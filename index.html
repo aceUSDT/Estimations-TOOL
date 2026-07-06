@@ -1192,18 +1192,33 @@ async function ocrPdfPage(f,pageNo,{reanalyze=true,quiet=false}={}){
     const status=$('#vOcrStatus');if(status)status.textContent='';
   }
 }
-async function ocrScannedPages(f,limit=20){
+async function ocrScannedPages(f,limit=20,{reanalyze=true,quiet=false}={}){
   const queue=f.pages.map((pg,i)=>({pg,page:i+1})).filter(x=>!(x.pg.lines||[]).length).slice(0,limit);
-  if(!queue.length){toast('Every page already has readable text');return;}
+  if(!queue.length){if(!quiet)toast('Every page already has readable text');return 0;}
   let done=0;
   for(const item of queue){
     try{await ocrPdfPage(f,item.page,{reanalyze:false,quiet:true});done++;}
     catch(e){toast(`OCR stopped on page ${item.page}: ${e.message}`);break;}
   }
-  if(done) await runAnalysis({auto:true});
+  if(done&&reanalyze) await runAnalysis({auto:true});
   const remain=f.pages.filter(pg=>!(pg.lines||[]).length).length;
-  toast(`OCR completed ${done} page${done===1?'':'s'}${remain?`; ${remain} remain — run OCR scans again`:''}`);
+  if(!quiet||remain) toast(`OCR completed ${done} page${done===1?'':'s'}${remain?`; ${remain} remain — run OCR scans again`:''}`);
   renderViewer();
+  return done;
+}
+/* Workstream 0 (§0.2‑4): scanned pages are OCR'd automatically on ingest —
+   a page with no text layer must never silently contribute zero rows. */
+async function autoOcrScannedFiles(){
+  const p=state.cur; if(!p) return 0;
+  let total=0;
+  for (const f of p.files){
+    if (f.status!=='ready'||f.ext!=='pdf') continue;
+    if (!f.pages.some(pg=>!(pg.lines||[]).length)) continue;
+    toast(`Reading scanned pages in ${f.name} with OCR…`);
+    try{ total+=await ocrScannedPages(f, Infinity, {reanalyze:false, quiet:true}); }
+    catch(e){ toast('Auto-OCR: '+e.message); }
+  }
+  return total;
 }
 /* reconstruct lines (text + bbox) from a pdf.js text content object */
 function linesFromTextContent(tc, vp){
@@ -1250,7 +1265,7 @@ async function ingestFile(file){
         rec.pct=25+Math.round(65*i/doc.numPages); renderDocs();
       }
       rec.native=anyText;
-      if (!anyText) rec.warn='Scanned PDF — no selectable text found. Use OCR scans or open the page and press OCR page.';
+      if (!anyText) rec.warn='Scanned PDF — no selectable text found. Pages will be read automatically with OCR.';
     } else if (ext==='txt'||ext==='csv'||ext==='md'||ext==='text'){
       const txt=await file.text();
       rec.pages=splitTextPages(txt); rec.native=true;
@@ -1277,6 +1292,7 @@ async function handleFiles(list){
   if (!state.cur){ toast('Open a project first'); return; }
   const files=Array.from(list);
   for (const f of files) await ingestFile(f);
+  await autoOcrScannedFiles();
   if (state.cur.files.some(f=>f.status==='ready')){ toast('Documents read — analysing…'); runAnalysis({auto:true}); }
 }
 $('#fileInput').addEventListener('change', e=>{ handleFiles(e.target.files); e.target.value=''; });
@@ -1342,7 +1358,7 @@ function renderDocs(){
         inp.addEventListener('change', async ()=>{
           if (!inp.files.length) return;
           p.files=p.files.filter(x=>x.id!==f.id); delete rawStore[f.id];
-          await ingestFile(inp.files[0]); runAnalysis({auto:true});
+          await ingestFile(inp.files[0]); await autoOcrScannedFiles(); runAnalysis({auto:true});
         });
         inp.click();
       }
@@ -1594,7 +1610,7 @@ async function runAnalysis(opts){
   if (!auto) toast('Analysis complete — '+A.rows.length+' evidence rows extracted');
 }
 $('#anRunBtn').addEventListener('click', ()=>runAnalysis());
-$('#reanalyzeBtn').addEventListener('click', ()=>{ setTab('analysis'); runAnalysis(); });
+$('#reanalyzeBtn').addEventListener('click', async ()=>{ setTab('analysis'); await autoOcrScannedFiles(); runAnalysis(); });
 
 
 /* ============================ RESULTS (DEVICES TAB) ============================ */
