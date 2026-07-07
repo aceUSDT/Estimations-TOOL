@@ -332,7 +332,7 @@ Each workstream **changes a page that already exists** — see the §2 table for
 
 ## 8. Access, deployment & credentials — **read before you start**
 
-- **Live app:** https://estimation101.netlify.app/ — this is the deployed instance to diagnose against. Workspace password: `design#50`.
+- **Live app:** https://estimation101.netlify.app/ — this is the deployed instance to diagnose against. Workspace password: `<redacted — ask the owner>`.
   - **This password is currently enforced client-side only** (it gated rendering, not data access — it was trivially bypassable from outside). If the workspace is meant to be private, that's a real gap: move the gate server-side (Netlify Identity, a password-protected redirect, or an authenticated function) rather than a client-side check anyone can read past in the bundle. Flag this even if it's not one of the five workstreams — it's a live exposure.
 - **Claude API key:** a key was shared in chat for this project. **Treat it as already compromised — rotate/revoke it in the Anthropic Console and generate a fresh one before wiring anything up.** A key that has appeared in any chat, ticket, or doc should always be rotated, on principle, regardless of who saw it.
 - **How the new key must be handled (non-negotiable, given this is a client-side SPA):**
