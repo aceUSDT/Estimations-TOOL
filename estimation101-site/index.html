@@ -1260,6 +1260,124 @@ async function autoOcrScannedFiles(){
   }
   return total;
 }
+/* ==================== AI EXTRACTION (serverless — key stays server-side) ==================== */
+/* The front-end NEVER holds the Anthropic key: it posts one page at a time to
+   a Netlify function (netlify/functions/extract.mjs) and merges the returned
+   structured rows as review-pending evidence. If the function is absent or
+   unconfigured, the app silently falls back to regex-only extraction. */
+const AI_EXTRACT_ENDPOINT='./.netlify/functions/extract';
+let aiProbePromise=null;
+window.__aiStatus='unknown';
+function aiExtractReady(){
+  if (!aiProbePromise){
+    aiProbePromise=fetch(AI_EXTRACT_ENDPOINT,{method:'GET'}).then(async r=>{
+      if(!r.ok){ window.__aiStatus='off — extraction endpoint not reachable'; return false; }
+      const j=await r.json();
+      if(!j.configured){ window.__aiStatus='not configured — set ANTHROPIC_API_KEY in Netlify'; return false; }
+      window.__aiStatus='active ('+(j.model||'Claude')+')';
+      return true;
+    }).catch(()=>{ window.__aiStatus='off — extraction endpoint not reachable'; return false; });
+  }
+  return aiProbePromise;
+}
+const AI_DEVICE_MAP={MCB:'MCB',RCBO:'RCBO',MCCB:'MCCB',ACB:'ACB',RCD:'RCD',SPD:'SPD',fuse:'Fuse',
+  switch_disconnector:'Isolator',isolator:'Isolator',contactor:'Contactor',meter:'Meter'};
+async function aiExtractPage(f,pageNo,pg){
+  let image_base64=null;
+  if (f.ext==='pdf'&&rawStore[f.id]){
+    const lib=await loadPdfjs();
+    let doc=state.viewer.pdfDocs[f.id];
+    if(!doc){doc=await lib.getDocument({data:rawStore[f.id].slice(0)}).promise;state.viewer.pdfDocs[f.id]=doc;}
+    const page=await doc.getPage(pageNo);
+    const base=page.getViewport({scale:1});
+    const scale=Math.min(2.5, 2000/Math.max(base.width,base.height));
+    const vp=page.getViewport({scale});
+    const cv=document.createElement('canvas'); cv.width=Math.ceil(vp.width); cv.height=Math.ceil(vp.height);
+    await page.render({canvasContext:cv.getContext('2d',{alpha:false}),viewport:vp}).promise;
+    image_base64=cv.toDataURL('image/jpeg',0.85).split(',')[1];
+  }
+  const r=await fetch(AI_EXTRACT_ENDPOINT,{method:'POST',headers:{'content-type':'application/json'},
+    body:JSON.stringify({filename:f.name, page_number:pageNo, image_base64, media_type:'image/jpeg',
+      text_lines:(pg.lines||[]).map(l=>l.text).slice(0,400), hints:{type:pg.type}})});
+  if(!r.ok){ const err=await r.json().catch(()=>({})); throw new Error(err.error||('HTTP '+r.status)); }
+  return (await r.json()).result;
+}
+function mergeAiResult(A,out,fileId,pageNo){
+  if(!out) return;
+  (out.boards||[]).forEach(b=>{
+    if(!b.ref) return;
+    const norm=normBoard(b.ref); if(!norm) return;
+    if(!A.boards[norm]){
+      const det=detectBoards(b.ref)[0];
+      A.boards[norm]={norm, orig:b.ref, type:det?det.type:'UNK', pages:[], parent:null, parentConf:0, manual:false};
+    }
+    const e=A.boards[norm];
+    if(!e.pages.some(x=>x.fileId===fileId&&x.page===pageNo)) e.pages.push({fileId,page:pageNo});
+    e.header=Object.assign(e.header||{}, Object.fromEntries(Object.entries(b).filter(([k,v])=>v!==null&&k!=='ref'&&k!=='confidence')));
+    if (b.fed_from_ref && !e.manual){
+      const fb=normBoard(b.fed_from_ref);
+      if (fb && fb!==norm && 0.75>(e.parentConf||0)){ e.parent=fb; e.parentConf=0.75; }
+    }
+  });
+  (out.devices||[]).forEach(d=>{
+    const bn=d.board_ref?normBoard(d.board_ref):null;
+    // regex rows win: skip AI rows for slots the schedule parser already filled
+    const dup=A.rows.some(r=>r.kind==='schedule'&&r.boardNorm===bn&&r.way===d.way
+      &&(!r.phase||!d.phase||r.phase===d.phase||d.phase==='L1L2L3'));
+    if (dup) return;
+    const space=d.device_class==='space';
+    const spare=d.is_spare||d.device_class==='spare';
+    const device=AI_DEVICE_MAP[d.device_class]|| (d.is_spd?'SPD':null);
+    A.rows.push({id:uid(), boardNorm:bn, fileId, page:pageNo, line:null, status:'pending', kind:'ai',
+      way:d.way??null, phase:d.phase&&d.phase!=='L1L2L3'?d.phase:(d.phase==='L1L2L3'?'3PH':null),
+      desc:d.description||'', device, rating:d.rating_a??null, poles:d.poles??null,
+      curve:d.trip_curve||null, sens:d.rcd_ma??null, afdd:!!d.afdd, ka:null,
+      cable:(d.phase_csa_mm2!=null||d.cable_type)?{orig:[d.phase_csa_mm2?d.phase_csa_mm2+'mm²':null,d.cable_type].filter(Boolean).join(' '),
+        size:d.phase_csa_mm2??null, cpc:typeof d.cpc_csa_mm2==='number'?d.cpc_csa_mm2:null, cores:null,
+        construction:typeof d.cpc_csa_mm2==='string'?d.cpc_csa_mm2:null, typeCode:d.cable_type||null, installMethod:d.install_method||null}:null,
+      circuitConfig:d.circuit_config||null, spare, space, incomer:!!d.is_incomer, isSpd:!!d.is_spd,
+      qty:space?0:1, srcText:'[AI] '+(d.description||d.device_class||'')+(d.way!=null?' (way '+d.way+(d.phase?'/'+d.phase:'')+')':''),
+      conf:Math.max(0.2,Math.min(0.95,Number(d.confidence)||0.6))});
+  });
+  (out.feeds||[]).forEach(fd=>{
+    if(!fd.to_ref) return;
+    A.feeders.push({id:uid(), fileId, page:pageNo, line:null,
+      from:fd.from_ref?normBoard(fd.from_ref):null, to:normBoard(fd.to_ref),
+      cable:(fd.cable_csa_mm2!=null||fd.cable_desc)?{orig:fd.cable_desc||(fd.cable_csa_mm2+'mm²'), size:fd.cable_csa_mm2??null,
+        cpc:typeof fd.cable_cpc_mm2==='number'?fd.cable_cpc_mm2:null, cores:null, construction:null, ref:fd.cable_ref||null}:null,
+      device:fd.device_class||null, rating:fd.rating_a??null, poles:fd.poles??null,
+      srcText:'[AI] feed '+(fd.from_ref||'?')+' → '+fd.to_ref+(fd.cable_ref?' via '+fd.cable_ref:''),
+      conf:Math.max(0.2,Math.min(0.9,Number(fd.confidence)||0.7)), ai:true});
+  });
+  (out.flags||[]).forEach(fl=>{ (A.aiFlags=A.aiFlags||[]).push({fileId, page:pageNo, kind:fl.kind, message:fl.message}); });
+}
+async function runAiExtraction(A,f,p,pageSet){
+  if(!(await aiExtractReady())) return;
+  const jobs=[];
+  for (const id of f.fileIds){
+    const fl=p.files.find(x=>x.id===id); if(!fl||fl.status!=='ready') continue;
+    fl.pages.forEach((pg,pi)=>{
+      const pageNo=pi+1;
+      if (pageSet && !pageSet.has(pageNo)) return;
+      const rowsHere=A.rows.filter(r=>r.fileId===id&&r.page===pageNo&&r.kind==='schedule').length;
+      // recall-first: any schedule/schematic/unknown page, plus any page the regex pass left empty
+      if (SCHEDULE_TYPES.has(pg.type)||pg.type==='sld'||pg.type==='schematic'||pg.type==='unknown'||rowsHere===0)
+        jobs.push({fl,id,pg,pageNo});
+    });
+  }
+  if(!jobs.length) return;
+  toast('AI extraction: reading '+jobs.length+' page'+(jobs.length===1?'':'s')+'…');
+  A.aiPages=0; A.aiErrors=0;
+  const CONC=2;
+  for (let i=0;i<jobs.length;i+=CONC){
+    await Promise.all(jobs.slice(i,i+CONC).map(async j=>{
+      try{ mergeAiResult(A, await aiExtractPage(j.fl,j.pageNo,j.pg), j.id, j.pageNo); A.aiPages++; }
+      catch(e){ console.warn('AI extraction failed on '+j.fl.name+' p'+j.pageNo+':', e.message); A.aiErrors++; }
+    }));
+  }
+  if (A.aiErrors) toast('AI extraction: '+A.aiErrors+' page(s) failed — results kept for the rest');
+}
+
 /* reconstruct lines (text + bbox) from a pdf.js text content object */
 function linesFromTextContent(tc, vp){
   const items = tc.items.map(it=>{
@@ -1464,13 +1582,17 @@ function renderCoverage(){
       <td class="num">${unCell}</td><td class="num">${b.rowsCaptured}</td>
       <td>${b.evidence?esc(b.evidence.text)+' <span class="hint" style="display:inline;margin:0">p'+b.evidence.page+'</span>':'—'}</td></tr>`;
   }).join('') || '<tr><td colspan="6" style="color:var(--txt3)">No boards detected yet.</td></tr>';
-  pagesEl.innerHTML = cov.zeroRowSchedulePages.length
+  const ai=window.__aiStatus||'unknown';
+  const aiCls = ai.startsWith('active')?'green': ai.startsWith('not configured')?'amber':'grey';
+  const aiStats = p.analysis&&p.analysis.aiPages!=null ? ` · ${p.analysis.aiPages} page(s) read${p.analysis.aiErrors?', '+p.analysis.aiErrors+' failed':''}` : '';
+  pagesEl.innerHTML = `<div style="margin-bottom:7px"><span class="chip ${aiCls}">AI extraction: ${esc(ai)}${esc(aiStats)}</span></div>`
+    + (cov.zeroRowSchedulePages.length
     ? '<span class="chip amber">⚠ '+cov.zeroRowSchedulePages.length+' page(s) look like schedules but produced 0 rows:</span> '
       + cov.zeroRowSchedulePages.slice(0,30).map(z=>{
           const fl=p.files.find(x=>x.id===z.fileId);
           return `<span class="chip grey">${esc(fl?fl.name.slice(0,24):'?')} p${z.page}</span>`;
         }).join(' ')
-    : '<span class="chip green">Every schedule-looking page produced rows.</span>';
+    : '<span class="chip green">Every schedule-looking page produced rows.</span>');
 }
 
 /* ============================ ANALYSIS CONTROLS ============================ */
@@ -1648,6 +1770,10 @@ async function runAnalysis(opts){
     });
   }
   renderStages(4); if(anim) await sleep(220);
+  // Workstream 0 §0.0 — genuine AI extraction across all dialects + schematics
+  // (regex pass above stays as the fast pre-pass; AI rows go to review, never
+  // overriding a slot the schedule parser already filled).
+  try{ await runAiExtraction(A, f, p, pageSet); }catch(e){ console.warn('AI extraction unavailable:', e.message); }
   A.feeders.forEach(fd=>{
     if (!fd.to) return;
     const child=A.boards[fd.to];

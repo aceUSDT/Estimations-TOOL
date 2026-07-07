@@ -1,0 +1,13 @@
+# Netlify deploy configuration.
+# The app itself is static (index.html + extractor-core.js at the repo root).
+# AI extraction runs behind a serverless function so the Anthropic API key
+# stays server-side (CLAUDE.md non-negotiable) — set ANTHROPIC_API_KEY in
+# Site configuration → Environment variables. Never commit it.
+
+[build]
+  publish = "."
+  command = "npm install"
+
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
