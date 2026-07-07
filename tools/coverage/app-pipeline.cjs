@@ -31,20 +31,31 @@ const DEVICE_DEFS = [
 const BOARD_TYPES = {
   MAIN:'Main LV panel', MDB:'Main distribution board', MCC:'Motor-control centre',
   SMDB:'Sub-main distribution board', DB:'Distribution board', LDB:'Lighting board',
-  PDB:'Power board', MECH:'Mechanical board', FA:'Fire-alarm panel', CTRL:'Control panel', UNK:'Unknown panel',
+  PDB:'Power board', MECH:'Mechanical board', FA:'Fire-alarm panel', CTRL:'Control panel',
+  SB:'Switchboard', PB:'Panelboard', CU:'Consumer unit', UNK:'Unknown panel',
 };
 
+const BOARD_REF_STOPWORDS = new Set(['SCHEDULE','SCHEDULES','REFERENCE','REF','BOARD','BOARDS','FED','FROM',
+  'TO','SERVING','SERVED','TYPE','RATING','SIZE','WAY','WAYS','NO','NUMBER','DATA','INCOMER','LOCATION',
+  'NOTES','NOTE','LEGEND','CHART','CHARTS','IDENTITY','AND','OR','THE','FOR','WITH','IS','ARE','MODEL']);
+
 const BOARD_PATTERNS = [
+  {re:/\b([A-Z0-9]{1,6}(?:-[A-Z0-9]{1,6})*-DB(?:-[A-Z0-9]{1,6})+)\b/gi, type:'DB'},
   {re:/\b(S\s?M\s?D\s?B[\s.\-_\/]?\d*[A-Z]?)\b/gi, type:'SMDB'},
   {re:/\b(M\s?D\s?B[\s.\-_\/]?\d*[A-Z]?)\b/gi, type:'MDB'},
   {re:/\b(L\s?D\s?B[\s.\-_\/]?\d*[A-Z]?)\b/gi, type:'LDB'},
   {re:/\b(P\s?D\s?B[\s.\-_\/]?\d*[A-Z]?)\b/gi, type:'PDB'},
+  {re:/\b(DB\s?[.\-_\/]\s?[A-Z0-9]{1,8}(?:[.\-_\/][A-Z0-9]{1,8})*)\b/gi, type:'DB', guard:true},
   {re:/\b(D\.?\s?B\.?(?:[\s.\-_\/]?\d+[A-Z]?)+(?:\s+[A-Z])?)\b/gi, type:'DB'},
   {re:/\b(MCC(?!B)[\s.\-_\/]?\d*)\b/gi, type:'MCC'},
   {re:/\b(MCP[\s.\-_\/]?\d*[A-Z]?)\b/gi, type:'MECH'},
+  {re:/\b(SB[\s.\-_\/]?\d+[A-Z]?)\b/g, type:'SB'},
+  {re:/\b((?:PB|MSB)[\s.\-_\/]?\d+[A-Z]?)\b/gi, type:'PB'},
   {re:/\b(FACP|FAP)[\s.\-_\/]?(\d*)\b/gi, type:'FA'},
   {re:/\bmain\s+lv\s+(?:panel|switchboard)\b/gi, type:'MAIN', fixed:'Main LV Panel'},
   {re:/\bmain\s+switch\s?board\b|\bMSB\b/gi, type:'MAIN', fixed:'Main LV Panel'},
+  {re:/\b[Cc]onsumer\s+[Uu]nit\s*\(([^)]{2,30})\)/g, type:'CU', prefix:'CU '},
+  {re:/(?<!(?:[Cc]able|[Dd]rawing|[Dd]ocument|[Pp]roject|[Jj]ob|[Ss]chedule)\s)\b(?:[Bb]oard\s+)?(?:[Rr]eference|[Ii]dentity)\s*[:\-]?\s+([A-Z0-9][A-Z0-9\/._-]{1,14})/g, type:'UNK', header:true},
   {re:/\b[Pp]anel\s+([A-Z](?:[\s.\-_]?\d+)?)\b/g, type:'CTRL', prefix:'Panel '},
 ];
 const normBoard = s => String(s).toUpperCase().replace(/[\s.\-_\/]+/g,'');
@@ -80,17 +91,27 @@ function detectBoards(line){
     while((m=bp.re.exec(line))!==null){
       let orig = bp.fixed || (bp.prefix? bp.prefix+m[1] : m[1]);
       orig = orig.trim();
+      if (bp.guard){
+        const tokens = orig.split(/[\s.\-_\/]+/).slice(1);
+        if (!tokens.length || BOARD_REF_STOPWORDS.has(tokens[0].toUpperCase())) continue;
+      }
+      if (bp.header){
+        orig = orig.replace(/[.,:]+$/,'');
+        if (!/[\d\/-]/.test(orig) || BOARD_REF_STOPWORDS.has(orig.toUpperCase())) continue;
+      }
       const norm = normBoard(orig);
       if (!norm || /^(DB|MDB|SMDB|LDB|PDB|MCC|MCP)$/.test(norm) && !bp.fixed && !/\d/.test(norm) && norm!=='MDB' && norm!=='SMDB') continue;
       if (found.some(f=>f.norm===norm)) continue;
-      if (bp.type==='DB'){
+      if (bp.type==='DB' && !bp.guard){
         const pre = line[m.index-1];
         if (pre && /[A-Za-z]/.test(pre)) continue;
       }
-      found.push({orig, norm, type:bp.type});
+      found.push({orig, norm, type:bp.type, start:m.index, end:m.index+m[0].length});
     }
   }
-  return found;
+  return found
+    .filter(f=>!found.some(o=>o!==f && o.start<=f.start && o.end>=f.end && (o.end-o.start)>(f.end-f.start)))
+    .map(({orig,norm,type})=>({orig,norm,type}));
 }
 
 /* ==================== CABLE DETECTION (index.html:828) ==================== */

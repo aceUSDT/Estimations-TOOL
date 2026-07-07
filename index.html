@@ -400,6 +400,19 @@
         </table></div>
         <div class="empty" id="pgclassEmpty">Run analysis to classify pages.</div>
       </div>
+      <div class="panel" style="margin-top:16px">
+        <div class="p-head">Extraction coverage
+          <span class="sub">expected vs captured — a shortfall is flagged, never silently accepted</span>
+          <span class="chip grey" id="covSummary" style="margin-left:auto"></span>
+        </div>
+        <div style="overflow-x:auto"><table class="t">
+          <thead><tr><th>Board</th><th class="num">Expected ways</th><th class="num">Captured ways</th>
+          <th class="num">Unaccounted</th><th class="num">Rows</th><th>Header evidence</th></tr></thead>
+          <tbody id="covBody"></tbody>
+        </table></div>
+        <div id="covPages" style="padding:10px 18px"></div>
+        <div class="empty" id="covEmpty">Run analysis to measure extraction coverage.</div>
+      </div>
     </div>
 
     <!-- ==== VIEWER ==== -->
@@ -757,21 +770,34 @@ const PAGE_TYPES = {
 const BOARD_TYPES = {
   MAIN:'Main LV panel', MDB:'Main distribution board', MCC:'Motor-control centre',
   SMDB:'Sub-main distribution board', DB:'Distribution board', LDB:'Lighting board',
-  PDB:'Power board', MECH:'Mechanical board', FA:'Fire-alarm panel', CTRL:'Control panel', UNK:'Unknown panel',
+  PDB:'Power board', MECH:'Mechanical board', FA:'Fire-alarm panel', CTRL:'Control panel',
+  SB:'Switchboard', PB:'Panelboard', CU:'Consumer unit', UNK:'Unknown panel',
 };
 
-/* board reference patterns — DB-01, DB01, D.B.01, LDB-1, PDB-01, MDB, SMDB, MCC-01, MCP-01, Panel A, Main LV Panel */
+/* Words that can follow "DB" in prose without naming a board ("DB Schedule", "DB Fed From"). */
+const BOARD_REF_STOPWORDS = new Set(['SCHEDULE','SCHEDULES','REFERENCE','REF','BOARD','BOARDS','FED','FROM',
+  'TO','SERVING','SERVED','TYPE','RATING','SIZE','WAY','WAYS','NO','NUMBER','DATA','INCOMER','LOCATION',
+  'NOTES','NOTE','LEGEND','CHART','CHARTS','IDENTITY','AND','OR','THE','FOR','WITH','IS','ARE','MODEL']);
+
+/* board reference patterns — DB-01, DB-MECH, DB/GF, G1-GF-DB-LL, PB01, MSB1, SB12, CU variants…
+   Ordered most-specific first; detectBoards drops matches contained inside a longer match. */
 const BOARD_PATTERNS = [
+  {re:/\b([A-Z0-9]{1,6}(?:-[A-Z0-9]{1,6})*-DB(?:-[A-Z0-9]{1,6})+)\b/gi, type:'DB'},
   {re:/\b(S\s?M\s?D\s?B[\s.\-_\/]?\d*[A-Z]?)\b/gi, type:'SMDB'},
   {re:/\b(M\s?D\s?B[\s.\-_\/]?\d*[A-Z]?)\b/gi, type:'MDB'},
   {re:/\b(L\s?D\s?B[\s.\-_\/]?\d*[A-Z]?)\b/gi, type:'LDB'},
   {re:/\b(P\s?D\s?B[\s.\-_\/]?\d*[A-Z]?)\b/gi, type:'PDB'},
+  {re:/\b(DB\s?[.\-_\/]\s?[A-Z0-9]{1,8}(?:[.\-_\/][A-Z0-9]{1,8})*)\b/gi, type:'DB', guard:true},
   {re:/\b(D\.?\s?B\.?(?:[\s.\-_\/]?\d+[A-Z]?)+(?:\s+[A-Z])?)\b/gi, type:'DB'},
   {re:/\b(MCC(?!B)[\s.\-_\/]?\d*)\b/gi, type:'MCC'},
   {re:/\b(MCP[\s.\-_\/]?\d*[A-Z]?)\b/gi, type:'MECH'},
+  {re:/\b(SB[\s.\-_\/]?\d+[A-Z]?)\b/g, type:'SB'},
+  {re:/\b((?:PB|MSB)[\s.\-_\/]?\d+[A-Z]?)\b/gi, type:'PB'},
   {re:/\b(FACP|FAP)[\s.\-_\/]?(\d*)\b/gi, type:'FA'},
   {re:/\bmain\s+lv\s+(?:panel|switchboard)\b/gi, type:'MAIN', fixed:'Main LV Panel'},
   {re:/\bmain\s+switch\s?board\b|\bMSB\b/gi, type:'MAIN', fixed:'Main LV Panel'},
+  {re:/\b[Cc]onsumer\s+[Uu]nit\s*\(([^)]{2,30})\)/g, type:'CU', prefix:'CU '},
+  {re:/(?<!(?:[Cc]able|[Dd]rawing|[Dd]ocument|[Pp]roject|[Jj]ob|[Ss]chedule)\s)\b(?:[Bb]oard\s+)?(?:[Rr]eference|[Ii]dentity)\s*[:\-]?\s+([A-Z0-9][A-Z0-9\/._-]{1,14})/g, type:'UNK', header:true},
   {re:/\b[Pp]anel\s+([A-Z](?:[\s.\-_]?\d+)?)\b/g, type:'CTRL', prefix:'Panel '},
 ];
 const normBoard = s => String(s).toUpperCase().replace(/[\s.\-_\/]+/g,'');
@@ -810,18 +836,32 @@ function detectBoards(line){
     while((m=bp.re.exec(line))!==null){
       let orig = bp.fixed || (bp.prefix? bp.prefix+m[1] : m[1]);
       orig = orig.trim();
+      if (bp.guard){
+        // "DB <word>" prose guard: first token after DB must not be a stopword
+        const tokens = orig.split(/[\s.\-_\/]+/).slice(1);
+        if (!tokens.length || BOARD_REF_STOPWORDS.has(tokens[0].toUpperCase())) continue;
+      }
+      if (bp.header){
+        // labelled refs ("Board Reference: 2A4") need a digit or separator to avoid prose
+        orig = orig.replace(/[.,:]+$/,'');
+        if (!/[\d\/-]/.test(orig) || BOARD_REF_STOPWORDS.has(orig.toUpperCase())) continue;
+      }
       const norm = normBoard(orig);
       if (!norm || /^(DB|MDB|SMDB|LDB|PDB|MCC|MCP)$/.test(norm) && !bp.fixed && !/\d/.test(norm) && norm!=='MDB' && norm!=='SMDB') continue;
       if (found.some(f=>f.norm===norm)) continue;
       // avoid matching DB inside SMDB/LDB/PDB/MDB occurrences
-      if (bp.type==='DB'){
+      if (bp.type==='DB' && !bp.guard){
         const pre = line[m.index-1];
         if (pre && /[A-Za-z]/.test(pre)) continue;
       }
-      found.push({orig, norm, type:bp.type});
+      found.push({orig, norm, type:bp.type, start:m.index, end:m.index+m[0].length});
     }
   }
-  return found;
+  // drop matches fully contained inside a longer match of the same text
+  // (e.g. keep DB-00-SUBEXT, drop the DB-00 sub-match)
+  return found
+    .filter(f=>!found.some(o=>o!==f && o.start<=f.start && o.end>=f.end && (o.end-o.start)>(f.end-f.start)))
+    .map(({orig,norm,type})=>({orig,norm,type}));
 }
 
 /* ==================== CABLE DETECTION ==================== */
@@ -1400,8 +1440,38 @@ function renderPgclass(){
     tr.querySelector('[data-a=view]').addEventListener('click', ()=>{ state.viewer.fileId=f.id; state.viewer.page=i+1; setTab('viewer'); });
     tb.appendChild(tr);
   });
+  renderCoverage();
 }
 $('#pgclassFileSel').addEventListener('change', renderPgclass);
+
+/* ============================ COVERAGE PANEL (Workstream 0 §0.4) ============================ */
+function renderCoverage(){
+  const p=state.cur; if(!p) return;
+  const cov=p.analysis&&p.analysis.coverage;
+  const body=$('#covBody'), pagesEl=$('#covPages'), sum=$('#covSummary');
+  $('#covEmpty').style.display = cov?'none':'';
+  if (!cov){ body.innerHTML=''; pagesEl.innerHTML=''; sum.textContent=''; return; }
+  const s=cov.summary;
+  sum.textContent = (s.pctComplete!=null? s.pctComplete+'% of header-declared ways captured · ':'')
+    + s.boardsWithRows+'/'+s.boards+' boards have rows';
+  sum.className = 'chip '+(s.pctComplete==null?'grey': s.pctComplete>=95?'green': s.pctComplete>=60?'amber':'red');
+  const rows=[...cov.perBoard].sort((a,b)=>(b.unaccountedWays||0)-(a.unaccountedWays||0)||(b.expectedWays||0)-(a.expectedWays||0));
+  body.innerHTML = rows.map(b=>{
+    const un=b.unaccountedWays;
+    const unCell = un==null?'—': un>0?`<span class="chip red">${un} missing</span>`:'<span class="chip green">0</span>';
+    return `<tr><td class="strong">${esc(b.orig||b.norm)}</td>
+      <td class="num">${b.expectedWays??'—'}</td><td class="num">${b.capturedWays}</td>
+      <td class="num">${unCell}</td><td class="num">${b.rowsCaptured}</td>
+      <td>${b.evidence?esc(b.evidence.text)+' <span class="hint" style="display:inline;margin:0">p'+b.evidence.page+'</span>':'—'}</td></tr>`;
+  }).join('') || '<tr><td colspan="6" style="color:var(--txt3)">No boards detected yet.</td></tr>';
+  pagesEl.innerHTML = cov.zeroRowSchedulePages.length
+    ? '<span class="chip amber">⚠ '+cov.zeroRowSchedulePages.length+' page(s) look like schedules but produced 0 rows:</span> '
+      + cov.zeroRowSchedulePages.slice(0,30).map(z=>{
+          const fl=p.files.find(x=>x.id===z.fileId);
+          return `<span class="chip grey">${esc(fl?fl.name.slice(0,24):'?')} p${z.page}</span>`;
+        }).join(' ')
+    : '<span class="chip green">Every schedule-looking page produced rows.</span>';
+}
 
 /* ============================ ANALYSIS CONTROLS ============================ */
 function parseRanges(str){
@@ -1593,6 +1663,17 @@ async function runAnalysis(opts){
     A.rows.forEach(r=>{ const o=prevMap[key(r)]; if(o&&o.status!=='pending') r.status=o.status; });
     prev.rows.filter(r=>r.kind==='manual').forEach(r=>A.rows.push(r));
     Object.values(prev.boards).forEach(b=>{ if(b.manual){ if(!A.boards[b.norm]) A.boards[b.norm]=b; A.boards[b.norm].parent=b.parent; A.boards[b.norm].manual=true; } });
+  }
+  // Workstream 0 §0.3 — reconciliation pass: check the result against the
+  // documents' own evidence (header way counts, schedule-looking pages).
+  if (window.EstimationExtractorCore&&window.EstimationExtractorCore.buildCoverage){
+    const covPages=[];
+    for (const id of f.fileIds){
+      const fl=p.files.find(x=>x.id===id); if(!fl||fl.status!=='ready') continue;
+      fl.pages.forEach((pg,pi)=>{ if(pageSet && !pageSet.has(pi+1)) return;
+        covPages.push({fileId:id, page:pi+1, text:(pg.lines||[]).map(l=>l.text).join('\n'), type:pg.type}); });
+    }
+    A.coverage = window.EstimationExtractorCore.buildCoverage({boards:A.boards, rows:A.rows, pages:covPages});
   }
   p.analysis=A;
   if(window.EstimationExtractorCore&&(p.assistedMarkups||[]).length){
@@ -1960,6 +2041,10 @@ function renderReview(){
   A.rows.filter(r=>r.status==='pending'&&r.conf<0.8).forEach(r=>items.push({kind:'row',r,conf:r.conf}));
   p.files.filter(f=>f.status==='ready'&&!f.native&&f.pages.some(pg=>!(pg.lines||[]).length)).forEach(f=>items.push({kind:'scan',f}));
   Object.values(A.boards).filter(b=>!b.parent&&!b.manual&&b.type!=='MAIN').forEach(b=>items.push({kind:'orphan',b}));
+  if (A.coverage){
+    A.coverage.perBoard.filter(b=>(b.unaccountedWays||0)>0).forEach(b=>items.push({kind:'gap',g:b,conf:0}));
+    A.coverage.zeroRowSchedulePages.forEach(z=>items.push({kind:'zeropage',z,conf:0.1}));
+  }
   if (!items.length){ host.innerHTML='<div class="empty"><div class="ico">✓</div>Nothing to review — all results are confirmed or high confidence.</div>'; return; }
   host.innerHTML='';
   items.sort((a,b)=>(a.conf??1)-(b.conf??1));
@@ -1991,6 +2076,22 @@ function renderReview(){
         <div class="hint">Use bounded OCR to create selectable lines and coordinates for device extraction. Native PDF exports remain more accurate when available.</div></div>
         <div class="racts"><button class="btn sm" data-a="ocr">OCR scanned pages</button></div>`;
       div.querySelector('[data-a=ocr]').addEventListener('click',()=>ocrScannedPages(it.f).catch(err=>toast(err.message)));
+    } else if (it.kind==='gap'){
+      const g=it.g;
+      div.innerHTML=`<div class="ric" style="background:var(--red-soft)">▦</div>
+        <div style="flex:1"><h4>${esc(g.orig||g.norm)}: ${g.unaccountedWays} of ${g.expectedWays} ways unaccounted for</h4>
+        <div class="rsrc">Header says "${esc(g.evidence?g.evidence.text:'')}"${g.evidence?' (page '+g.evidence.page+')':''} but only ${g.capturedWays} way${g.capturedWays===1?'':'s'} were extracted.</div>
+        <div class="hint">Missing ways are the worst failure — open the page and check what the extractor did not read.</div></div>
+        <div class="racts">${g.evidence?'<button class="btn sm" data-a="view">View page</button>':''}</div>`;
+      const vb=div.querySelector('[data-a=view]');
+      if (vb) vb.addEventListener('click',()=>{ state.viewer.fileId=g.evidence.fileId; state.viewer.page=g.evidence.page; setTab('viewer'); });
+    } else if (it.kind==='zeropage'){
+      const z=it.z, fl=p.files.find(x=>x.id===z.fileId);
+      div.innerHTML=`<div class="ric" style="background:var(--amber-soft)">▤</div>
+        <div style="flex:1"><h4>${esc(fl?fl.name:'?')} page ${z.page} looks like a schedule but produced no rows</h4>
+        <div class="hint">A schedule page with zero rows is a failure to raise, not an empty result — check the page and correct its type if needed.</div></div>
+        <div class="racts"><button class="btn sm" data-a="view">View page</button></div>`;
+      div.querySelector('[data-a=view]').addEventListener('click',()=>{ state.viewer.fileId=z.fileId; state.viewer.page=z.page; setTab('viewer'); });
     } else {
       div.innerHTML=`<div class="ric" style="background:var(--blue-soft)">◫</div>
         <div style="flex:1"><h4>${esc(it.b.orig)} has no known supply source</h4>

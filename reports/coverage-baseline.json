@@ -539,224 +539,304 @@
           "type": "cover",
           "lines": 36,
           "rows": 0,
-          "boards": []
+          "boards": [
+            "DBBY",
+            "DBB1"
+          ]
         },
         {
           "page": 2,
           "type": "unknown",
           "lines": 31,
           "rows": 0,
-          "boards": []
+          "boards": [
+            "DBB1"
+          ]
         },
         {
           "page": 3,
           "type": "unknown",
           "lines": 13,
           "rows": 0,
-          "boards": []
+          "boards": [
+            "DBC"
+          ]
         },
         {
           "page": 4,
           "type": "unknown",
           "lines": 16,
           "rows": 0,
-          "boards": []
+          "boards": [
+            "DBEVC"
+          ]
         },
         {
           "page": 5,
           "type": "unknown",
           "lines": 15,
           "rows": 0,
-          "boards": []
+          "boards": [
+            "DBEXT"
+          ]
         },
         {
           "page": 6,
           "type": "unknown",
           "lines": 35,
           "rows": 0,
-          "boards": []
+          "boards": [
+            "DBFF1"
+          ]
         },
         {
           "page": 7,
           "type": "unknown",
           "lines": 19,
           "rows": 0,
-          "boards": []
+          "boards": [
+            "DBFFY",
+            "DBFF1"
+          ]
         },
         {
           "page": 8,
           "type": "unknown",
           "lines": 39,
           "rows": 0,
-          "boards": []
+          "boards": [
+            "DBFF2"
+          ]
         },
         {
           "page": 9,
           "type": "unknown",
           "lines": 37,
           "rows": 0,
-          "boards": []
+          "boards": [
+            "DBFF2"
+          ]
         },
         {
           "page": 10,
           "type": "unknown",
           "lines": 18,
           "rows": 0,
-          "boards": []
+          "boards": [
+            "DBFF2"
+          ]
         },
         {
           "page": 11,
           "type": "unknown",
           "lines": 35,
           "rows": 0,
-          "boards": []
+          "boards": [
+            "DBGF",
+            "DBGF1"
+          ]
         },
         {
           "page": 12,
           "type": "unknown",
           "lines": 34,
           "rows": 0,
-          "boards": []
+          "boards": [
+            "DBGF1"
+          ]
         },
         {
           "page": 13,
           "type": "unknown",
           "lines": 38,
           "rows": 0,
-          "boards": []
+          "boards": [
+            "DBGF1"
+          ]
         },
         {
           "page": 14,
           "type": "unknown",
           "lines": 19,
           "rows": 0,
-          "boards": []
+          "boards": [
+            "DBGF1"
+          ]
         },
         {
           "page": 15,
           "type": "unknown",
           "lines": 32,
           "rows": 0,
-          "boards": []
+          "boards": [
+            "DBK"
+          ]
         },
         {
           "page": 16,
           "type": "unknown",
           "lines": 13,
           "rows": 0,
-          "boards": []
+          "boards": [
+            "DBK"
+          ]
         },
         {
           "page": 17,
           "type": "unknown",
           "lines": 31,
           "rows": 0,
-          "boards": []
+          "boards": [
+            "DBL"
+          ]
         },
         {
           "page": 18,
           "type": "unknown",
           "lines": 31,
           "rows": 0,
-          "boards": []
+          "boards": [
+            "DBPR"
+          ]
         },
         {
           "page": 19,
           "type": "unknown",
           "lines": 35,
           "rows": 0,
-          "boards": []
+          "boards": [
+            "DBRP"
+          ]
         },
         {
           "page": 20,
           "type": "unknown",
           "lines": 13,
           "rows": 0,
-          "boards": []
+          "boards": [
+            "DBRP"
+          ]
         },
         {
           "page": 21,
           "type": "unknown",
           "lines": 35,
           "rows": 0,
-          "boards": []
+          "boards": [
+            "DBSFT",
+            "DBSF1"
+          ]
         },
         {
           "page": 22,
           "type": "unknown",
           "lines": 19,
           "rows": 0,
-          "boards": []
+          "boards": [
+            "DBSF1"
+          ]
         },
         {
           "page": 23,
           "type": "unknown",
           "lines": 39,
           "rows": 0,
-          "boards": []
+          "boards": [
+            "DBSF2"
+          ]
         },
         {
           "page": 24,
           "type": "unknown",
           "lines": 38,
           "rows": 0,
-          "boards": []
+          "boards": [
+            "DBSF2"
+          ]
         },
         {
           "page": 25,
           "type": "unknown",
           "lines": 14,
           "rows": 0,
-          "boards": []
+          "boards": [
+            "DBSF2"
+          ]
         },
         {
           "page": 26,
           "type": "unknown",
           "lines": 35,
           "rows": 0,
-          "boards": []
+          "boards": [
+            "DBTF1"
+          ]
         },
         {
           "page": 27,
           "type": "unknown",
           "lines": 19,
           "rows": 0,
-          "boards": []
+          "boards": [
+            "DBTFY",
+            "DBTF1"
+          ]
         },
         {
           "page": 28,
           "type": "unknown",
           "lines": 38,
           "rows": 0,
-          "boards": []
+          "boards": [
+            "DBTF2"
+          ]
         },
         {
           "page": 29,
           "type": "unknown",
           "lines": 38,
           "rows": 0,
-          "boards": []
+          "boards": [
+            "DBTF2"
+          ]
         },
         {
           "page": 30,
           "type": "unknown",
           "lines": 12,
           "rows": 0,
-          "boards": []
+          "boards": [
+            "DBTF2"
+          ]
         },
         {
           "page": 31,
           "type": "unknown",
           "lines": 28,
           "rows": 0,
-          "boards": []
+          "boards": [
+            "DBC",
+            "DBEXT",
+            "DBB1",
+            "DBFF1",
+            "DBFF2",
+            "DBGF1",
+            "DBPR",
+            "DBRP"
+          ]
         },
         {
           "page": 32,
           "type": "unknown",
           "lines": 11,
           "rows": 0,
-          "boards": []
+          "boards": [
+            "DBSFI",
+            "DBSF2",
+            "DBTF1",
+            "DBTF2",
+            "DBEVC"
+          ]
         }
       ],
       "classification": {
@@ -793,7 +873,29 @@
         "31": "unknown",
         "32": "unknown"
       },
-      "boardsNamed": [],
+      "boardsNamed": [
+        "DBBY",
+        "DBB1",
+        "DBC",
+        "DBEVC",
+        "DBEXT",
+        "DBFF1",
+        "DBFFY",
+        "DBFF2",
+        "DBGF",
+        "DBGF1",
+        "DBK",
+        "DBL",
+        "DBPR",
+        "DBRP",
+        "DBSFT",
+        "DBSF1",
+        "DBSF2",
+        "DBTF1",
+        "DBTFY",
+        "DBTF2",
+        "DBSFI"
+      ],
       "boardsWithRows": [],
       "rowsTotal": 0,
       "scheduleRows": 0,
@@ -805,92 +907,92 @@
       "expectedWayHeaders": [
         {
           "page": 1,
-          "board": null,
+          "board": "DBBY",
           "ways": 16
         },
         {
           "page": 3,
-          "board": null,
+          "board": "DBC",
           "ways": 4
         },
         {
           "page": 5,
-          "board": null,
+          "board": "DBEXT",
           "ways": 6
         },
         {
           "page": 6,
-          "board": null,
+          "board": "DBFF1",
           "ways": 12
         },
         {
           "page": 7,
-          "board": null,
+          "board": "DBFFY",
           "ways": 12
         },
         {
           "page": 8,
-          "board": null,
+          "board": "DBFF2",
           "ways": 16
         },
         {
           "page": 9,
-          "board": null,
+          "board": "DBFF2",
           "ways": 16
         },
         {
           "page": 10,
-          "board": null,
+          "board": "DBFF2",
           "ways": 16
         },
         {
           "page": 11,
-          "board": null,
+          "board": "DBGF",
           "ways": 24
         },
         {
           "page": 15,
-          "board": null,
+          "board": "DBK",
           "ways": 12
         },
         {
           "page": 21,
-          "board": null,
+          "board": "DBSFT",
           "ways": 12
         },
         {
           "page": 22,
-          "board": null,
+          "board": "DBSF1",
           "ways": 12
         },
         {
           "page": 23,
-          "board": null,
+          "board": "DBSF2",
           "ways": 16
         },
         {
           "page": 24,
-          "board": null,
+          "board": "DBSF2",
           "ways": 16
         },
         {
           "page": 25,
-          "board": null,
+          "board": "DBSF2",
           "ways": 16
         },
         {
           "page": 26,
-          "board": null,
+          "board": "DBTF1",
           "ways": 12
         },
         {
           "page": 28,
-          "board": null,
+          "board": "DBTF2",
           "ways": 16
         },
         {
           "page": 29,
-          "board": null,
+          "board": "DBTF2",
           "ways": 16
         }
       ],
@@ -933,12 +1035,12 @@
       "_waySlots": []
     },
     "groundTruth": {
-      "pass": false,
+      "pass": true,
       "checks": [
         {
           "name": "min_boards ≥ 10",
-          "actual": 0,
-          "pass": false
+          "actual": 21,
+          "pass": true
         }
       ]
     }
@@ -1126,7 +1228,9 @@
           "type": "db-schedule",
           "lines": 49,
           "rows": 0,
-          "boards": []
+          "boards": [
+            "UEU4"
+          ]
         }
       ],
       "classification": {
@@ -1144,7 +1248,8 @@
         "DB0008P",
         "DB0011P",
         "DB0013P",
-        "DB0023P"
+        "DB0023P",
+        "UEU4"
       ],
       "boardsWithRows": [
         "DB0023P"
@@ -1362,7 +1467,9 @@
           "type": "cover",
           "lines": 92,
           "rows": 0,
-          "boards": []
+          "boards": [
+            "G1"
+          ]
         },
         {
           "page": 2,
@@ -1376,7 +1483,9 @@
         "1": "cover",
         "2": "unknown"
       },
-      "boardsNamed": [],
+      "boardsNamed": [
+        "G1"
+      ],
       "boardsWithRows": [],
       "rowsTotal": 0,
       "scheduleRows": 0,
@@ -1437,13 +1546,17 @@
           "type": "sld",
           "lines": 91,
           "rows": 0,
-          "boards": []
+          "boards": [
+            "PB1"
+          ]
         }
       ],
       "classification": {
         "1": "sld"
       },
-      "boardsNamed": [],
+      "boardsNamed": [
+        "PB1"
+      ],
       "boardsWithRows": [],
       "rowsTotal": 0,
       "scheduleRows": 0,
@@ -1455,7 +1568,7 @@
       "expectedWayHeaders": [
         {
           "page": 1,
-          "board": null,
+          "board": "PB1",
           "ways": 50
         }
       ],
@@ -1700,7 +1813,13 @@
           "type": "unknown",
           "lines": 15,
           "rows": 1,
-          "boards": []
+          "boards": [
+            "DBLM",
+            "DBLS",
+            "DBLLD",
+            "DBLLE",
+            "DBLLG"
+          ]
         },
         {
           "page": 6,
@@ -1714,7 +1833,18 @@
           "type": "db-schedule",
           "lines": 44,
           "rows": 0,
-          "boards": []
+          "boards": [
+            "DBLLD",
+            "DBLLE",
+            "DBALLF",
+            "DBLLG",
+            "DBLLSP",
+            "DBLLWF",
+            "DBLLWS",
+            "DBLLCP1",
+            "DBCP1LM1EV",
+            "DBLLEX"
+          ]
         },
         {
           "page": 8,
@@ -1745,10 +1875,13 @@
           "lines": 47,
           "rows": 0,
           "boards": [
+            "DBLLD",
             "PANELH",
             "DB10100A",
+            "DBALD2",
             "DB16100A",
-            "DB100A"
+            "DB100A",
+            "DBALDM"
           ]
         },
         {
@@ -1764,8 +1897,13 @@
           "lines": 46,
           "rows": 0,
           "boards": [
+            "DBLLE",
             "PANELT",
-            "DB10100A"
+            "DBLLE1",
+            "DB10100A",
+            "DBLLE2",
+            "DBLLE3LTG",
+            "DBLLE4"
           ]
         },
         {
@@ -1781,7 +1919,14 @@
           "lines": 46,
           "rows": 1,
           "boards": [
-            "DB100A"
+            "DBLLF",
+            "DBLLF1",
+            "DB100A",
+            "DBLLF2",
+            "DBLLF3",
+            "DBLLF4",
+            "DBLLF5",
+            "DBLLF6"
           ]
         },
         {
@@ -1797,8 +1942,16 @@
           "lines": 45,
           "rows": 1,
           "boards": [
+            "DBLLG",
+            "DBLLG1",
             "DB100A",
-            "DB10100A"
+            "DBLLG2",
+            "DB10100A",
+            "DBLLG3",
+            "DBLLG4",
+            "DBLLG5",
+            "DBLLG6",
+            "DBLLGT"
           ]
         },
         {
@@ -1838,16 +1991,49 @@
         "19": "spec"
       },
       "boardsNamed": [
+        "DBLM",
+        "DBLS",
+        "DBLLD",
+        "DBLLE",
+        "DBLLG",
+        "DBALLF",
+        "DBLLSP",
+        "DBLLWF",
+        "DBLLWS",
+        "DBLLCP1",
+        "DBCP1LM1EV",
+        "DBLLEX",
         "PANELH35",
         "PANELH",
         "DB10100A",
+        "DBALD2",
         "DB16100A",
         "DB100A",
-        "PANELT"
+        "DBALDM",
+        "PANELT",
+        "DBLLE1",
+        "DBLLE2",
+        "DBLLE3LTG",
+        "DBLLE4",
+        "DBLLF",
+        "DBLLF1",
+        "DBLLF2",
+        "DBLLF3",
+        "DBLLF4",
+        "DBLLF5",
+        "DBLLF6",
+        "DBLLG1",
+        "DBLLG2",
+        "DBLLG3",
+        "DBLLG4",
+        "DBLLG5",
+        "DBLLG6",
+        "DBLLGT"
       ],
       "boardsWithRows": [
+        "DBLLG",
         "PANELH35",
-        "DB100A"
+        "DBLLF"
       ],
       "rowsTotal": 5,
       "scheduleRows": 4,
@@ -1859,7 +2045,7 @@
       "expectedWayHeaders": [
         {
           "page": 5,
-          "board": null,
+          "board": "DBLM",
           "ways": 28
         }
       ],
@@ -1878,8 +2064,8 @@
       "_waySlots": [
         "?#13",
         "PANELH35#27",
-        "DB100A#5",
-        "?#2"
+        "DBLLF#5",
+        "DBLLG#2"
       ]
     },
     "groundTruth": {
@@ -1887,7 +2073,7 @@
       "checks": [
         {
           "name": "min_boards ≥ 5",
-          "actual": 6,
+          "actual": 38,
           "pass": true
         }
       ]
@@ -1970,28 +2156,43 @@
           "type": "db-schedule",
           "lines": 31,
           "rows": 0,
-          "boards": []
+          "boards": [
+            "DBAPTGF",
+            "DBAPTAST"
+          ]
         },
         {
           "page": 2,
           "type": "db-schedule",
           "lines": 25,
           "rows": 1,
-          "boards": []
+          "boards": [
+            "DBAPT2ND",
+            "DBAPT3RD",
+            "DBAPT4TH",
+            "DBAPT5TH",
+            "DBLLSTH"
+          ]
         },
         {
           "page": 3,
           "type": "db-schedule",
           "lines": 29,
           "rows": 2,
-          "boards": []
+          "boards": [
+            "DBLL3RD",
+            "DBLL1ST",
+            "DBLLGE"
+          ]
         },
         {
           "page": 4,
           "type": "db-schedule",
           "lines": 22,
           "rows": 1,
-          "boards": []
+          "boards": [
+            "DBPLANTH"
+          ]
         },
         {
           "page": 5,
@@ -2008,18 +2209,32 @@
         "4": "db-schedule",
         "5": "db-schedule"
       },
-      "boardsNamed": [],
-      "boardsWithRows": [],
+      "boardsNamed": [
+        "DBAPTGF",
+        "DBAPTAST",
+        "DBAPT2ND",
+        "DBAPT3RD",
+        "DBAPT4TH",
+        "DBAPT5TH",
+        "DBLLSTH",
+        "DBLL3RD",
+        "DBLL1ST",
+        "DBLLGE",
+        "DBPLANTH"
+      ],
+      "boardsWithRows": [
+        "DBPLANTH"
+      ],
       "rowsTotal": 4,
       "scheduleRows": 4,
       "mentionRows": 0,
       "cables": 0,
-      "feeders": 0,
+      "feeders": 4,
       "deviceGroups": 1,
       "deviceQty": 4,
       "expectedWayHeaders": [],
       "expectedWaysTotal": 0,
-      "capturedWaySlots": 3,
+      "capturedWaySlots": 4,
       "zeroRowPages": [
         1,
         5
@@ -2028,7 +2243,8 @@
       "_waySlots": [
         "?#12",
         "?#11",
-        "?#1"
+        "?#1",
+        "DBPLANTH#12"
       ]
     },
     "groundTruth": null
@@ -2253,14 +2469,18 @@
           "type": "db-schedule",
           "lines": 28,
           "rows": 0,
-          "boards": []
+          "boards": [
+            "DBAV"
+          ]
         },
         {
           "page": 11,
           "type": "db-schedule",
           "lines": 42,
           "rows": 0,
-          "boards": []
+          "boards": [
+            "DBMECH"
+          ]
         },
         {
           "page": 12,
@@ -2274,7 +2494,9 @@
           "type": "db-schedule",
           "lines": 31,
           "rows": 1,
-          "boards": []
+          "boards": [
+            "DBMECH"
+          ]
         }
       ],
       "classification": {
@@ -2295,9 +2517,13 @@
       "boardsNamed": [
         "DB01",
         "DB02",
-        "DB03"
+        "DB03",
+        "DBAV",
+        "DBMECH"
       ],
-      "boardsWithRows": [],
+      "boardsWithRows": [
+        "DBMECH"
+      ],
       "rowsTotal": 1,
       "scheduleRows": 1,
       "mentionRows": 0,
@@ -2328,17 +2554,17 @@
         },
         {
           "page": 10,
-          "board": null,
+          "board": "DBAV",
           "ways": 12
         },
         {
           "page": 11,
-          "board": null,
+          "board": "DBMECH",
           "ways": 18
         },
         {
           "page": 13,
-          "board": null,
+          "board": "DBMECH",
           "ways": 18
         }
       ],
@@ -2355,7 +2581,7 @@
       ],
       "noTextPages": [],
       "_waySlots": [
-        "?#18"
+        "DBMECH#18"
       ]
     },
     "groundTruth": {
@@ -2363,20 +2589,17 @@
       "checks": [
         {
           "name": "boards_expected (2)",
-          "missing": [
-            "DB-MECH",
-            "DB-AV"
-          ],
-          "pass": false
+          "missing": [],
+          "pass": true
         },
         {
           "name": "min_boards ≥ 10",
-          "actual": 3,
+          "actual": 5,
           "pass": false
         },
         {
           "name": "DB-MECH: 18 ways expected",
-          "captured": 0,
+          "captured": 1,
           "pass": false
         },
         {
@@ -2960,28 +3183,47 @@
           "type": "unknown",
           "lines": 56,
           "rows": 7,
-          "boards": []
+          "boards": [
+            "DBM"
+          ]
         },
         {
           "page": 3,
           "type": "sld",
           "lines": 55,
           "rows": 0,
-          "boards": []
+          "boards": [
+            "DBB1",
+            "DBC",
+            "DBEVC",
+            "DBEXT",
+            "DBFF1"
+          ]
         },
         {
           "page": 4,
           "type": "sld",
           "lines": 58,
           "rows": 0,
-          "boards": []
+          "boards": [
+            "DBFF2",
+            "DBGF1",
+            "DBK",
+            "DBL"
+          ]
         },
         {
           "page": 5,
           "type": "sld",
           "lines": 60,
           "rows": 0,
-          "boards": []
+          "boards": [
+            "DBRP",
+            "DBSF1",
+            "DBSF2",
+            "DBTF1",
+            "DBTF2"
+          ]
         },
         {
           "page": 6,
@@ -2999,7 +3241,23 @@
         "5": "sld",
         "6": "sld"
       },
-      "boardsNamed": [],
+      "boardsNamed": [
+        "DBM",
+        "DBB1",
+        "DBC",
+        "DBEVC",
+        "DBEXT",
+        "DBFF1",
+        "DBFF2",
+        "DBGF1",
+        "DBK",
+        "DBL",
+        "DBRP",
+        "DBSF1",
+        "DBSF2",
+        "DBTF1",
+        "DBTF2"
+      ],
       "boardsWithRows": [],
       "rowsTotal": 7,
       "scheduleRows": 0,
@@ -3011,17 +3269,17 @@
       "expectedWayHeaders": [
         {
           "page": 2,
-          "board": null,
+          "board": "DBM",
           "ways": 12
         },
         {
           "page": 3,
-          "board": null,
+          "board": "DBB1",
           "ways": 6
         },
         {
           "page": 5,
-          "board": null,
+          "board": "DBRP",
           "ways": 16
         }
       ],
