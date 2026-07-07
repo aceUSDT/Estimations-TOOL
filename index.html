@@ -599,7 +599,7 @@ let toastTimer;
 const toast = m => { const t=$('#toast'); t.textContent=m; t.classList.add('show');
   clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.remove('show'),2600); };
 /* Password is stored only as a SHA-256 hash — the plain text never appears in this file. */
-const PASSWORD_HASH='48e484fe76cc1a2825144b934053978239843d4b999f2cf60e07ecc08994c010';
+const PASSWORD_HASH='0eebd979388387abe2d21379da7b5ba190e0ef3183492892f842924638f2f9d9';
 /* compact synchronous SHA-256 (public-domain style implementation) */
 function sha256(ascii){
   const rrot=(v,c)=>(v>>>c)|(v<<(32-c));
