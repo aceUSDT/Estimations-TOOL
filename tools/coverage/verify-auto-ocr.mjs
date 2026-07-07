@@ -8,7 +8,9 @@ import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..', '..');
-const FIXTURE = path.join(ROOT, 'examples/db-schedules/simple/BC250847-E13_Distribution.pdf');
+const FIXTURE = process.argv[2]
+  ? path.resolve(process.argv[2])
+  : path.join(ROOT, 'examples/db-schedules/simple/BC250847-E13_Distribution.pdf');
 const URL = 'http://127.0.0.1:8765/?test=1';
 
 const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
@@ -68,10 +70,17 @@ try {
     rows: state.cur.analysis.rows.length,
     boards: Object.keys(state.cur.analysis.boards),
     status: state.cur.status,
+    coverage: state.cur.analysis.coverage ? {
+      boards: state.cur.analysis.coverage.summary.boards,
+      zeroRowPages: state.cur.analysis.coverage.zeroRowSchedulePages.length,
+    } : null,
+    coveragePanelText: document.querySelector('#covSummary') ? document.querySelector('#covSummary').textContent : null,
+    reviewItems: (() => { setTab('review'); return document.querySelectorAll('#reviewList .rev-item').length; })(),
   })`);
   console.log(JSON.stringify(res, null, 2));
   if (!res.ocrReady || !res.pageLines.every((n) => n > 0)) throw new Error('auto-OCR did not populate page lines');
-  console.log('\nPASS: scanned PDF was auto-OCR’d and analysed without any manual OCR click.');
+  if (!res.coverage) throw new Error('analysis.coverage missing — reconciliation pass did not run');
+  console.log('\nPASS: auto-OCR ran, analysis completed, and the reconciliation/coverage pass populated analysis.coverage.');
 } finally {
   await browser.close();
 }
