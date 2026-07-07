@@ -76,27 +76,67 @@
     return String(value || '').toUpperCase().replace(/[\s._/-]+/g, '');
   }
 
+  // Words that can follow "DB" in prose without naming a board ("DB Schedule",
+  // "DB Fed From", …). A candidate whose first token is one of these is prose.
+  const BOARD_REF_STOPWORDS = new Set([
+    'SCHEDULE', 'SCHEDULES', 'REFERENCE', 'REF', 'BOARD', 'BOARDS', 'FED', 'FROM',
+    'TO', 'SERVING', 'SERVED', 'TYPE', 'RATING', 'SIZE', 'WAY', 'WAYS', 'NO',
+    'NUMBER', 'DATA', 'INCOMER', 'LOCATION', 'NOTES', 'NOTE', 'LEGEND', 'CHART',
+    'CHARTS', 'IDENTITY', 'AND', 'OR', 'THE', 'FOR', 'WITH', 'IS', 'ARE', 'MODEL',
+  ]);
+
   function extractBoardReferences(text) {
     const source = String(text || '');
+    // Ordered most-specific first; shorter matches fully contained inside an
+    // already-found span are dropped (so "DB-00-SUBEXT" wins over "DB-00").
     const patterns = [
-      /\bSMDB(?:[\s._/-]?\d+[A-Z]?)*\b/gi,
-      /\bMDB(?:[\s._/-]?\d+[A-Z]?)*\b/gi,
-      /\b(?:LDB|PDB|MCC|MCP|SB)(?:[\s._/-]?\d+[A-Z]?)+\b/gi,
-      /\bDB\.?(?:[\s._/-]?\d+[A-Z]?)+(?:\s+[A-Z])?\b/gi,
-      /\bmain\s+lv\s+(?:panel|switchboard)\b/gi,
-      /\bmain\s+switchboard\b/gi,
+      // compound refs containing DB as an inner/terminal token: G1-GF-DB-LL
+      { re: /\b[A-Z0-9]{1,6}(?:-[A-Z0-9]{1,6})*-DB(?:-[A-Z0-9]{1,6})+\b/gi },
+      { re: /\bSMDB(?:[\s._/-]?\d+[A-Z]?)*\b/gi },
+      { re: /\bMDB(?:[\s._/-]?\d+[A-Z]?)*\b/gi },
+      { re: /\b(?:LDB|PDB|MCC|MCP|SB)(?:[\s._/-]?\d+[A-Z]?)+\b/gi },
+      // DB + letter-bearing tokens: DB-MECH, DB-AV, DB/GF, DB-ESS-01, DB-00-SUBEXT
+      { re: /\bDB\s?[.\-_/]\s?[A-Z0-9]{1,8}(?:[.\-_/][A-Z0-9]{1,8})*\b/gi, guard: true },
+      { re: /\bDB\.?(?:[\s._/-]?\d+[A-Z]?)+(?:\s+[A-Z])?\b/gi },
+      // panelboards / switchboards: PB01, MSB1
+      { re: /\b(?:PB|MSB)[\s.\-_/]?\d+[A-Z]?\b/gi },
+      { re: /\bmain\s+lv\s+(?:panel|switchboard)\b/gi },
+      { re: /\bmain\s+switchboard\b/gi },
+      // consumer-unit variants: "Consumer Unit (General Apartment)" → CU General Apartment
+      { re: /\bconsumer\s+unit\s*\(([^)]{2,30})\)/gi, cu: true },
     ];
+    // header-labelled refs catch names no generic pattern can (e.g. "Reference: 2A4")
+    const headerRe = /(?<!(?:cable|drawing|document|project|job|schedule)\s)\b(?:board\s+)?(?:reference|identity)\s*[:\-]?\s+([A-Z0-9][A-Z0-9/._-]{1,14})/gi;
+    const spans = [];
+    for (const { re, guard, cu } of patterns) {
+      re.lastIndex = 0;
+      for (const match of source.matchAll(re)) {
+        let original = match[0].trim();
+        if (cu) original = 'CU ' + match[1].trim();
+        if (guard) {
+          const tokens = original.split(/[\s.\-_/]+/).slice(1);
+          if (!tokens.length || BOARD_REF_STOPWORDS.has(tokens[0].toUpperCase())) continue;
+        }
+        spans.push({ original, start: match.index, end: match.index + match[0].length });
+      }
+    }
+    headerRe.lastIndex = 0;
+    for (const match of source.matchAll(headerRe)) {
+      const token = match[1].replace(/[.,:]+$/, '');
+      // require a digit or separator so prose ("Reference: Drawings") is skipped
+      if (!/[\d/-]/.test(token) || BOARD_REF_STOPWORDS.has(token.toUpperCase())) continue;
+      spans.push({ original: token, start: match.index, end: match.index + match[0].length });
+    }
+    // drop spans fully contained in a longer span (sub-matches of the same text)
+    const kept = spans.filter((s) => !spans.some((o) => o !== s
+      && o.start <= s.start && o.end >= s.end && (o.end - o.start) > (s.end - s.start)));
     const found = [];
     const seen = new Set();
-    for (const pattern of patterns) {
-      pattern.lastIndex = 0;
-      for (const match of source.matchAll(pattern)) {
-        const original = match[0].trim();
-        const normalised = /main\s/i.test(original) ? 'MAINLVPANEL' : normaliseBoardReference(original);
-        if (!normalised || seen.has(normalised)) continue;
-        seen.add(normalised);
-        found.push({ original, normalised });
-      }
+    for (const s of kept) {
+      const normalised = /main\s/i.test(s.original) ? 'MAINLVPANEL' : normaliseBoardReference(s.original);
+      if (!normalised || seen.has(normalised)) continue;
+      seen.add(normalised);
+      found.push({ original: s.original, normalised });
     }
     return found;
   }
@@ -336,7 +376,105 @@
     });
   }
 
+  /* ===== Workstream 0 §0.3 — reconciliation / completeness pass =====
+   * Deterministic self-check of an analysis against the documents' own
+   * evidence: board headers declare way counts ("18 WAY TP&N" ⇒ 18), pages
+   * that look like schedules must yield rows, and every shortfall is
+   * surfaced — never silently accepted. */
+  const WAY_HEADER_PATTERNS = [
+    /\b(\d{1,3})\s*[- ]?WAYS?\b/i,                                  // "18 WAY TP&N", "12-way"
+    /\bWAYS?\s*[:=]\s*(\d{1,3})\b/i,                                // "Ways: 12"
+    /\bN(?:o|umber)\.?\s*of\s*ways?\s*(?:\((?:SP|TP)\))?\s*[:=]?\s*(\d{1,3})/i,
+  ];
+
+  function expectedWaysFromText(text) {
+    const source = String(text || '');
+    for (const pattern of WAY_HEADER_PATTERNS) {
+      const match = source.match(pattern);
+      if (match) {
+        const ways = Number(match[1]);
+        if (ways >= 2 && ways <= 200) return { ways, evidence: match[0].trim() };
+      }
+    }
+    return null;
+  }
+
+  function pageLooksTabular(text) {
+    const lines = String(text || '').split(/\r?\n/);
+    let hits = 0;
+    for (const line of lines) {
+      if (/^\s*\d{1,3}\s*[\/ ]\s*L[123]\b/i.test(line)) hits += 1;                 // "4/L1 …"
+      else if (/^\s*(?:way|cct|ckt|circuit)\s*\d{1,3}\b/i.test(line)) hits += 1;   // "CCT 4 …"
+    }
+    return hits >= 4;
+  }
+
+  const COVERAGE_SCHEDULE_TYPES = new Set(['db-schedule', 'main-schedule', 'equipment-schedule']);
+
+  /**
+   * @param boards map norm → {norm, orig, pages:[{fileId,page}] }
+   * @param rows   extracted rows (schedule kind) with boardNorm/way/page/fileId
+   * @param pages  [{fileId, page, text, type}] — one entry per analysed page
+   */
+  function buildCoverage({ boards, rows, pages }) {
+    const pageMap = new Map();
+    for (const pg of pages || []) pageMap.set(`${pg.fileId}#${pg.page}`, pg);
+    const scheduleRows = (rows || []).filter((r) => r && r.kind !== 'mention' && r.kind !== 'manual');
+
+    const perBoard = [];
+    for (const board of Object.values(boards || {})) {
+      let expected = null;
+      let evidence = null;
+      for (const ref of board.pages || []) {
+        const pg = pageMap.get(`${ref.fileId}#${ref.page}`);
+        const found = pg && expectedWaysFromText(pg.text);
+        if (found && (!expected || found.ways > expected)) {
+          expected = found.ways;
+          evidence = { fileId: ref.fileId, page: ref.page, text: found.evidence };
+        }
+      }
+      const boardRows = scheduleRows.filter((r) => r.boardNorm === board.norm);
+      const ways = new Set(boardRows.filter((r) => r.way != null).map((r) => r.way));
+      const unaccounted = expected != null ? Math.max(0, expected - ways.size) : null;
+      perBoard.push({
+        norm: board.norm, orig: board.orig,
+        expectedWays: expected, evidence,
+        capturedWays: ways.size, rowsCaptured: boardRows.length,
+        unaccountedWays: unaccounted,
+      });
+    }
+
+    const zeroRowSchedulePages = [];
+    for (const pg of pages || []) {
+      if (!String(pg.text || '').trim()) continue;
+      const scheduleish = COVERAGE_SCHEDULE_TYPES.has(pg.type)
+        || pageLooksTabular(pg.text) || Boolean(expectedWaysFromText(pg.text));
+      if (!scheduleish) continue;
+      if (!scheduleRows.some((r) => r.fileId === pg.fileId && r.page === pg.page)) {
+        zeroRowSchedulePages.push({ fileId: pg.fileId, page: pg.page, type: pg.type });
+      }
+    }
+
+    const expectedTotal = perBoard.reduce((sum, b) => sum + (b.expectedWays || 0), 0);
+    const capturedTotal = perBoard.reduce((sum, b) => sum + (b.expectedWays != null ? Math.min(b.capturedWays, b.expectedWays) : 0), 0);
+    return {
+      perBoard,
+      zeroRowSchedulePages,
+      summary: {
+        boards: perBoard.length,
+        boardsWithRows: perBoard.filter((b) => b.rowsCaptured > 0).length,
+        expectedWays: expectedTotal,
+        capturedWays: capturedTotal,
+        pctComplete: expectedTotal ? Math.round((100 * capturedTotal) / expectedTotal) : null,
+        unaccountedBoards: perBoard.filter((b) => (b.unaccountedWays || 0) > 0).length,
+      },
+    };
+  }
+
   global.EstimationExtractorCore = {
+    expectedWaysFromText,
+    pageLooksTabular,
+    buildCoverage,
     DEFAULT_PROTECTION_LEGEND,
     parseProtectionLegend,
     parseTrailingCable,

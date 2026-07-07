@@ -400,6 +400,19 @@
         </table></div>
         <div class="empty" id="pgclassEmpty">Run analysis to classify pages.</div>
       </div>
+      <div class="panel" style="margin-top:16px">
+        <div class="p-head">Extraction coverage
+          <span class="sub">expected vs captured — a shortfall is flagged, never silently accepted</span>
+          <span class="chip grey" id="covSummary" style="margin-left:auto"></span>
+        </div>
+        <div style="overflow-x:auto"><table class="t">
+          <thead><tr><th>Board</th><th class="num">Expected ways</th><th class="num">Captured ways</th>
+          <th class="num">Unaccounted</th><th class="num">Rows</th><th>Header evidence</th></tr></thead>
+          <tbody id="covBody"></tbody>
+        </table></div>
+        <div id="covPages" style="padding:10px 18px"></div>
+        <div class="empty" id="covEmpty">Run analysis to measure extraction coverage.</div>
+      </div>
     </div>
 
     <!-- ==== VIEWER ==== -->
@@ -586,7 +599,7 @@ let toastTimer;
 const toast = m => { const t=$('#toast'); t.textContent=m; t.classList.add('show');
   clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.remove('show'),2600); };
 /* Password is stored only as a SHA-256 hash — the plain text never appears in this file. */
-const PASSWORD_HASH='48e484fe76cc1a2825144b934053978239843d4b999f2cf60e07ecc08994c010';
+const PASSWORD_HASH='0eebd979388387abe2d21379da7b5ba190e0ef3183492892f842924638f2f9d9';
 /* compact synchronous SHA-256 (public-domain style implementation) */
 function sha256(ascii){
   const rrot=(v,c)=>(v>>>c)|(v<<(32-c));
@@ -757,21 +770,34 @@ const PAGE_TYPES = {
 const BOARD_TYPES = {
   MAIN:'Main LV panel', MDB:'Main distribution board', MCC:'Motor-control centre',
   SMDB:'Sub-main distribution board', DB:'Distribution board', LDB:'Lighting board',
-  PDB:'Power board', MECH:'Mechanical board', FA:'Fire-alarm panel', CTRL:'Control panel', UNK:'Unknown panel',
+  PDB:'Power board', MECH:'Mechanical board', FA:'Fire-alarm panel', CTRL:'Control panel',
+  SB:'Switchboard', PB:'Panelboard', CU:'Consumer unit', UNK:'Unknown panel',
 };
 
-/* board reference patterns — DB-01, DB01, D.B.01, LDB-1, PDB-01, MDB, SMDB, MCC-01, MCP-01, Panel A, Main LV Panel */
+/* Words that can follow "DB" in prose without naming a board ("DB Schedule", "DB Fed From"). */
+const BOARD_REF_STOPWORDS = new Set(['SCHEDULE','SCHEDULES','REFERENCE','REF','BOARD','BOARDS','FED','FROM',
+  'TO','SERVING','SERVED','TYPE','RATING','SIZE','WAY','WAYS','NO','NUMBER','DATA','INCOMER','LOCATION',
+  'NOTES','NOTE','LEGEND','CHART','CHARTS','IDENTITY','AND','OR','THE','FOR','WITH','IS','ARE','MODEL']);
+
+/* board reference patterns — DB-01, DB-MECH, DB/GF, G1-GF-DB-LL, PB01, MSB1, SB12, CU variants…
+   Ordered most-specific first; detectBoards drops matches contained inside a longer match. */
 const BOARD_PATTERNS = [
+  {re:/\b([A-Z0-9]{1,6}(?:-[A-Z0-9]{1,6})*-DB(?:-[A-Z0-9]{1,6})+)\b/gi, type:'DB'},
   {re:/\b(S\s?M\s?D\s?B[\s.\-_\/]?\d*[A-Z]?)\b/gi, type:'SMDB'},
   {re:/\b(M\s?D\s?B[\s.\-_\/]?\d*[A-Z]?)\b/gi, type:'MDB'},
   {re:/\b(L\s?D\s?B[\s.\-_\/]?\d*[A-Z]?)\b/gi, type:'LDB'},
   {re:/\b(P\s?D\s?B[\s.\-_\/]?\d*[A-Z]?)\b/gi, type:'PDB'},
+  {re:/\b(DB\s?[.\-_\/]\s?[A-Z0-9]{1,8}(?:[.\-_\/][A-Z0-9]{1,8})*)\b/gi, type:'DB', guard:true},
   {re:/\b(D\.?\s?B\.?(?:[\s.\-_\/]?\d+[A-Z]?)+(?:\s+[A-Z])?)\b/gi, type:'DB'},
   {re:/\b(MCC(?!B)[\s.\-_\/]?\d*)\b/gi, type:'MCC'},
   {re:/\b(MCP[\s.\-_\/]?\d*[A-Z]?)\b/gi, type:'MECH'},
+  {re:/\b(SB[\s.\-_\/]?\d+[A-Z]?)\b/g, type:'SB'},
+  {re:/\b((?:PB|MSB)[\s.\-_\/]?\d+[A-Z]?)\b/gi, type:'PB'},
   {re:/\b(FACP|FAP)[\s.\-_\/]?(\d*)\b/gi, type:'FA'},
   {re:/\bmain\s+lv\s+(?:panel|switchboard)\b/gi, type:'MAIN', fixed:'Main LV Panel'},
   {re:/\bmain\s+switch\s?board\b|\bMSB\b/gi, type:'MAIN', fixed:'Main LV Panel'},
+  {re:/\b[Cc]onsumer\s+[Uu]nit\s*\(([^)]{2,30})\)/g, type:'CU', prefix:'CU '},
+  {re:/(?<!(?:[Cc]able|[Dd]rawing|[Dd]ocument|[Pp]roject|[Jj]ob|[Ss]chedule)\s)\b(?:[Bb]oard\s+)?(?:[Rr]eference|[Ii]dentity)\s*[:\-]?\s+([A-Z0-9][A-Z0-9\/._-]{1,14})/g, type:'UNK', header:true},
   {re:/\b[Pp]anel\s+([A-Z](?:[\s.\-_]?\d+)?)\b/g, type:'CTRL', prefix:'Panel '},
 ];
 const normBoard = s => String(s).toUpperCase().replace(/[\s.\-_\/]+/g,'');
@@ -810,18 +836,32 @@ function detectBoards(line){
     while((m=bp.re.exec(line))!==null){
       let orig = bp.fixed || (bp.prefix? bp.prefix+m[1] : m[1]);
       orig = orig.trim();
+      if (bp.guard){
+        // "DB <word>" prose guard: first token after DB must not be a stopword
+        const tokens = orig.split(/[\s.\-_\/]+/).slice(1);
+        if (!tokens.length || BOARD_REF_STOPWORDS.has(tokens[0].toUpperCase())) continue;
+      }
+      if (bp.header){
+        // labelled refs ("Board Reference: 2A4") need a digit or separator to avoid prose
+        orig = orig.replace(/[.,:]+$/,'');
+        if (!/[\d\/-]/.test(orig) || BOARD_REF_STOPWORDS.has(orig.toUpperCase())) continue;
+      }
       const norm = normBoard(orig);
       if (!norm || /^(DB|MDB|SMDB|LDB|PDB|MCC|MCP)$/.test(norm) && !bp.fixed && !/\d/.test(norm) && norm!=='MDB' && norm!=='SMDB') continue;
       if (found.some(f=>f.norm===norm)) continue;
       // avoid matching DB inside SMDB/LDB/PDB/MDB occurrences
-      if (bp.type==='DB'){
+      if (bp.type==='DB' && !bp.guard){
         const pre = line[m.index-1];
         if (pre && /[A-Za-z]/.test(pre)) continue;
       }
-      found.push({orig, norm, type:bp.type});
+      found.push({orig, norm, type:bp.type, start:m.index, end:m.index+m[0].length});
     }
   }
-  return found;
+  // drop matches fully contained inside a longer match of the same text
+  // (e.g. keep DB-00-SUBEXT, drop the DB-00 sub-match)
+  return found
+    .filter(f=>!found.some(o=>o!==f && o.start<=f.start && o.end>=f.end && (o.end-o.start)>(f.end-f.start)))
+    .map(({orig,norm,type})=>({orig,norm,type}));
 }
 
 /* ==================== CABLE DETECTION ==================== */
@@ -1192,19 +1232,152 @@ async function ocrPdfPage(f,pageNo,{reanalyze=true,quiet=false}={}){
     const status=$('#vOcrStatus');if(status)status.textContent='';
   }
 }
-async function ocrScannedPages(f,limit=20){
+async function ocrScannedPages(f,limit=20,{reanalyze=true,quiet=false}={}){
   const queue=f.pages.map((pg,i)=>({pg,page:i+1})).filter(x=>!(x.pg.lines||[]).length).slice(0,limit);
-  if(!queue.length){toast('Every page already has readable text');return;}
+  if(!queue.length){if(!quiet)toast('Every page already has readable text');return 0;}
   let done=0;
   for(const item of queue){
     try{await ocrPdfPage(f,item.page,{reanalyze:false,quiet:true});done++;}
     catch(e){toast(`OCR stopped on page ${item.page}: ${e.message}`);break;}
   }
-  if(done) await runAnalysis({auto:true});
+  if(done&&reanalyze) await runAnalysis({auto:true});
   const remain=f.pages.filter(pg=>!(pg.lines||[]).length).length;
-  toast(`OCR completed ${done} page${done===1?'':'s'}${remain?`; ${remain} remain — run OCR scans again`:''}`);
+  if(!quiet||remain) toast(`OCR completed ${done} page${done===1?'':'s'}${remain?`; ${remain} remain — run OCR scans again`:''}`);
   renderViewer();
+  return done;
 }
+/* Workstream 0 (§0.2‑4): scanned pages are OCR'd automatically on ingest —
+   a page with no text layer must never silently contribute zero rows. */
+async function autoOcrScannedFiles(){
+  const p=state.cur; if(!p) return 0;
+  let total=0;
+  for (const f of p.files){
+    if (f.status!=='ready'||f.ext!=='pdf') continue;
+    if (!f.pages.some(pg=>!(pg.lines||[]).length)) continue;
+    toast(`Reading scanned pages in ${f.name} with OCR…`);
+    try{ total+=await ocrScannedPages(f, Infinity, {reanalyze:false, quiet:true}); }
+    catch(e){ toast('Auto-OCR: '+e.message); }
+  }
+  return total;
+}
+/* ==================== AI EXTRACTION (serverless — key stays server-side) ==================== */
+/* The front-end NEVER holds the Anthropic key: it posts one page at a time to
+   a Netlify function (netlify/functions/extract.mjs) and merges the returned
+   structured rows as review-pending evidence. If the function is absent or
+   unconfigured, the app silently falls back to regex-only extraction. */
+const AI_EXTRACT_ENDPOINT='./.netlify/functions/extract';
+let aiProbePromise=null;
+window.__aiStatus='unknown';
+function aiExtractReady(){
+  if (!aiProbePromise){
+    aiProbePromise=fetch(AI_EXTRACT_ENDPOINT,{method:'GET'}).then(async r=>{
+      if(!r.ok){ window.__aiStatus='off — extraction endpoint not reachable'; return false; }
+      const j=await r.json();
+      if(!j.configured){ window.__aiStatus='not configured — set ANTHROPIC_API_KEY in Netlify'; return false; }
+      window.__aiStatus='active ('+(j.model||'Claude')+')';
+      return true;
+    }).catch(()=>{ window.__aiStatus='off — extraction endpoint not reachable'; return false; });
+  }
+  return aiProbePromise;
+}
+const AI_DEVICE_MAP={MCB:'MCB',RCBO:'RCBO',MCCB:'MCCB',ACB:'ACB',RCD:'RCD',SPD:'SPD',fuse:'Fuse',
+  switch_disconnector:'Isolator',isolator:'Isolator',contactor:'Contactor',meter:'Meter'};
+async function aiExtractPage(f,pageNo,pg){
+  let image_base64=null;
+  if (f.ext==='pdf'&&rawStore[f.id]){
+    const lib=await loadPdfjs();
+    let doc=state.viewer.pdfDocs[f.id];
+    if(!doc){doc=await lib.getDocument({data:rawStore[f.id].slice(0)}).promise;state.viewer.pdfDocs[f.id]=doc;}
+    const page=await doc.getPage(pageNo);
+    const base=page.getViewport({scale:1});
+    const scale=Math.min(2.5, 2000/Math.max(base.width,base.height));
+    const vp=page.getViewport({scale});
+    const cv=document.createElement('canvas'); cv.width=Math.ceil(vp.width); cv.height=Math.ceil(vp.height);
+    await page.render({canvasContext:cv.getContext('2d',{alpha:false}),viewport:vp}).promise;
+    image_base64=cv.toDataURL('image/jpeg',0.85).split(',')[1];
+  }
+  const r=await fetch(AI_EXTRACT_ENDPOINT,{method:'POST',headers:{'content-type':'application/json'},
+    body:JSON.stringify({filename:f.name, page_number:pageNo, image_base64, media_type:'image/jpeg',
+      text_lines:(pg.lines||[]).map(l=>l.text).slice(0,400), hints:{type:pg.type}})});
+  if(!r.ok){ const err=await r.json().catch(()=>({})); throw new Error(err.error||('HTTP '+r.status)); }
+  return (await r.json()).result;
+}
+function mergeAiResult(A,out,fileId,pageNo){
+  if(!out) return;
+  (out.boards||[]).forEach(b=>{
+    if(!b.ref) return;
+    const norm=normBoard(b.ref); if(!norm) return;
+    if(!A.boards[norm]){
+      const det=detectBoards(b.ref)[0];
+      A.boards[norm]={norm, orig:b.ref, type:det?det.type:'UNK', pages:[], parent:null, parentConf:0, manual:false};
+    }
+    const e=A.boards[norm];
+    if(!e.pages.some(x=>x.fileId===fileId&&x.page===pageNo)) e.pages.push({fileId,page:pageNo});
+    e.header=Object.assign(e.header||{}, Object.fromEntries(Object.entries(b).filter(([k,v])=>v!==null&&k!=='ref'&&k!=='confidence')));
+    if (b.fed_from_ref && !e.manual){
+      const fb=normBoard(b.fed_from_ref);
+      if (fb && fb!==norm && 0.75>(e.parentConf||0)){ e.parent=fb; e.parentConf=0.75; }
+    }
+  });
+  (out.devices||[]).forEach(d=>{
+    const bn=d.board_ref?normBoard(d.board_ref):null;
+    // regex rows win: skip AI rows for slots the schedule parser already filled
+    const dup=A.rows.some(r=>r.kind==='schedule'&&r.boardNorm===bn&&r.way===d.way
+      &&(!r.phase||!d.phase||r.phase===d.phase||d.phase==='L1L2L3'));
+    if (dup) return;
+    const space=d.device_class==='space';
+    const spare=d.is_spare||d.device_class==='spare';
+    const device=AI_DEVICE_MAP[d.device_class]|| (d.is_spd?'SPD':null);
+    A.rows.push({id:uid(), boardNorm:bn, fileId, page:pageNo, line:null, status:'pending', kind:'ai',
+      way:d.way??null, phase:d.phase&&d.phase!=='L1L2L3'?d.phase:(d.phase==='L1L2L3'?'3PH':null),
+      desc:d.description||'', device, rating:d.rating_a??null, poles:d.poles??null,
+      curve:d.trip_curve||null, sens:d.rcd_ma??null, afdd:!!d.afdd, ka:null,
+      cable:(d.phase_csa_mm2!=null||d.cable_type)?{orig:[d.phase_csa_mm2?d.phase_csa_mm2+'mm²':null,d.cable_type].filter(Boolean).join(' '),
+        size:d.phase_csa_mm2??null, cpc:typeof d.cpc_csa_mm2==='number'?d.cpc_csa_mm2:null, cores:null,
+        construction:typeof d.cpc_csa_mm2==='string'?d.cpc_csa_mm2:null, typeCode:d.cable_type||null, installMethod:d.install_method||null}:null,
+      circuitConfig:d.circuit_config||null, spare, space, incomer:!!d.is_incomer, isSpd:!!d.is_spd,
+      qty:space?0:1, srcText:'[AI] '+(d.description||d.device_class||'')+(d.way!=null?' (way '+d.way+(d.phase?'/'+d.phase:'')+')':''),
+      conf:Math.max(0.2,Math.min(0.95,Number(d.confidence)||0.6))});
+  });
+  (out.feeds||[]).forEach(fd=>{
+    if(!fd.to_ref) return;
+    A.feeders.push({id:uid(), fileId, page:pageNo, line:null,
+      from:fd.from_ref?normBoard(fd.from_ref):null, to:normBoard(fd.to_ref),
+      cable:(fd.cable_csa_mm2!=null||fd.cable_desc)?{orig:fd.cable_desc||(fd.cable_csa_mm2+'mm²'), size:fd.cable_csa_mm2??null,
+        cpc:typeof fd.cable_cpc_mm2==='number'?fd.cable_cpc_mm2:null, cores:null, construction:null, ref:fd.cable_ref||null}:null,
+      device:fd.device_class||null, rating:fd.rating_a??null, poles:fd.poles??null,
+      srcText:'[AI] feed '+(fd.from_ref||'?')+' → '+fd.to_ref+(fd.cable_ref?' via '+fd.cable_ref:''),
+      conf:Math.max(0.2,Math.min(0.9,Number(fd.confidence)||0.7)), ai:true});
+  });
+  (out.flags||[]).forEach(fl=>{ (A.aiFlags=A.aiFlags||[]).push({fileId, page:pageNo, kind:fl.kind, message:fl.message}); });
+}
+async function runAiExtraction(A,f,p,pageSet){
+  if(!(await aiExtractReady())) return;
+  const jobs=[];
+  for (const id of f.fileIds){
+    const fl=p.files.find(x=>x.id===id); if(!fl||fl.status!=='ready') continue;
+    fl.pages.forEach((pg,pi)=>{
+      const pageNo=pi+1;
+      if (pageSet && !pageSet.has(pageNo)) return;
+      const rowsHere=A.rows.filter(r=>r.fileId===id&&r.page===pageNo&&r.kind==='schedule').length;
+      // recall-first: any schedule/schematic/unknown page, plus any page the regex pass left empty
+      if (SCHEDULE_TYPES.has(pg.type)||pg.type==='sld'||pg.type==='schematic'||pg.type==='unknown'||rowsHere===0)
+        jobs.push({fl,id,pg,pageNo});
+    });
+  }
+  if(!jobs.length) return;
+  toast('AI extraction: reading '+jobs.length+' page'+(jobs.length===1?'':'s')+'…');
+  A.aiPages=0; A.aiErrors=0;
+  const CONC=2;
+  for (let i=0;i<jobs.length;i+=CONC){
+    await Promise.all(jobs.slice(i,i+CONC).map(async j=>{
+      try{ mergeAiResult(A, await aiExtractPage(j.fl,j.pageNo,j.pg), j.id, j.pageNo); A.aiPages++; }
+      catch(e){ console.warn('AI extraction failed on '+j.fl.name+' p'+j.pageNo+':', e.message); A.aiErrors++; }
+    }));
+  }
+  if (A.aiErrors) toast('AI extraction: '+A.aiErrors+' page(s) failed — results kept for the rest');
+}
+
 /* reconstruct lines (text + bbox) from a pdf.js text content object */
 function linesFromTextContent(tc, vp){
   const items = tc.items.map(it=>{
@@ -1250,7 +1423,7 @@ async function ingestFile(file){
         rec.pct=25+Math.round(65*i/doc.numPages); renderDocs();
       }
       rec.native=anyText;
-      if (!anyText) rec.warn='Scanned PDF — no selectable text found. Use OCR scans or open the page and press OCR page.';
+      if (!anyText) rec.warn='Scanned PDF — no selectable text found. Pages will be read automatically with OCR.';
     } else if (ext==='txt'||ext==='csv'||ext==='md'||ext==='text'){
       const txt=await file.text();
       rec.pages=splitTextPages(txt); rec.native=true;
@@ -1277,6 +1450,7 @@ async function handleFiles(list){
   if (!state.cur){ toast('Open a project first'); return; }
   const files=Array.from(list);
   for (const f of files) await ingestFile(f);
+  await autoOcrScannedFiles();
   if (state.cur.files.some(f=>f.status==='ready')){ toast('Documents read — analysing…'); runAnalysis({auto:true}); }
 }
 $('#fileInput').addEventListener('change', e=>{ handleFiles(e.target.files); e.target.value=''; });
@@ -1342,7 +1516,7 @@ function renderDocs(){
         inp.addEventListener('change', async ()=>{
           if (!inp.files.length) return;
           p.files=p.files.filter(x=>x.id!==f.id); delete rawStore[f.id];
-          await ingestFile(inp.files[0]); runAnalysis({auto:true});
+          await ingestFile(inp.files[0]); await autoOcrScannedFiles(); runAnalysis({auto:true});
         });
         inp.click();
       }
@@ -1384,8 +1558,42 @@ function renderPgclass(){
     tr.querySelector('[data-a=view]').addEventListener('click', ()=>{ state.viewer.fileId=f.id; state.viewer.page=i+1; setTab('viewer'); });
     tb.appendChild(tr);
   });
+  renderCoverage();
 }
 $('#pgclassFileSel').addEventListener('change', renderPgclass);
+
+/* ============================ COVERAGE PANEL (Workstream 0 §0.4) ============================ */
+function renderCoverage(){
+  const p=state.cur; if(!p) return;
+  const cov=p.analysis&&p.analysis.coverage;
+  const body=$('#covBody'), pagesEl=$('#covPages'), sum=$('#covSummary');
+  $('#covEmpty').style.display = cov?'none':'';
+  if (!cov){ body.innerHTML=''; pagesEl.innerHTML=''; sum.textContent=''; return; }
+  const s=cov.summary;
+  sum.textContent = (s.pctComplete!=null? s.pctComplete+'% of header-declared ways captured · ':'')
+    + s.boardsWithRows+'/'+s.boards+' boards have rows';
+  sum.className = 'chip '+(s.pctComplete==null?'grey': s.pctComplete>=95?'green': s.pctComplete>=60?'amber':'red');
+  const rows=[...cov.perBoard].sort((a,b)=>(b.unaccountedWays||0)-(a.unaccountedWays||0)||(b.expectedWays||0)-(a.expectedWays||0));
+  body.innerHTML = rows.map(b=>{
+    const un=b.unaccountedWays;
+    const unCell = un==null?'—': un>0?`<span class="chip red">${un} missing</span>`:'<span class="chip green">0</span>';
+    return `<tr><td class="strong">${esc(b.orig||b.norm)}</td>
+      <td class="num">${b.expectedWays??'—'}</td><td class="num">${b.capturedWays}</td>
+      <td class="num">${unCell}</td><td class="num">${b.rowsCaptured}</td>
+      <td>${b.evidence?esc(b.evidence.text)+' <span class="hint" style="display:inline;margin:0">p'+b.evidence.page+'</span>':'—'}</td></tr>`;
+  }).join('') || '<tr><td colspan="6" style="color:var(--txt3)">No boards detected yet.</td></tr>';
+  const ai=window.__aiStatus||'unknown';
+  const aiCls = ai.startsWith('active')?'green': ai.startsWith('not configured')?'amber':'grey';
+  const aiStats = p.analysis&&p.analysis.aiPages!=null ? ` · ${p.analysis.aiPages} page(s) read${p.analysis.aiErrors?', '+p.analysis.aiErrors+' failed':''}` : '';
+  pagesEl.innerHTML = `<div style="margin-bottom:7px"><span class="chip ${aiCls}">AI extraction: ${esc(ai)}${esc(aiStats)}</span></div>`
+    + (cov.zeroRowSchedulePages.length
+    ? '<span class="chip amber">⚠ '+cov.zeroRowSchedulePages.length+' page(s) look like schedules but produced 0 rows:</span> '
+      + cov.zeroRowSchedulePages.slice(0,30).map(z=>{
+          const fl=p.files.find(x=>x.id===z.fileId);
+          return `<span class="chip grey">${esc(fl?fl.name.slice(0,24):'?')} p${z.page}</span>`;
+        }).join(' ')
+    : '<span class="chip green">Every schedule-looking page produced rows.</span>');
+}
 
 /* ============================ ANALYSIS CONTROLS ============================ */
 function parseRanges(str){
@@ -1562,6 +1770,10 @@ async function runAnalysis(opts){
     });
   }
   renderStages(4); if(anim) await sleep(220);
+  // Workstream 0 §0.0 — genuine AI extraction across all dialects + schematics
+  // (regex pass above stays as the fast pre-pass; AI rows go to review, never
+  // overriding a slot the schedule parser already filled).
+  try{ await runAiExtraction(A, f, p, pageSet); }catch(e){ console.warn('AI extraction unavailable:', e.message); }
   A.feeders.forEach(fd=>{
     if (!fd.to) return;
     const child=A.boards[fd.to];
@@ -1577,6 +1789,17 @@ async function runAnalysis(opts){
     A.rows.forEach(r=>{ const o=prevMap[key(r)]; if(o&&o.status!=='pending') r.status=o.status; });
     prev.rows.filter(r=>r.kind==='manual').forEach(r=>A.rows.push(r));
     Object.values(prev.boards).forEach(b=>{ if(b.manual){ if(!A.boards[b.norm]) A.boards[b.norm]=b; A.boards[b.norm].parent=b.parent; A.boards[b.norm].manual=true; } });
+  }
+  // Workstream 0 §0.3 — reconciliation pass: check the result against the
+  // documents' own evidence (header way counts, schedule-looking pages).
+  if (window.EstimationExtractorCore&&window.EstimationExtractorCore.buildCoverage){
+    const covPages=[];
+    for (const id of f.fileIds){
+      const fl=p.files.find(x=>x.id===id); if(!fl||fl.status!=='ready') continue;
+      fl.pages.forEach((pg,pi)=>{ if(pageSet && !pageSet.has(pi+1)) return;
+        covPages.push({fileId:id, page:pi+1, text:(pg.lines||[]).map(l=>l.text).join('\n'), type:pg.type}); });
+    }
+    A.coverage = window.EstimationExtractorCore.buildCoverage({boards:A.boards, rows:A.rows, pages:covPages});
   }
   p.analysis=A;
   if(window.EstimationExtractorCore&&(p.assistedMarkups||[]).length){
@@ -1594,7 +1817,7 @@ async function runAnalysis(opts){
   if (!auto) toast('Analysis complete — '+A.rows.length+' evidence rows extracted');
 }
 $('#anRunBtn').addEventListener('click', ()=>runAnalysis());
-$('#reanalyzeBtn').addEventListener('click', ()=>{ setTab('analysis'); runAnalysis(); });
+$('#reanalyzeBtn').addEventListener('click', async ()=>{ setTab('analysis'); await autoOcrScannedFiles(); runAnalysis(); });
 
 
 /* ============================ RESULTS (DEVICES TAB) ============================ */
@@ -1944,6 +2167,10 @@ function renderReview(){
   A.rows.filter(r=>r.status==='pending'&&r.conf<0.8).forEach(r=>items.push({kind:'row',r,conf:r.conf}));
   p.files.filter(f=>f.status==='ready'&&!f.native&&f.pages.some(pg=>!(pg.lines||[]).length)).forEach(f=>items.push({kind:'scan',f}));
   Object.values(A.boards).filter(b=>!b.parent&&!b.manual&&b.type!=='MAIN').forEach(b=>items.push({kind:'orphan',b}));
+  if (A.coverage){
+    A.coverage.perBoard.filter(b=>(b.unaccountedWays||0)>0).forEach(b=>items.push({kind:'gap',g:b,conf:0}));
+    A.coverage.zeroRowSchedulePages.forEach(z=>items.push({kind:'zeropage',z,conf:0.1}));
+  }
   if (!items.length){ host.innerHTML='<div class="empty"><div class="ico">✓</div>Nothing to review — all results are confirmed or high confidence.</div>'; return; }
   host.innerHTML='';
   items.sort((a,b)=>(a.conf??1)-(b.conf??1));
@@ -1975,6 +2202,22 @@ function renderReview(){
         <div class="hint">Use bounded OCR to create selectable lines and coordinates for device extraction. Native PDF exports remain more accurate when available.</div></div>
         <div class="racts"><button class="btn sm" data-a="ocr">OCR scanned pages</button></div>`;
       div.querySelector('[data-a=ocr]').addEventListener('click',()=>ocrScannedPages(it.f).catch(err=>toast(err.message)));
+    } else if (it.kind==='gap'){
+      const g=it.g;
+      div.innerHTML=`<div class="ric" style="background:var(--red-soft)">▦</div>
+        <div style="flex:1"><h4>${esc(g.orig||g.norm)}: ${g.unaccountedWays} of ${g.expectedWays} ways unaccounted for</h4>
+        <div class="rsrc">Header says "${esc(g.evidence?g.evidence.text:'')}"${g.evidence?' (page '+g.evidence.page+')':''} but only ${g.capturedWays} way${g.capturedWays===1?'':'s'} were extracted.</div>
+        <div class="hint">Missing ways are the worst failure — open the page and check what the extractor did not read.</div></div>
+        <div class="racts">${g.evidence?'<button class="btn sm" data-a="view">View page</button>':''}</div>`;
+      const vb=div.querySelector('[data-a=view]');
+      if (vb) vb.addEventListener('click',()=>{ state.viewer.fileId=g.evidence.fileId; state.viewer.page=g.evidence.page; setTab('viewer'); });
+    } else if (it.kind==='zeropage'){
+      const z=it.z, fl=p.files.find(x=>x.id===z.fileId);
+      div.innerHTML=`<div class="ric" style="background:var(--amber-soft)">▤</div>
+        <div style="flex:1"><h4>${esc(fl?fl.name:'?')} page ${z.page} looks like a schedule but produced no rows</h4>
+        <div class="hint">A schedule page with zero rows is a failure to raise, not an empty result — check the page and correct its type if needed.</div></div>
+        <div class="racts"><button class="btn sm" data-a="view">View page</button></div>`;
+      div.querySelector('[data-a=view]').addEventListener('click',()=>{ state.viewer.fileId=z.fileId; state.viewer.page=z.page; setTab('viewer'); });
     } else {
       div.innerHTML=`<div class="ric" style="background:var(--blue-soft)">◫</div>
         <div style="flex:1"><h4>${esc(it.b.orig)} has no known supply source</h4>

@@ -1,0 +1,16 @@
+# Secrets — never commit keys (CLAUDE.md non-negotiable)
+.env
+.env.*
+
+# Dependencies
+node_modules/
+
+# Coverage-harness working data (rendered pages, OCR cache, logs)
+tools/coverage/work/
+tools/coverage/*.log
+tools/coverage/test_*.png
+tools/coverage/*.traineddata
+
+# OS noise
+.DS_Store
+Thumbs.db

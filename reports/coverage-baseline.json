@@ -1,0 +1,3665 @@
+[
+  {
+    "file": "consumer-units/114026_Typical-CU-Layouts.pdf",
+    "pages": 1,
+    "nativePages": 0,
+    "auto": {
+      "pages": [
+        {
+          "page": 1,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        }
+      ],
+      "classification": {
+        "1": "unknown"
+      },
+      "boardsNamed": [],
+      "boardsWithRows": [],
+      "rowsTotal": 0,
+      "scheduleRows": 0,
+      "mentionRows": 0,
+      "cables": 0,
+      "feeders": 0,
+      "deviceGroups": 0,
+      "deviceQty": 0,
+      "expectedWayHeaders": [],
+      "expectedWaysTotal": 0,
+      "capturedWaySlots": 0,
+      "zeroRowPages": [],
+      "noTextPages": [
+        1
+      ]
+    },
+    "ocr": {
+      "pages": [
+        {
+          "page": 1,
+          "type": "spec",
+          "lines": 64,
+          "rows": 0,
+          "boards": []
+        }
+      ],
+      "classification": {
+        "1": "spec"
+      },
+      "boardsNamed": [],
+      "boardsWithRows": [],
+      "rowsTotal": 0,
+      "scheduleRows": 0,
+      "mentionRows": 0,
+      "cables": 0,
+      "feeders": 0,
+      "deviceGroups": 0,
+      "deviceQty": 0,
+      "expectedWayHeaders": [],
+      "expectedWaysTotal": 0,
+      "capturedWaySlots": 0,
+      "zeroRowPages": [
+        1
+      ],
+      "noTextPages": [],
+      "_waySlots": []
+    },
+    "groundTruth": null
+  },
+  {
+    "file": "consumer-units/Dundee_CU-Circuit-Chart.pdf",
+    "pages": 5,
+    "nativePages": 0,
+    "auto": {
+      "pages": [
+        {
+          "page": 1,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 2,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 3,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 4,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 5,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        }
+      ],
+      "classification": {
+        "1": "unknown",
+        "2": "unknown",
+        "3": "unknown",
+        "4": "unknown",
+        "5": "unknown"
+      },
+      "boardsNamed": [],
+      "boardsWithRows": [],
+      "rowsTotal": 0,
+      "scheduleRows": 0,
+      "mentionRows": 0,
+      "cables": 0,
+      "feeders": 0,
+      "deviceGroups": 0,
+      "deviceQty": 0,
+      "expectedWayHeaders": [],
+      "expectedWaysTotal": 0,
+      "capturedWaySlots": 0,
+      "zeroRowPages": [],
+      "noTextPages": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ]
+    },
+    "ocr": {
+      "pages": [
+        {
+          "page": 1,
+          "type": "unknown",
+          "lines": 6,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 2,
+          "type": "unknown",
+          "lines": 9,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 3,
+          "type": "unknown",
+          "lines": 27,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 4,
+          "type": "unknown",
+          "lines": 21,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 5,
+          "type": "unknown",
+          "lines": 21,
+          "rows": 0,
+          "boards": []
+        }
+      ],
+      "classification": {
+        "1": "unknown",
+        "2": "unknown",
+        "3": "unknown",
+        "4": "unknown",
+        "5": "unknown"
+      },
+      "boardsNamed": [],
+      "boardsWithRows": [],
+      "rowsTotal": 0,
+      "scheduleRows": 0,
+      "mentionRows": 0,
+      "cables": 0,
+      "feeders": 0,
+      "deviceGroups": 0,
+      "deviceQty": 0,
+      "expectedWayHeaders": [],
+      "expectedWaysTotal": 0,
+      "capturedWaySlots": 0,
+      "zeroRowPages": [
+        3
+      ],
+      "noTextPages": [],
+      "_waySlots": []
+    },
+    "groundTruth": {
+      "pass": false,
+      "checks": [
+        {
+          "name": "boards_expected (3)",
+          "missing": [
+            "CU General Apartment",
+            "CU Cluster Bedroom",
+            "CU Cluster Kitchen"
+          ],
+          "pass": false
+        },
+        {
+          "name": "min_boards ≥ 3",
+          "actual": 0,
+          "pass": false
+        }
+      ]
+    }
+  },
+  {
+    "file": "db-schedules/amtech/Broomfield-House_Circuit-Charts.pdf",
+    "pages": 32,
+    "nativePages": 0,
+    "auto": {
+      "pages": [
+        {
+          "page": 1,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 2,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 3,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 4,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 5,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 6,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 7,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 8,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 9,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 10,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 11,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 12,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 13,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 14,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 15,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 16,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 17,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 18,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 19,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 20,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 21,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 22,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 23,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 24,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 25,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 26,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 27,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 28,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 29,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 30,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 31,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 32,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        }
+      ],
+      "classification": {
+        "1": "unknown",
+        "2": "unknown",
+        "3": "unknown",
+        "4": "unknown",
+        "5": "unknown",
+        "6": "unknown",
+        "7": "unknown",
+        "8": "unknown",
+        "9": "unknown",
+        "10": "unknown",
+        "11": "unknown",
+        "12": "unknown",
+        "13": "unknown",
+        "14": "unknown",
+        "15": "unknown",
+        "16": "unknown",
+        "17": "unknown",
+        "18": "unknown",
+        "19": "unknown",
+        "20": "unknown",
+        "21": "unknown",
+        "22": "unknown",
+        "23": "unknown",
+        "24": "unknown",
+        "25": "unknown",
+        "26": "unknown",
+        "27": "unknown",
+        "28": "unknown",
+        "29": "unknown",
+        "30": "unknown",
+        "31": "unknown",
+        "32": "unknown"
+      },
+      "boardsNamed": [],
+      "boardsWithRows": [],
+      "rowsTotal": 0,
+      "scheduleRows": 0,
+      "mentionRows": 0,
+      "cables": 0,
+      "feeders": 0,
+      "deviceGroups": 0,
+      "deviceQty": 0,
+      "expectedWayHeaders": [],
+      "expectedWaysTotal": 0,
+      "capturedWaySlots": 0,
+      "zeroRowPages": [],
+      "noTextPages": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32
+      ]
+    },
+    "ocr": {
+      "pages": [
+        {
+          "page": 1,
+          "type": "cover",
+          "lines": 36,
+          "rows": 0,
+          "boards": [
+            "DBBY",
+            "DBB1"
+          ]
+        },
+        {
+          "page": 2,
+          "type": "unknown",
+          "lines": 31,
+          "rows": 0,
+          "boards": [
+            "DBB1"
+          ]
+        },
+        {
+          "page": 3,
+          "type": "unknown",
+          "lines": 13,
+          "rows": 0,
+          "boards": [
+            "DBC"
+          ]
+        },
+        {
+          "page": 4,
+          "type": "unknown",
+          "lines": 16,
+          "rows": 0,
+          "boards": [
+            "DBEVC"
+          ]
+        },
+        {
+          "page": 5,
+          "type": "unknown",
+          "lines": 15,
+          "rows": 0,
+          "boards": [
+            "DBEXT"
+          ]
+        },
+        {
+          "page": 6,
+          "type": "unknown",
+          "lines": 35,
+          "rows": 0,
+          "boards": [
+            "DBFF1"
+          ]
+        },
+        {
+          "page": 7,
+          "type": "unknown",
+          "lines": 19,
+          "rows": 0,
+          "boards": [
+            "DBFFY",
+            "DBFF1"
+          ]
+        },
+        {
+          "page": 8,
+          "type": "unknown",
+          "lines": 39,
+          "rows": 0,
+          "boards": [
+            "DBFF2"
+          ]
+        },
+        {
+          "page": 9,
+          "type": "unknown",
+          "lines": 37,
+          "rows": 0,
+          "boards": [
+            "DBFF2"
+          ]
+        },
+        {
+          "page": 10,
+          "type": "unknown",
+          "lines": 18,
+          "rows": 0,
+          "boards": [
+            "DBFF2"
+          ]
+        },
+        {
+          "page": 11,
+          "type": "unknown",
+          "lines": 35,
+          "rows": 0,
+          "boards": [
+            "DBGF",
+            "DBGF1"
+          ]
+        },
+        {
+          "page": 12,
+          "type": "unknown",
+          "lines": 34,
+          "rows": 0,
+          "boards": [
+            "DBGF1"
+          ]
+        },
+        {
+          "page": 13,
+          "type": "unknown",
+          "lines": 38,
+          "rows": 0,
+          "boards": [
+            "DBGF1"
+          ]
+        },
+        {
+          "page": 14,
+          "type": "unknown",
+          "lines": 19,
+          "rows": 0,
+          "boards": [
+            "DBGF1"
+          ]
+        },
+        {
+          "page": 15,
+          "type": "unknown",
+          "lines": 32,
+          "rows": 0,
+          "boards": [
+            "DBK"
+          ]
+        },
+        {
+          "page": 16,
+          "type": "unknown",
+          "lines": 13,
+          "rows": 0,
+          "boards": [
+            "DBK"
+          ]
+        },
+        {
+          "page": 17,
+          "type": "unknown",
+          "lines": 31,
+          "rows": 0,
+          "boards": [
+            "DBL"
+          ]
+        },
+        {
+          "page": 18,
+          "type": "unknown",
+          "lines": 31,
+          "rows": 0,
+          "boards": [
+            "DBPR"
+          ]
+        },
+        {
+          "page": 19,
+          "type": "unknown",
+          "lines": 35,
+          "rows": 0,
+          "boards": [
+            "DBRP"
+          ]
+        },
+        {
+          "page": 20,
+          "type": "unknown",
+          "lines": 13,
+          "rows": 0,
+          "boards": [
+            "DBRP"
+          ]
+        },
+        {
+          "page": 21,
+          "type": "unknown",
+          "lines": 35,
+          "rows": 0,
+          "boards": [
+            "DBSFT",
+            "DBSF1"
+          ]
+        },
+        {
+          "page": 22,
+          "type": "unknown",
+          "lines": 19,
+          "rows": 0,
+          "boards": [
+            "DBSF1"
+          ]
+        },
+        {
+          "page": 23,
+          "type": "unknown",
+          "lines": 39,
+          "rows": 0,
+          "boards": [
+            "DBSF2"
+          ]
+        },
+        {
+          "page": 24,
+          "type": "unknown",
+          "lines": 38,
+          "rows": 0,
+          "boards": [
+            "DBSF2"
+          ]
+        },
+        {
+          "page": 25,
+          "type": "unknown",
+          "lines": 14,
+          "rows": 0,
+          "boards": [
+            "DBSF2"
+          ]
+        },
+        {
+          "page": 26,
+          "type": "unknown",
+          "lines": 35,
+          "rows": 0,
+          "boards": [
+            "DBTF1"
+          ]
+        },
+        {
+          "page": 27,
+          "type": "unknown",
+          "lines": 19,
+          "rows": 0,
+          "boards": [
+            "DBTFY",
+            "DBTF1"
+          ]
+        },
+        {
+          "page": 28,
+          "type": "unknown",
+          "lines": 38,
+          "rows": 0,
+          "boards": [
+            "DBTF2"
+          ]
+        },
+        {
+          "page": 29,
+          "type": "unknown",
+          "lines": 38,
+          "rows": 0,
+          "boards": [
+            "DBTF2"
+          ]
+        },
+        {
+          "page": 30,
+          "type": "unknown",
+          "lines": 12,
+          "rows": 0,
+          "boards": [
+            "DBTF2"
+          ]
+        },
+        {
+          "page": 31,
+          "type": "unknown",
+          "lines": 28,
+          "rows": 0,
+          "boards": [
+            "DBC",
+            "DBEXT",
+            "DBB1",
+            "DBFF1",
+            "DBFF2",
+            "DBGF1",
+            "DBPR",
+            "DBRP"
+          ]
+        },
+        {
+          "page": 32,
+          "type": "unknown",
+          "lines": 11,
+          "rows": 0,
+          "boards": [
+            "DBSFI",
+            "DBSF2",
+            "DBTF1",
+            "DBTF2",
+            "DBEVC"
+          ]
+        }
+      ],
+      "classification": {
+        "1": "cover",
+        "2": "unknown",
+        "3": "unknown",
+        "4": "unknown",
+        "5": "unknown",
+        "6": "unknown",
+        "7": "unknown",
+        "8": "unknown",
+        "9": "unknown",
+        "10": "unknown",
+        "11": "unknown",
+        "12": "unknown",
+        "13": "unknown",
+        "14": "unknown",
+        "15": "unknown",
+        "16": "unknown",
+        "17": "unknown",
+        "18": "unknown",
+        "19": "unknown",
+        "20": "unknown",
+        "21": "unknown",
+        "22": "unknown",
+        "23": "unknown",
+        "24": "unknown",
+        "25": "unknown",
+        "26": "unknown",
+        "27": "unknown",
+        "28": "unknown",
+        "29": "unknown",
+        "30": "unknown",
+        "31": "unknown",
+        "32": "unknown"
+      },
+      "boardsNamed": [
+        "DBBY",
+        "DBB1",
+        "DBC",
+        "DBEVC",
+        "DBEXT",
+        "DBFF1",
+        "DBFFY",
+        "DBFF2",
+        "DBGF",
+        "DBGF1",
+        "DBK",
+        "DBL",
+        "DBPR",
+        "DBRP",
+        "DBSFT",
+        "DBSF1",
+        "DBSF2",
+        "DBTF1",
+        "DBTFY",
+        "DBTF2",
+        "DBSFI"
+      ],
+      "boardsWithRows": [],
+      "rowsTotal": 0,
+      "scheduleRows": 0,
+      "mentionRows": 0,
+      "cables": 0,
+      "feeders": 0,
+      "deviceGroups": 0,
+      "deviceQty": 0,
+      "expectedWayHeaders": [
+        {
+          "page": 1,
+          "board": "DBBY",
+          "ways": 16
+        },
+        {
+          "page": 3,
+          "board": "DBC",
+          "ways": 4
+        },
+        {
+          "page": 5,
+          "board": "DBEXT",
+          "ways": 6
+        },
+        {
+          "page": 6,
+          "board": "DBFF1",
+          "ways": 12
+        },
+        {
+          "page": 7,
+          "board": "DBFFY",
+          "ways": 12
+        },
+        {
+          "page": 8,
+          "board": "DBFF2",
+          "ways": 16
+        },
+        {
+          "page": 9,
+          "board": "DBFF2",
+          "ways": 16
+        },
+        {
+          "page": 10,
+          "board": "DBFF2",
+          "ways": 16
+        },
+        {
+          "page": 11,
+          "board": "DBGF",
+          "ways": 24
+        },
+        {
+          "page": 15,
+          "board": "DBK",
+          "ways": 12
+        },
+        {
+          "page": 21,
+          "board": "DBSFT",
+          "ways": 12
+        },
+        {
+          "page": 22,
+          "board": "DBSF1",
+          "ways": 12
+        },
+        {
+          "page": 23,
+          "board": "DBSF2",
+          "ways": 16
+        },
+        {
+          "page": 24,
+          "board": "DBSF2",
+          "ways": 16
+        },
+        {
+          "page": 25,
+          "board": "DBSF2",
+          "ways": 16
+        },
+        {
+          "page": 26,
+          "board": "DBTF1",
+          "ways": 12
+        },
+        {
+          "page": 28,
+          "board": "DBTF2",
+          "ways": 16
+        },
+        {
+          "page": 29,
+          "board": "DBTF2",
+          "ways": 16
+        }
+      ],
+      "expectedWaysTotal": 250,
+      "capturedWaySlots": 0,
+      "zeroRowPages": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32
+      ],
+      "noTextPages": [],
+      "_waySlots": []
+    },
+    "groundTruth": {
+      "pass": true,
+      "checks": [
+        {
+          "name": "min_boards ≥ 10",
+          "actual": 21,
+          "pass": true
+        }
+      ]
+    }
+  },
+  {
+    "file": "db-schedules/bam-epo/EPO_Ashfield_Circuitry-markup.pdf",
+    "pages": 9,
+    "nativePages": 0,
+    "auto": {
+      "pages": [
+        {
+          "page": 1,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 2,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 3,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 4,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 5,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 6,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 7,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 8,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 9,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        }
+      ],
+      "classification": {
+        "1": "unknown",
+        "2": "unknown",
+        "3": "unknown",
+        "4": "unknown",
+        "5": "unknown",
+        "6": "unknown",
+        "7": "unknown",
+        "8": "unknown",
+        "9": "unknown"
+      },
+      "boardsNamed": [],
+      "boardsWithRows": [],
+      "rowsTotal": 0,
+      "scheduleRows": 0,
+      "mentionRows": 0,
+      "cables": 0,
+      "feeders": 0,
+      "deviceGroups": 0,
+      "deviceQty": 0,
+      "expectedWayHeaders": [],
+      "expectedWaysTotal": 0,
+      "capturedWaySlots": 0,
+      "zeroRowPages": [],
+      "noTextPages": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ]
+    },
+    "ocr": {
+      "pages": [
+        {
+          "page": 1,
+          "type": "db-schedule",
+          "lines": 50,
+          "rows": 0,
+          "boards": [
+            "DB0008P"
+          ]
+        },
+        {
+          "page": 2,
+          "type": "db-schedule",
+          "lines": 40,
+          "rows": 0,
+          "boards": [
+            "DB0008P"
+          ]
+        },
+        {
+          "page": 3,
+          "type": "db-schedule",
+          "lines": 51,
+          "rows": 0,
+          "boards": [
+            "DB0011P"
+          ]
+        },
+        {
+          "page": 4,
+          "type": "db-schedule",
+          "lines": 34,
+          "rows": 0,
+          "boards": [
+            "DB0011P"
+          ]
+        },
+        {
+          "page": 5,
+          "type": "db-schedule",
+          "lines": 55,
+          "rows": 0,
+          "boards": [
+            "DB0013P"
+          ]
+        },
+        {
+          "page": 6,
+          "type": "db-schedule",
+          "lines": 30,
+          "rows": 0,
+          "boards": [
+            "DB0013P"
+          ]
+        },
+        {
+          "page": 7,
+          "type": "db-schedule",
+          "lines": 52,
+          "rows": 0,
+          "boards": [
+            "DB0023P"
+          ]
+        },
+        {
+          "page": 8,
+          "type": "db-schedule",
+          "lines": 47,
+          "rows": 2,
+          "boards": []
+        },
+        {
+          "page": 9,
+          "type": "db-schedule",
+          "lines": 49,
+          "rows": 0,
+          "boards": [
+            "UEU4"
+          ]
+        }
+      ],
+      "classification": {
+        "1": "db-schedule",
+        "2": "db-schedule",
+        "3": "db-schedule",
+        "4": "db-schedule",
+        "5": "db-schedule",
+        "6": "db-schedule",
+        "7": "db-schedule",
+        "8": "db-schedule",
+        "9": "db-schedule"
+      },
+      "boardsNamed": [
+        "DB0008P",
+        "DB0011P",
+        "DB0013P",
+        "DB0023P",
+        "UEU4"
+      ],
+      "boardsWithRows": [
+        "DB0023P"
+      ],
+      "rowsTotal": 2,
+      "scheduleRows": 2,
+      "mentionRows": 0,
+      "cables": 0,
+      "feeders": 0,
+      "deviceGroups": 2,
+      "deviceQty": 2,
+      "expectedWayHeaders": [
+        {
+          "page": 1,
+          "board": "DB0008P",
+          "ways": 18
+        },
+        {
+          "page": 2,
+          "board": "DB0008P",
+          "ways": 18
+        },
+        {
+          "page": 3,
+          "board": "DB0011P",
+          "ways": 16
+        },
+        {
+          "page": 4,
+          "board": "DB0011P",
+          "ways": 16
+        },
+        {
+          "page": 5,
+          "board": "DB0013P",
+          "ways": 12
+        },
+        {
+          "page": 6,
+          "board": "DB0013P",
+          "ways": 12
+        },
+        {
+          "page": 7,
+          "board": "DB0023P",
+          "ways": 12
+        },
+        {
+          "page": 8,
+          "board": null,
+          "ways": 8
+        }
+      ],
+      "expectedWaysTotal": 112,
+      "capturedWaySlots": 2,
+      "zeroRowPages": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        9
+      ],
+      "noTextPages": [],
+      "_waySlots": [
+        "DB0023P#1",
+        "DB0023P#2"
+      ]
+    },
+    "groundTruth": {
+      "pass": false,
+      "checks": [
+        {
+          "name": "min_rows ≥ 30",
+          "actual": 2,
+          "pass": false
+        }
+      ]
+    }
+  },
+  {
+    "file": "db-schedules/bes/Kings-Road_G1-GF-DB-LL.pdf",
+    "pages": 2,
+    "nativePages": 0,
+    "auto": {
+      "pages": [
+        {
+          "page": 1,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 2,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        }
+      ],
+      "classification": {
+        "1": "unknown",
+        "2": "unknown"
+      },
+      "boardsNamed": [],
+      "boardsWithRows": [],
+      "rowsTotal": 0,
+      "scheduleRows": 0,
+      "mentionRows": 0,
+      "cables": 0,
+      "feeders": 0,
+      "deviceGroups": 0,
+      "deviceQty": 0,
+      "expectedWayHeaders": [],
+      "expectedWaysTotal": 0,
+      "capturedWaySlots": 0,
+      "zeroRowPages": [],
+      "noTextPages": [
+        1,
+        2
+      ]
+    },
+    "ocr": {
+      "pages": [
+        {
+          "page": 1,
+          "type": "db-schedule",
+          "lines": 44,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 2,
+          "type": "unknown",
+          "lines": 26,
+          "rows": 0,
+          "boards": []
+        }
+      ],
+      "classification": {
+        "1": "db-schedule",
+        "2": "unknown"
+      },
+      "boardsNamed": [],
+      "boardsWithRows": [],
+      "rowsTotal": 0,
+      "scheduleRows": 0,
+      "mentionRows": 0,
+      "cables": 0,
+      "feeders": 0,
+      "deviceGroups": 0,
+      "deviceQty": 0,
+      "expectedWayHeaders": [],
+      "expectedWaysTotal": 0,
+      "capturedWaySlots": 0,
+      "zeroRowPages": [
+        1,
+        2
+      ],
+      "noTextPages": [],
+      "_waySlots": []
+    },
+    "groundTruth": null
+  },
+  {
+    "file": "db-schedules/hevacomp/DBG_The-Angel.pdf",
+    "pages": 2,
+    "nativePages": 0,
+    "auto": {
+      "pages": [
+        {
+          "page": 1,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 2,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        }
+      ],
+      "classification": {
+        "1": "unknown",
+        "2": "unknown"
+      },
+      "boardsNamed": [],
+      "boardsWithRows": [],
+      "rowsTotal": 0,
+      "scheduleRows": 0,
+      "mentionRows": 0,
+      "cables": 0,
+      "feeders": 0,
+      "deviceGroups": 0,
+      "deviceQty": 0,
+      "expectedWayHeaders": [],
+      "expectedWaysTotal": 0,
+      "capturedWaySlots": 0,
+      "zeroRowPages": [],
+      "noTextPages": [
+        1,
+        2
+      ]
+    },
+    "ocr": {
+      "pages": [
+        {
+          "page": 1,
+          "type": "cover",
+          "lines": 92,
+          "rows": 0,
+          "boards": [
+            "G1"
+          ]
+        },
+        {
+          "page": 2,
+          "type": "unknown",
+          "lines": 23,
+          "rows": 0,
+          "boards": []
+        }
+      ],
+      "classification": {
+        "1": "cover",
+        "2": "unknown"
+      },
+      "boardsNamed": [
+        "G1"
+      ],
+      "boardsWithRows": [],
+      "rowsTotal": 0,
+      "scheduleRows": 0,
+      "mentionRows": 0,
+      "cables": 0,
+      "feeders": 0,
+      "deviceGroups": 0,
+      "deviceQty": 0,
+      "expectedWayHeaders": [],
+      "expectedWaysTotal": 0,
+      "capturedWaySlots": 0,
+      "zeroRowPages": [
+        1
+      ],
+      "noTextPages": [],
+      "_waySlots": []
+    },
+    "groundTruth": null
+  },
+  {
+    "file": "db-schedules/simple/BC250847-E13_Distribution.pdf",
+    "pages": 1,
+    "nativePages": 0,
+    "auto": {
+      "pages": [
+        {
+          "page": 1,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        }
+      ],
+      "classification": {
+        "1": "unknown"
+      },
+      "boardsNamed": [],
+      "boardsWithRows": [],
+      "rowsTotal": 0,
+      "scheduleRows": 0,
+      "mentionRows": 0,
+      "cables": 0,
+      "feeders": 0,
+      "deviceGroups": 0,
+      "deviceQty": 0,
+      "expectedWayHeaders": [],
+      "expectedWaysTotal": 0,
+      "capturedWaySlots": 0,
+      "zeroRowPages": [],
+      "noTextPages": [
+        1
+      ]
+    },
+    "ocr": {
+      "pages": [
+        {
+          "page": 1,
+          "type": "sld",
+          "lines": 91,
+          "rows": 0,
+          "boards": [
+            "PB1"
+          ]
+        }
+      ],
+      "classification": {
+        "1": "sld"
+      },
+      "boardsNamed": [
+        "PB1"
+      ],
+      "boardsWithRows": [],
+      "rowsTotal": 0,
+      "scheduleRows": 0,
+      "mentionRows": 0,
+      "cables": 0,
+      "feeders": 0,
+      "deviceGroups": 0,
+      "deviceQty": 0,
+      "expectedWayHeaders": [
+        {
+          "page": 1,
+          "board": "PB1",
+          "ways": 50
+        }
+      ],
+      "expectedWaysTotal": 50,
+      "capturedWaySlots": 0,
+      "zeroRowPages": [
+        1
+      ],
+      "noTextPages": [],
+      "_waySlots": []
+    },
+    "groundTruth": null
+  },
+  {
+    "file": "db-schedules/switchboard-mccb/MCCB-Schedule_BowGreen.pdf",
+    "pages": 19,
+    "nativePages": 0,
+    "auto": {
+      "pages": [
+        {
+          "page": 1,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 2,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 3,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 4,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 5,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 6,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 7,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 8,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 9,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 10,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 11,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 12,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 13,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 14,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 15,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 16,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 17,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 18,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 19,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        }
+      ],
+      "classification": {
+        "1": "unknown",
+        "2": "unknown",
+        "3": "unknown",
+        "4": "unknown",
+        "5": "unknown",
+        "6": "unknown",
+        "7": "unknown",
+        "8": "unknown",
+        "9": "unknown",
+        "10": "unknown",
+        "11": "unknown",
+        "12": "unknown",
+        "13": "unknown",
+        "14": "unknown",
+        "15": "unknown",
+        "16": "unknown",
+        "17": "unknown",
+        "18": "unknown",
+        "19": "unknown"
+      },
+      "boardsNamed": [],
+      "boardsWithRows": [],
+      "rowsTotal": 0,
+      "scheduleRows": 0,
+      "mentionRows": 0,
+      "cables": 0,
+      "feeders": 0,
+      "deviceGroups": 0,
+      "deviceQty": 0,
+      "expectedWayHeaders": [],
+      "expectedWaysTotal": 0,
+      "capturedWaySlots": 0,
+      "zeroRowPages": [],
+      "noTextPages": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19
+      ]
+    },
+    "ocr": {
+      "pages": [
+        {
+          "page": 1,
+          "type": "cover",
+          "lines": 18,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 2,
+          "type": "unknown",
+          "lines": 33,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 3,
+          "type": "unknown",
+          "lines": 7,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 4,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 5,
+          "type": "unknown",
+          "lines": 15,
+          "rows": 1,
+          "boards": [
+            "DBLM",
+            "DBLS",
+            "DBLLD",
+            "DBLLE",
+            "DBLLG"
+          ]
+        },
+        {
+          "page": 6,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 7,
+          "type": "db-schedule",
+          "lines": 44,
+          "rows": 0,
+          "boards": [
+            "DBLLD",
+            "DBLLE",
+            "DBALLF",
+            "DBLLG",
+            "DBLLSP",
+            "DBLLWF",
+            "DBLLWS",
+            "DBLLCP1",
+            "DBCP1LM1EV",
+            "DBLLEX"
+          ]
+        },
+        {
+          "page": 8,
+          "type": "db-schedule",
+          "lines": 33,
+          "rows": 1,
+          "boards": []
+        },
+        {
+          "page": 9,
+          "type": "db-schedule",
+          "lines": 49,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 10,
+          "type": "db-schedule",
+          "lines": 44,
+          "rows": 1,
+          "boards": [
+            "PANELH35"
+          ]
+        },
+        {
+          "page": 11,
+          "type": "db-schedule",
+          "lines": 47,
+          "rows": 0,
+          "boards": [
+            "DBLLD",
+            "PANELH",
+            "DB10100A",
+            "DBALD2",
+            "DB16100A",
+            "DB100A",
+            "DBALDM"
+          ]
+        },
+        {
+          "page": 12,
+          "type": "unknown",
+          "lines": 8,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 13,
+          "type": "db-schedule",
+          "lines": 46,
+          "rows": 0,
+          "boards": [
+            "DBLLE",
+            "PANELT",
+            "DBLLE1",
+            "DB10100A",
+            "DBLLE2",
+            "DBLLE3LTG",
+            "DBLLE4"
+          ]
+        },
+        {
+          "page": 14,
+          "type": "unknown",
+          "lines": 9,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 15,
+          "type": "db-schedule",
+          "lines": 46,
+          "rows": 1,
+          "boards": [
+            "DBLLF",
+            "DBLLF1",
+            "DB100A",
+            "DBLLF2",
+            "DBLLF3",
+            "DBLLF4",
+            "DBLLF5",
+            "DBLLF6"
+          ]
+        },
+        {
+          "page": 16,
+          "type": "unknown",
+          "lines": 10,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 17,
+          "type": "db-schedule",
+          "lines": 45,
+          "rows": 1,
+          "boards": [
+            "DBLLG",
+            "DBLLG1",
+            "DB100A",
+            "DBLLG2",
+            "DB10100A",
+            "DBLLG3",
+            "DBLLG4",
+            "DBLLG5",
+            "DBLLG6",
+            "DBLLGT"
+          ]
+        },
+        {
+          "page": 18,
+          "type": "unknown",
+          "lines": 10,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 19,
+          "type": "spec",
+          "lines": 46,
+          "rows": 0,
+          "boards": []
+        }
+      ],
+      "classification": {
+        "1": "cover",
+        "2": "unknown",
+        "3": "unknown",
+        "4": "unknown",
+        "5": "unknown",
+        "6": "unknown",
+        "7": "db-schedule",
+        "8": "db-schedule",
+        "9": "db-schedule",
+        "10": "db-schedule",
+        "11": "db-schedule",
+        "12": "unknown",
+        "13": "db-schedule",
+        "14": "unknown",
+        "15": "db-schedule",
+        "16": "unknown",
+        "17": "db-schedule",
+        "18": "unknown",
+        "19": "spec"
+      },
+      "boardsNamed": [
+        "DBLM",
+        "DBLS",
+        "DBLLD",
+        "DBLLE",
+        "DBLLG",
+        "DBALLF",
+        "DBLLSP",
+        "DBLLWF",
+        "DBLLWS",
+        "DBLLCP1",
+        "DBCP1LM1EV",
+        "DBLLEX",
+        "PANELH35",
+        "PANELH",
+        "DB10100A",
+        "DBALD2",
+        "DB16100A",
+        "DB100A",
+        "DBALDM",
+        "PANELT",
+        "DBLLE1",
+        "DBLLE2",
+        "DBLLE3LTG",
+        "DBLLE4",
+        "DBLLF",
+        "DBLLF1",
+        "DBLLF2",
+        "DBLLF3",
+        "DBLLF4",
+        "DBLLF5",
+        "DBLLF6",
+        "DBLLG1",
+        "DBLLG2",
+        "DBLLG3",
+        "DBLLG4",
+        "DBLLG5",
+        "DBLLG6",
+        "DBLLGT"
+      ],
+      "boardsWithRows": [
+        "DBLLG",
+        "PANELH35",
+        "DBLLF"
+      ],
+      "rowsTotal": 5,
+      "scheduleRows": 4,
+      "mentionRows": 1,
+      "cables": 0,
+      "feeders": 0,
+      "deviceGroups": 1,
+      "deviceQty": 2,
+      "expectedWayHeaders": [
+        {
+          "page": 5,
+          "board": "DBLM",
+          "ways": 28
+        }
+      ],
+      "expectedWaysTotal": 28,
+      "capturedWaySlots": 4,
+      "zeroRowPages": [
+        7,
+        9,
+        11,
+        13
+      ],
+      "noTextPages": [
+        4,
+        6
+      ],
+      "_waySlots": [
+        "?#13",
+        "PANELH35#27",
+        "DBLLF#5",
+        "DBLLG#2"
+      ]
+    },
+    "groundTruth": {
+      "pass": true,
+      "checks": [
+        {
+          "name": "min_boards ≥ 5",
+          "actual": 38,
+          "pass": true
+        }
+      ]
+    }
+  },
+  {
+    "file": "db-schedules/switchboard-mccb/Switchboard-Schedules-P02.pdf",
+    "pages": 5,
+    "nativePages": 0,
+    "auto": {
+      "pages": [
+        {
+          "page": 1,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 2,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 3,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 4,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 5,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        }
+      ],
+      "classification": {
+        "1": "unknown",
+        "2": "unknown",
+        "3": "unknown",
+        "4": "unknown",
+        "5": "unknown"
+      },
+      "boardsNamed": [],
+      "boardsWithRows": [],
+      "rowsTotal": 0,
+      "scheduleRows": 0,
+      "mentionRows": 0,
+      "cables": 0,
+      "feeders": 0,
+      "deviceGroups": 0,
+      "deviceQty": 0,
+      "expectedWayHeaders": [],
+      "expectedWaysTotal": 0,
+      "capturedWaySlots": 0,
+      "zeroRowPages": [],
+      "noTextPages": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ]
+    },
+    "ocr": {
+      "pages": [
+        {
+          "page": 1,
+          "type": "db-schedule",
+          "lines": 31,
+          "rows": 0,
+          "boards": [
+            "DBAPTGF",
+            "DBAPTAST"
+          ]
+        },
+        {
+          "page": 2,
+          "type": "db-schedule",
+          "lines": 25,
+          "rows": 1,
+          "boards": [
+            "DBAPT2ND",
+            "DBAPT3RD",
+            "DBAPT4TH",
+            "DBAPT5TH",
+            "DBLLSTH"
+          ]
+        },
+        {
+          "page": 3,
+          "type": "db-schedule",
+          "lines": 29,
+          "rows": 2,
+          "boards": [
+            "DBLL3RD",
+            "DBLL1ST",
+            "DBLLGE"
+          ]
+        },
+        {
+          "page": 4,
+          "type": "db-schedule",
+          "lines": 22,
+          "rows": 1,
+          "boards": [
+            "DBPLANTH"
+          ]
+        },
+        {
+          "page": 5,
+          "type": "db-schedule",
+          "lines": 15,
+          "rows": 0,
+          "boards": []
+        }
+      ],
+      "classification": {
+        "1": "db-schedule",
+        "2": "db-schedule",
+        "3": "db-schedule",
+        "4": "db-schedule",
+        "5": "db-schedule"
+      },
+      "boardsNamed": [
+        "DBAPTGF",
+        "DBAPTAST",
+        "DBAPT2ND",
+        "DBAPT3RD",
+        "DBAPT4TH",
+        "DBAPT5TH",
+        "DBLLSTH",
+        "DBLL3RD",
+        "DBLL1ST",
+        "DBLLGE",
+        "DBPLANTH"
+      ],
+      "boardsWithRows": [
+        "DBPLANTH"
+      ],
+      "rowsTotal": 4,
+      "scheduleRows": 4,
+      "mentionRows": 0,
+      "cables": 0,
+      "feeders": 4,
+      "deviceGroups": 1,
+      "deviceQty": 4,
+      "expectedWayHeaders": [],
+      "expectedWaysTotal": 0,
+      "capturedWaySlots": 4,
+      "zeroRowPages": [
+        1,
+        5
+      ],
+      "noTextPages": [],
+      "_waySlots": [
+        "?#12",
+        "?#11",
+        "?#1",
+        "DBPLANTH#12"
+      ]
+    },
+    "groundTruth": null
+  },
+  {
+    "file": "db-schedules/syntegral/25057_DB-Schedules_RevC02.pdf",
+    "pages": 13,
+    "nativePages": 0,
+    "auto": {
+      "pages": [
+        {
+          "page": 1,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 2,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 3,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 4,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 5,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 6,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 7,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 8,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 9,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 10,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 11,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 12,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 13,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        }
+      ],
+      "classification": {
+        "1": "unknown",
+        "2": "unknown",
+        "3": "unknown",
+        "4": "unknown",
+        "5": "unknown",
+        "6": "unknown",
+        "7": "unknown",
+        "8": "unknown",
+        "9": "unknown",
+        "10": "unknown",
+        "11": "unknown",
+        "12": "unknown",
+        "13": "unknown"
+      },
+      "boardsNamed": [],
+      "boardsWithRows": [],
+      "rowsTotal": 0,
+      "scheduleRows": 0,
+      "mentionRows": 0,
+      "cables": 0,
+      "feeders": 0,
+      "deviceGroups": 0,
+      "deviceQty": 0,
+      "expectedWayHeaders": [],
+      "expectedWaysTotal": 0,
+      "capturedWaySlots": 0,
+      "zeroRowPages": [],
+      "noTextPages": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13
+      ]
+    },
+    "ocr": {
+      "pages": [
+        {
+          "page": 1,
+          "type": "db-schedule",
+          "lines": 18,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 2,
+          "type": "unknown",
+          "lines": 37,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 3,
+          "type": "db-schedule",
+          "lines": 34,
+          "rows": 0,
+          "boards": [
+            "DB01"
+          ]
+        },
+        {
+          "page": 4,
+          "type": "unknown",
+          "lines": 30,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 5,
+          "type": "db-schedule",
+          "lines": 21,
+          "rows": 0,
+          "boards": [
+            "DB02"
+          ]
+        },
+        {
+          "page": 6,
+          "type": "db-schedule",
+          "lines": 27,
+          "rows": 0,
+          "boards": [
+            "DB02"
+          ]
+        },
+        {
+          "page": 7,
+          "type": "unknown",
+          "lines": 30,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 8,
+          "type": "unknown",
+          "lines": 28,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 9,
+          "type": "db-schedule",
+          "lines": 42,
+          "rows": 0,
+          "boards": [
+            "DB03"
+          ]
+        },
+        {
+          "page": 10,
+          "type": "db-schedule",
+          "lines": 28,
+          "rows": 0,
+          "boards": [
+            "DBAV"
+          ]
+        },
+        {
+          "page": 11,
+          "type": "db-schedule",
+          "lines": 42,
+          "rows": 0,
+          "boards": [
+            "DBMECH"
+          ]
+        },
+        {
+          "page": 12,
+          "type": "unknown",
+          "lines": 36,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 13,
+          "type": "db-schedule",
+          "lines": 31,
+          "rows": 1,
+          "boards": [
+            "DBMECH"
+          ]
+        }
+      ],
+      "classification": {
+        "1": "db-schedule",
+        "2": "unknown",
+        "3": "db-schedule",
+        "4": "unknown",
+        "5": "db-schedule",
+        "6": "db-schedule",
+        "7": "unknown",
+        "8": "unknown",
+        "9": "db-schedule",
+        "10": "db-schedule",
+        "11": "db-schedule",
+        "12": "unknown",
+        "13": "db-schedule"
+      },
+      "boardsNamed": [
+        "DB01",
+        "DB02",
+        "DB03",
+        "DBAV",
+        "DBMECH"
+      ],
+      "boardsWithRows": [
+        "DBMECH"
+      ],
+      "rowsTotal": 1,
+      "scheduleRows": 1,
+      "mentionRows": 0,
+      "cables": 0,
+      "feeders": 0,
+      "deviceGroups": 1,
+      "deviceQty": 1,
+      "expectedWayHeaders": [
+        {
+          "page": 3,
+          "board": "DB01",
+          "ways": 8
+        },
+        {
+          "page": 5,
+          "board": "DB02",
+          "ways": 14
+        },
+        {
+          "page": 6,
+          "board": "DB02",
+          "ways": 14
+        },
+        {
+          "page": 9,
+          "board": "DB03",
+          "ways": 14
+        },
+        {
+          "page": 10,
+          "board": "DBAV",
+          "ways": 12
+        },
+        {
+          "page": 11,
+          "board": "DBMECH",
+          "ways": 18
+        },
+        {
+          "page": 13,
+          "board": "DBMECH",
+          "ways": 18
+        }
+      ],
+      "expectedWaysTotal": 98,
+      "capturedWaySlots": 1,
+      "zeroRowPages": [
+        1,
+        3,
+        5,
+        6,
+        9,
+        10,
+        11
+      ],
+      "noTextPages": [],
+      "_waySlots": [
+        "DBMECH#18"
+      ]
+    },
+    "groundTruth": {
+      "pass": false,
+      "checks": [
+        {
+          "name": "boards_expected (2)",
+          "missing": [],
+          "pass": true
+        },
+        {
+          "name": "min_boards ≥ 10",
+          "actual": 5,
+          "pass": false
+        },
+        {
+          "name": "DB-MECH: 18 ways expected",
+          "captured": 1,
+          "pass": false
+        },
+        {
+          "name": "DB-AV: 12 ways expected",
+          "captured": 0,
+          "pass": false
+        }
+      ]
+    }
+  },
+  {
+    "file": "pricing-output/205987740_EnergyForce_Contractor.pdf",
+    "pages": 3,
+    "nativePages": 0,
+    "auto": {
+      "pages": [
+        {
+          "page": 1,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 2,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 3,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        }
+      ],
+      "classification": {
+        "1": "unknown",
+        "2": "unknown",
+        "3": "unknown"
+      },
+      "boardsNamed": [],
+      "boardsWithRows": [],
+      "rowsTotal": 0,
+      "scheduleRows": 0,
+      "mentionRows": 0,
+      "cables": 0,
+      "feeders": 0,
+      "deviceGroups": 0,
+      "deviceQty": 0,
+      "expectedWayHeaders": [],
+      "expectedWaysTotal": 0,
+      "capturedWaySlots": 0,
+      "zeroRowPages": [],
+      "noTextPages": [
+        1,
+        2,
+        3
+      ]
+    },
+    "ocr": {
+      "pages": [
+        {
+          "page": 1,
+          "type": "cover",
+          "lines": 35,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 2,
+          "type": "unknown",
+          "lines": 37,
+          "rows": 2,
+          "boards": []
+        },
+        {
+          "page": 3,
+          "type": "spec",
+          "lines": 14,
+          "rows": 0,
+          "boards": []
+        }
+      ],
+      "classification": {
+        "1": "cover",
+        "2": "unknown",
+        "3": "spec"
+      },
+      "boardsNamed": [],
+      "boardsWithRows": [],
+      "rowsTotal": 2,
+      "scheduleRows": 0,
+      "mentionRows": 2,
+      "cables": 0,
+      "feeders": 0,
+      "deviceGroups": 0,
+      "deviceQty": 0,
+      "expectedWayHeaders": [
+        {
+          "page": 2,
+          "board": null,
+          "ways": 8
+        }
+      ],
+      "expectedWaysTotal": 8,
+      "capturedWaySlots": 0,
+      "zeroRowPages": [],
+      "noTextPages": [],
+      "_waySlots": []
+    },
+    "groundTruth": null
+  },
+  {
+    "file": "pricing-output/205987740_EnergyForce_Stockist.pdf",
+    "pages": 3,
+    "nativePages": 0,
+    "auto": {
+      "pages": [
+        {
+          "page": 1,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 2,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 3,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        }
+      ],
+      "classification": {
+        "1": "unknown",
+        "2": "unknown",
+        "3": "unknown"
+      },
+      "boardsNamed": [],
+      "boardsWithRows": [],
+      "rowsTotal": 0,
+      "scheduleRows": 0,
+      "mentionRows": 0,
+      "cables": 0,
+      "feeders": 0,
+      "deviceGroups": 0,
+      "deviceQty": 0,
+      "expectedWayHeaders": [],
+      "expectedWaysTotal": 0,
+      "capturedWaySlots": 0,
+      "zeroRowPages": [],
+      "noTextPages": [
+        1,
+        2,
+        3
+      ]
+    },
+    "ocr": {
+      "pages": [
+        {
+          "page": 1,
+          "type": "cover",
+          "lines": 30,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 2,
+          "type": "unknown",
+          "lines": 39,
+          "rows": 4,
+          "boards": []
+        },
+        {
+          "page": 3,
+          "type": "spec",
+          "lines": 12,
+          "rows": 0,
+          "boards": []
+        }
+      ],
+      "classification": {
+        "1": "cover",
+        "2": "unknown",
+        "3": "spec"
+      },
+      "boardsNamed": [],
+      "boardsWithRows": [],
+      "rowsTotal": 4,
+      "scheduleRows": 0,
+      "mentionRows": 4,
+      "cables": 0,
+      "feeders": 0,
+      "deviceGroups": 0,
+      "deviceQty": 0,
+      "expectedWayHeaders": [
+        {
+          "page": 2,
+          "board": null,
+          "ways": 8
+        }
+      ],
+      "expectedWaysTotal": 8,
+      "capturedWaySlots": 0,
+      "zeroRowPages": [],
+      "noTextPages": [],
+      "_waySlots": []
+    },
+    "groundTruth": null
+  },
+  {
+    "file": "revisions/rev2_panel.pdf",
+    "pages": 1,
+    "nativePages": 0,
+    "auto": {
+      "pages": [
+        {
+          "page": 1,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        }
+      ],
+      "classification": {
+        "1": "unknown"
+      },
+      "boardsNamed": [],
+      "boardsWithRows": [],
+      "rowsTotal": 0,
+      "scheduleRows": 0,
+      "mentionRows": 0,
+      "cables": 0,
+      "feeders": 0,
+      "deviceGroups": 0,
+      "deviceQty": 0,
+      "expectedWayHeaders": [],
+      "expectedWaysTotal": 0,
+      "capturedWaySlots": 0,
+      "zeroRowPages": [],
+      "noTextPages": [
+        1
+      ]
+    },
+    "ocr": {
+      "pages": [
+        {
+          "page": 1,
+          "type": "unknown",
+          "lines": 84,
+          "rows": 0,
+          "boards": []
+        }
+      ],
+      "classification": {
+        "1": "unknown"
+      },
+      "boardsNamed": [],
+      "boardsWithRows": [],
+      "rowsTotal": 0,
+      "scheduleRows": 0,
+      "mentionRows": 0,
+      "cables": 0,
+      "feeders": 0,
+      "deviceGroups": 0,
+      "deviceQty": 0,
+      "expectedWayHeaders": [],
+      "expectedWaysTotal": 0,
+      "capturedWaySlots": 0,
+      "zeroRowPages": [
+        1
+      ],
+      "noTextPages": [],
+      "_waySlots": []
+    },
+    "groundTruth": null
+  },
+  {
+    "file": "revisions/rev3_panel_fuse-160A-not-32A.pdf",
+    "pages": 1,
+    "nativePages": 0,
+    "auto": {
+      "pages": [
+        {
+          "page": 1,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        }
+      ],
+      "classification": {
+        "1": "unknown"
+      },
+      "boardsNamed": [],
+      "boardsWithRows": [],
+      "rowsTotal": 0,
+      "scheduleRows": 0,
+      "mentionRows": 0,
+      "cables": 0,
+      "feeders": 0,
+      "deviceGroups": 0,
+      "deviceQty": 0,
+      "expectedWayHeaders": [],
+      "expectedWaysTotal": 0,
+      "capturedWaySlots": 0,
+      "zeroRowPages": [],
+      "noTextPages": [
+        1
+      ]
+    },
+    "ocr": {
+      "pages": [
+        {
+          "page": 1,
+          "type": "sld",
+          "lines": 106,
+          "rows": 0,
+          "boards": []
+        }
+      ],
+      "classification": {
+        "1": "sld"
+      },
+      "boardsNamed": [],
+      "boardsWithRows": [],
+      "rowsTotal": 0,
+      "scheduleRows": 0,
+      "mentionRows": 0,
+      "cables": 0,
+      "feeders": 0,
+      "deviceGroups": 0,
+      "deviceQty": 0,
+      "expectedWayHeaders": [],
+      "expectedWaysTotal": 0,
+      "capturedWaySlots": 0,
+      "zeroRowPages": [],
+      "noTextPages": [],
+      "_waySlots": []
+    },
+    "groundTruth": null
+  },
+  {
+    "file": "revisions/rev5_847-RME_Main-LV-Distribution_C5.pdf",
+    "pages": 1,
+    "nativePages": 0,
+    "auto": {
+      "pages": [
+        {
+          "page": 1,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        }
+      ],
+      "classification": {
+        "1": "unknown"
+      },
+      "boardsNamed": [],
+      "boardsWithRows": [],
+      "rowsTotal": 0,
+      "scheduleRows": 0,
+      "mentionRows": 0,
+      "cables": 0,
+      "feeders": 0,
+      "deviceGroups": 0,
+      "deviceQty": 0,
+      "expectedWayHeaders": [],
+      "expectedWaysTotal": 0,
+      "capturedWaySlots": 0,
+      "zeroRowPages": [],
+      "noTextPages": [
+        1
+      ]
+    },
+    "ocr": {
+      "pages": [
+        {
+          "page": 1,
+          "type": "unknown",
+          "lines": 99,
+          "rows": 0,
+          "boards": []
+        }
+      ],
+      "classification": {
+        "1": "unknown"
+      },
+      "boardsNamed": [],
+      "boardsWithRows": [],
+      "rowsTotal": 0,
+      "scheduleRows": 0,
+      "mentionRows": 0,
+      "cables": 0,
+      "feeders": 0,
+      "deviceGroups": 0,
+      "deviceQty": 0,
+      "expectedWayHeaders": [],
+      "expectedWaysTotal": 0,
+      "capturedWaySlots": 0,
+      "zeroRowPages": [
+        1
+      ],
+      "noTextPages": [],
+      "_waySlots": []
+    },
+    "groundTruth": null
+  },
+  {
+    "file": "scanned-ocr/SKM_scanned.pdf",
+    "pages": 1,
+    "nativePages": 0,
+    "auto": {
+      "pages": [
+        {
+          "page": 1,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        }
+      ],
+      "classification": {
+        "1": "unknown"
+      },
+      "boardsNamed": [],
+      "boardsWithRows": [],
+      "rowsTotal": 0,
+      "scheduleRows": 0,
+      "mentionRows": 0,
+      "cables": 0,
+      "feeders": 0,
+      "deviceGroups": 0,
+      "deviceQty": 0,
+      "expectedWayHeaders": [],
+      "expectedWaysTotal": 0,
+      "capturedWaySlots": 0,
+      "zeroRowPages": [],
+      "noTextPages": [
+        1
+      ]
+    },
+    "ocr": {
+      "pages": [
+        {
+          "page": 1,
+          "type": "spec",
+          "lines": 69,
+          "rows": 0,
+          "boards": [
+            "DB00"
+          ]
+        }
+      ],
+      "classification": {
+        "1": "spec"
+      },
+      "boardsNamed": [
+        "DB00"
+      ],
+      "boardsWithRows": [],
+      "rowsTotal": 0,
+      "scheduleRows": 0,
+      "mentionRows": 0,
+      "cables": 0,
+      "feeders": 0,
+      "deviceGroups": 0,
+      "deviceQty": 0,
+      "expectedWayHeaders": [],
+      "expectedWaysTotal": 0,
+      "capturedWaySlots": 0,
+      "zeroRowPages": [
+        1
+      ],
+      "noTextPages": [],
+      "_waySlots": []
+    },
+    "groundTruth": null
+  },
+  {
+    "file": "scanned-ocr/doc08967_scanned.pdf",
+    "pages": 6,
+    "nativePages": 0,
+    "auto": {
+      "pages": [
+        {
+          "page": 1,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 2,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 3,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 4,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 5,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 6,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        }
+      ],
+      "classification": {
+        "1": "unknown",
+        "2": "unknown",
+        "3": "unknown",
+        "4": "unknown",
+        "5": "unknown",
+        "6": "unknown"
+      },
+      "boardsNamed": [],
+      "boardsWithRows": [],
+      "rowsTotal": 0,
+      "scheduleRows": 0,
+      "mentionRows": 0,
+      "cables": 0,
+      "feeders": 0,
+      "deviceGroups": 0,
+      "deviceQty": 0,
+      "expectedWayHeaders": [],
+      "expectedWaysTotal": 0,
+      "capturedWaySlots": 0,
+      "zeroRowPages": [],
+      "noTextPages": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ]
+    },
+    "ocr": {
+      "pages": [
+        {
+          "page": 1,
+          "type": "cover",
+          "lines": 38,
+          "rows": 0,
+          "boards": []
+        },
+        {
+          "page": 2,
+          "type": "unknown",
+          "lines": 56,
+          "rows": 7,
+          "boards": [
+            "DBM"
+          ]
+        },
+        {
+          "page": 3,
+          "type": "sld",
+          "lines": 55,
+          "rows": 0,
+          "boards": [
+            "DBB1",
+            "DBC",
+            "DBEVC",
+            "DBEXT",
+            "DBFF1"
+          ]
+        },
+        {
+          "page": 4,
+          "type": "sld",
+          "lines": 58,
+          "rows": 0,
+          "boards": [
+            "DBFF2",
+            "DBGF1",
+            "DBK",
+            "DBL"
+          ]
+        },
+        {
+          "page": 5,
+          "type": "sld",
+          "lines": 60,
+          "rows": 0,
+          "boards": [
+            "DBRP",
+            "DBSF1",
+            "DBSF2",
+            "DBTF1",
+            "DBTF2"
+          ]
+        },
+        {
+          "page": 6,
+          "type": "sld",
+          "lines": 30,
+          "rows": 0,
+          "boards": []
+        }
+      ],
+      "classification": {
+        "1": "cover",
+        "2": "unknown",
+        "3": "sld",
+        "4": "sld",
+        "5": "sld",
+        "6": "sld"
+      },
+      "boardsNamed": [
+        "DBM",
+        "DBB1",
+        "DBC",
+        "DBEVC",
+        "DBEXT",
+        "DBFF1",
+        "DBFF2",
+        "DBGF1",
+        "DBK",
+        "DBL",
+        "DBRP",
+        "DBSF1",
+        "DBSF2",
+        "DBTF1",
+        "DBTF2"
+      ],
+      "boardsWithRows": [],
+      "rowsTotal": 7,
+      "scheduleRows": 0,
+      "mentionRows": 7,
+      "cables": 0,
+      "feeders": 0,
+      "deviceGroups": 0,
+      "deviceQty": 0,
+      "expectedWayHeaders": [
+        {
+          "page": 2,
+          "board": "DBM",
+          "ways": 12
+        },
+        {
+          "page": 3,
+          "board": "DBB1",
+          "ways": 6
+        },
+        {
+          "page": 5,
+          "board": "DBRP",
+          "ways": 16
+        }
+      ],
+      "expectedWaysTotal": 34,
+      "capturedWaySlots": 0,
+      "zeroRowPages": [
+        3,
+        4,
+        5
+      ],
+      "noTextPages": [],
+      "_waySlots": []
+    },
+    "groundTruth": null
+  },
+  {
+    "file": "schematics/2429-SGL_LV-Schematic_Sheet1of2.pdf",
+    "pages": 1,
+    "nativePages": 0,
+    "auto": {
+      "pages": [
+        {
+          "page": 1,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        }
+      ],
+      "classification": {
+        "1": "unknown"
+      },
+      "boardsNamed": [],
+      "boardsWithRows": [],
+      "rowsTotal": 0,
+      "scheduleRows": 0,
+      "mentionRows": 0,
+      "cables": 0,
+      "feeders": 0,
+      "deviceGroups": 0,
+      "deviceQty": 0,
+      "expectedWayHeaders": [],
+      "expectedWaysTotal": 0,
+      "capturedWaySlots": 0,
+      "zeroRowPages": [],
+      "noTextPages": [
+        1
+      ]
+    },
+    "ocr": {
+      "pages": [
+        {
+          "page": 1,
+          "type": "sld",
+          "lines": 90,
+          "rows": 0,
+          "boards": []
+        }
+      ],
+      "classification": {
+        "1": "sld"
+      },
+      "boardsNamed": [],
+      "boardsWithRows": [],
+      "rowsTotal": 0,
+      "scheduleRows": 0,
+      "mentionRows": 0,
+      "cables": 0,
+      "feeders": 0,
+      "deviceGroups": 0,
+      "deviceQty": 0,
+      "expectedWayHeaders": [],
+      "expectedWaysTotal": 0,
+      "capturedWaySlots": 0,
+      "zeroRowPages": [
+        1
+      ],
+      "noTextPages": [],
+      "_waySlots": []
+    },
+    "groundTruth": null
+  },
+  {
+    "file": "schematics/2429-SGL_LV-Schematic_Sheet2of2.pdf",
+    "pages": 1,
+    "nativePages": 0,
+    "auto": {
+      "pages": [
+        {
+          "page": 1,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        }
+      ],
+      "classification": {
+        "1": "unknown"
+      },
+      "boardsNamed": [],
+      "boardsWithRows": [],
+      "rowsTotal": 0,
+      "scheduleRows": 0,
+      "mentionRows": 0,
+      "cables": 0,
+      "feeders": 0,
+      "deviceGroups": 0,
+      "deviceQty": 0,
+      "expectedWayHeaders": [],
+      "expectedWaysTotal": 0,
+      "capturedWaySlots": 0,
+      "zeroRowPages": [],
+      "noTextPages": [
+        1
+      ]
+    },
+    "ocr": {
+      "pages": [
+        {
+          "page": 1,
+          "type": "sld",
+          "lines": 121,
+          "rows": 0,
+          "boards": []
+        }
+      ],
+      "classification": {
+        "1": "sld"
+      },
+      "boardsNamed": [],
+      "boardsWithRows": [],
+      "rowsTotal": 0,
+      "scheduleRows": 0,
+      "mentionRows": 0,
+      "cables": 0,
+      "feeders": 0,
+      "deviceGroups": 0,
+      "deviceQty": 0,
+      "expectedWayHeaders": [],
+      "expectedWaysTotal": 0,
+      "capturedWaySlots": 0,
+      "zeroRowPages": [
+        1
+      ],
+      "noTextPages": [],
+      "_waySlots": []
+    },
+    "groundTruth": null
+  },
+  {
+    "file": "schematics/250405-GG_LV-Schematic.pdf",
+    "pages": 1,
+    "nativePages": 0,
+    "auto": {
+      "pages": [
+        {
+          "page": 1,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        }
+      ],
+      "classification": {
+        "1": "unknown"
+      },
+      "boardsNamed": [],
+      "boardsWithRows": [],
+      "rowsTotal": 0,
+      "scheduleRows": 0,
+      "mentionRows": 0,
+      "cables": 0,
+      "feeders": 0,
+      "deviceGroups": 0,
+      "deviceQty": 0,
+      "expectedWayHeaders": [],
+      "expectedWaysTotal": 0,
+      "capturedWaySlots": 0,
+      "zeroRowPages": [],
+      "noTextPages": [
+        1
+      ]
+    },
+    "ocr": {
+      "pages": [
+        {
+          "page": 1,
+          "type": "unknown",
+          "lines": 90,
+          "rows": 0,
+          "boards": []
+        }
+      ],
+      "classification": {
+        "1": "unknown"
+      },
+      "boardsNamed": [],
+      "boardsWithRows": [],
+      "rowsTotal": 0,
+      "scheduleRows": 0,
+      "mentionRows": 0,
+      "cables": 0,
+      "feeders": 0,
+      "deviceGroups": 0,
+      "deviceQty": 0,
+      "expectedWayHeaders": [],
+      "expectedWaysTotal": 0,
+      "capturedWaySlots": 0,
+      "zeroRowPages": [
+        1
+      ],
+      "noTextPages": [],
+      "_waySlots": []
+    },
+    "groundTruth": null
+  },
+  {
+    "file": "schematics/C056-BBK_LV-Schematic.pdf",
+    "pages": 1,
+    "nativePages": 0,
+    "auto": {
+      "pages": [
+        {
+          "page": 1,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        }
+      ],
+      "classification": {
+        "1": "unknown"
+      },
+      "boardsNamed": [],
+      "boardsWithRows": [],
+      "rowsTotal": 0,
+      "scheduleRows": 0,
+      "mentionRows": 0,
+      "cables": 0,
+      "feeders": 0,
+      "deviceGroups": 0,
+      "deviceQty": 0,
+      "expectedWayHeaders": [],
+      "expectedWaysTotal": 0,
+      "capturedWaySlots": 0,
+      "zeroRowPages": [],
+      "noTextPages": [
+        1
+      ]
+    },
+    "ocr": {
+      "pages": [
+        {
+          "page": 1,
+          "type": "sld",
+          "lines": 116,
+          "rows": 0,
+          "boards": []
+        }
+      ],
+      "classification": {
+        "1": "sld"
+      },
+      "boardsNamed": [],
+      "boardsWithRows": [],
+      "rowsTotal": 0,
+      "scheduleRows": 0,
+      "mentionRows": 0,
+      "cables": 0,
+      "feeders": 0,
+      "deviceGroups": 0,
+      "deviceQty": 0,
+      "expectedWayHeaders": [],
+      "expectedWaysTotal": 0,
+      "capturedWaySlots": 0,
+      "zeroRowPages": [
+        1
+      ],
+      "noTextPages": [],
+      "_waySlots": []
+    },
+    "groundTruth": null
+  },
+  {
+    "file": "schematics/SRP1053-NB1-NB2_LV-Schematic_cable-sizes.pdf",
+    "pages": 1,
+    "nativePages": 0,
+    "auto": {
+      "pages": [
+        {
+          "page": 1,
+          "type": "unknown",
+          "lines": 0,
+          "rows": 0,
+          "boards": []
+        }
+      ],
+      "classification": {
+        "1": "unknown"
+      },
+      "boardsNamed": [],
+      "boardsWithRows": [],
+      "rowsTotal": 0,
+      "scheduleRows": 0,
+      "mentionRows": 0,
+      "cables": 0,
+      "feeders": 0,
+      "deviceGroups": 0,
+      "deviceQty": 0,
+      "expectedWayHeaders": [],
+      "expectedWaysTotal": 0,
+      "capturedWaySlots": 0,
+      "zeroRowPages": [],
+      "noTextPages": [
+        1
+      ]
+    },
+    "ocr": {
+      "pages": [
+        {
+          "page": 1,
+          "type": "unknown",
+          "lines": 65,
+          "rows": 0,
+          "boards": []
+        }
+      ],
+      "classification": {
+        "1": "unknown"
+      },
+      "boardsNamed": [],
+      "boardsWithRows": [],
+      "rowsTotal": 0,
+      "scheduleRows": 0,
+      "mentionRows": 0,
+      "cables": 0,
+      "feeders": 0,
+      "deviceGroups": 0,
+      "deviceQty": 0,
+      "expectedWayHeaders": [],
+      "expectedWaysTotal": 0,
+      "capturedWaySlots": 0,
+      "zeroRowPages": [],
+      "noTextPages": [],
+      "_waySlots": []
+    },
+    "groundTruth": {
+      "pass": false,
+      "checks": [
+        {
+          "name": "boards_expected (19)",
+          "missing": [
+            "DB-00-08",
+            "DB-00-09",
+            "DB-00-10",
+            "DB-00-11",
+            "DB-00-12",
+            "DB-00-13",
+            "DB-00-14",
+            "DB-00-50",
+            "DB-01-21",
+            "DB-01-22",
+            "DB-01-23",
+            "DB-01-24",
+            "DB-01-25",
+            "DB-01-26",
+            "DB-01-27",
+            "DB-01-28",
+            "DB-01-29",
+            "DB-ESS-01",
+            "DB-00-SUBEXT"
+          ],
+          "pass": false
+        },
+        {
+          "name": "min_boards ≥ 19",
+          "actual": 0,
+          "pass": false
+        }
+      ]
+    }
+  }
+]
