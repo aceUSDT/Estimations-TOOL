@@ -14,3 +14,9 @@ tools/coverage/*.traineddata
 # OS noise
 .DS_Store
 Thumbs.db
+
+# Desktop (Electron) build artifacts
+desktop/node_modules/
+desktop/release/
+desktop/build/*.ico
+desktop/build/*.icns

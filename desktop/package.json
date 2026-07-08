@@ -1,0 +1,41 @@
+{
+  "name": "estimation101-desktop",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Estimation 101 — Electrical Document Intelligence (desktop shell)",
+  "author": "Estimation 101",
+  "main": "main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --publish never",
+    "dist:win": "electron-builder --win nsis --publish never",
+    "dist:mac": "electron-builder --mac dmg --publish never"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "app.netlify.estimationtoolz",
+    "productName": "Estimation 101",
+    "files": ["main.cjs", "preload.cjs"],
+    "directories": { "output": "release" },
+    "win": {
+      "target": ["nsis"],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true
+    },
+    "mac": {
+      "target": ["dmg"],
+      "icon": "build/icon.icns",
+      "category": "public.app-category.productivity"
+    },
+    "dmg": {
+      "title": "Estimation 101"
+    }
+  }
+}
