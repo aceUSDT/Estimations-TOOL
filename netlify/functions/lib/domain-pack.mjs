@@ -41,12 +41,19 @@ export const EXTRACTION_SYSTEM_PROMPT = `You are the extraction engine of an ele
 7. The incomer/main switch of a board is a device entry with is_incomer=true, way null.
 8. Confidence is per item, 0..1: 0.9+ clearly printed; 0.6–0.9 legible but ambiguous; <0.6 guessed from context (always also add a flag).
 9. Use the board reference EXACTLY as printed (e.g. "DB-00-08P", "DB/GF", "2A4"). Do not invent, normalise, merge or split references.
-10. If the page is a continuation of a board started on an earlier page (way numbers continue, "continued" markers, no header), set boards[].continuation=true and still use the printed board reference if shown, else "".`;
+10. If the page is a continuation of a board started on an earlier page (way numbers continue, "continued" markers, no header), set boards[].continuation=true and still use the printed board reference if shown, else "".
+11. OUTPUT FORMAT: return every numeric field as a STRING (e.g. rating "32", ways "18", confidence "0.9"), and "" when a value is absent — never a bare number and never null. Booleans stay booleans. Enums use exactly the listed values ("" where allowed).`;
 
-/* JSON schema for structured outputs (output_config.format). Constraints per
- * the structured-outputs rules: additionalProperties:false everywhere, no
- * numeric/string bounds, nullable via anyOf. */
-const nullable = (t) => ({ anyOf: [{ type: t }, { type: 'null' }] });
+/* JSON schema for structured outputs (output_config.format).
+ * IMPORTANT: the Messages API rejects schemas with more than ~32 union-typed
+ * (anyOf) or array-typed parameters ("exponential compilation cost"). So every
+ * scalar leaf here is a PLAIN string / boolean / enum — no anyOf, no nullable
+ * unions. Numeric fields are returned as strings ("" = absent) and coerced back
+ * to numbers/null in extract.mjs (NUMERIC_FIELDS / NUM_OR_STR_FIELDS) so the
+ * downstream merge code still sees numbers. additionalProperties:false and
+ * required-lists-every-property are kept (structured-outputs requirement). */
+const STR = { type: 'string' };
+const NUM = { type: 'string', description: 'number as a string, e.g. "32"; "" if absent' };
 
 const BOARD = {
   type: 'object',
@@ -56,23 +63,23 @@ const BOARD = {
     'fault_ka', 'board_type_text', 'continuation', 'confidence'],
   properties: {
     ref: { type: 'string', description: 'Board reference exactly as printed' },
-    description: nullable('string'),
-    location: nullable('string'),
-    fed_from_ref: { anyOf: [{ type: 'string' }, { type: 'null' }], description: 'Parent board ref / Served by / DB Fed From' },
-    serving: nullable('string'),
-    ways_total: nullable('integer'),
-    ways_sp: nullable('integer'),
-    ways_tp: nullable('integer'),
-    spare_capacity_pct: nullable('number'),
-    incomer_class: { anyOf: [{ type: 'string' }, { type: 'null' }], description: 'e.g. Switch Disconnector, Isolator, MCCB, ACB' },
-    incomer_rating_a: nullable('number'),
-    incomer_poles: nullable('integer'),
-    board_model: { anyOf: [{ type: 'string' }, { type: 'null' }], description: 'Manufacturer + model, e.g. Hager JKD186TM' },
-    metering: { anyOf: [{ type: 'string' }, { type: 'null' }], description: 'Full metering spec as printed, not a boolean' },
-    fault_ka: nullable('number'),
-    board_type_text: { anyOf: [{ type: 'string' }, { type: 'null' }], description: 'Verbatim size/type/rating line' },
+    description: STR,
+    location: STR,
+    fed_from_ref: { type: 'string', description: 'Parent board ref / Served by / DB Fed From; "" if none' },
+    serving: STR,
+    ways_total: NUM,
+    ways_sp: NUM,
+    ways_tp: NUM,
+    spare_capacity_pct: NUM,
+    incomer_class: { type: 'string', description: 'e.g. Switch Disconnector, Isolator, MCCB, ACB; "" if none' },
+    incomer_rating_a: NUM,
+    incomer_poles: NUM,
+    board_model: { type: 'string', description: 'Manufacturer + model, e.g. Hager JKD186TM; "" if none' },
+    metering: { type: 'string', description: 'Full metering spec as printed, not a boolean; "" if none' },
+    fault_ka: NUM,
+    board_type_text: { type: 'string', description: 'Verbatim size/type/rating line; "" if none' },
     continuation: { type: 'boolean' },
-    confidence: { type: 'number' },
+    confidence: NUM,
   },
 };
 
@@ -83,25 +90,25 @@ const DEVICE = {
     'afdd', 'poles', 'cable_type', 'phase_csa_mm2', 'cpc_csa_mm2', 'circuit_config', 'install_method',
     'is_spare', 'is_spd', 'is_incomer', 'confidence'],
   properties: {
-    board_ref: { type: 'string' },
-    way: nullable('integer'),
+    board_ref: STR,
+    way: { type: 'string', description: 'way number as a string; "" if none' },
     phase: { type: 'string', enum: ['L1', 'L2', 'L3', 'L1L2L3', 'SP', ''] },
-    description: nullable('string'),
+    description: STR,
     device_class: { type: 'string', enum: ['MCB', 'RCBO', 'MCCB', 'ACB', 'RCD', 'SPD', 'fuse', 'switch_disconnector', 'isolator', 'contactor', 'meter', 'spare', 'space', 'other'] },
-    rating_a: nullable('number'),
+    rating_a: NUM,
     trip_curve: { type: 'string', enum: ['B', 'C', 'D', ''] },
-    rcd_ma: nullable('number'),
+    rcd_ma: NUM,
     afdd: { type: 'boolean' },
-    poles: nullable('integer'),
-    cable_type: { anyOf: [{ type: 'string' }, { type: 'null' }], description: 'Code as printed (T2, 5, …) or description' },
-    phase_csa_mm2: nullable('number'),
-    cpc_csa_mm2: { anyOf: [{ type: 'number' }, { type: 'string' }, { type: 'null' }], description: 'mm² or "SWA"/"integral"' },
+    poles: NUM,
+    cable_type: { type: 'string', description: 'Code as printed (T2, 5, …) or description; "" if none' },
+    phase_csa_mm2: NUM,
+    cpc_csa_mm2: { type: 'string', description: 'mm² number as a string, or "SWA"/"integral"; "" if none' },
     circuit_config: { type: 'string', enum: ['RING', 'RADIAL', ''] },
-    install_method: nullable('string'),
+    install_method: STR,
     is_spare: { type: 'boolean' },
     is_spd: { type: 'boolean' },
     is_incomer: { type: 'boolean' },
-    confidence: { type: 'number' },
+    confidence: NUM,
   },
 };
 
@@ -111,16 +118,16 @@ const FEED = {
   required: ['from_ref', 'to_ref', 'device_class', 'rating_a', 'poles', 'cable_ref', 'cable_csa_mm2',
     'cable_cpc_mm2', 'cable_desc', 'confidence'],
   properties: {
-    from_ref: { anyOf: [{ type: 'string' }, { type: 'null' }], description: 'Feeding board/source (TRANSFORMER, GENERATOR, panel ref…)' },
-    to_ref: { type: 'string' },
-    device_class: nullable('string'),
-    rating_a: nullable('number'),
-    poles: nullable('integer'),
-    cable_ref: { anyOf: [{ type: 'string' }, { type: 'null' }], description: 'e.g. F28' },
-    cable_csa_mm2: nullable('number'),
-    cable_cpc_mm2: { anyOf: [{ type: 'number' }, { type: 'string' }, { type: 'null' }] },
-    cable_desc: nullable('string'),
-    confidence: { type: 'number' },
+    from_ref: { type: 'string', description: 'Feeding board/source (TRANSFORMER, GENERATOR, panel ref…); "" if none' },
+    to_ref: STR,
+    device_class: STR,
+    rating_a: NUM,
+    poles: NUM,
+    cable_ref: { type: 'string', description: 'e.g. F28; "" if none' },
+    cable_csa_mm2: NUM,
+    cable_cpc_mm2: { type: 'string', description: 'mm² number as a string, or "SWA"/"integral"; "" if none' },
+    cable_desc: STR,
+    confidence: NUM,
   },
 };
 
@@ -136,7 +143,7 @@ export const EXTRACTION_SCHEMA = {
       properties: {
         type: { type: 'string', enum: ['schematic', 'db_schedule', 'specification', 'other'] },
         sub_format: { type: 'string', enum: ['amtech', 'trimble', 'bes', 'bam_epo', 'syntegral', 'hevacomp', 'cu', 'switchboard', 'mccb', 'simple', 'unknown'] },
-        confidence: { type: 'number' },
+        confidence: NUM,
       },
     },
     boards: { type: 'array', items: BOARD },
@@ -156,3 +163,34 @@ export const EXTRACTION_SCHEMA = {
     },
   },
 };
+
+/* Fields the model returns as strings that downstream code wants as numbers
+ * (or null). Applied in extract.mjs after JSON.parse so the client/harness
+ * merge code is unchanged. */
+export const NUMERIC_FIELDS = {
+  board: ['ways_total', 'ways_sp', 'ways_tp', 'spare_capacity_pct', 'incomer_rating_a', 'incomer_poles', 'fault_ka', 'confidence'],
+  device: ['way', 'rating_a', 'rcd_ma', 'poles', 'phase_csa_mm2', 'confidence'],
+  feed: ['rating_a', 'poles', 'cable_csa_mm2', 'confidence'],
+};
+// numeric-or-string (mm² number, else "SWA"/"integral", else null)
+export const NUM_OR_STR_FIELDS = { device: ['cpc_csa_mm2'], feed: ['cable_cpc_mm2'] };
+
+const toNum = (v) => { if (v === '' || v == null) return null; const n = Number(v); return Number.isFinite(n) ? n : null; };
+const toNumOrStr = (v) => { if (v === '' || v == null) return null; const n = Number(v); return Number.isFinite(n) ? n : String(v); };
+
+/** Coerce the model's all-string result back into the numbers/null the merge
+ *  code expects. Mutates and returns `result`. */
+export function coerceResult(result) {
+  if (!result || typeof result !== 'object') return result;
+  if (result.classification) result.classification.confidence = toNum(result.classification.confidence);
+  const apply = (arr, kind) => {
+    for (const item of arr || []) {
+      for (const f of NUMERIC_FIELDS[kind]) if (f in item) item[f] = toNum(item[f]);
+      for (const f of (NUM_OR_STR_FIELDS[kind] || [])) if (f in item) item[f] = toNumOrStr(item[f]);
+    }
+  };
+  apply(result.boards, 'board');
+  apply(result.devices, 'device');
+  apply(result.feeds, 'feed');
+  return result;
+}

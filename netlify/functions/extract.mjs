@@ -16,7 +16,7 @@
  * function + polling. One page per request keeps latency bounded.
  */
 import Anthropic from '@anthropic-ai/sdk';
-import { EXTRACTION_SYSTEM_PROMPT, EXTRACTION_SCHEMA } from './lib/domain-pack.mjs';
+import { EXTRACTION_SYSTEM_PROMPT, EXTRACTION_SCHEMA, coerceResult } from './lib/domain-pack.mjs';
 
 const MODEL = process.env.EXTRACTION_MODEL || 'claude-opus-4-8';
 
@@ -78,7 +78,7 @@ export default async function handler(req) {
     }
     const text = response.content.find((b) => b.type === 'text');
     if (!text) return json(502, { error: 'No text block in model response' });
-    const result = JSON.parse(text.text);
+    const result = coerceResult(JSON.parse(text.text));
     return json(200, {
       result,
       model: response.model,
