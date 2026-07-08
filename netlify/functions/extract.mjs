@@ -8,17 +8,20 @@
  *
  * Env vars:
  *   ANTHROPIC_API_KEY   required for extraction (GET /health reports state)
- *   EXTRACTION_MODEL    optional override, default claude-opus-4-8
+ *   EXTRACTION_MODEL    optional override, default claude-sonnet-5
  *
- * Note on timeouts: Netlify synchronous functions allow up to ~26s. Dense A0
- * schematics at high effort can exceed that — if you see 502/timeouts, either
- * set EXTRACTION_MODEL to a faster model or move this to a background
- * function + polling. One page per request keeps latency bounded.
+ * Note on timeouts: Netlify synchronous functions cap at ~26s. A full Opus
+ * extraction of a dense page image exceeds that (measured ~30s → 502), so the
+ * default is claude-sonnet-5 — near-Opus quality on this structured-extraction
+ * task at roughly half the latency, which fits the sync budget. For maximum
+ * recall on the hardest sheets without a latency ceiling, move this to a
+ * background function + polling and set EXTRACTION_MODEL=claude-opus-4-8.
+ * One page per request keeps latency bounded.
  */
 import Anthropic from '@anthropic-ai/sdk';
 import { EXTRACTION_SYSTEM_PROMPT, EXTRACTION_SCHEMA, coerceResult } from './lib/domain-pack.mjs';
 
-const MODEL = process.env.EXTRACTION_MODEL || 'claude-opus-4-8';
+const MODEL = process.env.EXTRACTION_MODEL || 'claude-sonnet-5';
 
 const json = (status, body) => new Response(JSON.stringify(body), {
   status,
@@ -65,7 +68,7 @@ export default async function handler(req) {
   try {
     const response = await client.messages.create({
       model: MODEL,
-      max_tokens: 16000,
+      max_tokens: 12000,
       system: [{ type: 'text', text: EXTRACTION_SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
       output_config: { format: { type: 'json_schema', schema: EXTRACTION_SCHEMA } },
       messages: [{ role: 'user', content }],

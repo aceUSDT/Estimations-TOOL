@@ -1290,7 +1290,9 @@ async function aiExtractPage(f,pageNo,pg){
     if(!doc){doc=await lib.getDocument({data:rawStore[f.id].slice(0)}).promise;state.viewer.pdfDocs[f.id]=doc;}
     const page=await doc.getPage(pageNo);
     const base=page.getViewport({scale:1});
-    const scale=Math.min(2.5, 2000/Math.max(base.width,base.height));
+    // Cap the long edge at ~1500px: readable for schedule tables, but small
+    // enough that a Sonnet-5 extraction fits Netlify's ~26s sync-function limit.
+    const scale=Math.min(2.0, 1500/Math.max(base.width,base.height));
     const vp=page.getViewport({scale});
     const cv=document.createElement('canvas'); cv.width=Math.ceil(vp.width); cv.height=Math.ceil(vp.height);
     await page.render({canvasContext:cv.getContext('2d',{alpha:false}),viewport:vp}).promise;
