@@ -69,6 +69,11 @@ export default async function handler(req) {
     const response = await client.messages.create({
       model: MODEL,
       max_tokens: 12000,
+      // Structured extraction, not reasoning — disable thinking. Sonnet 5 runs
+      // adaptive thinking by DEFAULT when this is omitted, which pushed the call
+      // past Netlify's ~30s sync limit (measured 30s → 502). Disabling it drops
+      // latency to well within budget with no loss on this transcription task.
+      thinking: { type: 'disabled' },
       system: [{ type: 'text', text: EXTRACTION_SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
       output_config: { format: { type: 'json_schema', schema: EXTRACTION_SCHEMA } },
       messages: [{ role: 'user', content }],
