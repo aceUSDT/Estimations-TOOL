@@ -148,6 +148,7 @@
   .dropzone{border:2px dashed var(--line2);border-radius:12px;background:#fbfcfe;padding:26px 18px;
     text-align:center;cursor:pointer;margin-bottom:16px;transition:.12s;}
   .dropzone:hover,.dropzone.over{border-color:var(--blue);background:var(--blue-soft);}
+  #pt-docs.dz-over{outline:2px dashed var(--blue);outline-offset:-4px;border-radius:12px;}
   .dropzone h3{font-size:14px;font-weight:800;}
   .dropzone p{color:var(--txt2);font-size:12px;margin-top:4px;}
   .dropzone p b{color:var(--blue);}
@@ -552,6 +553,10 @@
 
     <!-- ==== REVIEW ==== -->
     <div class="subview" id="pt-review">
+      <div class="panel" id="xrefPanel" style="margin-bottom:16px;display:none">
+        <div class="p-head">Schematic ↔ schedule cross-reference <span class="sub">links a board named in a schematic to its board-schedule counterpart and checks rating/cable agree</span></div>
+        <div id="xrefList"></div>
+      </div>
       <div class="panel">
         <div class="p-head">Review queue <span class="sub">uncertain results are never silently accepted</span></div>
         <div id="reviewList"><div class="empty"><div class="ico">✓</div>Nothing to review.</div></div>
@@ -1499,9 +1504,14 @@ async function handleFiles(list){
 $('#fileInput').addEventListener('change', e=>{ handleFiles(e.target.files); e.target.value=''; });
 const dz=$('#dropzone');
 dz.addEventListener('click', ()=>$('#fileInput').click());
-['dragover','dragenter'].forEach(ev=>dz.addEventListener(ev,e=>{e.preventDefault();dz.classList.add('over');}));
-['dragleave','drop'].forEach(ev=>dz.addEventListener(ev,e=>{e.preventDefault();dz.classList.remove('over');}));
-dz.addEventListener('drop', e=>{ if(e.dataTransfer&&e.dataTransfer.files.length) handleFiles(e.dataTransfer.files); });
+/* §5.3 — drop-anywhere: a drop anywhere on the Documents page captures files, not just the dz box. */
+const docsPage=$('#pt-docs');
+['dragover','dragenter'].forEach(ev=>docsPage.addEventListener(ev,e=>{e.preventDefault();docsPage.classList.add('dz-over');dz.classList.add('over');}));
+['dragleave','drop'].forEach(ev=>docsPage.addEventListener(ev,e=>{e.preventDefault();docsPage.classList.remove('dz-over');dz.classList.remove('over');}));
+docsPage.addEventListener('drop', e=>{ if(e.dataTransfer&&e.dataTransfer.files.length) handleFiles(e.dataTransfer.files); });
+/* safety net: swallow drops anywhere else in the app so the browser never navigates away to the dropped file */
+window.addEventListener('dragover', e=>e.preventDefault());
+window.addEventListener('drop', e=>{ if(!docsPage.contains(e.target)) e.preventDefault(); });
 
 /* ============================ DOCS TABLE ============================ */
 function docTypeLabel(f){
@@ -1852,6 +1862,8 @@ async function runAnalysis(opts){
     }
     A.coverage = window.EstimationExtractorCore.buildCoverage({boards:A.boards, rows:A.rows, pages:covPages});
   }
+  // §5.3 — schematic ↔ DB-schedule cross-referencing (deterministic code, not the model).
+  A.discrepancies = buildCrossReference(A, p, prev&&prev.discrepancies);
   p.analysis=A;
   if(window.EstimationExtractorCore&&(p.assistedMarkups||[]).length){
     p.assistedMarkups.forEach(m=>{
@@ -2275,9 +2287,114 @@ function renderBoards(){
   }));
 }
 
+/* ============================ §5.3 — SCHEMATIC ↔ SCHEDULE CROSS-REFERENCE ============================ */
+/* Deterministic code, not the model ("AI extracts, code computes"). Links a board named in a
+   schematic to its board-schedule counterpart and confirms the input→output relationship
+   (incomer rating, incoming cable) is consistent between the two documents — or flags it for
+   the user to resolve. Never auto-merges boards; a mismatch is surfaced, not silently picked. */
+function boardOriginTypes(b,p){
+  const set=new Set();
+  (b.pages||[]).forEach(x=>{
+    const f=p.files.find(y=>y.id===x.fileId); const pg=f&&f.pages&&f.pages[x.page-1];
+    if(pg) set.add(pageThreeType(pg));
+  });
+  return set;
+}
+function refsFuzzyMatch(a,b){
+  if(!a||!b) return false;
+  if(a===b) return true;
+  if(Math.abs(a.length-b.length)>2) return false;
+  const shorter=a.length<=b.length?a:b, longer=a.length<=b.length?b:a;
+  return longer.startsWith(shorter) && (longer.length-shorter.length)<=2;
+}
+function buildCrossReference(A,p,prev){
+  const prevById={}; (prev||[]).forEach(d=>{ prevById[d.id]=d; });
+  const withOrigin=Object.values(A.boards).map(b=>({b, origins:boardOriginTypes(b,p)}));
+  const schematicBoards=withOrigin.filter(x=>x.origins.has('schematic'));
+  const scheduleBoards=withOrigin.filter(x=>x.origins.has('db_schedule'));
+  if(!schematicBoards.length || !scheduleBoards.length) return [];   // nothing to cross-reference yet
+  const carry=id=>{ const pv=prevById[id]; return pv?{status:pv.status,chosenSource:pv.chosenSource||null}:{status:'open',chosenSource:null}; };
+  const out=[];
+  const usedSchedule=new Set();
+  schematicBoards.forEach(({b:sb})=>{
+    let match = scheduleBoards.find(x=>x.b.norm===sb.norm && !usedSchedule.has(x.b.norm));
+    if(!match) match = scheduleBoards.find(x=>refsFuzzyMatch(sb.norm,x.b.norm) && !usedSchedule.has(x.b.norm));
+    if(!match){
+      const id='missing|'+sb.norm;
+      out.push({id, kind:'missing_schedule', schematicNorm:sb.norm, scheduleNorm:null,
+        message:`${sb.orig} appears in a schematic but no matching board schedule was found.`,
+        severity:'medium', ...carry(id)});
+      return;
+    }
+    usedSchedule.add(match.b.norm);
+    const scb=match.b, h=scb.header||{};
+    const feed=A.feeders.find(f=>f.to===scb.norm||f.to===sb.norm);
+    if (feed && feed.rating!=null && h.incomer_rating_a!=null && h.incomer_rating_a!==''){
+      const same=Number(feed.rating)===Number(h.incomer_rating_a);
+      const id='rating|'+sb.norm+'|'+scb.norm;
+      out.push({id, kind:'rating', schematicNorm:sb.norm, scheduleNorm:scb.norm,
+        message: same? `${sb.orig} ↔ ${scb.orig}: incomer rating consistent (${feed.rating}A).`
+                      : `${sb.orig} ↔ ${scb.orig}: rating mismatch — schematic feed shows ${feed.rating}A, schedule incomer shows ${h.incomer_rating_a}A.`,
+        severity: same?'info':'high', detail:{schematicRating:feed.rating, scheduleRating:h.incomer_rating_a},
+        ...(same?{status:'resolved',chosenSource:null}:carry(id))});
+    }
+    if (feed && feed.cable && feed.cable.ref){
+      const ref=String(feed.cable.ref).toUpperCase();
+      const hay=[h.description,h.board_type_text,h.serving].filter(Boolean).join(' ').toUpperCase();
+      const found=hay.includes(ref);
+      const id='cable|'+sb.norm+'|'+scb.norm;
+      out.push({id, kind:'cable', schematicNorm:sb.norm, scheduleNorm:scb.norm,
+        message: found? `${sb.orig} ↔ ${scb.orig}: incoming cable ${feed.cable.ref} confirmed on the schedule.`
+                       : `${sb.orig} ↔ ${scb.orig}: schematic cites incoming cable ${feed.cable.ref}; not confirmed in the schedule text.`,
+        severity: found?'info':'low',
+        ...(found?{status:'resolved',chosenSource:null}:carry(id))});
+    }
+    const linkId='linked|'+sb.norm+'|'+scb.norm;
+    out.push({id:linkId, kind:'linked', schematicNorm:sb.norm, scheduleNorm:scb.norm,
+      message:`${sb.orig} (schematic) linked to ${scb.orig} (schedule).`, severity:'info',
+      status:'resolved', chosenSource:null});
+  });
+  return out;
+}
+
 /* ============================ REVIEW TAB ============================ */
+function renderXref(){
+  const p=state.cur; if(!p) return;
+  const panel=$('#xrefPanel'), host=$('#xrefList');
+  const A=p.analysis;
+  const items=A&&A.discrepancies||[];
+  if (!items.length){ panel.style.display='none'; return; }
+  panel.style.display='';
+  host.innerHTML='';
+  const sevBg={high:'var(--red-soft)',medium:'var(--amber-soft)',low:'var(--amber-soft)',info:'var(--green-soft)'};
+  const sevIcon={high:'✕',medium:'⚠',low:'⚠',info:'✓'};
+  [...items].sort((a,b)=>(a.status==='open'?0:1)-(b.status==='open'?0:1)).forEach(d=>{
+    const div=document.createElement('div'); div.className='rev-item';
+    const open=d.status==='open';
+    div.innerHTML=`<div class="ric" style="background:${sevBg[d.severity]||sevBg.info}">${sevIcon[d.severity]||'•'}</div>
+      <div style="flex:1"><h4>${esc(d.message)}</h4>
+      ${d.chosenSource?`<div class="hint">Resolved — kept ${esc(d.chosenSource)} value.</div>`:''}</div>
+      <div class="racts">${open&&d.kind==='rating'?`
+          <button class="btn sm" data-a="use-schematic">Use schematic (${d.detail.schematicRating}A)</button>
+          <button class="btn sm" data-a="use-schedule">Use schedule (${d.detail.scheduleRating}A)</button>
+          <button class="btn sm ghost" data-a="ack">Acknowledge</button>`
+        : open?`<button class="btn sm ghost" data-a="ack">Acknowledge</button>`:''}</div>`;
+    div.querySelectorAll('[data-a]').forEach(btn=>btn.addEventListener('click',()=>{
+      const a=btn.dataset.a;
+      d.status='resolved';
+      d.chosenSource = a==='use-schematic'?'schematic': a==='use-schedule'?'schedule':'acknowledged';
+      if (a==='use-schematic'&&d.scheduleNorm&&A.boards[d.scheduleNorm]){
+        A.boards[d.scheduleNorm].header=A.boards[d.scheduleNorm].header||{};
+        A.boards[d.scheduleNorm].header.incomer_rating_a=d.detail.schematicRating;
+      }
+      renderXref(); renderTakeoff(); saveProject(p); toast('Discrepancy resolved');
+    }));
+    host.appendChild(div);
+  });
+}
 function renderReview(){
   const p=state.cur; if(!p) return;
+  renderXref();
   const host=$('#reviewList');
   const A=p.analysis;
   if (!A){ host.innerHTML='<div class="empty"><div class="ico">✓</div>Nothing to review.</div>'; return; }
