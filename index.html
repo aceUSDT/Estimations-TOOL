@@ -1834,7 +1834,9 @@ async function runAnalysis(opts){
   // Workstream 0 §0.0 — genuine AI extraction across all dialects + schematics
   // (regex pass above stays as the fast pre-pass; AI rows go to review, never
   // overriding a slot the schedule parser already filled).
-  try{ await runAiExtraction(A, f, p, pageSet); }catch(e){ console.warn('AI extraction unavailable:', e.message); }
+  if (!(opts&&opts.noAi)){
+    try{ await runAiExtraction(A, f, p, pageSet); }catch(e){ console.warn('AI extraction unavailable:', e.message); }
+  }
   A.feeders.forEach(fd=>{
     if (!fd.to) return;
     const child=A.boards[fd.to];
@@ -1863,7 +1865,8 @@ async function runAnalysis(opts){
     A.coverage = window.EstimationExtractorCore.buildCoverage({boards:A.boards, rows:A.rows, pages:covPages});
   }
   // §5.3 — schematic ↔ DB-schedule cross-referencing (deterministic code, not the model).
-  A.discrepancies = buildCrossReference(A, p, prev&&prev.discrepancies);
+  try{ A.discrepancies = buildCrossReference(A, p, prev&&prev.discrepancies); }
+  catch(e){ console.warn('cross-reference skipped:', e.message); A.discrepancies=[]; }
   p.analysis=A;
   if(window.EstimationExtractorCore&&(p.assistedMarkups||[]).length){
     p.assistedMarkups.forEach(m=>{
@@ -3117,21 +3120,34 @@ async function boot(){
   $('#storeChip').className = 'chip '+(ok?'cyan':'amber');
   let stored=[];
   try{ stored=await loadProjects(); }catch(e){}
+  let seeded=null;
   if (stored.length){
     stored.forEach(rec=>state.projects.push(rec));
     // restore max id counter
     state.nextId += state.projects.length*50;
   } else {
-    const seeded=seedDemo();
-    for (const p of seeded){
-      state.cur=p;
-      await runAnalysis({auto:true});
-    }
-    state.cur=null;
-    seeded.forEach(p=>saveProject(p));
+    seeded=seedDemo();                 // synchronous: just creates the project objects
+    seeded.forEach(p=>saveProject(p)); // persist immediately so a reload keeps them
   }
+  // Paint the Projects home NOW — the first render must never wait on document
+  // analysis (which can take minutes on the network AI path). Blank-page fix.
   renderProjects();
   show('home');
+  // Analyse the demo fixtures in the background, regex-only (no slow network AI
+  // call for throwaway samples), and re-render as each finishes. Never blocks boot,
+  // and yields to the user the moment they open a project.
+  if (seeded){
+    (async()=>{
+      for (const p of seeded){
+        if (state.cur) break;          // user has navigated into a project — don't fight them
+        state.cur=p;
+        try{ await runAnalysis({auto:true, noAi:true}); }catch(e){ console.warn('demo analysis skipped:', e.message); }
+        if (state.cur===p) state.cur=null;
+        saveProject(p);
+        if (!state.cur) renderProjects();
+      }
+    })();
+  }
 }
 boot();
 
