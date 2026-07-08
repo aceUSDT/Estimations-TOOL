@@ -13,7 +13,7 @@ const PACK = path.resolve(HERE, '../../netlify/functions/lib/domain-pack.mjs');
 delete process.env.ANTHROPIC_API_KEY;
 delete process.env.ANTHROPIC_AUTH_TOKEN;
 const { default: handler } = await import(FN);
-const { EXTRACTION_SCHEMA, EXTRACTION_SYSTEM_PROMPT } = await import(PACK);
+const { EXTRACTION_SCHEMA, EXTRACTION_SYSTEM_PROMPT, coerceResult } = await import(PACK);
 
 let fail = 0;
 const check = (name, cond, detail) => {
@@ -44,6 +44,31 @@ delete process.env.ANTHROPIC_API_KEY;
 
 /* schema sanity: structured outputs demands additionalProperties:false and
  * required listing every property, recursively */
+// The Messages API rejects >~32 union/array-typed params: assert we stay clear.
+let unionCount = 0;
+(function countUnions(s) {
+  if (!s || typeof s !== 'object') return;
+  if (s.anyOf || Array.isArray(s.type)) unionCount++;
+  if (s.properties) Object.values(s.properties).forEach(countUnions);
+  if (s.items) countUnions(s.items);
+})(EXTRACTION_SCHEMA);
+check('schema has no union-typed params (API compilation limit)', unionCount === 0, `found ${unionCount}`);
+
+// coerceResult turns the model's all-string output back into numbers/null
+const co = coerceResult({
+  classification: { type: 'db_schedule', sub_format: 'bam_epo', confidence: '0.9' },
+  boards: [{ ref: 'DB-00-08P', ways_total: '18', incomer_rating_a: '160', fault_ka: '', confidence: '0.95' }],
+  devices: [{ board_ref: 'DB-00-08P', way: '13', rating_a: '32', cpc_csa_mm2: 'SWA', phase_csa_mm2: '6', confidence: '0.9', is_spare: false }],
+  feeds: [{ to_ref: 'DB-00-08P', cable_csa_mm2: '70', cable_cpc_mm2: '', rating_a: '160', confidence: '0.8' }],
+  flags: [],
+});
+check('coerce: ways_total "18" → 18', co.boards[0].ways_total === 18);
+check('coerce: empty "" → null', co.boards[0].fault_ka === null);
+check('coerce: device way "13" → 13', co.devices[0].way === 13);
+check('coerce: cpc "SWA" stays string', co.devices[0].cpc_csa_mm2 === 'SWA');
+check('coerce: feed cable_csa "70" → 70', co.feeds[0].cable_csa_mm2 === 70);
+check('coerce: booleans untouched', co.devices[0].is_spare === false);
+
 function walk(schema, where) {
   if (schema.anyOf) { schema.anyOf.forEach((s) => walk(s, where)); return; }
   if (schema.type === 'object') {
