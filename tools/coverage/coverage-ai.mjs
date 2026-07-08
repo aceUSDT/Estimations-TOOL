@@ -78,11 +78,19 @@ async function extractPage(slug, filename, pg) {
     job_id: jobId, filename, page_number: pg.page, image_base64, media_type: pg.mediaType || 'image/png',
     text_lines: pg.lines.slice(0, 400), hints: { type: pg.type },
   });
-  const enq = await fetch(BG_ENDPOINT, { method: 'POST', headers: { 'content-type': 'application/json' }, body });
-  if (!enq.ok && enq.status !== 202) {
+  // Enqueue, retrying transient errors (500/502/503 — often a cold container).
+  let enqueued = false;
+  for (let a = 0; a < 3 && !enqueued; a++) {
+    if (a) await sleep(3000 * a);
+    let enq;
+    try { enq = await fetch(BG_ENDPOINT, { method: 'POST', headers: { 'content-type': 'application/json' }, body }); }
+    catch (e) { if (a === 2) throw e; continue; }
+    if (enq.ok || enq.status === 202) { enqueued = true; break; }
+    if (enq.status === 500 || enq.status === 502 || enq.status === 503) continue;
     const err = await enq.json().catch(() => ({}));
     throw new Error(`enqueue HTTP ${enq.status}: ${err.error || ''}`);
   }
+  if (!enqueued) throw new Error('enqueue failed after retries (transient 5xx)');
   for (let i = 0; i < 90; i++) {            // poll up to ~4 min
     await sleep(2500);
     let s;
@@ -198,15 +206,17 @@ for (const doc of docs) {
 }
 
 /* ---- write report ---- */
+let healthModel = 'unknown';
+try { healthModel = (await (await fetch(ENDPOINT)).json()).model || 'unknown'; } catch { /* ignore */ }
 fs.mkdirSync(REPORTS, { recursive: true });
-fs.writeFileSync(path.join(REPORTS, 'coverage-ai.json'), JSON.stringify({ endpoint: ENDPOINT, generated: new Date().toISOString(), results }, null, 2));
+fs.writeFileSync(path.join(REPORTS, 'coverage-ai.json'), JSON.stringify({ endpoint: ENDPOINT, model: healthModel, generated: new Date().toISOString(), results }, null, 2));
 
 const pctStr = (v) => (v == null ? '—' : v + '%');
 const gtStr = (g) => (g == null ? '—' : g.pass ? '✅' : '❌');
 let md = `# AI-active vs regex-only recall — deployed endpoint
 
 Generated ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC.
-Endpoint: \`${ENDPOINT}\` (health: \`configured:true\`, model \`claude-opus-4-8\`).
+Endpoint: \`${ENDPOINT}\` (background function + polling; model \`${healthModel}\`).
 Scope: ${runAll ? 'full corpus' : 'ground-truth anchor set (§0.5)'} — ${results.length} document(s), ${totalPagesSent} page(s) sent to the model${totalErrors ? `, ${totalErrors} page error(s)` : ''}.
 
 **Method.** Regex-only = the deployed app's inline pipeline (\`extractor-core.js\` + verbatim

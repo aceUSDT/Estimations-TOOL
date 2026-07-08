@@ -1,0 +1,170 @@
+{
+  "endpoint": "https://estimationtoolz.netlify.app/.netlify/functions/extract",
+  "generated": "2026-07-08T10:36:45.498Z",
+  "results": [
+    {
+      "file": "consumer-units/Dundee_CU-Circuit-Chart.pdf",
+      "pages": 5,
+      "sent": 5,
+      "errs": 0,
+      "regex": {
+        "boards": 0,
+        "waySlots": 0,
+        "rows": 0,
+        "pct": null,
+        "gt": {
+          "pass": false,
+          "checks": [
+            {
+              "name": "boards_expected (3)",
+              "pass": false,
+              "detail": "missing 3: CU General Apartment, CU Cluster Bedroom, CU Cluster Kitchen"
+            },
+            {
+              "name": "min_boards ≥ 3",
+              "pass": false,
+              "detail": "got 0"
+            }
+          ]
+        }
+      },
+      "ai": {
+        "boards": 3,
+        "waySlots": 24,
+        "rows": 27,
+        "pct": null,
+        "gt": {
+          "pass": false,
+          "checks": [
+            {
+              "name": "boards_expected (3)",
+              "pass": false,
+              "detail": "missing 3: CU General Apartment, CU Cluster Bedroom, CU Cluster Kitchen"
+            },
+            {
+              "name": "min_boards ≥ 3",
+              "pass": true,
+              "detail": "got 3"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "file": "db-schedules/syntegral/25057_DB-Schedules_RevC02.pdf",
+      "pages": 13,
+      "sent": 13,
+      "errs": 0,
+      "regex": {
+        "boards": 5,
+        "waySlots": 1,
+        "rows": 1,
+        "pct": null,
+        "gt": {
+          "pass": false,
+          "checks": [
+            {
+              "name": "boards_expected (2)",
+              "pass": true,
+              "detail": "all found"
+            },
+            {
+              "name": "min_boards ≥ 10",
+              "pass": false,
+              "detail": "got 5"
+            },
+            {
+              "name": "DB-MECH: 18 ways",
+              "pass": false,
+              "detail": "captured 1"
+            },
+            {
+              "name": "DB-AV: 12 ways",
+              "pass": false,
+              "detail": "captured 0"
+            }
+          ]
+        }
+      },
+      "ai": {
+        "boards": 5,
+        "waySlots": 51,
+        "rows": 210,
+        "pct": 77,
+        "gt": {
+          "pass": false,
+          "checks": [
+            {
+              "name": "boards_expected (2)",
+              "pass": true,
+              "detail": "all found"
+            },
+            {
+              "name": "min_boards ≥ 10",
+              "pass": false,
+              "detail": "got 5"
+            },
+            {
+              "name": "DB-MECH: 18 ways",
+              "pass": true,
+              "detail": "captured 18"
+            },
+            {
+              "name": "DB-AV: 12 ways",
+              "pass": false,
+              "detail": "captured 3"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "file": "schematics/SRP1053-NB1-NB2_LV-Schematic_cable-sizes.pdf",
+      "pages": 1,
+      "sent": 0,
+      "errs": 1,
+      "regex": {
+        "boards": 0,
+        "waySlots": 0,
+        "rows": 0,
+        "pct": null,
+        "gt": {
+          "pass": false,
+          "checks": [
+            {
+              "name": "boards_expected (19)",
+              "pass": false,
+              "detail": "missing 19: DB-00-08, DB-00-09, DB-00-10, DB-00-11, DB-00-12, DB-00-13…"
+            },
+            {
+              "name": "min_boards ≥ 19",
+              "pass": false,
+              "detail": "got 0"
+            }
+          ]
+        }
+      },
+      "ai": {
+        "boards": 0,
+        "waySlots": 0,
+        "rows": 0,
+        "pct": null,
+        "gt": {
+          "pass": false,
+          "checks": [
+            {
+              "name": "boards_expected (19)",
+              "pass": false,
+              "detail": "missing 19: DB-00-08, DB-00-09, DB-00-10, DB-00-11, DB-00-12, DB-00-13…"
+            },
+            {
+              "name": "min_boards ≥ 19",
+              "pass": false,
+              "detail": "got 0"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}
