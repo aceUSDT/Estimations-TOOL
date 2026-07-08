@@ -66,25 +66,32 @@ function loadPages(slug) {
 }
 
 /* ---- POST one page to the deployed endpoint (front-end request shape) ---- */
+const BG_ENDPOINT = ENDPOINT.replace(/\/extract$/, '/extract-background');
+const STATUS_ENDPOINT = ENDPOINT.replace(/\/extract$/, '/extract-status');
+
+/* Enqueue on the background function (no 30s ceiling), then poll the status
+ * endpoint for the result written to the blob store — mirrors the front-end. */
 async function extractPage(slug, filename, pg) {
   const image_base64 = pg.png ? fs.readFileSync(pg.png).toString('base64') : null;
+  const jobId = `${slug}-p${pg.page}-${Date.now()}`;
   const body = JSON.stringify({
-    filename, page_number: pg.page, image_base64, media_type: pg.mediaType || 'image/png',
+    job_id: jobId, filename, page_number: pg.page, image_base64, media_type: pg.mediaType || 'image/png',
     text_lines: pg.lines.slice(0, 400), hints: { type: pg.type },
   });
-  // Retry only transient states (429/503). A 502 here is a function TIMEOUT —
-  // retrying just times out again, so treat it as a hard page error.
-  for (let attempt = 0; attempt < 3; attempt++) {
-    let r;
-    try { r = await fetch(ENDPOINT, { method: 'POST', headers: { 'content-type': 'application/json' }, body }); }
-    catch (e) { if (attempt === 2) throw e; await sleep(2000 * (attempt + 1)); continue; }
-    if (r.ok) return (await r.json()).result;
-    if (r.status === 429 || r.status === 503) { await sleep(3000 * (attempt + 1)); continue; }
-    if (r.status === 502) throw new Error('502 (function timeout — page too dense for the sync budget)');
-    const err = await r.json().catch(() => ({}));
-    throw new Error(`HTTP ${r.status}: ${err.error || ''}`);
+  const enq = await fetch(BG_ENDPOINT, { method: 'POST', headers: { 'content-type': 'application/json' }, body });
+  if (!enq.ok && enq.status !== 202) {
+    const err = await enq.json().catch(() => ({}));
+    throw new Error(`enqueue HTTP ${enq.status}: ${err.error || ''}`);
   }
-  throw new Error('exhausted retries');
+  for (let i = 0; i < 90; i++) {            // poll up to ~4 min
+    await sleep(2500);
+    let s;
+    try { s = await (await fetch(`${STATUS_ENDPOINT}?id=${encodeURIComponent(jobId)}`)).json(); }
+    catch (e) { continue; }
+    if (s.status === 'done') return s.result;
+    if (s.status === 'error') throw new Error(s.error || 'extraction failed');
+  }
+  throw new Error('timed out waiting for background result (>4min)');
 }
 const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
 

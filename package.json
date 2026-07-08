@@ -4,7 +4,8 @@
   "description": "Estimation 101 — Electrical Document Intelligence (static SPA + Netlify functions)",
   "type": "module",
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.39.0"
+    "@anthropic-ai/sdk": "^0.39.0",
+    "@netlify/blobs": "^8.1.0"
   },
   "scripts": {
     "dev": "python3 -m http.server 8765 --bind 127.0.0.1",
