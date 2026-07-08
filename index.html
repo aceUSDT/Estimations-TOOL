@@ -162,6 +162,13 @@
   /* analysis tab */
   .an-layout{display:grid;grid-template-columns:330px 1fr;gap:16px;align-items:start;}
   @media(max-width:980px){.an-layout{grid-template-columns:1fr;}}
+  .bd-explorer{display:grid;grid-template-columns:minmax(260px,320px) 1fr;gap:14px;align-items:start;}
+  @media(max-width:1200px){.bd-explorer{grid-template-columns:1fr;}}
+  .bd-hdr{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;padding:14px 18px;border-bottom:1px solid var(--line);}
+  .bd-hdr .k{font-size:10.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--txt3);font-weight:700;}
+  .bd-hdr .v{font-size:13px;font-weight:600;margin-top:2px;}
+  .tree .trow.sel{outline:2px solid var(--blue);}
+  #boardBody tr.sel td{background:var(--blue-soft,#eaf2ff);}
   .fgroup{margin-bottom:16px;}
   .fgroup:last-child{margin-bottom:0;}
   .check-row{display:flex;align-items:center;gap:8px;padding:4px 1px;font-size:12.5px;cursor:pointer;color:var(--txt2);}
@@ -366,8 +373,7 @@
     <div class="ptabs">
       <button class="ptab active" data-pt="docs">Documents <span class="badge" id="bDocs">0</span></button>
       <button class="ptab" data-pt="viewer">Viewer</button>
-      <button class="ptab" data-pt="analysis">Devices <span class="badge" id="bDev">0</span></button>
-      <button class="ptab" data-pt="boards">Boards <span class="badge" id="bBoards">0</span></button>
+      <button class="ptab" data-pt="analysis">Boards &amp; Devices <span class="badge" id="bBoards" title="boards">0</span><span class="badge" id="bDev" title="devices">0</span></button>
       <button class="ptab" data-pt="review">Review <span class="badge" id="bRev">0</span></button>
       <button class="ptab" data-pt="compare">Compare</button>
     </div>
@@ -502,38 +508,45 @@
           </div>
         </div>
 
-        <div class="panel">
-          <div class="sumchips" id="anSummary"></div>
-          <div style="display:flex;gap:8px;align-items:center;padding:11px 18px;border-bottom:1px solid var(--line);flex-wrap:wrap">
-            <span style="font-weight:800;font-size:13px">Device totals by board</span>
-            <button class="btn sm" id="bulkApproveBtn" style="margin-left:auto">✓ Approve all high-confidence</button>
-            <button class="btn sm" id="addManualBtn">+ Add manually</button>
-            <button class="btn sm" id="expCsvBtn">⤓ CSV</button>
-            <button class="btn sm" id="expXlsxBtn">⤓ XLSX</button>
+        <div>
+          <div class="panel" style="margin-bottom:14px">
+            <div class="sumchips" id="anSummary"></div>
+            <div style="display:flex;gap:8px;align-items:center;padding:11px 18px;flex-wrap:wrap">
+              <span style="font-weight:800;font-size:13px">Take-off</span>
+              <span class="sub" style="margin-left:2px">roll-up across all boards — select a board to drill in</span>
+              <button class="btn sm" id="bulkApproveBtn" style="margin-left:auto">✓ Approve all high-confidence</button>
+              <button class="btn sm" id="addManualBtn">+ Add manually</button>
+              <button class="btn sm" id="expCsvBtn">⤓ CSV</button>
+              <button class="btn sm" id="expXlsxBtn">⤓ XLSX</button>
+            </div>
           </div>
-          <div id="resBoards"><div class="empty"><div class="ico">▦</div>No results yet — press <b>Count devices</b>.</div></div>
-        </div>
-      </div>
-    </div>
 
-    <!-- ==== BOARDS ==== -->
-    <div class="subview" id="pt-boards">
-      <div class="panel" style="margin-bottom:16px">
-        <div class="p-head">Board hierarchy <span class="sub">supply relationships extracted from schematics — correct the parent if wrong</span></div>
-        <div class="p-body"><div class="tree" id="boardTree"><div class="empty">Run analysis to map board relationships.</div></div></div>
-      </div>
-      <div class="panel" style="margin-bottom:16px">
-        <div class="p-head">Detected boards</div>
-        <div style="overflow-x:auto"><table class="t">
-          <thead><tr><th>Board</th><th>Normalised</th><th>Type</th><th>Supplied from</th>
-          <th class="num">Devices</th><th>Source</th><th>Confidence</th></tr></thead>
-          <tbody id="boardBody"></tbody>
-        </table></div>
-        <div class="empty" id="boardEmpty">No boards detected yet.</div>
-      </div>
-      <div class="panel">
-        <div class="p-head">Possible duplicate boards <span class="sub">never merged automatically</span></div>
-        <div id="dupeList"><div class="empty">No possible duplicates found.</div></div>
+          <div class="bd-explorer">
+            <!-- LEFT: board list + feed hierarchy -->
+            <div>
+              <div class="panel" style="margin-bottom:14px">
+                <div class="p-head">Boards &amp; feed hierarchy <span class="sub">supply relationships from schematics — select a board</span></div>
+                <div class="p-body"><div class="tree" id="boardTree"><div class="empty">Run analysis to map board relationships.</div></div></div>
+                <div style="overflow-x:auto;border-top:1px solid var(--line)"><table class="t">
+                  <thead><tr><th>Board</th><th>Type</th><th>Supplied from</th><th class="num">Devices</th><th>Conf.</th></tr></thead>
+                  <tbody id="boardBody"></tbody>
+                </table></div>
+                <div class="empty" id="boardEmpty">No boards detected yet.</div>
+              </div>
+              <div class="panel">
+                <div class="p-head">Possible duplicate boards <span class="sub">never merged automatically</span></div>
+                <div id="dupeList"><div class="empty">No possible duplicates found.</div></div>
+              </div>
+            </div>
+
+            <!-- RIGHT: roll-up (default) OR selected board's header + device table -->
+            <div class="panel">
+              <div class="p-head" id="bdDetailHead">Device totals by board <span class="sub">all boards — select one on the left to drill in</span></div>
+              <div id="boardDetail" style="display:none"></div>
+              <div id="resBoards"><div class="empty"><div class="ico">▦</div>No results yet — press <b>Count devices</b>.</div></div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -674,6 +687,7 @@ const state = {
   cur: null,           // current project
   nextId: 1,
   viewer: {fileId:null, page:1, zoom:1, rot:0, pdfDocs:{}, assist:{enabled:false,boardNorm:null,seed:null,results:[]}},
+  selectedBoard: null,  // §5.4 — board selected in the merged Boards & Devices page ('__none__' = unassigned rows), null = roll-up
 };
 const uid = () => 'x'+(state.nextId++)+'_'+Math.random().toString(36).slice(2,6);
 
@@ -767,6 +781,16 @@ const PAGE_TYPES = {
   'cable-schedule':'Cable schedule','equipment-schedule':'Equipment schedule',
   'spec':'Specification','notes':'General electrical notes','unknown':'Unknown electrical page',
 };
+/* WS5.1 — the product taxonomy is exactly three classes. The fine PAGE_TYPES above
+   stay as internal routing signal (stored per page as `sub_format`); every page also
+   carries a coarse `threeType` shown in the UI. `other` = a page with no take-off value
+   (cover/register/legend/plan/notes) — kept out of extraction, never silently dropped. */
+const THREE_TYPE_LABELS = { schematic:'Schematic', db_schedule:'Distribution Board Schedule', specification:'Specification', other:'Other / not applicable' };
+const toThreeType = (window.EstimationExtractorCore && window.EstimationExtractorCore.toThreeType)
+  || (t => { const m={sld:'schematic',schematic:'schematic','db-schedule':'db_schedule','main-schedule':'db_schedule','cable-schedule':'db_schedule','equipment-schedule':'db_schedule',spec:'specification',specification:'specification'}; return m[String(t||'').toLowerCase()]||'other'; });
+/* representative fine type to restore extraction routing when the user overrides the coarse type */
+const THREE_TO_FINE = { schematic:'schematic', db_schedule:'db-schedule', specification:'spec', other:'unknown' };
+const pageThreeType = pg => pg.threeType || (pg.threeType = toThreeType(pg.type));
 const BOARD_TYPES = {
   MAIN:'Main LV panel', MDB:'Main distribution board', MCC:'Motor-control centre',
   SMDB:'Sub-main distribution board', DB:'Distribution board', LDB:'Lighting board',
@@ -1025,10 +1049,11 @@ function show(view){
   $('#crumb').innerHTML = view==='home' ? '<b>Projects</b>' : ('Projects <span style="opacity:.5">/</span> <b>'+esc(state.cur?state.cur.name:'')+'</b>');
 }
 function setTab(name){
+  if (name==='boards') name='analysis';   // §5.4 — Boards merged into the Boards & Devices page
   $$('.ptab').forEach(t=>t.classList.toggle('active', t.dataset.pt===name));
   $$('#projView .subview').forEach(p=>p.classList.toggle('active', p.id==='pt-'+name));
   if (name==='viewer') renderViewer();
-  if (name==='boards') renderBoards();
+  if (name==='analysis') renderTakeoff();
   if (name==='review') renderReview();
   if (name==='compare') renderCompareSel();
 }
@@ -1130,6 +1155,7 @@ function openProject(id){
   show('proj');
   $('#projTitle').textContent=state.cur.name;
   state.viewer={fileId:null,page:1,zoom:1,rot:0,pdfDocs:state.viewer.pdfDocs,assist:{enabled:false,boardNorm:null,seed:null,results:[]}};
+  state.selectedBoard=null;
   renderProjHeader(); renderDocs(); renderPgclass(); renderAnalysisControls(); renderResults();
   setTab('docs');
 }
@@ -1218,7 +1244,8 @@ async function ocrPdfPage(f,pageNo,{reanalyze=true,quiet=false}={}){
     pg.lines=lines;pg.w=base.width;pg.h=base.height;
     pg.ocr={status:'done',confidence:result.data.confidence??null,at:new Date().toISOString()};
     const c=classifyPage(lines.map(l=>l.text).join('\n'),pageNo-1,f.pages.length);
-    pg.type=c.type;pg.conf=c.conf;
+    if(!pg.typeManual){ pg.type=c.type;pg.conf=c.conf;pg.sub_format=c.type;pg.threeType=toThreeType(c.type); }
+    pg.source='ocr';
     f.ocrReady=true;
     const remaining=f.pages.filter(x=>!(x.lines||[]).length).length;
     f.warn=remaining?`${remaining} scanned page${remaining===1?'':'s'} still need OCR.`:null;
@@ -1453,10 +1480,13 @@ async function ingestFile(file){
 function classifyFilePages(f){
   const tot=f.pages.length;
   f.pages.forEach((pg,i)=>{
-    if (pg.typeManual) return;
+    pg.source = pg.ocr ? 'ocr' : (f.native ? 'native_text' : 'ocr');   // §5.1 provenance
+    if (pg.typeManual){ pg.threeType = pg.threeType || toThreeType(pg.type); return; }
     const text=pg.lines.map(l=>l.text).join('\n');
     const c=classifyPage(text,i,tot);
     pg.type=c.type; pg.conf=c.conf;
+    pg.sub_format=c.type;               // §5.1 fine-grained tag kept for routing/insight
+    pg.threeType=toThreeType(c.type);   // §5.1 coarse three-type shown in the UI
   });
 }
 async function handleFiles(list){
@@ -1477,9 +1507,11 @@ dz.addEventListener('drop', e=>{ if(e.dataTransfer&&e.dataTransfer.files.length)
 function docTypeLabel(f){
   if (!f.pages.length) return '—';
   const counts={};
-  f.pages.forEach(pg=>{ if(pg.type) counts[pg.type]=(counts[pg.type]||0)+1; });
+  f.pages.forEach(pg=>{ const t=pageThreeType(pg); if(t) counts[t]=(counts[t]||0)+1; });
   const top=Object.entries(counts).sort((a,b)=>b[1]-a[1])[0];
-  return top? PAGE_TYPES[top[0]]||top[0] : '—';
+  if(!top) return '—';
+  const mixed=Object.keys(counts).filter(k=>k!=='other').length>1;
+  return (THREE_TYPE_LABELS[top[0]]||top[0]) + (mixed?' (mixed)':'');
 }
 function renderDocs(){
   const p=state.cur; if(!p) return;
@@ -1521,7 +1553,7 @@ function renderDocs(){
             p.analysis.cables=p.analysis.cables.filter(r=>r.fileId!==f.id);
           }
           p.assistedMarkups=(p.assistedMarkups||[]).filter(m=>m.fileId!==f.id&&!m.matches?.some(x=>x.fileId===f.id));
-          renderDocs(); renderPgclass(); renderAnalysisControls(); renderResults(); renderProjHeader(); saveProject(p); toast('Document removed');
+          renderDocs(); renderPgclass(); renderAnalysisControls(); renderTakeoff(); renderProjHeader(); saveProject(p); toast('Document removed');
         }, 'Remove');
       }
       if (a==='replace'){
@@ -1554,18 +1586,24 @@ function renderPgclass(){
   const A=p.analysis;
   f.pages.forEach((pg,i)=>{
     const tr=document.createElement('tr');
-    const opts=Object.entries(PAGE_TYPES).map(([k,v])=>`<option value="${k}" ${pg.type===k?'selected':''}>${esc(v)}</option>`).join('');
+    const cur=pageThreeType(pg);
+    const opts=Object.entries(THREE_TYPE_LABELS).map(([k,v])=>`<option value="${k}" ${cur===k?'selected':''}>${esc(v)}</option>`).join('');
+    const subFmt = pg.sub_format||pg.type;
+    const subChip = (subFmt && PAGE_TYPES[subFmt] && subFmt!==THREE_TO_FINE[cur])
+      ? `<div class="sub" style="margin-top:3px">sub-format: ${esc(PAGE_TYPES[subFmt])}</div>` : '';
     const boardsOn=[]; pg.lines.forEach(l=>detectBoards(l.text).forEach(b=>{ if(!boardsOn.includes(b.orig)) boardsOn.push(b.orig); }));
     const rows=A? A.rows.filter(r=>r.fileId===f.id&&r.page===i+1&&r.kind!=='manual').length : 0;
     tr.innerHTML=`<td class="num">${i+1}</td>
-      <td><select class="sel pg-type">${opts}</select></td>
+      <td><select class="sel pg-type">${opts}</select>${subChip}</td>
       <td>${pg.typeManual?'<span class="chip blue">Manually set</span>':confChip(pg.conf||0.3)}</td>
-      <td>${pg.ocr?'OCR':f.native?'Text':'Scan'}</td>
+      <td>${pg.source==='native_text'?'Text':pg.source==='ocr'||pg.ocr?'OCR':f.native?'Text':'Scan'}</td>
       <td>${boardsOn.slice(0,4).map(b=>'<span class="chip grey">'+esc(b)+'</span>').join(' ')||'—'}</td>
       <td class="num">${rows||'—'}</td>
       <td><button class="btn sm ghost" data-a="view">View</button></td>`;
     tr.querySelector('.pg-type').addEventListener('change', e=>{
-      pg.type=e.target.value; pg.typeManual=true; pg.conf=1;
+      // override the coarse three-type; restore a representative fine type so extraction routing follows
+      pg.threeType=e.target.value; pg.type=THREE_TO_FINE[e.target.value]||'unknown';
+      pg.sub_format=pg.type; pg.typeManual=true; pg.threeTypeManual=true; pg.conf=1;
       renderPgclass(); saveProject(p); toast('Page '+(i+1)+' reclassified — re-analyse to update results');
     });
     tr.querySelector('[data-a=view]').addEventListener('click', ()=>{ state.viewer.fileId=f.id; state.viewer.page=i+1; setTab('viewer'); });
@@ -1826,7 +1864,7 @@ async function runAnalysis(opts){
   const rev=A.rows.filter(r=>r.status==='pending'&&r.conf<0.8).length;
   p.status = rev? 'Needs review':'Analysed';
   renderStages(7,true);
-  renderResults(); renderProjHeader(); renderAnalysisControls(); renderPgclass(); saveProject(p);
+  renderTakeoff(); renderProjHeader(); renderAnalysisControls(); renderPgclass(); saveProject(p);
   if (!auto) toast('Analysis complete — '+A.rows.length+' evidence rows extracted');
 }
 $('#anRunBtn').addEventListener('click', ()=>runAnalysis());
@@ -1861,6 +1899,41 @@ function deviceTotals(rows, exclSpare){
   return by;
 }
 const countable = k => !k.startsWith('(');
+/* shared by the all-boards roll-up and the single-board detail view (§5.4) */
+function buildDeviceTable(devs, approveLabel){
+  const p=state.cur, A=p.analysis;
+  const tbl=document.createElement('table'); tbl.className='t';
+  tbl.innerHTML='<thead><tr><th style="width:26px"></th><th>Device</th><th class="num">Qty</th><th>Ratings seen</th><th>Status</th><th></th></tr></thead><tbody></tbody>';
+  const tb=tbl.querySelector('tbody');
+  Object.entries(devs).sort((a,b)=>b[1].qty-a[1].qty).forEach(([dev,rec])=>{
+    const tr=document.createElement('tr');
+    const ratings=[...new Set(rec.rows.map(r=>r.rating).filter(x=>x!==null))].sort((a,b)=>a-b);
+    const minConf=Math.min(...rec.rows.map(r=>r.status==='confirmed'?1:r.conf));
+    const allConf=rec.rows.every(r=>r.status==='confirmed');
+    const isCount=countable(dev);
+    tr.innerHTML=`<td><span class="car" style="color:var(--txt3);font-size:10px">▶</span></td>
+      <td class="strong">${esc(dev)}${isCount?'':' <span class="hint" style="display:inline;margin:0">not counted as devices</span>'}</td>
+      <td class="num"><b style="font-size:14px;color:${isCount?'var(--blue)':'var(--txt3)'}">${rec.qty}</b></td>
+      <td>${ratings.map(r=>`<span class="chip grey">${r}A</span>`).join(' ')||'—'}</td>
+      <td>${allConf?'<span class="chip green">Confirmed</span>':confChip(minConf)}</td>
+      <td><button class="btn sm ghost" data-a="ok" title="Approve all evidence rows">✓ Approve</button></td>`;
+    const evtr=document.createElement('tr'); evtr.style.display='none';
+    const evtd=document.createElement('td'); evtd.colSpan=6; evtd.style.padding='0';
+    evtr.appendChild(evtd); evtr.className='evwrap';
+    evtd.innerHTML=`<table class="t" style="background:#f7fafd">${rec.rows.map(r=>evRowHtml(r)).join('')}</table>`;
+    tr.addEventListener('click', e=>{
+      if (e.target.dataset&&e.target.dataset.a==='ok'){
+        rec.rows.forEach(r=>{ const live=A.rows.find(x=>x.id===r.id); if(live) live.status='confirmed'; });
+        renderTakeoff(); saveProject(p); toast(dev+' approved'+(approveLabel?' for '+approveLabel:'')); return;
+      }
+      evtr.style.display = evtr.style.display==='none'?'':'none';
+      tr.querySelector('.car').style.transform = evtr.style.display===''?'rotate(90deg)':'';
+    });
+    bindEvActions(evtd, rec.rows);
+    tb.appendChild(tr); tb.appendChild(evtr);
+  });
+  return tbl;
+}
 function renderResults(){
   const p=state.cur; if(!p) return;
   const A=p.analysis;
@@ -1896,43 +1969,72 @@ function renderResults(){
     grp.innerHTML=`<div class="bg-head"><span class="car">▶</span>
       <span class="bname">${esc(bnLabel)}</span>
       ${btype?`<span class="chip grey">${esc(btype)}</span>`:''}
-      <span class="btot">${total} device${total===1?'':'s'}</span></div>
+      <span class="btot">${total} device${total===1?'':'s'}</span>
+      ${bn!=='__none__'?'<button class="btn sm ghost" data-a="drill" style="margin-left:8px">Open board ›</button>':''}</div>
       <div class="bg-body"></div>`;
     const body=grp.querySelector('.bg-body');
-    const tbl=document.createElement('table'); tbl.className='t';
-    tbl.innerHTML='<thead><tr><th style="width:26px"></th><th>Device</th><th class="num">Qty</th><th>Ratings seen</th><th>Status</th><th></th></tr></thead><tbody></tbody>';
-    const tb=tbl.querySelector('tbody');
-    Object.entries(devs).sort((a,b)=>b[1].qty-a[1].qty).forEach(([dev,rec])=>{
-      const tr=document.createElement('tr');
-      const ratings=[...new Set(rec.rows.map(r=>r.rating).filter(x=>x!==null))].sort((a,b)=>a-b);
-      const minConf=Math.min(...rec.rows.map(r=>r.status==='confirmed'?1:r.conf));
-      const allConf=rec.rows.every(r=>r.status==='confirmed');
-      const isCount=countable(dev);
-      tr.innerHTML=`<td><span class="car" style="color:var(--txt3);font-size:10px">▶</span></td>
-        <td class="strong">${esc(dev)}${isCount?'':' <span class="hint" style="display:inline;margin:0">not counted as devices</span>'}</td>
-        <td class="num"><b style="font-size:14px;color:${isCount?'var(--blue)':'var(--txt3)'}">${rec.qty}</b></td>
-        <td>${ratings.map(r=>`<span class="chip grey">${r}A</span>`).join(' ')||'—'}</td>
-        <td>${allConf?'<span class="chip green">Confirmed</span>':confChip(minConf)}</td>
-        <td><button class="btn sm ghost" data-a="ok" title="Approve all evidence rows">✓ Approve</button></td>`;
-      const evtr=document.createElement('tr'); evtr.style.display='none';
-      const evtd=document.createElement('td'); evtd.colSpan=6; evtd.style.padding='0';
-      evtr.appendChild(evtd); evtr.className='evwrap';
-      evtd.innerHTML=`<table class="t" style="background:#f7fafd">${rec.rows.map(r=>evRowHtml(r)).join('')}</table>`;
-      tr.addEventListener('click', e=>{
-        if (e.target.dataset&&e.target.dataset.a==='ok'){
-          rec.rows.forEach(r=>{ const live=A.rows.find(x=>x.id===r.id); if(live) live.status='confirmed'; });
-          renderResults(); renderProjHeader(); saveProject(p); toast(dev+' approved for '+bnLabel); return;
-        }
-        evtr.style.display = evtr.style.display==='none'?'':'none';
-        tr.querySelector('.car').style.transform = evtr.style.display===''?'rotate(90deg)':'';
-      });
-      bindEvActions(evtd, rec.rows);
-      tb.appendChild(tr); tb.appendChild(evtr);
+    body.appendChild(buildDeviceTable(devs, bnLabel));
+    grp.querySelector('.bg-head').addEventListener('click', e=>{
+      if (e.target.dataset&&e.target.dataset.a==='drill'){ e.stopPropagation(); selectBoard(bn); return; }
+      grp.classList.toggle('open');
     });
-    body.appendChild(tbl);
-    grp.querySelector('.bg-head').addEventListener('click',()=>grp.classList.toggle('open'));
     host.appendChild(grp);
   });
+}
+/* ============================ §5.4 — MERGED BOARD DETAIL ============================ */
+function boardHeaderCard(b){
+  const h=b.header||{};
+  const val=v=>(v===undefined||v===null||v===''?'—':v);
+  const fields=[
+    ['Board type', BOARD_TYPES[b.type]||val(h.board_type_text)],
+    ['Fed from', b.parent?boardLabel(b.parent):val(h.fed_from_ref)],
+    ['Serving', val(h.serving)],
+    ['Location', val(h.location)],
+    ['Ways total', val(h.ways_total)],
+    ['Ways SP / TP', (h.ways_sp!=null&&h.ways_sp!=='')||(h.ways_tp!=null&&h.ways_tp!=='')?`${val(h.ways_sp)} / ${val(h.ways_tp)}`:'—'],
+    ['Spare capacity', h.spare_capacity_pct!=null&&h.spare_capacity_pct!==''?h.spare_capacity_pct+'%':'—'],
+    ['Incomer', [h.incomer_class,h.incomer_rating_a?h.incomer_rating_a+'A':null,h.incomer_poles?h.incomer_poles+'P':null].filter(Boolean).join(' · ')||'—'],
+    ['Board model', val(h.board_model)],
+    ['Fault rating', h.fault_ka!=null&&h.fault_ka!==''?h.fault_ka+'kA':'—'],
+    ['Metering', val(h.metering)],
+  ];
+  return `<div class="bd-hdr">${fields.map(([k,v])=>`<div><div class="k">${esc(k)}</div><div class="v">${esc(String(v))}</div></div>`).join('')}</div>`;
+}
+function selectBoard(norm){
+  state.selectedBoard = state.selectedBoard===norm ? null : norm;
+  renderTakeoff();
+}
+function renderBoardDetail(){
+  const p=state.cur; if(!p) return;
+  const A=p.analysis;
+  const head=$('#bdDetailHead');
+  const detail=$('#boardDetail');
+  const rollup=$('#resBoards');
+  const norm=state.selectedBoard;
+  if (!norm || !A){
+    detail.style.display='none'; detail.innerHTML='';
+    rollup.style.display='';
+    head.innerHTML='Device totals by board <span class="sub">all boards — select one on the left to drill in</span>';
+    return;
+  }
+  rollup.style.display='none';
+  detail.style.display='';
+  const b = norm==='__none__'?null:A.boards[norm];
+  const label = norm==='__none__'?'No board reference (plans / general text)':boardLabel(norm);
+  head.innerHTML=`<button class="btn sm ghost" id="bdBack">‹ All boards</button> <b style="margin-left:6px">${esc(label)}</b>`;
+  $('#bdBack').addEventListener('click', ()=>{ state.selectedBoard=null; renderTakeoff(); });
+  const rows=activeRows().filter(r=>(r.boardNorm||'__none__')===norm);
+  const devs=deviceTotals(rows)[norm]||{};
+  const total=Object.entries(devs).filter(([k])=>countable(k)).reduce((s,[,v])=>s+v.qty,0);
+  detail.innerHTML = (b? boardHeaderCard(b) : '<div class="p-body"><span class="hint">Rows with no detected board reference.</span></div>')
+    + `<div style="padding:11px 18px;font-weight:800;font-size:13px;border-top:1px solid var(--line)">Devices on this board <span class="chip grey" style="margin-left:8px">${total} device${total===1?'':'s'}</span></div>`;
+  if (Object.keys(devs).length) detail.appendChild(buildDeviceTable(devs, label));
+  else detail.insertAdjacentHTML('beforeend','<div class="empty">No devices captured on this board yet.</div>');
+}
+function renderTakeoff(){
+  renderBoards();
+  renderResults();
+  renderBoardDetail();
 }
 function evRowHtml(r){
   const p=state.cur;
@@ -1977,7 +2079,7 @@ function bindEvActions(container, rows){
       if (a==='ok'){ r.status='confirmed'; }
       if (a==='no'){ r.status='rejected'; }
       if (a==='edit'){ openRowEditor(r); return; }
-      renderResults(); renderProjHeader(); saveProject(p);
+      renderTakeoff(); renderProjHeader(); saveProject(p);
     }));
   });
 }
@@ -2011,7 +2113,7 @@ function openRowEditor(r, isNew){
     r.desc=$('#eDesc').value;
     r.status='confirmed'; r.edited=true;
     if (isNew) A.rows.push(r);
-    renderResults(); renderProjHeader(); saveProject(p);
+    renderTakeoff(); renderProjHeader(); saveProject(p);
     toast(isNew?'Device added':'Row corrected and confirmed');
   });
 }
@@ -2019,7 +2121,7 @@ $('#bulkApproveBtn').addEventListener('click', ()=>{
   const p=state.cur; if(!p||!p.analysis) return;
   let n=0;
   p.analysis.rows.forEach(r=>{ if(r.status==='pending'&&r.conf>=0.8){r.status='confirmed';n++;} });
-  renderResults(); renderProjHeader(); saveProject(p);
+  renderTakeoff(); renderProjHeader(); saveProject(p);
   toast(n+' high-confidence rows approved');
 });
 $('#addManualBtn').addEventListener('click', ()=>{
@@ -2094,17 +2196,16 @@ function renderBoards(){
   const boards=Object.values(A.boards).sort((a,b)=>a.norm<b.norm?-1:1);
   boards.forEach(b=>{
     const tr=document.createElement('tr');
-    const feed=A.feeders.find(f=>f.to===b.norm&&f.from===b.parent);
-    const srcs=[...new Set(b.pages.map(x=>{const f=p.files.find(y=>y.id===x.fileId);return (f?f.name:'?')+' p'+x.page;}))];
+    tr.className='board-row'+(state.selectedBoard===b.norm?' sel':'');
+    tr.style.cursor='pointer';
     tr.innerHTML=`<td class="strong">${esc(b.orig)}</td>
-      <td class="mono">${esc(b.norm)}</td>
       <td>${esc(BOARD_TYPES[b.type]||'')}</td>
       <td>${b.parent?esc(boardLabel(b.parent))+(b.manual?' <span class="chip blue">manual</span>':''):'<span class="chip grey">unknown</span>'}
         <button class="btn sm ghost" data-a="parent">✎</button></td>
       <td class="num">${boardDeviceCount(b.norm)}</td>
-      <td style="font-size:11px">${srcs.slice(0,3).map(esc).join('<br>')}</td>
       <td>${b.manual?'<span class="chip blue">Manually set</span>':b.parent?confChip(b.parentConf||0.6):confChip(0.5)}</td>`;
-    tr.querySelector('[data-a=parent]').addEventListener('click', ()=>{
+    tr.querySelector('[data-a=parent]').addEventListener('click', e=>{
+      e.stopPropagation();
       const opts=['MAINLVPANEL','TRANSFORMER','GENERATOR','ATS',...boards.map(x=>x.norm).filter(n=>n!==b.norm)];
       openModal('Supplied from — '+b.orig,
         `<label class="lbl">Parent board / source</label>
@@ -2114,9 +2215,10 @@ function renderBoards(){
          </select>
          <div class="hint">Manual corrections are kept when you re-analyse.</div>`, ()=>{
         b.parent=$('#mPar').value||null; b.manual=true;
-        renderBoards(); saveProject(p); toast('Board relationship updated');
+        renderTakeoff(); saveProject(p); toast('Board relationship updated');
       });
     });
+    tr.addEventListener('click', ()=>selectBoard(b.norm));
     tb.appendChild(tr);
   });
   // hierarchy tree
@@ -2138,15 +2240,17 @@ function renderBoards(){
     const label=b?b.orig:boardLabel(norm);
     const typeChip=b?`<span class="chip ${b.type==='MAIN'?'blue':b.type==='SMDB'||b.type==='MDB'?'cyan':'grey'}">${esc(BOARD_TYPES[b.type]||'')}</span>`:'<span class="chip purple">Source</span>';
     const kids=(kidsOf[norm]||[]).map(k=>nodeHtml(k,depth+1)).join('');
-    return `<div class="tnode"><span class="trow"><span class="tb">${esc(label)}</span>${typeChip}${dev}${cable}</span>
+    const selCls = b && state.selectedBoard===norm ? ' sel' : '';
+    return `<div class="tnode"><span class="trow${selCls}"${b?` data-board="${esc(norm)}" style="cursor:pointer"`:''}><span class="tb">${esc(label)}</span>${typeChip}${dev}${cable}</span>
       ${kids?`<div class="kids">${kids}</div>`:''}</div>`;
   };
   const rootNames=['MAINLVPANEL','TRANSFORMER','GENERATOR','ATS'].filter(n=>kidsOf[n]||known.has(n));
   let html='';
   ['TRANSFORMER','GENERATOR','ATS'].forEach(src=>{ if(kidsOf[src]) html+=nodeHtml(src,0); });
-  if (known.has('MAINLVPANEL') && !rendered.has('MAINLVPANEL')) html+=nodeHtml('MAINLVPANEL',0);
+  if ((known.has('MAINLVPANEL')||kidsOf['MAINLVPANEL']) && !rendered.has('MAINLVPANEL')) html+=nodeHtml('MAINLVPANEL',0);
   boards.forEach(b=>{ if(!rendered.has(b.norm) && (kidsOf['__orphan__']||[]).includes(b.norm)) html+=nodeHtml(b.norm,0); });
   tree.innerHTML = html || '<div class="empty">No supply relationships found yet — they are read from schematic and SLD pages.</div>';
+  tree.querySelectorAll('.trow[data-board]').forEach(el=>el.addEventListener('click',()=>selectBoard(el.dataset.board)));
   // duplicates: same digits+type family, e.g. DB1 vs DB01
   const dupes=[];
   for (let i=0;i<boards.length;i++) for(let j=i+1;j<boards.length;j++){
@@ -2166,7 +2270,8 @@ function renderBoards(){
     A.cables.forEach(c=>{ if(c.boardNorm===drop) c.boardNorm=keep; });
     if (A.boards[drop]){ A.boards[keep].pages.push(...A.boards[drop].pages); delete A.boards[drop]; }
     Object.values(A.boards).forEach(b=>{ if(b.parent===drop) b.parent=keep; });
-    renderBoards(); renderResults(); renderProjHeader(); saveProject(p); toast('Boards merged');
+    if (state.selectedBoard===drop) state.selectedBoard=keep;
+    renderTakeoff(); renderProjHeader(); saveProject(p); toast('Boards merged');
   }));
 }
 
@@ -2207,7 +2312,7 @@ function renderReview(){
         if (a==='jump') return jumpToEvidence(r);
         if (a==='edit') return openRowEditor(r);
         r.status = a==='ok'?'confirmed':'rejected';
-        renderReview(); renderResults(); renderProjHeader(); saveProject(p);
+        renderReview(); renderTakeoff(); renderProjHeader(); saveProject(p);
       }));
     } else if (it.kind==='scan'){
       div.innerHTML=`<div class="ric" style="background:var(--red-soft)">⚠</div>
@@ -2364,7 +2469,8 @@ async function renderViewer(){
   $('#vOcrBtn').style.display=f.ext==='pdf'?'':'none';
   // meta row
   const dets=pageDetections(f,V.page).filter(ovlVisible);
-  $('#vMetaRow').innerHTML=`<span class="chip blue">${esc(PAGE_TYPES[pg.type]||'Unknown')}</span>
+  $('#vMetaRow').innerHTML=`<span class="chip blue">${esc(THREE_TYPE_LABELS[pageThreeType(pg)]||'Unknown')}</span>
+    ${pg.sub_format&&PAGE_TYPES[pg.sub_format]&&pg.sub_format!==THREE_TO_FINE[pageThreeType(pg)]?`<span class="chip grey">${esc(PAGE_TYPES[pg.sub_format])}</span>`:''}
     ${pg.typeManual?'<span class="chip grey">manually set</span>':confChip(pg.conf||0.3)}
     ${pg.ocr?'<span class="chip purple">OCR text</span>':(!pg.lines?.length?'<span class="chip amber">Scan — run OCR</span>':'')}
     <span class="hint" style="margin:0">${dets.length} detection${dets.length===1?'':'s'} on this page</span>`;
