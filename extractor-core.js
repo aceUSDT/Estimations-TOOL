@@ -471,10 +471,34 @@
     };
   }
 
+  /* ===== Workstream 5.1 — three-type classification ===== */
+  // The product taxonomy is exactly three classes; the legacy classifier emits
+  // ~16 fine-grained types. Collapse them so the UI and pipeline speak in three.
+  const THREE_TYPES = { schematic: 'Schematic', db_schedule: 'Distribution Board Schedule', specification: 'Specification' };
+  const LEGACY_TO_THREE = {
+    // schematics
+    sld: 'schematic', schematic: 'schematic',
+    // distribution board schedules (incl. main/cable/equipment/CU/switchboard/mccb variants)
+    'db-schedule': 'db_schedule', 'main-schedule': 'db_schedule', 'cable-schedule': 'db_schedule',
+    'equipment-schedule': 'db_schedule', cu: 'db_schedule', switchboard: 'db_schedule', mccb: 'db_schedule',
+    // specifications
+    spec: 'specification', specification: 'specification',
+  };
+  // Plans/legends/registers/notes/covers/unknown have no take-off value; the
+  // three-type view treats them as "other" (kept out of extraction, still shown).
+  function toThreeType(legacyType) {
+    if (!legacyType) return 'other';
+    const key = String(legacyType).toLowerCase();
+    if (THREE_TYPES[key]) return key;                 // already a 3-type value
+    return LEGACY_TO_THREE[key] || 'other';
+  }
+
   global.EstimationExtractorCore = {
     expectedWaysFromText,
     pageLooksTabular,
     buildCoverage,
+    THREE_TYPES,
+    toThreeType,
     DEFAULT_PROTECTION_LEGEND,
     parseProtectionLegend,
     parseTrailingCable,
