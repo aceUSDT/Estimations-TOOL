@@ -36,19 +36,29 @@ const index = JSON.parse(fs.readFileSync(path.join(WORK, 'index.json'), 'utf8'))
 const norm = (s) => String(s).toUpperCase().replace(/[\s.\-_/]+/g, '');
 
 const runAll = process.argv.includes('--all');
-const docs = runAll ? index : index.filter((d) => groundTruth[d.file]);
+// Optional substring filters (argv after flags) limit which docs run, e.g.
+//   node coverage-ai.mjs syntegral SRP1053
+const filters = process.argv.slice(2).filter((a) => !a.startsWith('--'));
+let docs = runAll ? index : index.filter((d) => groundTruth[d.file]);
+if (filters.length) docs = docs.filter((d) => filters.some((f) => d.file.toLowerCase().includes(f.toLowerCase())));
+const CONCURRENCY = Number(process.env.AI_CONCURRENCY || 1);
 
 /* ---- load a document's pages from the work cache (native text or OCR) ---- */
 function loadPages(slug) {
   const meta = JSON.parse(fs.readFileSync(path.join(WORK, slug, 'meta.json'), 'utf8'));
   const pages = meta.pages.map((pg) => {
     let lines = pg.native ? pg.lines.map((l) => l.text) : [];
-    let png = pg.png ? path.join(WORK, slug, pg.png) : null;
+    // Prefer the downscaled AI JPEG (render_ai_images.py) — ~4x smaller, fits
+    // Netlify's 30s sync limit better; fall back to the full-res PNG.
+    const jpg = path.join(WORK, slug, `ai-${String(pg.page).padStart(3, '0')}.jpg`);
+    let img = null, mediaType = 'image/png';
+    if (fs.existsSync(jpg)) { img = jpg; mediaType = 'image/jpeg'; }
+    else if (pg.png) img = path.join(WORK, slug, pg.png);
     if (!pg.native) {
       const f = path.join(WORK, slug, `ocr-${String(pg.page).padStart(3, '0')}.json`);
       if (fs.existsSync(f)) lines = (JSON.parse(fs.readFileSync(f, 'utf8')).lines || []).map((l) => l.text);
     }
-    return { page: pg.page, lines, png, width: pg.width, height: pg.height };
+    return { page: pg.page, lines, png: img, mediaType, width: pg.width, height: pg.height };
   });
   const total = pages.length;
   pages.forEach((pg, i) => { pg.type = P.classifyPage(pg.lines.join('\n'), i, total).type; });
@@ -56,22 +66,32 @@ function loadPages(slug) {
 }
 
 /* ---- POST one page to the deployed endpoint (front-end request shape) ---- */
+const BG_ENDPOINT = ENDPOINT.replace(/\/extract$/, '/extract-background');
+const STATUS_ENDPOINT = ENDPOINT.replace(/\/extract$/, '/extract-status');
+
+/* Enqueue on the background function (no 30s ceiling), then poll the status
+ * endpoint for the result written to the blob store — mirrors the front-end. */
 async function extractPage(slug, filename, pg) {
   const image_base64 = pg.png ? fs.readFileSync(pg.png).toString('base64') : null;
+  const jobId = `${slug}-p${pg.page}-${Date.now()}`;
   const body = JSON.stringify({
-    filename, page_number: pg.page, image_base64, media_type: 'image/png',
+    job_id: jobId, filename, page_number: pg.page, image_base64, media_type: pg.mediaType || 'image/png',
     text_lines: pg.lines.slice(0, 400), hints: { type: pg.type },
   });
-  for (let attempt = 0; attempt < 3; attempt++) {
-    let r;
-    try { r = await fetch(ENDPOINT, { method: 'POST', headers: { 'content-type': 'application/json' }, body }); }
-    catch (e) { if (attempt === 2) throw e; await sleep(2000 * (attempt + 1)); continue; }
-    if (r.ok) return (await r.json()).result;
-    if (r.status === 429 || r.status === 502 || r.status === 503) { await sleep(3000 * (attempt + 1)); continue; }
-    const err = await r.json().catch(() => ({}));
-    throw new Error(`HTTP ${r.status}: ${err.error || ''}`);
+  const enq = await fetch(BG_ENDPOINT, { method: 'POST', headers: { 'content-type': 'application/json' }, body });
+  if (!enq.ok && enq.status !== 202) {
+    const err = await enq.json().catch(() => ({}));
+    throw new Error(`enqueue HTTP ${enq.status}: ${err.error || ''}`);
   }
-  throw new Error('exhausted retries');
+  for (let i = 0; i < 90; i++) {            // poll up to ~4 min
+    await sleep(2500);
+    let s;
+    try { s = await (await fetch(`${STATUS_ENDPOINT}?id=${encodeURIComponent(jobId)}`)).json(); }
+    catch (e) { continue; }
+    if (s.status === 'done') return s.result;
+    if (s.status === 'error') throw new Error(s.error || 'extraction failed');
+  }
+  throw new Error('timed out waiting for background result (>4min)');
 }
 const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
 
@@ -157,7 +177,7 @@ for (const doc of docs) {
   });
   process.stdout.write(`${doc.file}: sending ${toSend.length}/${pages.length} pages… `);
   let sent = 0, errs = 0;
-  const CONC = 2;
+  const CONC = CONCURRENCY;
   for (let i = 0; i < toSend.length; i += CONC) {
     await Promise.all(toSend.slice(i, i + CONC).map(async (pg) => {
       try { mergeAi(ai, await extractPage(doc.slug, doc.file, pg), doc.slug, pg.page); sent++; }
