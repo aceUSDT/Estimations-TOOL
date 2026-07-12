@@ -233,10 +233,25 @@
   .thumb-it .txtpre{font-size:3.2px;line-height:1.4;padding:4px;height:74px;overflow:hidden;color:var(--txt2);
     font-family:var(--mono);white-space:pre-wrap;}
   .v-toolbar{display:flex;align-items:center;gap:6px;padding:8px 12px;border-bottom:1px solid var(--line);
-    flex-wrap:wrap;background:#fafbfd;border-radius:12px 12px 0 0;}
+    flex-wrap:wrap;background:#fafbfd;}
   .v-toolbar .vsep{width:1px;height:20px;background:var(--line);margin:0 4px;}
+  /* §5.2 multi-document tabs */
+  .v-doctabs{display:flex;gap:2px;padding:6px 8px 0;border-bottom:1px solid var(--line);background:#f2f5f9;
+    border-radius:12px 12px 0 0;overflow-x:auto;}
+  .v-doctabs:empty{display:none;}
+  .v-doctab{border:1px solid var(--line);border-bottom:none;border-radius:8px 8px 0 0;padding:6px 12px;font-size:12px;
+    font-weight:600;color:var(--txt2);background:#e8edf3;cursor:pointer;white-space:nowrap;max-width:220px;
+    overflow:hidden;text-overflow:ellipsis;}
+  .v-doctab.act{background:#fafbfd;color:var(--txt);border-color:var(--line);position:relative;top:1px;}
   .v-stage{position:relative;overflow:auto;max-height:66vh;background:#e7ebf1;border-radius:0 0 12px 12px;
     display:flex;justify-content:center;padding:16px;}
+  /* §5.2 dark canvas mode */
+  .v-stage.v-dark{background:#141a22;}
+  .v-stage.v-dark .v-pagewrap canvas,.v-stage.v-dark .v-textpage{filter:invert(.93) hue-rotate(180deg);}
+  .thumb-it .bdot{position:absolute;top:3px;left:4px;background:var(--blue);color:#fff;font-size:9px;font-weight:800;
+    border-radius:4px;padding:0 4px;}
+  .ovl.search{background:rgba(240,180,20,.35);outline:2px solid #d99a06;z-index:3;}
+  .ovl.boardhl{background:rgba(22,104,227,.22);outline:3px solid var(--blue);z-index:3;}
   .v-pagewrap{position:relative;box-shadow:0 4px 20px rgba(22,32,46,.18);background:#fff;}
   .v-pagewrap canvas{display:block;}
   .v-textpage{width:840px;min-height:600px;padding:34px 38px;font-family:var(--mono);font-size:11.5px;
@@ -247,6 +262,7 @@
   .hl.red{background:var(--red-soft);outline:1px solid #f2c2c5;}
   .hl.cyan{background:var(--cyan-soft);outline:1px solid #b6e2ec;}
   .hl.blue{background:var(--blue-soft);outline:2px solid var(--blue);}
+  .hl.boardhl{background:rgba(22,104,227,.22);outline:3px solid var(--blue);}
   .ovl{position:absolute;border-radius:2px;pointer-events:none;}
   .ovl.green{background:rgba(15,153,96,.16);outline:1.5px solid rgba(15,153,96,.7);}
   .ovl.amber{background:rgba(200,125,14,.14);outline:1.5px solid rgba(200,125,14,.7);}
@@ -427,17 +443,17 @@
       <div class="viewer-layout">
         <div class="panel thumbs" id="vThumbs"></div>
         <div class="panel" style="overflow:hidden">
+          <div class="v-doctabs" id="vDocTabs"></div>
           <div class="v-toolbar">
-            <select class="sel" id="vFileSel" style="max-width:210px"></select>
-            <div class="vsep"></div>
-            <button class="btn sm" id="vPrev">‹</button>
+            <button class="btn sm" id="vPrev" title="Previous page (←)">‹</button>
             <span style="font-size:12px;color:var(--txt2)"><span id="vPageNo">1</span> / <span id="vPageCt">1</span></span>
-            <button class="btn sm" id="vNext">›</button>
+            <button class="btn sm" id="vNext" title="Next page (→)">›</button>
             <div class="vsep"></div>
-            <button class="btn sm" id="vZoomOut">−</button>
-            <button class="btn sm" id="vZoomIn">+</button>
-            <button class="btn sm" id="vFit">Fit</button>
-            <button class="btn sm" id="vRotate">⟳</button>
+            <button class="btn sm" id="vZoomOut" title="Zoom out (−)">−</button>
+            <span style="font-size:11px;color:var(--txt2);min-width:38px;text-align:center" id="vZoomPct">100%</span>
+            <button class="btn sm" id="vZoomIn" title="Zoom in (+)">+</button>
+            <button class="btn sm" id="vFit" title="Fit page to window">Fit</button>
+            <button class="btn sm" id="vRotate" title="Rotate 90°">⟳</button>
             <div class="vsep"></div>
             <label class="check-row" style="padding:0"><input type="checkbox" id="vOvl" checked> Overlays</label>
             <select class="sel" id="vOvlFilter">
@@ -447,10 +463,16 @@
               <option value="cable">Cables</option>
               <option value="board">Boards</option>
             </select>
+            <select class="sel" id="vBoardHl" title="Smart-highlight every mention of a board reference"><option value="">Highlight board…</option></select>
             <div class="vsep"></div>
             <button class="btn sm" id="vAssistMode" title="Highlight one device to find every matching device on the current board">✦ Assisted canvas</button>
             <button class="btn sm" id="vOcrBtn" title="Read a scanned page with OCR">OCR page</button>
-            <input class="in" id="vSearch" placeholder="Search text…" style="width:150px;margin-left:auto">
+            <button class="btn sm" id="vDark" title="Dark / light canvas">◐</button>
+            <button class="btn sm" id="vPrint" title="Print current page">⎙</button>
+            <button class="btn sm" id="vDownload" title="Download original document">⤓</button>
+            <input class="in" id="vSearch" placeholder="Search in document…" style="width:150px;margin-left:auto">
+            <span style="font-size:11px;color:var(--txt2);white-space:nowrap" id="vSearchInfo"></span>
+            <button class="btn sm" id="vSearchNext" title="Jump to next page with a match" style="display:none">↓</button>
           </div>
           <div class="assist-bar" id="vAssistBar" hidden>
             <span class="step">1 Board</span>
@@ -570,12 +592,13 @@
           <div class="fgroup"><label class="lbl">Document A (original)</label><select class="sel" id="cmpA" style="width:100%"></select></div>
           <div class="fgroup"><label class="lbl">Document B (revision)</label><select class="sel" id="cmpB" style="width:100%"></select></div>
           <button class="btn primary" id="runCmpBtn">⇄ Compare</button>
+          <button class="btn" id="cmpTextBtn" style="display:none">≋ Text diff</button>
           <button class="btn" id="nextChgBtn" style="display:none">↓ Next</button>
         </div>
         <div id="cmpSummary" style="display:flex;gap:8px;flex-wrap:wrap"></div>
       </div></div>
       <div class="panel" id="chgPanel" style="display:none;margin-bottom:14px">
-        <div class="p-head">Electrical changes
+        <div class="p-head">Electrical changes <span class="sub">structured, per board — click a change to see it in the document</span>
           <select class="sel" id="chgFilter" style="margin-left:auto">
             <option value="all">All change types</option>
             <option value="circuit-added">Circuit added</option>
@@ -588,7 +611,7 @@
         </div>
         <div class="chg-list" id="chgList"></div>
       </div>
-      <div class="cmp-panes">
+      <div class="cmp-panes" id="cmpPanes" style="display:none">
         <div class="cmp-pane"><div class="pane-head" id="cmpHeadA">Document A</div><div class="cmp-body" id="cmpBodyA"><div class="empty">Pick two documents and press Compare.</div></div></div>
         <div class="cmp-pane"><div class="pane-head" id="cmpHeadB">Document B</div><div class="cmp-body" id="cmpBodyB"><div class="empty"> </div></div></div>
       </div>
@@ -691,7 +714,7 @@ const state = {
   projects: [],
   cur: null,           // current project
   nextId: 1,
-  viewer: {fileId:null, page:1, zoom:1, rot:0, pdfDocs:{}, assist:{enabled:false,boardNorm:null,seed:null,results:[]}},
+  viewer: {fileId:null, page:1, zoom:1, rot:0, dark:false, boardHl:null, pdfDocs:{}, assist:{enabled:false,boardNorm:null,seed:null,results:[]}},
   selectedBoard: null,  // §5.4 — board selected in the merged Boards & Devices page ('__none__' = unassigned rows), null = roll-up
 };
 const uid = () => 'x'+(state.nextId++)+'_'+Math.random().toString(36).slice(2,6);
@@ -1159,7 +1182,7 @@ function openProject(id){
   ensureAssistedState(state.cur);
   show('proj');
   $('#projTitle').textContent=state.cur.name;
-  state.viewer={fileId:null,page:1,zoom:1,rot:0,pdfDocs:state.viewer.pdfDocs,assist:{enabled:false,boardNorm:null,seed:null,results:[]}};
+  state.viewer={fileId:null,page:1,zoom:1,rot:0,dark:state.viewer.dark,boardHl:null,pdfDocs:state.viewer.pdfDocs,assist:{enabled:false,boardNorm:null,seed:null,results:[]}};
   state.selectedBoard=null;
   renderProjHeader(); renderDocs(); renderPgclass(); renderAnalysisControls(); renderResults();
   setTab('docs');
@@ -1483,6 +1506,7 @@ async function ingestFile(file){
   renderDocs(); renderPgclass(); renderAnalysisControls(); renderProjHeader(); saveProject(p);
 }
 function classifyFilePages(f){
+  Object.keys(boardScanCache).forEach(k=>{ if(k.startsWith(f.id+'|')) delete boardScanCache[k]; });  // lines may have changed (ingest/OCR)
   const tot=f.pages.length;
   f.pages.forEach((pg,i)=>{
     pg.source = pg.ocr ? 'ocr' : (f.native ? 'native_text' : 'ocr');   // §5.1 provenance
@@ -2515,7 +2539,8 @@ function bindAssistedDrag(wrap,f,pg,scale){
   const V=state.viewer;if(!V.assist.enabled)return;
   wrap.classList.add('assist-cursor');
   let start=null,box=null;
-  const point=e=>{const r=wrap.getBoundingClientRect();return{x:e.clientX-r.left,y:e.clientY-r.top};};
+  const point=e=>{const r=wrap.getBoundingClientRect();const cs=parseFloat(wrap.dataset.cssScale||'1')||1;
+    return{x:(e.clientX-r.left)/cs,y:(e.clientY-r.top)/cs};};
   wrap.addEventListener('pointerdown',e=>{
     if(e.button!==0)return;e.preventDefault();start=point(e);
     box=document.createElement('div');box.className='canvas-selection';box.style.left=start.x+'px';box.style.top=start.y+'px';wrap.appendChild(box);
@@ -2564,6 +2589,7 @@ function pageDetections(f, pageNo){
 }
 function ovlVisible(d){
   const mode=$('#vOvlFilter').value;
+  if (d.kind==='boardhl') return true;   // §5.2 smart-highlight is independent of the overlay filter
   if (mode==='all') return true;
   if (mode==='confirmed') return d.kind==='row'&&d.r.status==='confirmed';
   if (mode==='review') return d.kind==='row'&&d.r.status==='pending'&&d.r.conf<0.8;
@@ -2572,38 +2598,116 @@ function ovlVisible(d){
   if (d.kind==='assisted') return mode==='all';
   return true;
 }
+/* §5.2 — PDF thumbnail + board-page caches (module-level, keyed by immutable file ids) */
+const vThumbCache={};      // fileId -> {page: dataURL}
+let vThumbBusy=null;       // fileId currently rendering thumbs
+const boardScanCache={};   // fileId|norm -> Set(pages)
+function boardPagesIn(f,norm){
+  const p=state.cur, A=p&&p.analysis, set=new Set();
+  if (A){
+    (A.boards[norm]&&A.boards[norm].pages||[]).forEach(x=>{ if(x.fileId===f.id) set.add(x.page); });
+    A.rows.forEach(r=>{ if(r.boardNorm===norm&&r.fileId===f.id) set.add(r.page); });
+  }
+  const key=f.id+'|'+norm;
+  if (!boardScanCache[key]){
+    const s=new Set();
+    f.pages.forEach((pg,i)=>{ if((pg.lines||[]).some(l=>detectBoards(l.text).some(b=>b.norm===norm))) s.add(i+1); });
+    boardScanCache[key]=s;
+  }
+  boardScanCache[key].forEach(x=>set.add(x));
+  return [...set].sort((a,b)=>a-b);
+}
+async function ensureThumbs(f){
+  if (f.ext!=='pdf'||!rawStore[f.id]||!window.pdfjsLib) return;
+  if (vThumbBusy===f.id) return; vThumbBusy=f.id;
+  try{
+    const V=state.viewer;
+    let doc=V.pdfDocs[f.id];
+    if (!doc){ doc=await window.pdfjsLib.getDocument({data:rawStore[f.id].slice(0)}).promise; V.pdfDocs[f.id]=doc; }
+    const cache=vThumbCache[f.id]=vThumbCache[f.id]||{};
+    for (let i=1;i<=Math.min(f.pages.length,80);i++){
+      if (cache[i]) continue;
+      if (state.viewer.fileId!==f.id) break;         // user switched docs — stop
+      const page=await doc.getPage(i);
+      const vp1=page.getViewport({scale:1});
+      const vp=page.getViewport({scale:110/vp1.width});
+      const cv=document.createElement('canvas'); cv.width=vp.width; cv.height=vp.height;
+      await page.render({canvasContext:cv.getContext('2d'), viewport:vp}).promise;
+      cache[i]=cv.toDataURL('image/jpeg',0.72);
+      const holder=document.querySelector('#vThumbs .thumb-it[data-pg="'+i+'"] .txtpre');
+      if (holder) holder.outerHTML='<img src="'+cache[i]+'" alt="p'+i+'">';
+    }
+  }catch(e){ /* thumbs are cosmetic — never break the viewer */ }
+  finally{ vThumbBusy=null; }
+}
 async function renderViewer(){
   const p=state.cur; if(!p) return;
   const f=viewerFile();
-  const sel=$('#vFileSel');
   const ready=p.files.filter(x=>x.status==='ready');
-  sel.innerHTML=ready.map(x=>`<option value="${x.id}" ${f&&x.id===f.id?'selected':''}>${esc(x.name)}</option>`).join('');
+  // §5.2 multi-document tabs
+  const tabs=$('#vDocTabs');
+  tabs.innerHTML=ready.map(x=>`<div class="v-doctab${f&&x.id===f.id?' act':''}" data-id="${x.id}" title="${esc(x.name)}">${esc(x.name)}</div>`).join('');
+  tabs.querySelectorAll('.v-doctab').forEach(t=>t.addEventListener('click',()=>{ state.viewer.fileId=t.dataset.id; state.viewer.page=1; renderViewer(); }));
   const stage=$('#vStage');
   if (!f){ stage.innerHTML='<div class="empty">Upload a document first.</div>'; $('#vThumbs').innerHTML=''; $('#vDetList').innerHTML='<div class="empty">No detections.</div>'; return; }
   state.viewer.fileId=f.id;
   const V=state.viewer;
   V.page=Math.min(Math.max(1,V.page), f.pages.length);
   $('#vPageNo').textContent=V.page; $('#vPageCt').textContent=f.pages.length;
+  $('#vZoomPct').textContent=Math.round(V.zoom*100)+'%';
+  stage.classList.toggle('v-dark', !!V.dark);
   const pg=f.pages[V.page-1];
   renderAssistControls(f);
   $('#vOcrBtn').style.display=f.ext==='pdf'?'':'none';
-  // meta row
+  // §5.2 smart-highlight board select
+  const bsel=$('#vBoardHl'); const A=p.analysis;
+  const bkeep=V.boardHl||'';
+  bsel.innerHTML='<option value="">Highlight board…</option>'+(A?Object.values(A.boards).sort((a,b)=>a.norm<b.norm?-1:1)
+    .map(b=>`<option value="${b.norm}" ${b.norm===bkeep?'selected':''}>${esc(b.orig)}</option>`).join(''):'');
+  if (A&&bkeep&&!A.boards[bkeep]) V.boardHl=null;
+  // search state (across the whole document)
+  const q=($('#vSearch').value||'').trim().toLowerCase();
+  let matchPages=[];
+  if (q){
+    f.pages.forEach((tp,i)=>{ const n=(tp.lines||[]).filter(l=>l.text.toLowerCase().includes(q)).length; if(n) matchPages.push({page:i+1,n}); });
+    const tot=matchPages.reduce((s,x)=>s+x.n,0);
+    $('#vSearchInfo').textContent = tot? tot+' match'+(tot===1?'':'es')+' · '+matchPages.length+' page'+(matchPages.length===1?'':'s') : 'no matches';
+    $('#vSearchNext').style.display = matchPages.length?'':'none';
+  } else { $('#vSearchInfo').textContent=''; $('#vSearchNext').style.display='none'; }
+  // detections (+ §5.2 board smart-highlight pseudo-detections)
   const dets=pageDetections(f,V.page).filter(ovlVisible);
+  if (V.boardHl){
+    (pg.lines||[]).forEach((l,li)=>{
+      const hit=detectBoards(l.text).some(b=>b.norm===V.boardHl)
+        || (A&&A.rows.some(r=>r.fileId===f.id&&r.page===V.page&&r.line===li&&r.boardNorm===V.boardHl));
+      if (hit) dets.push({kind:'boardhl', line:li, color:'boardhl', label:'Board '+boardLabel(V.boardHl), r:{srcText:l.text}});
+    });
+  }
+  // meta row (+ board page map when highlighting)
+  const hlPages = V.boardHl? boardPagesIn(f,V.boardHl) : [];
+  const nDets=dets.filter(d=>d.kind!=='boardhl').length;
   $('#vMetaRow').innerHTML=`<span class="chip blue">${esc(THREE_TYPE_LABELS[pageThreeType(pg)]||'Unknown')}</span>
     ${pg.sub_format&&PAGE_TYPES[pg.sub_format]&&pg.sub_format!==THREE_TO_FINE[pageThreeType(pg)]?`<span class="chip grey">${esc(PAGE_TYPES[pg.sub_format])}</span>`:''}
     ${pg.typeManual?'<span class="chip grey">manually set</span>':confChip(pg.conf||0.3)}
     ${pg.ocr?'<span class="chip purple">OCR text</span>':(!pg.lines?.length?'<span class="chip amber">Scan — run OCR</span>':'')}
-    <span class="hint" style="margin:0">${dets.length} detection${dets.length===1?'':'s'} on this page</span>`;
-  // thumbnails
+    <span class="hint" style="margin:0">${nDets} detection${nDets===1?'':'s'} on this page</span>
+    ${V.boardHl?`<span class="chip blue">${esc(boardLabel(V.boardHl))} on:</span> `+
+      (hlPages.length?hlPages.map(n=>`<span class="chip ${n===V.page?'blue':'grey'}" data-goto="${n}" style="cursor:pointer">p${n}</span>`).join(' '):'<span class="hint" style="margin:0">not found in this document</span>'):''}`;
+  $('#vMetaRow').querySelectorAll('[data-goto]').forEach(ch=>ch.addEventListener('click',()=>{ V.page=+ch.dataset.goto; renderViewer(); }));
+  // thumbnails (real page images for PDFs, cached; text preview otherwise)
   const th=$('#vThumbs'); th.innerHTML='';
+  const tcache=vThumbCache[f.id]||{};
+  const matchSet=new Set(matchPages.map(x=>x.page));
   f.pages.forEach((tp,i)=>{
-    const d=document.createElement('div'); d.className='thumb-it'+(i+1===V.page?' sel':'');
-    d.innerHTML=`<div class="txtpre">${esc(tp.lines.slice(0,26).map(l=>l.text).join('\n'))}</div><span class="tn">${i+1}</span>`;
+    const d=document.createElement('div'); d.className='thumb-it'+(i+1===V.page?' sel':''); d.dataset.pg=i+1;
+    const badge=(V.boardHl&&hlPages.includes(i+1))?'<span class="bdot">◈</span>':(q&&matchSet.has(i+1)?'<span class="bdot" style="background:#d99a06">●</span>':'');
+    d.innerHTML=(tcache[i+1]?`<img src="${tcache[i+1]}" alt="p${i+1}">`
+      :`<div class="txtpre">${esc(tp.lines.slice(0,26).map(l=>l.text).join('\n'))}</div>`)+badge+`<span class="tn">${i+1}</span>`;
     d.addEventListener('click',()=>{V.page=i+1; renderViewer();});
     th.appendChild(d);
   });
+  ensureThumbs(f);
   // stage
-  const q=($('#vSearch').value||'').trim().toLowerCase();
   const showOvl=$('#vOvl').checked;
   const isPdf=f.ext==='pdf' && rawStore[f.id] && window.pdfjsLib;
   if (isPdf){
@@ -2611,13 +2715,20 @@ async function renderViewer(){
       let doc=V.pdfDocs[f.id];
       if (!doc){ doc=await window.pdfjsLib.getDocument({data:rawStore[f.id].slice(0)}).promise; V.pdfDocs[f.id]=doc; }
       const page=await doc.getPage(V.page);
-      const vp=page.getViewport({scale:1.35*V.zoom, rotation:(page.rotate+V.rot)%360});
+      // §5.2 25–800% zoom: render the canvas up to a safe pixel cap, CSS-scale the rest
+      const rot=(page.rotate+V.rot)%360;
+      const vp1=page.getViewport({scale:1, rotation:rot});
+      const desired=1.35*V.zoom;
+      const renderScale=Math.min(desired, 8192/Math.max(vp1.width,vp1.height), 5.5);
+      const cssR=desired/renderScale;
+      const vp=page.getViewport({scale:renderScale, rotation:rot});
       const cv=document.createElement('canvas'); cv.width=vp.width; cv.height=vp.height;
       await page.render({canvasContext:cv.getContext('2d'), viewport:vp}).promise;
       const wrap=document.createElement('div'); wrap.className='v-pagewrap'; wrap.appendChild(cv);
-      if (showOvl && pg.lines){
-        const sc=1.35*V.zoom;
-        dets.forEach(d=>{
+      wrap.dataset.cssScale=cssR;
+      const sc=renderScale;
+      if (pg.lines){
+        if (showOvl) dets.forEach(d=>{
           const ln=pg.lines[d.line]; if(!ln||!ln.bbox) return;
           const o=document.createElement('div'); o.className='ovl '+d.color+(d.kind==='assisted'?' assisted':''); o.title=d.label;
           o.style.left=(ln.bbox[0]*sc-2)+'px'; o.style.top=(ln.bbox[1]*sc-1)+'px';
@@ -2628,9 +2739,22 @@ async function renderViewer(){
             note.style.left=Math.max(0,ln.bbox[0]*sc)+'px';note.style.top=Math.max(0,ln.bbox[1]*sc-20)+'px';wrap.appendChild(note);
           }
         });
+        if (q) pg.lines.forEach(ln=>{                    // §5.2 in-document search overlays
+          if(!ln.bbox||!ln.text.toLowerCase().includes(q)) return;
+          const o=document.createElement('div'); o.className='ovl search';
+          o.style.left=(ln.bbox[0]*sc-2)+'px'; o.style.top=(ln.bbox[1]*sc-1)+'px';
+          o.style.width=(ln.bbox[2]*sc+4)+'px'; o.style.height=(ln.bbox[3]*sc+2)+'px';
+          wrap.appendChild(o);
+        });
       }
-      bindAssistedDrag(wrap,f,pg,1.35*V.zoom);
-      stage.innerHTML=''; stage.appendChild(wrap);
+      bindAssistedDrag(wrap,f,pg,sc);
+      if (cssR!==1){
+        wrap.style.transform='scale('+cssR+')'; wrap.style.transformOrigin='top left';
+        const sizer=document.createElement('div');
+        sizer.style.width=(cv.width*cssR)+'px'; sizer.style.height=(cv.height*cssR)+'px'; sizer.style.flex='none';
+        sizer.appendChild(wrap);
+        stage.innerHTML=''; stage.appendChild(sizer);
+      } else { stage.innerHTML=''; stage.appendChild(wrap); }
     }catch(e){ stage.innerHTML='<div class="empty">Could not render this PDF page: '+esc(e.message)+'</div>'; }
   } else {
     // text page rendering with inline highlights
@@ -2643,7 +2767,7 @@ async function renderViewer(){
       if (q && l.text.toLowerCase().includes(q))
         t=t.replace(new RegExp('('+q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')','gi'),'<span class="hl blue">$1</span>');
       const ds=byLine[li];
-      if (ds && !q){ const assisted=ds.find(x=>x.kind==='assisted');const c=(assisted||ds[0]).color; t=`<span class="hl ${c}" data-line="${li}" title="${esc(ds.map(x=>x.label).join(' · '))}">${t}</span>`; }
+      if (ds && !q){ const top=ds.find(x=>x.kind==='assisted')||ds.find(x=>x.kind==='boardhl')||ds[0]; t=`<span class="hl ${top.color}" data-line="${li}" title="${esc(ds.map(x=>x.label).join(' · '))}">${t}</span>`; }
       return `<span id="vline-${li}" data-line="${li}">${t}</span>`;
     }).join('\n');
     stage.innerHTML=''; stage.appendChild(div);
@@ -2664,12 +2788,13 @@ async function renderViewer(){
       const r=V.assist.results[Number(el.dataset.r)];V.fileId=r.fileId;V.page=r.page;renderViewer();
     }));
   } else {
-    dl.innerHTML = dets.length? dets.map((d,i)=>`<div class="det" data-i="${i}">
+    const listDets=dets.filter(d=>d.kind!=='boardhl');
+    dl.innerHTML = listDets.length? listDets.map((d,i)=>`<div class="det" data-i="${i}">
       <span class="chip ${d.color}">${d.kind}</span> <b>${esc(d.label)}</b>
       <div class="hint" style="margin-top:2px">${esc((d.r.srcText||'').slice(0,90))}</div></div>`).join('')
     : '<div class="empty">No detections on this page.</div>';
     dl.querySelectorAll('.det').forEach(el=>el.addEventListener('click',()=>{
-      const d=dets[+el.dataset.i];
+      const d=listDets[+el.dataset.i];
       if(V.assist.enabled&&d.kind==='row')return applyAssistedSeed(d.r.srcText,d.r,{fileId:f.id,page:V.page,line:d.line});
       const tgt=document.getElementById('vline-'+d.line);
       if (tgt&&tgt.scrollIntoView) tgt.scrollIntoView({block:'center',behavior:'smooth'});
@@ -2685,16 +2810,63 @@ function jumpToEvidence(r){
     if (tgt){ if(tgt.scrollIntoView) tgt.scrollIntoView({block:'center'}); tgt.classList.add('hl','blue'); }
   }, 60);
 }
-$('#vFileSel').addEventListener('change', e=>{ state.viewer.fileId=e.target.value; state.viewer.page=1; renderViewer(); });
 $('#vPrev').addEventListener('click', ()=>{ state.viewer.page--; renderViewer(); });
 $('#vNext').addEventListener('click', ()=>{ state.viewer.page++; renderViewer(); });
-$('#vZoomIn').addEventListener('click', ()=>{ state.viewer.zoom=Math.min(3,state.viewer.zoom*1.2); renderViewer(); });
-$('#vZoomOut').addEventListener('click', ()=>{ state.viewer.zoom=Math.max(.4,state.viewer.zoom/1.2); renderViewer(); });
-$('#vFit').addEventListener('click', ()=>{ state.viewer.zoom=1; state.viewer.rot=0; renderViewer(); });
+/* §5.2 — zoom 25%–800% */
+const vZoomBy=k=>{ state.viewer.zoom=Math.max(.25,Math.min(8,state.viewer.zoom*k)); renderViewer(); };
+$('#vZoomIn').addEventListener('click', ()=>vZoomBy(1.25));
+$('#vZoomOut').addEventListener('click', ()=>vZoomBy(1/1.25));
+$('#vFit').addEventListener('click', async ()=>{
+  const V=state.viewer, f=viewerFile(); V.rot=0;
+  if (f&&f.ext==='pdf'&&V.pdfDocs[f.id]){
+    try{ const page=await V.pdfDocs[f.id].getPage(V.page);
+      const vp=page.getViewport({scale:1.35, rotation:page.rotate%360});
+      V.zoom=Math.max(.25,Math.min(8,($('#vStage').clientWidth-40)/vp.width)); }
+    catch(e){ V.zoom=1; }
+  } else V.zoom=1;
+  renderViewer();
+});
 $('#vRotate').addEventListener('click', ()=>{ state.viewer.rot=(state.viewer.rot+90)%360; renderViewer(); });
 $('#vOvl').addEventListener('change', renderViewer);
 $('#vOvlFilter').addEventListener('change', renderViewer);
+$('#vBoardHl').addEventListener('change', e=>{ state.viewer.boardHl=e.target.value||null; renderViewer(); });
+$('#vDark').addEventListener('click', ()=>{ state.viewer.dark=!state.viewer.dark; renderViewer(); });
+$('#vPrint').addEventListener('click', ()=>{
+  const cv=$('#vStage canvas'), tp=$('#vStage .v-textpage');
+  const w=window.open('','_blank'); if(!w){ toast('Pop-up blocked — allow pop-ups to print'); return; }
+  if (cv) w.document.write('<img src="'+cv.toDataURL('image/png')+'" style="max-width:100%">');
+  else if (tp) w.document.write('<pre style="font:11px/1.7 monospace;white-space:pre-wrap">'+esc(tp.textContent)+'</pre>');
+  w.document.close(); w.focus(); setTimeout(()=>w.print(),250);
+});
+$('#vDownload').addEventListener('click', ()=>{
+  const f=viewerFile(); if(!f) return;
+  const blob = (f.ext==='pdf'&&rawStore[f.id])
+    ? new Blob([rawStore[f.id]],{type:'application/pdf'})
+    : new Blob([f.pages.map(pg=>(pg.lines||[]).map(l=>l.text).join('\n')).join('\n\n— page break —\n\n')],{type:'text/plain'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download=f.ext==='pdf'?f.name:(f.name.replace(/\.[^.]+$/,'')+'.txt');
+  a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+});
 $('#vSearch').addEventListener('input', ()=>renderViewer());
+$('#vSearchNext').addEventListener('click', ()=>{     // jump to the next page containing a match
+  const f=viewerFile(); if(!f) return;
+  const q=($('#vSearch').value||'').trim().toLowerCase(); if(!q) return;
+  const pages=[]; f.pages.forEach((tp,i)=>{ if((tp.lines||[]).some(l=>l.text.toLowerCase().includes(q))) pages.push(i+1); });
+  if (!pages.length) return;
+  const nxt=pages.find(n=>n>state.viewer.page) ?? pages[0];
+  state.viewer.page=nxt; renderViewer();
+});
+$('#vSearch').addEventListener('keydown', e=>{ if(e.key==='Enter') $('#vSearchNext').click(); });
+/* §5.2 — ctrl+wheel zoom on the canvas, keyboard page/zoom */
+$('#vStage').addEventListener('wheel', e=>{ if(e.ctrlKey){ e.preventDefault(); vZoomBy(e.deltaY<0?1.15:1/1.15); } }, {passive:false});
+document.addEventListener('keydown', e=>{
+  if (!$('#pt-viewer').classList.contains('active')) return;
+  if (e.target.matches('input,select,textarea')) return;
+  if (e.key==='ArrowLeft'){ state.viewer.page--; renderViewer(); }
+  else if (e.key==='ArrowRight'){ state.viewer.page++; renderViewer(); }
+  else if (e.key==='+'||e.key==='='){ vZoomBy(1.25); }
+  else if (e.key==='-'){ vZoomBy(1/1.25); }
+});
 $('#vAssistMode').addEventListener('click',()=>{
   const V=state.viewer;V.assist.enabled=!V.assist.enabled;
   if(V.assist.enabled){V.rot=0;$('#vOvl').checked=true;}
@@ -2737,42 +2909,64 @@ function fileSchedule(f){
       : {legend:null};
     const ctx={board:ctxBoard?ctxBoard.norm:null, sawHeader:false, inNotes:false,
       lastWay:null, lastPhase:null, pendingRows:[], protectionLegend:parsedLegend.legend};
-    lines.forEach(t=>{
+    lines.forEach((t,li)=>{
       const row=parseScheduleLine(t,ctx);
-      if (row){ const bn=ctx.board||'?'; (rowsByBoard[bn]=rowsByBoard[bn]||[]).push(row); }
+      if (row){ const bn=ctx.board||'?'; row.fileId=f.id; row.page=pi+1; row.line=li;
+        (rowsByBoard[bn]=rowsByBoard[bn]||[]).push(row); }
     });
     if (window.EstimationExtractorCore) window.EstimationExtractorCore.finalizeScheduleContext(ctx);
   });
   return rowsByBoard;
 }
 function cableKey(c){ return c? (c.cores?c.cores+'C':'')+(c.earth?'+E':'')+' '+(c.size??'')+(c.construction?' '+c.construction:'') : ''; }
+/* §5.5 — rows for the structured diff. Prefer the analysed rows (which include the
+   AI-extraction recall path); fall back to the regex re-parse for un-analysed files. */
+function fileRowsForDiff(f){
+  const p=state.cur, A=p&&p.analysis;
+  const byBoard={}; let n=0;
+  if (A) A.rows.forEach(r=>{
+    if (r.fileId!==f.id || r.status==='rejected' || r.kind==='mention' || r.kind==='manual') return;
+    const bn=r.boardNorm||'?'; (byBoard[bn]=byBoard[bn]||[]).push(r); n++;
+  });
+  if (n) return {rows:byBoard, source:'analysis'};
+  return {rows:fileSchedule(f), source:'regex'};
+}
+const cmpRef = r => (r&&r.fileId)? {fileId:r.fileId, page:r.page||1, line:r.line??null} : null;
 function compareSchedules(fa, fb){
-  const A=fileSchedule(fa), B=fileSchedule(fb);
+  const RA=fileRowsForDiff(fa), RB=fileRowsForDiff(fb);
+  const A=RA.rows, B=RB.rows;
+  compareSchedules.source = RA.source==='analysis'&&RB.source==='analysis' ? 'analysis'
+    : RA.source==='regex'&&RB.source==='regex' ? 'regex' : 'mixed';
   const changes=[];
   const boards=[...new Set([...Object.keys(A),...Object.keys(B)])];
   boards.forEach(bn=>{
     const ra=A[bn]||[], rb=B[bn]||[];
-    if (!ra.length){ changes.push({type:'board', txt:'Board '+bn+' added in revision', bn}); }
-    if (!rb.length){ changes.push({type:'board', txt:'Board '+bn+' removed in revision', bn}); }
-    const byWayA={}, byWayB={};
-    ra.forEach(r=>{ if(r.way!==null) byWayA[r.way]=r; });
-    rb.forEach(r=>{ if(r.way!==null) byWayB[r.way]=r; });
-    const ways=[...new Set([...Object.keys(byWayA),...Object.keys(byWayB)])].map(Number).sort((a,b)=>a-b);
-    ways.forEach(w=>{
-      const a=byWayA[w], b=byWayB[w];
-      if (a&&!b){ changes.push({type:'circuit-removed', bn, way:w, txt:`${bn} way ${w} removed (${a.device||(a.spare?'spare':'circuit')}${a.rating?' '+a.rating+'A':''})`, src:a.srcText}); return; }
-      if (!a&&b){ changes.push({type:'circuit-added', bn, way:w, txt:`${bn} way ${w} added (${b.device||(b.spare?'spare':'circuit')}${b.rating?' '+b.rating+'A':''})`, src:b.srcText}); return; }
+    if (!ra.length){ changes.push({type:'board', bn, txt:'Board '+boardLabel(bn)+' added in revision', refB:cmpRef(rb[0])}); }
+    if (!rb.length){ changes.push({type:'board', bn, txt:'Board '+boardLabel(bn)+' removed in revision', refA:cmpRef(ra[0])}); }
+    // key phase-slots independently only when both sides carry phases for this board
+    const phased = ra.some(r=>r.phase&&r.phase!=='3PH') && rb.some(r=>r.phase&&r.phase!=='3PH');
+    const keyOf = r => r.way===null||r.way===undefined? null : (phased? r.way+'/'+(r.phase||'') : String(r.way));
+    const byKeyA={}, byKeyB={};
+    ra.forEach(r=>{ const k=keyOf(r); if(k!==null&&!byKeyA[k]) byKeyA[k]=r; });
+    rb.forEach(r=>{ const k=keyOf(r); if(k!==null&&!byKeyB[k]) byKeyB[k]=r; });
+    const keys=[...new Set([...Object.keys(byKeyA),...Object.keys(byKeyB)])]
+      .sort((x,y)=>parseFloat(x)-parseFloat(y)||String(x).localeCompare(String(y)));
+    keys.forEach(k=>{
+      const a=byKeyA[k], b=byKeyB[k];
+      const lbl=phased? 'way '+k.replace('/',' ') : 'way '+k;
+      if (a&&!b){ changes.push({type:'circuit-removed', bn, way:k, txt:`${boardLabel(bn)} ${lbl} removed (${a.device||(a.spare?'spare':'circuit')}${a.rating?' '+a.rating+'A':''})`, src:a.srcText, refA:cmpRef(a)}); return; }
+      if (!a&&b){ changes.push({type:'circuit-added', bn, way:k, txt:`${boardLabel(bn)} ${lbl} added (${b.device||(b.spare?'spare':'circuit')}${b.rating?' '+b.rating+'A':''})`, src:b.srcText, refB:cmpRef(b)}); return; }
       if (a&&b){
         if ((a.device||'')!==(b.device||'') && !(a.spare&&b.spare))
-          changes.push({type:'device-changed', bn, way:w, txt:`${bn} way ${w}: device changed ${a.device||(a.spare?'SPARE':'—')} → ${b.device||(b.spare?'SPARE':'—')}`, src:b.srcText});
+          changes.push({type:'device-changed', bn, way:k, txt:`${boardLabel(bn)} ${lbl}: device changed ${a.device||(a.spare?'SPARE':'—')} → ${b.device||(b.spare?'SPARE':'—')}`, src:b.srcText, refA:cmpRef(a), refB:cmpRef(b)});
         if (a.rating!==b.rating && a.rating!==null && b.rating!==null)
-          changes.push({type:'rating-changed', bn, way:w, txt:`${bn} way ${w}: rating changed ${a.rating}A → ${b.rating}A`, src:b.srcText});
+          changes.push({type:'rating-changed', bn, way:k, txt:`${boardLabel(bn)} ${lbl}: rating changed ${a.rating}A → ${b.rating}A`, src:b.srcText, refA:cmpRef(a), refB:cmpRef(b)});
         if (cableKey(a.cable)!==cableKey(b.cable) && (a.cable||b.cable))
-          changes.push({type:'cable-changed', bn, way:w, txt:`${bn} way ${w}: cable changed ${a.cable?a.cable.orig:'—'} → ${b.cable?b.cable.orig:'—'}`, src:b.srcText});
+          changes.push({type:'cable-changed', bn, way:k, txt:`${boardLabel(bn)} ${lbl}: cable changed ${a.cable?a.cable.orig:'—'} → ${b.cable?b.cable.orig:'—'}`, src:b.srcText, refA:cmpRef(a), refB:cmpRef(b)});
         if (a.spare&&!b.spare&&b.device)
-          changes.push({type:'circuit-added', bn, way:w, txt:`${bn} way ${w}: spare way now used (${b.device}${b.rating?' '+b.rating+'A':''})`, src:b.srcText});
+          changes.push({type:'circuit-added', bn, way:k, txt:`${boardLabel(bn)} ${lbl}: spare way now used (${b.device}${b.rating?' '+b.rating+'A':''})`, src:b.srcText, refB:cmpRef(b)});
         if (!a.spare&&b.spare&&a.device)
-          changes.push({type:'circuit-removed', bn, way:w, txt:`${bn} way ${w}: circuit removed, now spare (was ${a.device}${a.rating?' '+a.rating+'A':''})`, src:a.srcText});
+          changes.push({type:'circuit-removed', bn, way:k, txt:`${boardLabel(bn)} ${lbl}: circuit removed, now spare (was ${a.device}${a.rating?' '+a.rating+'A':''})`, src:a.srcText, refA:cmpRef(a)});
       }
     });
   });
@@ -2826,10 +3020,16 @@ function runCompare(){
   const LBL={'circuit-added':['Circuits added','green'],'circuit-removed':['Circuits removed','red'],
     'rating-changed':['Ratings changed','amber'],'device-changed':['Devices changed','purple'],
     'cable-changed':['Cables changed','cyan'],'board':['Boards added/removed','blue']};
-  $('#cmpSummary').innerHTML = cmpChanges.length
+  const srcChip = compareSchedules.source==='analysis'
+    ? '<span class="chip cyan" title="Rows come from the analysed take-off (including AI extraction)">diff from analysed rows</span>'
+    : compareSchedules.source==='regex'
+      ? '<span class="chip grey" title="No analysis for these documents yet — regex re-parse only. Run ⚙ Analyse documents for full recall.">diff from regex re-parse</span>'
+      : '<span class="chip amber" title="One side has analysed rows, the other only a regex re-parse — run ⚙ Analyse documents so both sides compare equally">mixed sources — re-analyse for a fair diff</span>';
+  $('#cmpSummary').innerHTML = (cmpChanges.length
     ? Object.entries(counts).map(([t,n])=>`<span class="chip ${LBL[t]?LBL[t][1]:'grey'}">${n} ${LBL[t]?LBL[t][0].toLowerCase():t}</span>`).join('')
-    : '<span class="chip green">No electrical changes detected between these schedules</span>';
+    : '<span class="chip green">No electrical changes detected between these schedules</span>')+srcChip;
   $('#chgPanel').style.display=cmpChanges.length?'':'none';
+  $('#cmpTextBtn').style.display='';
   renderChgList();
   // text diff panes
   const la=fa.pages.flatMap(pg=>pg.lines.map(l=>l.text));
@@ -2857,22 +3057,47 @@ function runCompare(){
   const sync=(src,dst)=>()=>{ if(lockSc)return; lockSc=true; dst.scrollTop=src.scrollTop; lockSc=false; };
   bA.onscroll=sync(bA,bB); bB.onscroll=sync(bB,bA);
   cmpPtr=-1;
-  $('#nextChgBtn').style.display = $('#cmpBodyA').querySelector('.del,.chg,.blank')?'':'none';
+  $('#nextChgBtn').style.display = ($('#cmpPanes').style.display!=='none' && $('#cmpBodyA').querySelector('.del,.chg,.blank'))?'':'none';
   toast(cmpChanges.length? cmpChanges.length+' electrical changes found' : 'No electrical changes found');
 }
+/* §5.5 — grouped per board; every change clicks through to its evidence in the viewer */
 function renderChgList(){
   const filter=$('#chgFilter').value;
   const list=cmpChanges.filter(c=>filter==='all'||c.type===filter);
   const ICO={'circuit-added':['＋','green'],'circuit-removed':['−','red'],'rating-changed':['Δ','amber'],
     'device-changed':['⇄','purple'],'cable-changed':['⌁','cyan'],'board':['◫','blue']};
-  $('#chgList').innerHTML = list.length? list.map(c=>{
-    const [ic,cl]=ICO[c.type]||['•','grey'];
-    return `<div class="chg-it"><span class="chip ${cl}">${ic}</span> ${esc(c.txt)}
-      ${c.src?`<span class="hint" style="margin:0 0 0 auto;font-family:var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:340px">${esc(c.src)}</span>`:''}</div>`;
-  }).join('') : '<div class="empty">No changes of this type.</div>';
+  const byBoard={};
+  list.forEach(c=>{ (byBoard[c.bn||'?']=byBoard[c.bn||'?']||[]).push(c); });
+  const host=$('#chgList');
+  if (!list.length){ host.innerHTML='<div class="empty">No changes of this type.</div>'; return; }
+  host.innerHTML=Object.keys(byBoard).sort().map(bn=>{
+    const items=byBoard[bn];
+    return `<div style="padding:8px 14px 4px;font-weight:800;font-size:12.5px;border-top:1px solid var(--line)">
+        ${esc(bn==='?'?'No board reference':boardLabel(bn))} <span class="chip grey">${items.length} change${items.length===1?'':'s'}</span></div>`
+      + items.map(c=>{
+        const [ic,cl]=ICO[c.type]||['•','grey'];
+        const gi=cmpChanges.indexOf(c);
+        const jumpable=c.refB||c.refA;
+        return `<div class="chg-it" data-g="${gi}" style="${jumpable?'cursor:pointer':''}" title="${jumpable?'Show this change in the document':''}">
+          <span class="chip ${cl}">${ic}</span> ${esc(c.txt)}
+          ${jumpable?'<span class="chip grey" style="margin-left:auto">👁 view</span>':''}
+          ${c.src?`<span class="hint" style="margin:0;font-family:var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:280px">${esc(c.src)}</span>`:''}</div>`;
+      }).join('');
+  }).join('');
+  host.querySelectorAll('.chg-it[data-g]').forEach(el=>el.addEventListener('click',()=>{
+    const c=cmpChanges[+el.dataset.g]; const ref=c&&(c.refB||c.refA);
+    if (ref) jumpToEvidence(ref);
+  }));
 }
 $('#chgFilter').addEventListener('change', renderChgList);
 $('#runCmpBtn').addEventListener('click', runCompare);
+$('#cmpTextBtn').addEventListener('click', ()=>{               // §5.5 raw text diff behind a toggle
+  const panes=$('#cmpPanes');
+  const show=panes.style.display==='none';
+  panes.style.display=show?'':'none';
+  $('#cmpTextBtn').textContent=show?'≋ Hide text diff':'≋ Text diff';
+  $('#nextChgBtn').style.display=(show&&$('#cmpBodyA').querySelector('.del,.chg,.blank'))?'':'none';
+});
 $('#nextChgBtn').addEventListener('click', ()=>{
   const marks=$$('#cmpBodyA .dline.del, #cmpBodyA .dline.chg, #cmpBodyA .dline.blank');
   if (!marks.length) return;

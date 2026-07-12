@@ -25,17 +25,17 @@ _Last updated: 2026-07-08. Branch `claude/electrical-estimating-tool-h68ums`; PR
   - Full detail: `reports/coverage-ai.md`. Regex-only baseline: `reports/coverage-baseline.md`; dialect proof: `reports/dialect-probe.md`.
 - **Two tractable follow-ups (not extractor failures):** (a) recalibrate the ground-truth strings (Dundee CU names, Syntegral min_boards); (b) send schematics at full resolution / tiled + pass OCR text so the tiny A0 DB labels (DB-00-08…) resolve to specific refs instead of descriptive names. Background functions have no latency ceiling, so full-res is now viable.
 
-## Five feature workstreams (docs/BUILD_BRIEF.md §5) — status
-
-All work so far is **Workstream 0 (extraction completeness)**, which underpins the five but is separate from them.
+## Five feature workstreams (docs/BUILD_BRIEF.md §5) — status: ALL FIVE SHIPPED
 
 | # | Workstream | Status |
 |---|---|---|
-| 5.1 | Three-type page classification (Schematic / DB Schedule / Specification) | **Not started.** Classifier still uses the long `PAGE_TYPES` list; board-ref detection was generalised (WS0.2) but the 3-type collapse + per-page override persistence is not done. |
-| 5.2 | Revision compare + full canvas viewer (A0, zoom, thumbnails, search, dark/light) | **Not started.** Viewer still the original; no structured revision diff. |
-| 5.3 | Drop-anywhere capture + auto-scrape + assisted review + schematic↔schedule cross-ref | **Foundations only.** Auto-OCR on ingest (WS0.1), reconciliation gaps → Review queue (WS0.3), and AI auto-scrape (WS0.4) are in. Full-page dropzone, side-by-side assisted review, and cross-referencing are **not** done. |
-| 5.4 | Merge Boards + Devices into one page (per-board device table + roll-up) | **Not started** as a merged page. Board header capture (§4A.1) + grouped-summation foundations exist in the AI merge + `aggregateDevices`. |
-| 5.5 | Rebuild Compare (simple, powerful, synced dual-pane) | **Not started.** |
+| 5.1 | Three-type page classification | ✅ **Done** (PR #6). UI classifies exactly Schematic / DB Schedule / Specification (+ "Other"); fine classifier kept underneath as `sub_format`; per-page override + `source` provenance. |
+| 5.2 | Full canvas viewer | ✅ **Done.** 25–800% zoom (canvas-capped + CSS residual for A0), ctrl+wheel, real PDF thumbnails, multi-doc tabs, cross-page search w/ overlays + jump, smart-highlight by board ref w/ clickable page map, dark/light canvas, print/download, keyboard nav. |
+| 5.3 | Drop-anywhere + auto-scrape + assisted review + cross-ref | ✅ **Done** (PR #6). Full-page dropzone; auto-scrape on ingest (WS0); `buildCrossReference()` links schematic↔schedule boards (DB-00-08 ↔ DB-00-08P), flags rating/cable discrepancies, resolution UI records `chosen_source`. |
+| 5.4 | Merge Boards + Devices | ✅ **Done** (PR #6). One "Boards & Devices" page: feed-hierarchy tree + board list, per-board header card + device table, all-boards roll-up w/ drill-down. |
+| 5.5 | Rebuild Compare | ✅ **Done.** Structured diff from **analysed rows** (AI recall path; regex fallback + source chip), phase-aware way keys, grouped per board, every change clicks through to its evidence in the viewer; raw text diff behind a toggle. |
+
+**Phase E (desktop, Windows first):** `.github/workflows/desktop.yml` builds the Windows `.exe` + macOS `.dmg`/`.zip` on native runners — run the workflow for artifacts, or push a `desktop-v*` tag for a GitHub Release. Unsigned until the owner adds signing identities; the Microsoft-Store ("software centre") route and its exact requirements are documented in `desktop/README.md`.
 
 ## Workstream 0 (done, on `main`)
 
