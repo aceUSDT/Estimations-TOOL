@@ -23,7 +23,21 @@ export const EXTRACTION_SYSTEM_PROMPT = `You are the extraction engine of an ele
 - hevacomp: device-note block ("Small power type B RCBO/AFDD 10kA…"), "Served by SBxx"; rows like "7/L1 20 6.0 2.5 LSF Singles Fixed power …".
 - cu (consumer unit): Board Identity e.g. "Consumer Unit (General Apartment)", No of Ways, DB Incomer Device; several CU variants may share one page — extract each as its own board.
 - switchboard / mccb: one row per outgoing device/board; MCCB schedules often carry a Summary Index (Ref/Location/Size) — extract index entries as boards too.
+- hager_grid: TPN grid with way number spanning three phase sub-rows ("7-L1 / 7-L2 / 7-L3" or a way cell beside an L1/L2/L3 column); merged rating/description/cable cells spanning all three phase rows = ONE common multi-pole device; per-phase rows with their own ratings = independent single-phase circuits; RCD often Yes/No; "Spare" may be printed per phase row.
 - simple: Way No / Device Rating(A) / Device Type / Phase + hand notes.
+
+## SPN vs TPN board classification (phase_config — classify EVERY board)
+- SPN (single-phase + neutral): one live phase + N. Schedule is one row per circuit. Circuit labels like "1-L1, 2-L1, 3-L1…" with NO L2/L3 row structure are SPN — the L1 suffix alone is NEVER proof of TPN.
+- TPN (three-phase + neutral): L1+L2+L3+N. One numbered way spans L1/L2/L3 sub-rows (or repeats the way number per phase row); can hold 1× triple-pole device OR up to 3× independent single-phase devices.
+- Strong TPN evidence: repeated L1/L2/L3 phase rows under each way; TP/3P/4P/TPN/TP&N device poles or board header; 3-phase incomer; per-phase conductor-count columns; "No Poles TP&N".
+- Strong SPN evidence: compact row-per-circuit table; no L2/L3 anywhere; single-phase incomer; simple RCD Yes/No column.
+- Conflicting or cropped evidence → phase_config "ambiguous". Never upgrade to SPN/TPN without structural evidence; put the deciding signals in phase_config_evidence.
+- TPN counting traps (these cause the worst real-world errors):
+  * A rating/description spanning three phase rows (e.g. "16 TPN" beside 7-L1/7-L2/7-L3) is ONE device entry, phase "L1L2L3" — never three.
+  * Identical load names on L1/L2/L3 with per-row devices/ratings are THREE single-phase circuits; with one common multi-pole device they are ONE — decide from poles, merged cells, and cable conductor counts; if unresolved, extract as separate rows and add a flag "possible common multi-pole device".
+  * An empty phase position inside a partially-used way ("empty"/blank row under a used way) is device_class "space" with its phase — it is NOT an active circuit and NOT the same as a spare way.
+  * A fully spare way on a TPN board printed as three "Spare" phase rows → one spare entry per printed phase row, as shown.
+  * Never sum a multi-pole device's rating across phases — the rating is per device.
 
 ## Legends (read the page's own legend when present; these are the defaults)
 - Device codes: P1=MCB curve C, P2=RCBO Type A 30mA, P3=MCB/fuse + separate 30mA RCD, P4=HRC fuse, P5=MCB user-defined, B=fitted blank (space).
@@ -60,9 +74,11 @@ const BOARD = {
   additionalProperties: false,
   required: ['ref', 'description', 'location', 'fed_from_ref', 'serving', 'ways_total', 'ways_sp', 'ways_tp',
     'spare_capacity_pct', 'incomer_class', 'incomer_rating_a', 'incomer_poles', 'board_model', 'metering',
-    'fault_ka', 'board_type_text', 'continuation', 'confidence'],
+    'fault_ka', 'board_type_text', 'phase_config', 'phase_config_evidence', 'continuation', 'confidence'],
   properties: {
     ref: { type: 'string', description: 'Board reference exactly as printed' },
+    phase_config: { type: 'string', enum: ['SPN', 'TPN', 'mixed', 'ambiguous', ''] },
+    phase_config_evidence: { type: 'string', description: 'The structural signals that decided phase_config; "" if none' },
     description: STR,
     location: STR,
     fed_from_ref: { type: 'string', description: 'Parent board ref / Served by / DB Fed From; "" if none' },
@@ -142,7 +158,7 @@ export const EXTRACTION_SCHEMA = {
       required: ['type', 'sub_format', 'confidence'],
       properties: {
         type: { type: 'string', enum: ['schematic', 'db_schedule', 'specification', 'other'] },
-        sub_format: { type: 'string', enum: ['amtech', 'trimble', 'bes', 'bam_epo', 'syntegral', 'hevacomp', 'cu', 'switchboard', 'mccb', 'simple', 'unknown'] },
+        sub_format: { type: 'string', enum: ['amtech', 'trimble', 'bes', 'bam_epo', 'syntegral', 'hevacomp', 'cu', 'switchboard', 'mccb', 'hager_grid', 'simple', 'unknown'] },
         confidence: NUM,
       },
     },

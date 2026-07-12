@@ -263,6 +263,7 @@
   .hl.cyan{background:var(--cyan-soft);outline:1px solid #b6e2ec;}
   .hl.blue{background:var(--blue-soft);outline:2px solid var(--blue);}
   .hl.boardhl{background:rgba(22,104,227,.22);outline:3px solid var(--blue);}
+  .devdot{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:7px;vertical-align:-1px;}
   .ovl{position:absolute;border-radius:2px;pointer-events:none;}
   .ovl.green{background:rgba(15,153,96,.16);outline:1.5px solid rgba(15,153,96,.7);}
   .ovl.amber{background:rgba(200,125,14,.14);outline:1.5px solid rgba(200,125,14,.7);}
@@ -1381,7 +1382,7 @@ function mergeAiResult(A,out,fileId,pageNo){
     }
     const e=A.boards[norm];
     if(!e.pages.some(x=>x.fileId===fileId&&x.page===pageNo)) e.pages.push({fileId,page:pageNo});
-    e.header=Object.assign(e.header||{}, Object.fromEntries(Object.entries(b).filter(([k,v])=>v!==null&&k!=='ref'&&k!=='confidence')));
+    e.header=Object.assign(e.header||{}, Object.fromEntries(Object.entries(b).filter(([k,v])=>v!==null&&v!==''&&k!=='ref'&&k!=='confidence')));
     if (b.fed_from_ref && !e.manual){
       const fb=normBoard(b.fed_from_ref);
       if (fb && fb!==norm && 0.75>(e.parentConf||0)){ e.parent=fb; e.parentConf=0.75; }
@@ -1938,6 +1939,14 @@ function deviceTotals(rows, exclSpare){
   return by;
 }
 const countable = k => !k.startsWith('(');
+/* Colour-coding per counted device type (design doc: estimator-style "dot off" colours).
+   Deterministic hash → fixed palette, so MCB 32A is the same colour everywhere in the app. */
+const DEVICE_PALETTE=['#1668e3','#0f9960','#c87d0e','#7b5cd6','#d33c43','#0aa2c0','#b0328f','#5b7a1e','#8a5a2c','#2f6f8f'];
+function deviceColor(name){
+  let h=0; const s=String(name).toUpperCase();
+  for (let i=0;i<s.length;i++) h=(h*31+s.charCodeAt(i))>>>0;
+  return DEVICE_PALETTE[h%DEVICE_PALETTE.length];
+}
 /* shared by the all-boards roll-up and the single-board detail view (§5.4) */
 function buildDeviceTable(devs, approveLabel){
   const p=state.cur, A=p.analysis;
@@ -1951,15 +1960,15 @@ function buildDeviceTable(devs, approveLabel){
     const allConf=rec.rows.every(r=>r.status==='confirmed');
     const isCount=countable(dev);
     tr.innerHTML=`<td><span class="car" style="color:var(--txt3);font-size:10px">▶</span></td>
-      <td class="strong">${esc(dev)}${isCount?'':' <span class="hint" style="display:inline;margin:0">not counted as devices</span>'}</td>
-      <td class="num"><b style="font-size:14px;color:${isCount?'var(--blue)':'var(--txt3)'}">${rec.qty}</b></td>
+      <td class="strong">${isCount?`<span class="devdot" style="background:${deviceColor(dev)}"></span>`:''}${esc(dev)}${isCount?'':' <span class="hint" style="display:inline;margin:0">not counted as devices</span>'}</td>
+      <td class="num"><b style="font-size:14px;color:${isCount?deviceColor(dev):'var(--txt3)'}">${rec.qty}</b></td>
       <td>${ratings.map(r=>`<span class="chip grey">${r}A</span>`).join(' ')||'—'}</td>
       <td>${allConf?'<span class="chip green">Confirmed</span>':confChip(minConf)}</td>
       <td><button class="btn sm ghost" data-a="ok" title="Approve all evidence rows">✓ Approve</button></td>`;
     const evtr=document.createElement('tr'); evtr.style.display='none';
     const evtd=document.createElement('td'); evtd.colSpan=6; evtd.style.padding='0';
     evtr.appendChild(evtd); evtr.className='evwrap';
-    evtd.innerHTML=`<table class="t" style="background:#f7fafd">${rec.rows.map(r=>evRowHtml(r)).join('')}</table>`;
+    evtd.innerHTML=`<table class="t" style="background:#f7fafd;border-left:4px solid ${countable(dev)?deviceColor(dev):'var(--line)'}">${rec.rows.map(r=>evRowHtml(r)).join('')}</table>`;
     tr.addEventListener('click', e=>{
       if (e.target.dataset&&e.target.dataset.a==='ok'){
         rec.rows.forEach(r=>{ const live=A.rows.find(x=>x.id===r.id); if(live) live.status='confirmed'; });
@@ -2021,10 +2030,34 @@ function renderResults(){
   });
 }
 /* ============================ §5.4 — MERGED BOARD DETAIL ============================ */
+/* SPN/TPN phase configuration (design doc + AI_Guide_SPN_vs_TPN):
+   prefer the model's structural classification (header.phase_config), else infer
+   deterministically from the captured rows — L1/L2/L3 spread, 3PH rows or 3+-pole
+   devices ⇒ TPN; rows all on one phase ⇒ SPN (an L1 suffix alone is never TPN).
+   Header signals (ways TP>0, "TP&N" text, 3/4-pole incomer) also count. */
+function boardPhaseConfig(norm){
+  const p=state.cur, A=p&&p.analysis; if(!A||!A.boards[norm]) return null;
+  const h=A.boards[norm].header||{};
+  if (['SPN','TPN','mixed','ambiguous'].includes(h.phase_config)) return {v:h.phase_config, src:'extracted'};
+  if ((+h.ways_tp||0)>0 || (+h.incomer_poles||0)>=3 || /TP\s*&?\s*N|3\s*P(H|\b)|THREE\s*PHASE/i.test(String(h.board_type_text||''))) return {v:'TPN', src:'header'};
+  const rows=A.rows.filter(r=>r.boardNorm===norm && r.status!=='rejected' && !r.space);
+  if (!rows.length) return null;
+  const ph=new Set(rows.map(r=>r.phase).filter(x=>x&&x!=='3PH'));
+  if (rows.some(r=>r.phase==='3PH'||(r.poles||0)>=3) || ph.size>=2) return {v:'TPN', src:'inferred'};
+  return {v:'SPN', src:'inferred'};
+}
+const phaseConfigChip=norm=>{
+  const pc=boardPhaseConfig(norm); if(!pc) return '';
+  const cl=pc.v==='TPN'?'cyan':pc.v==='SPN'?'green':'amber';
+  const lbl=pc.v==='TPN'?'TPN · 3-phase':pc.v==='SPN'?'SPN · 1-phase':pc.v;
+  return `<span class="chip ${cl}" title="Phase configuration (${pc.src}) — a TPN way holds 1× TP device or up to 3× single-phase devices">${lbl}</span>`;
+};
 function boardHeaderCard(b){
   const h=b.header||{};
   const val=v=>(v===undefined||v===null||v===''?'—':v);
+  const pc=boardPhaseConfig(b.norm);
   const fields=[
+    ['Phase config', pc? (pc.v==='TPN'?'TPN — 3-phase':pc.v==='SPN'?'SPN — single-phase':pc.v)+(pc.src!=='extracted'?' ('+pc.src+')':'') : '—'],
     ['Board type', BOARD_TYPES[b.type]||val(h.board_type_text)],
     ['Fed from', b.parent?boardLabel(b.parent):val(h.fed_from_ref)],
     ['Serving', val(h.serving)],
@@ -2238,7 +2271,7 @@ function renderBoards(){
     tr.className='board-row'+(state.selectedBoard===b.norm?' sel':'');
     tr.style.cursor='pointer';
     tr.innerHTML=`<td class="strong">${esc(b.orig)}</td>
-      <td>${esc(BOARD_TYPES[b.type]||'')}</td>
+      <td>${phaseConfigChip(b.norm)||esc(BOARD_TYPES[b.type]||'')}</td>
       <td>${b.parent?esc(boardLabel(b.parent))+(b.manual?' <span class="chip blue">manual</span>':''):'<span class="chip grey">unknown</span>'}
         <button class="btn sm ghost" data-a="parent">✎</button></td>
       <td class="num">${boardDeviceCount(b.norm)}</td>
@@ -2277,7 +2310,7 @@ function renderBoards(){
     const cable=feed&&feed.cable?`<span class="cable-lbl">⌁ ${esc(feed.cable.orig)}</span>`:'';
     const dev=b?` <span class="chip grey">${boardDeviceCount(norm)} devices</span>`:'';
     const label=b?b.orig:boardLabel(norm);
-    const typeChip=b?`<span class="chip ${b.type==='MAIN'?'blue':b.type==='SMDB'||b.type==='MDB'?'cyan':'grey'}">${esc(BOARD_TYPES[b.type]||'')}</span>`:'<span class="chip purple">Source</span>';
+    const typeChip=b?(phaseConfigChip(norm)||`<span class="chip ${b.type==='MAIN'?'blue':b.type==='SMDB'||b.type==='MDB'?'cyan':'grey'}">${esc(BOARD_TYPES[b.type]||'')}</span>`):'<span class="chip purple">Source</span>';
     const kids=(kidsOf[norm]||[]).map(k=>nodeHtml(k,depth+1)).join('');
     const selCls = b && state.selectedBoard===norm ? ' sel' : '';
     return `<div class="tnode"><span class="trow${selCls}"${b?` data-board="${esc(norm)}" style="cursor:pointer"`:''}><span class="tb">${esc(label)}</span>${typeChip}${dev}${cable}</span>
