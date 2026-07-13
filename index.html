@@ -6,9 +6,9 @@
 <title>Estimation Tools</title>
 <style>
   :root{
-    --nav:#0e1a2b; --nav2:#14243a; --navline:#22354e;
-    --bg:#eef1f5; --card:#ffffff; --line:#dde3ec; --line2:#c3cddc;
-    --txt:#16202e; --txt2:#54617a; --txt3:#8b96ab;
+    --nav:#191c20; --nav2:#252a30; --navline:#343a40;
+    --bg:#f3f5f7; --card:#ffffff; --line:#d9dee4; --line2:#bdc6d0;
+    --txt:#20252b; --txt2:#5a6570; --txt3:#7c8792;
     --blue:#1668e3; --blue2:#0f54ba; --blue-soft:#e8f0fd;
     --brand:#009ee2; --brand2:#0083bd;   /* Hager brand blue */
     --cyan:#0aa2c0; --cyan-soft:#e2f5f9;
@@ -17,7 +17,7 @@
     --red:#d33c43; --red-soft:#fcebec;
     --purple:#7b5cd6; --purple-soft:#f0ebfb;
     --mono:"SF Mono",ui-monospace,Menlo,Consolas,monospace;
-    --shadow:0 1px 2px rgba(22,32,46,.06), 0 4px 14px rgba(22,32,46,.05);
+    --shadow:0 1px 2px rgba(22,32,46,.05);
   }
   *{box-sizing:border-box;margin:0;padding:0;}
   html,body{height:100%;}
@@ -72,8 +72,7 @@
   .empty .ico{font-size:26px;margin-bottom:8px;opacity:.7;}
 
   /* ---------- lock ---------- */
-  #lockView.active{display:flex;align-items:center;justify-content:center;min-height:100vh;
-    background:radial-gradient(1200px 700px at 70% -10%, #1d3a5f 0%, var(--nav) 55%);}
+  #lockView.active{display:flex;align-items:center;justify-content:center;min-height:100vh;background:var(--nav);}
   .lock-card{background:#fff;border-radius:12px;padding:44px 40px 34px;width:392px;max-width:92vw;
     box-shadow:0 30px 70px rgba(4,10,20,.55);text-align:center;}
   .lock-logo{height:44px;display:block;margin:0 auto 14px;}
@@ -341,6 +340,62 @@
     color:#fff;padding:10px 20px;border-radius:9px;font-size:12.5px;font-weight:600;opacity:0;
     pointer-events:none;transition:.22s;z-index:99;box-shadow:0 10px 30px rgba(0,0,0,.3);}
   #toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+
+  /* ---------- reporting workspace ---------- */
+  .report-shell{background:#fff;border:1px solid var(--line);border-radius:6px;overflow:hidden;}
+  .report-top{display:flex;align-items:center;gap:18px;padding:15px 18px;border-bottom:1px solid var(--line);}
+  .report-heading{min-width:210px;}
+  .report-heading h2{font-size:16px;line-height:1.25;font-weight:700;}
+  .report-heading p{font-size:12px;color:var(--txt2);margin-top:3px;}
+  .report-facts{display:flex;align-items:center;gap:20px;margin-left:auto;}
+  .report-fact{display:grid;gap:2px;min-width:70px;}
+  .report-fact dt{font-size:10px;color:var(--txt3);text-transform:uppercase;font-weight:700;}
+  .report-fact dd{font-size:15px;font-weight:700;}
+  .report-actions{display:flex;align-items:center;gap:7px;}
+  .report-status{display:flex;align-items:center;gap:8px;min-height:38px;padding:8px 18px;border-bottom:1px solid var(--line);font-size:12px;}
+  .report-status.ok{background:#f2faf6;color:#176c48;}
+  .report-status.warn{background:#fff8eb;color:#87570b;}
+  .report-status.bad{background:#fff1f2;color:#a52d35;}
+  .report-matrix-scroll{max-height:calc(100vh - 275px);min-height:430px;overflow:auto;background:#fff;}
+  table.report-matrix{border-collapse:separate;border-spacing:0;min-width:max-content;width:100%;font-size:11px;}
+  .report-matrix th,.report-matrix td{height:28px;padding:5px 7px;border-right:1px solid #d5d9de;border-bottom:1px solid #d5d9de;text-align:center;background:#fff;}
+  .report-matrix thead th{position:sticky;z-index:6;font-weight:700;}
+  .report-matrix .report-row-project th{top:0;height:106px;background:#181a1d;color:#fff;vertical-align:middle;}
+  .report-matrix .report-row-title th{top:106px;height:30px;background:#181a1d;color:#fff;}
+  .report-matrix .report-row-head th{top:136px;height:30px;background:#f7e0d1;color:#24272b;}
+  .report-matrix .report-device{position:sticky;left:0;z-index:4;width:260px;min-width:260px;text-align:left;}
+  .report-matrix .report-unit{position:sticky;left:260px;z-index:4;width:54px;min-width:54px;}
+  .report-matrix thead .report-device,.report-matrix thead .report-unit{z-index:8;}
+  .report-matrix .report-board{width:48px;min-width:48px;padding:0;vertical-align:bottom;}
+  .report-board button{display:flex;align-items:center;justify-content:center;width:100%;height:100%;padding:8px 0;color:inherit;font-weight:600;writing-mode:vertical-rl;transform:rotate(180deg);}
+  .report-matrix .report-total{width:58px;min-width:58px;font-weight:700;}
+  .report-matrix th:last-child,.report-matrix td:last-child{width:48px;min-width:48px;}
+  .report-matrix .report-section td{background:#e3e5e8;font-weight:700;text-align:left;}
+  .report-matrix .report-section .report-device{z-index:5;background:#e3e5e8;}
+  .report-matrix .report-data .report-device{font-weight:600;}
+  .report-matrix .report-data:hover td{background:#f7fafc;}
+  .report-matrix .report-data:hover .report-device,.report-matrix .report-data:hover .report-unit{background:#f7fafc;}
+  .report-qty{width:100%;min-height:22px;font-weight:700;color:#1668e3;}
+  .report-qty:hover{background:#e8f0fd;}
+  .report-matrix .report-final td{background:#e3e5e8;font-weight:700;}
+  .report-matrix .report-final .report-device,.report-matrix .report-final .report-unit{z-index:5;background:#e3e5e8;}
+  .report-empty{padding:64px 24px;text-align:center;color:var(--txt2);}
+
+  /* restrained operational finish */
+  .panel,.proj-card,.dropzone,.cmp-pane,.modal,.lock-card{border-radius:6px;}
+  .panel,.proj-card,.cmp-pane{box-shadow:var(--shadow);}
+  .btn,.in,.sel,.back-btn{border-radius:5px;}
+  .page{max-width:1600px;}
+  .appbar{border-bottom:3px solid var(--brand);}
+  .ptabs{padding:0 10px;background:#fff;border:1px solid var(--line);border-radius:6px;}
+  .ptab{padding:11px 14px;}
+  @media(max-width:900px){
+    .report-top{align-items:flex-start;flex-wrap:wrap;}
+    .report-facts{order:3;width:100%;margin:0;overflow-x:auto;}
+    .report-actions{margin-left:auto;}
+    .report-matrix .report-device{width:190px;min-width:190px;}
+    .report-matrix .report-unit{left:190px;}
+  }
 </style>
 </head>
 <body>
@@ -383,13 +438,14 @@
         <h1 class="pg" id="projTitle">Project</h1>
         <div class="pg-sub" id="projMeta"></div>
       </div>
-      <button class="btn primary" id="reanalyzeBtn">⚙ Analyse documents</button>
+      <button class="btn primary" id="reanalyzeBtn">Analyse documents</button>
     </div>
 
     <div class="ptabs">
       <button class="ptab active" data-pt="docs">Documents <span class="badge" id="bDocs">0</span></button>
       <button class="ptab" data-pt="viewer">Viewer</button>
       <button class="ptab" data-pt="analysis">Boards &amp; Devices <span class="badge" id="bBoards" title="boards">0</span><span class="badge" id="bDev" title="devices">0</span></button>
+      <button class="ptab" data-pt="reports">Reports</button>
       <button class="ptab" data-pt="review">Review <span class="badge" id="bRev">0</span></button>
       <button class="ptab" data-pt="compare">Compare</button>
     </div>
@@ -521,7 +577,7 @@
                 <label class="check-row"><input type="checkbox" id="anExclSpare" checked> Exclude only unpopulated spare &amp; space ways</label>
                 <button class="btn sm ghost" id="anPreviewBtn" style="margin-top:4px">Preview excluded rows</button>
               </div>
-              <button class="btn primary" id="anRunBtn" style="width:100%">⚙ Count devices</button>
+              <button class="btn primary" id="anRunBtn" style="width:100%">Count devices</button>
             </div>
           </div>
           <div class="panel">
@@ -536,10 +592,9 @@
             <div style="display:flex;gap:8px;align-items:center;padding:11px 18px;flex-wrap:wrap">
               <span style="font-weight:800;font-size:13px">Take-off</span>
               <span class="sub" style="margin-left:2px">roll-up across all boards — select a board to drill in</span>
-              <button class="btn sm" id="bulkApproveBtn" style="margin-left:auto">✓ Approve all high-confidence</button>
-              <button class="btn sm" id="addManualBtn">+ Add manually</button>
-              <button class="btn sm" id="expCsvBtn">⤓ CSV</button>
-              <button class="btn sm" id="expXlsxBtn">⤓ XLSX</button>
+              <button class="btn sm" id="bulkApproveBtn" style="margin-left:auto">Approve checked rows</button>
+              <button class="btn sm" id="addManualBtn">Add device</button>
+              <button class="btn sm primary" id="openReportBtn">Open report</button>
             </div>
           </div>
 
@@ -570,6 +625,27 @@
           </div>
         </div>
       </div>
+    </div>
+
+    <!-- ==== REPORTS ==== -->
+    <div class="subview" id="pt-reports">
+      <section class="report-shell" aria-labelledby="reportTitle">
+        <div class="report-top">
+          <div class="report-heading">
+            <h2 id="reportTitle">DB device take-off</h2>
+            <p id="reportProject">No project selected</p>
+          </div>
+          <dl class="report-facts" id="reportFacts"></dl>
+          <div class="report-actions">
+            <button class="btn" id="reportCsvBtn">Export CSV</button>
+            <button class="btn primary" id="reportXlsxBtn">Export Excel</button>
+          </div>
+        </div>
+        <div class="report-status" id="reportStatus"></div>
+        <div class="report-matrix-scroll" id="reportMatrixHost">
+          <div class="report-empty">Analyse documents to build the take-off.</div>
+        </div>
+      </section>
     </div>
 
     <!-- ==== REVIEW ==== -->
@@ -626,6 +702,8 @@
 </div></div>
 <div id="toast"></div>
 
+<script src="./vendor/exceljs.min.js"></script>
+<script src="./report-core.js"></script>
 <script src="./extractor-core.js"></script>
 <script>
 'use strict';
@@ -739,7 +817,7 @@ function serializeProject(p){
 const rawStore = {}; // fileId -> ArrayBuffer (kept in memory; also persisted as blob)
 const saveTimers={};  // per-project debounce — a single shared timer let one project's save clobber another's
 function saveProject(p){
-  if (!p) return;
+  if (!p || p.testFixture) return;
   p.updated = todayStr();
   if (!idbOk) return;
   clearTimeout(saveTimers[p.id]);
@@ -1081,6 +1159,7 @@ function setTab(name){
   $$('#projView .subview').forEach(p=>p.classList.toggle('active', p.id==='pt-'+name));
   if (name==='viewer') renderViewer();
   if (name==='analysis') renderTakeoff();
+  if (name==='reports') renderReport();
   if (name==='review') renderReview();
   if (name==='compare') renderCompareSel();
 }
@@ -1330,7 +1409,7 @@ function aiExtractReady(){
       if(!r.ok){ window.__aiStatus='off — extraction endpoint not reachable'; return false; }
       const j=await r.json();
       if(!j.configured){ window.__aiStatus='not configured — set ANTHROPIC_API_KEY in Netlify'; return false; }
-      window.__aiStatus='active ('+(j.model||'Claude')+')';
+      window.__aiStatus='active';
       return true;
     }).catch(()=>{ window.__aiStatus='off — extraction endpoint not reachable'; return false; });
   }
@@ -1367,7 +1446,7 @@ async function aiExtractPage(f,pageNo,pg){
     if(s.status==='done') return s.result;
     if(s.status==='error') throw new Error(s.error||'extraction failed');
   }
-  throw new Error('AI extraction timed out (>3 min)');
+  throw new Error('Document extraction timed out (>3 min)');
 }
 function mergeAiResult(A,out,fileId,pageNo){
   if(!out) return;
@@ -1403,7 +1482,7 @@ function mergeAiResult(A,out,fileId,pageNo){
         size:d.phase_csa_mm2??null, cpc:typeof d.cpc_csa_mm2==='number'?d.cpc_csa_mm2:null, cores:null,
         construction:typeof d.cpc_csa_mm2==='string'?d.cpc_csa_mm2:null, typeCode:d.cable_type||null, installMethod:d.install_method||null}:null,
       circuitConfig:d.circuit_config||null, spare, space, incomer:!!d.is_incomer, isSpd:!!d.is_spd,
-      qty:space?0:1, srcText:'[AI] '+(d.description||d.device_class||'')+(d.way!=null?' (way '+d.way+(d.phase?'/'+d.phase:'')+')':''),
+      qty:space?0:1, srcText:(d.description||d.device_class||'Device')+(d.way!=null?' (way '+d.way+(d.phase?'/'+d.phase:'')+')':''),
       conf:Math.max(0.2,Math.min(0.95,Number(d.confidence)||0.6))});
   });
   (out.feeds||[]).forEach(fd=>{
@@ -1413,7 +1492,7 @@ function mergeAiResult(A,out,fileId,pageNo){
       cable:(fd.cable_csa_mm2!=null||fd.cable_desc)?{orig:fd.cable_desc||(fd.cable_csa_mm2+'mm²'), size:fd.cable_csa_mm2??null,
         cpc:typeof fd.cable_cpc_mm2==='number'?fd.cable_cpc_mm2:null, cores:null, construction:null, ref:fd.cable_ref||null}:null,
       device:fd.device_class||null, rating:fd.rating_a??null, poles:fd.poles??null,
-      srcText:'[AI] feed '+(fd.from_ref||'?')+' → '+fd.to_ref+(fd.cable_ref?' via '+fd.cable_ref:''),
+      srcText:'Feed '+(fd.from_ref||'?')+' → '+fd.to_ref+(fd.cable_ref?' via '+fd.cable_ref:''),
       conf:Math.max(0.2,Math.min(0.9,Number(fd.confidence)||0.7)), ai:true});
   });
   (out.flags||[]).forEach(fl=>{ (A.aiFlags=A.aiFlags||[]).push({fileId, page:pageNo, kind:fl.kind, message:fl.message}); });
@@ -1433,7 +1512,7 @@ async function runAiExtraction(A,f,p,pageSet){
     });
   }
   if(!jobs.length) return;
-  toast('AI extraction: reading '+jobs.length+' page'+(jobs.length===1?'':'s')+'…');
+  toast('Extracting '+jobs.length+' page'+(jobs.length===1?'':'s')+'…');
   A.aiPages=0; A.aiErrors=0;
   const CONC=2;
   for (let i=0;i<jobs.length;i+=CONC){
@@ -1442,7 +1521,7 @@ async function runAiExtraction(A,f,p,pageSet){
       catch(e){ console.warn('AI extraction failed on '+j.fl.name+' p'+j.pageNo+':', e.message); A.aiErrors++; }
     }));
   }
-  if (A.aiErrors) toast('AI extraction: '+A.aiErrors+' page(s) failed — results kept for the rest');
+  if (A.aiErrors) toast(A.aiErrors+' page(s) could not be extracted — other results were kept');
 }
 
 /* reconstruct lines (text + bbox) from a pdf.js text content object */
@@ -1669,7 +1748,7 @@ function renderCoverage(){
   const ai=window.__aiStatus||'unknown';
   const aiCls = ai.startsWith('active')?'green': ai.startsWith('not configured')?'amber':'grey';
   const aiStats = p.analysis&&p.analysis.aiPages!=null ? ` · ${p.analysis.aiPages} page(s) read${p.analysis.aiErrors?', '+p.analysis.aiErrors+' failed':''}` : '';
-  pagesEl.innerHTML = `<div style="margin-bottom:7px"><span class="chip ${aiCls}">AI extraction: ${esc(ai)}${esc(aiStats)}</span></div>`
+  pagesEl.innerHTML = `<div style="margin-bottom:7px"><span class="chip ${aiCls}">Extraction service: ${esc(ai)}${esc(aiStats)}</span></div>`
     + (cov.zeroRowSchedulePages.length
     ? '<span class="chip amber">⚠ '+cov.zeroRowSchedulePages.length+' page(s) look like schedules but produced 0 rows:</span> '
       + cov.zeroRowSchedulePages.slice(0,30).map(z=>{
@@ -2202,48 +2281,96 @@ $('#addManualBtn').addEventListener('click', ()=>{
     cable:null, spare:false, space:false, incomer:false, qty:1, srcText:'(added manually)', conf:1}, true);
 });
 
-/* ============================ EXPORTS ============================ */
+/* ============================ REPORTS / EXPORTS ============================ */
 function download(name, mime, content){
   const a=document.createElement('a');
   a.href=URL.createObjectURL(new Blob([content],{type:mime}));
   a.download=name; document.body.appendChild(a); a.click();
   setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},600);
 }
-const csvCell = v => { v=String(v??''); return /[",\n]/.test(v)? '"'+v.replace(/"/g,'""')+'"' : v; };
-function exportRows(){
-  const p=state.cur, A=p&&p.analysis; if(!A) return null;
-  const out=[['Board','Board type','Device','Protection code','Qty','Rating (A)','Curve','RCD type','Poles','Sensitivity (mA)','Way','Phase','Circuit status','Cable','Review status','Confidence','Source document','Page','Original text']];
-  activeRows().forEach(r=>{
-    if (r.space || (r.spare&&!r.device)) return;
-    if (r.kind==='mention' && r.status!=='confirmed') return;
-    const f=p.files.find(x=>x.id===r.fileId);
-    const b=r.boardNorm?A.boards[r.boardNorm]:null;
-    const circuitStatus=r.space?'Fitted blank':r.spare?(r.device?'Populated spare':'Unpopulated spare'):'Active';
-    out.push([b?b.orig:'', b?BOARD_TYPES[b.type]||'':'', r.device||'', r.protectionCode||'', r.qty||1, r.rating??'', r.curve||'', r.rcdType||'', r.poles||'',
-      r.sens||'', r.way??'', r.phase||'', circuitStatus, r.cable?r.cable.orig:'', r.status==='confirmed'?'Confirmed':CONF(r.conf)[0],
-      Math.round(r.conf*100)+'%', f?f.name:'', r.page||'', r.srcText]);
+function currentReportModel(){
+  const p=state.cur, A=p&&p.analysis;
+  if (!p || !A || !window.EstimationReport) return null;
+  return window.EstimationReport.buildModel({
+    projectName:p.name,
+    boards:A.boards,
+    rows:A.rows,
+    coverage:A.coverage,
+    generatedAt:new Date(),
   });
-  return out;
 }
-$('#expCsvBtn').addEventListener('click', ()=>{
-  const rows=exportRows(); if(!rows){toast('Nothing to export yet');return;}
-  download((state.cur.name||'estimation101')+' - device counts.csv','text/csv',
-    '\ufeff'+rows.map(r=>r.map(csvCell).join(',')).join('\r\n'));
-  toast('CSV exported');
+function renderReport(){
+  const p=state.cur;
+  const host=$('#reportMatrixHost');
+  const facts=$('#reportFacts');
+  const status=$('#reportStatus');
+  $('#reportProject').textContent=p?p.name:'No project selected';
+  const model=currentReportModel();
+  if (!model || !model.groups.length){
+    facts.innerHTML='';
+    status.className='report-status warn';
+    status.textContent='No countable devices are available.';
+    host.innerHTML='<div class="report-empty">Analyse documents to build the take-off.</div>';
+    return;
+  }
+  facts.innerHTML=[['Boards',model.boards.length],['Device lines',model.deviceLineCount],['Total devices',model.grandTotal]]
+    .map(([k,v])=>`<div class="report-fact"><dt>${esc(k)}</dt><dd>${v}</dd></div>`).join('');
+  const issues=[];
+  if (model.reviewCount) issues.push(model.reviewCount+' row'+(model.reviewCount===1?'':'s')+' need review');
+  if (model.coverageIssueCount) issues.push(model.coverageIssueCount+' coverage check'+(model.coverageIssueCount===1?'':'s')+' need attention');
+  if (model.unassignedQty) issues.push(model.unassignedQty+' device'+(model.unassignedQty===1?'':'s')+' have no board reference');
+  status.className='report-status '+(model.unassignedQty?'bad':(model.reviewCount||model.coverageIssueCount)?'warn':'ok');
+  status.textContent=issues.length?issues.join(' · '):'Ready for issue';
+  const colSpan=model.boards.length+4;
+  let html='<table class="report-matrix"><thead>'+
+    `<tr class="report-row-project"><th class="report-device">${esc(model.projectName)}</th><th class="report-unit">DB Reference</th>`+
+    model.boards.map(b=>`<th class="report-board"><button data-report-board="${esc(b.norm)}" title="Open ${esc(b.label)}">${esc(b.label)}</button></th>`).join('')+
+    '<th class="report-total"></th><th>WS</th></tr>'+
+    `<tr class="report-row-title"><th class="report-device">Distribution Board Devices</th><th class="report-unit"></th>${model.boards.map(()=>'<th></th>').join('')}<th></th><th></th></tr>`+
+    `<tr class="report-row-head"><th class="report-device">Discipline</th><th class="report-unit">Unit</th>${model.boards.map(()=>'<th>Qty</th>').join('')}<th class="report-total">Total</th><th>WS</th></tr></thead><tbody>`;
+  model.groups.forEach(group=>{
+    html+=`<tr class="report-section"><td class="report-device" colspan="${colSpan}">${esc(group.name)}</td></tr>`;
+    group.rows.forEach(row=>{
+      html+=`<tr class="report-data"><td class="report-device">${esc(row.label)}</td><td class="report-unit">Nr</td>`+
+        row.quantities.map((qty,index)=>`<td>${qty?`<button class="report-qty" data-report-board="${esc(model.boards[index].norm)}" title="Open ${esc(model.boards[index].label)}">${qty}</button>`:''}</td>`).join('')+
+        `<td class="report-total">${row.total}</td><td></td></tr>`;
+    });
+  });
+  html+=`<tr class="report-final"><td class="report-device">DB Device Total</td><td class="report-unit"></td>${model.boardTotals.map(v=>`<td>${v||''}</td>`).join('')}<td class="report-total">${model.grandTotal}</td><td></td></tr></tbody></table>`;
+  host.innerHTML=html;
+  host.querySelectorAll('[data-report-board]').forEach(control=>control.addEventListener('click',()=>{
+    state.selectedBoard=control.dataset.reportBoard;
+    setTab('analysis');
+  }));
+}
+function reportFileName(ext){
+  const d=new Date();
+  const stamp=[String(d.getDate()).padStart(2,'0'),String(d.getMonth()+1).padStart(2,'0'),String(d.getFullYear()).slice(-2)].join('.');
+  return window.EstimationReport.safeFileName(state.cur?state.cur.name:'Electrical project')+' - DB Devices Take Off - '+stamp+'.'+ext;
+}
+$('#openReportBtn').addEventListener('click',()=>setTab('reports'));
+$('#reportCsvBtn').addEventListener('click',()=>{
+  const model=currentReportModel();
+  if (!model || !model.groups.length){ toast('Nothing to export yet'); return; }
+  download(reportFileName('csv'),'text/csv;charset=utf-8',window.EstimationReport.csv(model));
+  toast('Take-off CSV exported');
 });
-$('#expXlsxBtn').addEventListener('click', ()=>{
-  const rows=exportRows(); if(!rows){toast('Nothing to export yet');return;}
-  // Excel-compatible SpreadsheetML (opens directly in Excel)
-  const xml=`<?xml version="1.0"?><?mso-application progid="Excel.Sheet"?>
-<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
-<Worksheet ss:Name="Device counts"><Table>`+
-    rows.map((r,i)=>'<Row>'+r.map(c=>{
-      const isNum = i>0 && c!=='' && !isNaN(c) && String(c).trim()!=='';
-      return `<Cell><Data ss:Type="${isNum?'Number':'String'}">${esc(String(c)).replace(/"/g,'&quot;')}</Data></Cell>`;
-    }).join('')+'</Row>').join('')+
-    `</Table></Worksheet></Workbook>`;
-  download((state.cur.name||'estimation101')+' - device counts.xls','application/vnd.ms-excel',xml);
-  toast('Excel file exported');
+$('#reportXlsxBtn').addEventListener('click',async()=>{
+  const model=currentReportModel();
+  if (!model || !model.groups.length){ toast('Nothing to export yet'); return; }
+  const button=$('#reportXlsxBtn'), label=button.textContent;
+  button.disabled=true; button.textContent='Preparing Excel...';
+  try{
+    const workbook=window.EstimationReport.createExcelWorkbook(model,window.ExcelJS);
+    const buffer=await workbook.xlsx.writeBuffer();
+    download(reportFileName('xlsx'),'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',buffer);
+    toast('Excel take-off exported');
+  }catch(error){
+    console.error(error);
+    toast('Excel export could not be created');
+  }finally{
+    button.disabled=false; button.textContent=label;
+  }
 });
 
 /* ============================ BOARDS TAB ============================ */
@@ -3053,7 +3180,7 @@ function runCompare(){
     'rating-changed':['Ratings changed','amber'],'device-changed':['Devices changed','purple'],
     'cable-changed':['Cables changed','cyan'],'board':['Boards added/removed','blue']};
   const srcChip = compareSchedules.source==='analysis'
-    ? '<span class="chip cyan" title="Rows come from the analysed take-off (including AI extraction)">diff from analysed rows</span>'
+    ? '<span class="chip cyan" title="Rows come from the analysed take-off">diff from analysed rows</span>'
     : compareSchedules.source==='regex'
       ? '<span class="chip grey" title="No analysis for these documents yet — regex re-parse only. Run ⚙ Analyse documents for full recall.">diff from regex re-parse</span>'
       : '<span class="chip amber" title="One side has analysed rows, the other only a regex re-parse — run ⚙ Analyse documents so both sides compare equally">mixed sources — re-analyse for a fair diff</span>';
@@ -3363,10 +3490,29 @@ function seedDemo(){
   return [p1,p2];
 }
 
+const BUNDLED_DEMOS={
+  'Riverside Office Fit-Out (demo)':['E-001 Register & legend.txt','E-100 Small power plans.txt','E-200 Single-line diagram.txt','E-300 Distribution board schedules.txt','E-400 Cable schedule.csv'],
+  'DB-05 revision comparison (demo)':['DB-05 schedule Rev A.txt','DB-05 schedule Rev B.txt'],
+};
+function isBundledDemoProject(project){
+  const expected=BUNDLED_DEMOS[project&&project.name];
+  if (!expected) return false;
+  const actual=(project.files||[]).map(file=>file.name).sort();
+  return actual.length===expected.length && expected.every((name,index)=>name===actual[index]);
+}
+function cleanLegacySourceLabels(project){
+  const rows=project&&project.analysis&&project.analysis.rows||[];
+  rows.forEach(row=>{
+    if (typeof row.srcText!=='string') return;
+    row.srcText=row.srcText.replace(/^\[AI\]\s*feed\s*/i,'Feed ').replace(/^\[AI\]\s*/i,'');
+  });
+}
+
 /* ============================ BOOT ============================ */
 async function boot(){
+  const params=new URLSearchParams(location.search);
   const localTestMode=['localhost','127.0.0.1','::1'].includes(location.hostname)
-    && new URLSearchParams(location.search).get('test')==='1';
+    && params.get('test')==='1';
   if (localTestMode){
     window.__TEST__=true;
     $('#lockView').classList.remove('active');
@@ -3376,34 +3522,20 @@ async function boot(){
   if (!ok) toast('Storage unavailable — work is session-only until you export');   // header chip removed by design
   let stored=[];
   try{ stored=await loadProjects(); }catch(e){}
-  let seeded=null;
-  if (stored.length){
-    stored.forEach(rec=>state.projects.push(rec));
-    // restore max id counter
-    state.nextId += state.projects.length*50;
-  } else {
-    seeded=seedDemo();                 // synchronous: just creates the project objects
-    seeded.forEach(p=>saveProject(p)); // persist immediately so a reload keeps them
+  stored.forEach(rec=>{
+    if (isBundledDemoProject(rec)) deleteProjectStore(rec.id);
+    else { cleanLegacySourceLabels(rec); state.projects.push(rec); }
+  });
+  state.nextId += state.projects.length*50;
+  if (localTestMode && params.get('fixture')==='report' && !state.projects.length){
+    const fixtures=seedDemo();
+    fixtures.forEach(project=>project.testFixture=true);
+    state.cur=fixtures[0];
+    try{ await runAnalysis({auto:true,noAi:true}); }catch(error){ console.warn('Local report fixture could not be analysed:',error.message); }
+    state.cur=null;
   }
-  // Paint the Projects home NOW — the first render must never wait on document
-  // analysis (which can take minutes on the network AI path). Blank-page fix.
   renderProjects();
   show('home');
-  // Analyse the demo fixtures in the background, regex-only (no slow network AI
-  // call for throwaway samples), and re-render as each finishes. Never blocks boot,
-  // and yields to the user the moment they open a project.
-  if (seeded){
-    (async()=>{
-      for (const p of seeded){
-        if (state.cur) break;          // user has navigated into a project — don't fight them
-        state.cur=p;
-        try{ await runAnalysis({auto:true, noAi:true}); }catch(e){ console.warn('demo analysis skipped:', e.message); }
-        if (state.cur===p) state.cur=null;
-        saveProject(p);
-        if (!state.cur) renderProjects();
-      }
-    })();
-  }
 }
 boot();
 

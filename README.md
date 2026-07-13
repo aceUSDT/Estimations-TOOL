@@ -6,6 +6,8 @@ Electrical document intelligence prototype and private training/evaluation corpu
 
 - `index.html` - browser application and review interface.
 - `extractor-core.js` - reusable legend-aware schedule extraction logic.
+- `report-core.js` - deterministic board-by-device report model, CSV output, and formatted Excel workbook generation.
+- Reports workspace - review the project take-off as a board matrix, drill back into source boards, and export a genuine `.xlsx` workbook styled for electrical take-offs.
 - Viewer assisted canvas - select a board and highlight one device row to count and persist every matching device markup for that board, including continuation pages.
 - Bounded browser OCR - read scanned PDF pages individually or in batches of 20, then re-run the extraction pipeline using OCR text and coordinates.
 - `tests/extractor-core.test.mjs` - deterministic extraction regression test.
@@ -27,9 +29,7 @@ Open `http://127.0.0.1:8765/`. For local automated UI checks only, use `?test=1`
 ## Verification
 
 ```bash
-node tests/extractor-core.test.mjs
-node scripts/evaluate_training_labels.mjs
-node scripts/benchmark_pdf_extraction.mjs "data/electrical_corpus/raw/EPO Circuitry mark up.pdf"
+npm test
 ```
 
 ## Corpus rebuild

@@ -4,6 +4,7 @@
  * ANTHROPIC_API_KEY in the Netlify environment and is not tested here.
  */
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -12,8 +13,8 @@ const PACK = path.resolve(HERE, '../../netlify/functions/lib/domain-pack.mjs');
 
 delete process.env.ANTHROPIC_API_KEY;
 delete process.env.ANTHROPIC_AUTH_TOKEN;
-const { default: handler } = await import(FN);
-const { EXTRACTION_SCHEMA, EXTRACTION_SYSTEM_PROMPT, coerceResult } = await import(PACK);
+const { default: handler } = await import(pathToFileURL(FN));
+const { EXTRACTION_SCHEMA, EXTRACTION_SYSTEM_PROMPT, coerceResult } = await import(pathToFileURL(PACK));
 
 let fail = 0;
 const check = (name, cond, detail) => {
