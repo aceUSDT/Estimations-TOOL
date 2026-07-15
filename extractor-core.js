@@ -763,6 +763,8 @@
       const nextY = Number(bboxes[index][1]);
       if (nextY + Math.max(4, Number(bboxes[index][3]) || 0) < priorY) orderingErrors += 1;
     }
+    const orderingErrorRatio = orderingErrors / Math.max(1, bboxes.length - 1);
+    const orderingUnreliable = orderingErrors > 0 && orderingErrorRatio > 0.12;
     const expectedType = String(options.expectedType || '').toLowerCase();
     const expectsDenseTable = /schedule|table/.test(expectedType);
     let score = 0.15
@@ -773,16 +775,17 @@
       + Math.min(0.12, electricalSignals / 30);
     if (printableRatio > 0.96 && alphanumericRatio > 0.45) score += 0.18;
     score -= Math.min(0.45, replacementCount / Math.max(1, characters.length) * 8);
-    score -= Math.min(0.35, orderingErrors * 0.18);
+    score -= Math.min(0.35, orderingErrorRatio * 1.5);
     if (expectsDenseTable && (characters.length < 80 || records.length < 3)) score -= 0.35;
     if (tokens.length && tokens.filter((token) => token.length === 1).length / tokens.length > 0.55) score -= 0.2;
     score = Math.max(0, Math.min(1, score));
     const reasons = [];
     if (replacementCount) reasons.push('The text layer contains corrupt replacement characters');
     if (printableRatio < 0.9) reasons.push('The text layer contains too many non-printable characters');
-    if (orderingErrors) reasons.push('The text layer is not in a reliable reading order');
+    if (orderingUnreliable) reasons.push('The text layer is not in a reliable reading order');
+    else if (orderingErrors) reasons.push('Localized reading-order anomalies were normalized');
     if (expectsDenseTable && (characters.length < 80 || records.length < 3)) reasons.push('The schedule text layer appears incomplete');
-    const reliable = score >= 0.62 && printableRatio >= 0.9 && replacementCount === 0 && orderingErrors === 0;
+    const reliable = score >= 0.62 && printableRatio >= 0.9 && replacementCount === 0 && !orderingUnreliable;
     if (!reliable && !reasons.length) reasons.push('Embedded-text quality is below the acceptance threshold');
     return {
       route: reliable ? 'embedded_text' : 'ocr',
@@ -794,6 +797,8 @@
       alphanumericRatio,
       electricalSignals,
       orderingErrors,
+      orderingErrorRatio,
+      orderingUnreliable,
       reasons,
     };
   }

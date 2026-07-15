@@ -28,6 +28,15 @@ assert.equal(Core.assessPageText([
   { text: "3 L3 32A RCBO", bbox: [20, 20, 120, 12] },
 ], { expectedType: "db-schedule" }).route, "ocr");
 
+const localizedOrdering = Array.from({ length: 24 }, (_, index) => ({
+  text: `${index + 1} L${index % 3 + 1} Circuit ${index + 1} 16A MCB C 10kA`,
+  bbox: [20, index === 12 ? 170 : 20 + index * 18, 420, 12],
+}));
+const localizedQuality = Core.assessPageText(localizedOrdering, { expectedType: "db-schedule" });
+assert.equal(localizedQuality.orderingErrors, 1);
+assert.equal(localizedQuality.orderingUnreliable, false);
+assert.equal(localizedQuality.route, "embedded_text", "isolated layout anomalies must not replace a useful native schedule with OCR");
+
 // 4-7: orientation, skew, low-resolution, faint/noisy candidates.
 assert.ok(Core.buildOcrCandidatePlan({ orientation: 90 }).some((candidate) => candidate.rotation === 90));
 assert.ok(Core.buildOcrCandidatePlan({ skewAngle: 2.4 }).some((candidate) => candidate.deskew === -2.4));

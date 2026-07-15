@@ -10,6 +10,7 @@ Electrical document intelligence prototype and private training/evaluation corpu
 - Reports workspace - review a board-by-device take-off, including a separate control-equipment sheet, then export a formatted `.xlsx` workbook or CSV.
 - Viewer - original-document PDF rendering with thumbnails, search, source highlighting, rotation, 25–1000% zoom, and drag panning in every direction. Saved PDFs rehydrate their renderer when reopened.
 - Page-quality OCR - every PDF page independently keeps reliable embedded text or runs adaptive OCR. Candidate preprocessing, confidence, coordinates, original text, corrections, and reasons are retained.
+- Persistent processing status - document pages, OCR work, and analysis stages remain visible below the top bar while work is running.
 - Canonical procurement reporting - devices group by family, rating, curve, breaking capacity, and poles. Circuit purpose remains in contributor detail and never splits an otherwise identical product.
 - Reconciliation-gated exports - source, board, consolidated, and workbook totals must agree before CSV or Excel is issued.
 - `tools/coverage/` - deterministic regression tests for board references, schedule dialects, reconciliation, report exports, and the extraction endpoint.

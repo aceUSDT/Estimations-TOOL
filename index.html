@@ -101,6 +101,27 @@
   .appbar .link-btn:hover{background:var(--nav2);color:#fff;}
   .avatar{width:30px;height:30px;border-radius:50%;background:var(--blue);color:#fff;font-weight:700;
     display:flex;align-items:center;justify-content:center;font-size:12px;}
+  .processing-dock{position:sticky;top:54px;z-index:45;background:#fff;border-bottom:1px solid var(--line2);
+    box-shadow:0 5px 14px rgba(15,31,51,.08);}
+  .processing-dock[hidden]{display:none;}
+  .processing-dock-inner{max-width:1600px;margin:0 auto;padding:9px 22px;display:grid;
+    grid-template-columns:minmax(280px,auto) minmax(180px,1fr) auto;align-items:center;gap:14px;}
+  .processing-summary{display:flex;align-items:center;gap:10px;min-width:0;}
+  .processing-spinner{width:16px;height:16px;border:2px solid #b9c7d6;border-top-color:var(--brand);
+    border-radius:50%;flex:0 0 auto;animation:processing-spin .8s linear infinite;}
+  .processing-copy{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:baseline;gap:4px 8px;min-width:0;}
+  .processing-copy .processing-label{font-size:10px;color:var(--txt3);font-weight:800;text-transform:uppercase;}
+  .processing-copy strong{font-size:12.5px;color:var(--txt);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .processing-copy small{grid-column:2;font-size:11px;color:var(--txt2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .processing-track{height:6px;background:#e5ebf1;overflow:hidden;}
+  .processing-fill{display:block;width:0;height:100%;background:var(--brand);transition:width .2s ease;}
+  .processing-steps{display:flex;align-items:center;gap:7px;}
+  .processing-step{width:9px;height:9px;border-radius:50%;border:2px solid #b9c7d6;background:#fff;}
+  .processing-step.done{border-color:var(--green);background:var(--green);}
+  .processing-step.run{border-color:var(--brand);background:var(--brand);box-shadow:0 0 0 3px rgba(0,158,226,.14);}
+  .processing-dock.complete .processing-spinner{animation:none;border-color:var(--green);background:var(--green);}
+  .processing-dock.failed .processing-spinner{animation:none;border-color:var(--red);background:var(--red);}
+  @keyframes processing-spin{to{transform:rotate(360deg);}}
   .page{max-width:1340px;margin:0 auto;padding:24px 22px 70px;}
   h1.pg{font-size:20px;font-weight:800;letter-spacing:-.2px;}
   .pg-sub{color:var(--txt2);font-size:12.5px;margin-top:3px;}
@@ -159,12 +180,13 @@
   .pgclass-file{margin:14px 0 8px;}
 
   /* analysis tab */
-  .an-layout{display:grid;grid-template-columns:330px 1fr;gap:16px;align-items:start;}
-  @media(max-width:980px){.an-layout{grid-template-columns:1fr;}}
-  .bd-explorer{display:grid;grid-template-columns:minmax(260px,320px) 1fr;gap:14px;align-items:start;}
+  .an-layout{display:grid;grid-template-columns:minmax(0,330px) minmax(0,1fr);gap:16px;align-items:start;}
+  .an-layout>*,.bd-explorer>*{min-width:0;}
+  @media(max-width:980px){.an-layout{grid-template-columns:minmax(0,1fr);}}
+  .bd-explorer{display:grid;grid-template-columns:minmax(260px,320px) minmax(0,1fr);gap:14px;align-items:start;}
   .bd-explorer>.panel{position:sticky;top:64px;max-height:calc(100vh - 84px);overflow-y:auto;}
   .bd-explorer .tree .trow{padding:4px 10px;font-size:12.5px;}
-  @media(max-width:1200px){.bd-explorer{grid-template-columns:1fr;}.bd-explorer>.panel{position:static;max-height:none;}}
+  @media(max-width:1200px){.bd-explorer{grid-template-columns:minmax(0,1fr);}.bd-explorer>.panel{position:static;max-height:none;}}
   .bd-hdr{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;padding:14px 18px;border-bottom:1px solid var(--line);}
   .bd-hdr .k{font-size:10.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--txt3);font-weight:700;}
   .bd-hdr .v{font-size:13px;font-weight:600;margin-top:2px;}
@@ -172,8 +194,8 @@
   #boardBody tr.sel td{background:var(--blue-soft,#eaf2ff);}
   .fgroup{margin-bottom:16px;}
   .fgroup:last-child{margin-bottom:0;}
-  .check-row{display:flex;align-items:center;gap:8px;padding:4px 1px;font-size:12.5px;cursor:pointer;color:var(--txt2);}
-  .check-row input{width:15px;height:15px;accent-color:var(--blue);}
+  .check-row{display:flex;align-items:center;gap:8px;padding:4px 1px;font-size:12.5px;cursor:pointer;color:var(--txt2);min-width:0;overflow-wrap:anywhere;}
+  .check-row input{width:15px;height:15px;accent-color:var(--blue);flex:0 0 auto;}
   .qchips{display:flex;flex-wrap:wrap;gap:6px;}
   .qchip{padding:4px 11px;border-radius:14px;border:1px solid var(--line2);font-size:11.5px;font-weight:700;
     color:var(--txt2);background:#fff;user-select:none;cursor:pointer;}
@@ -216,10 +238,10 @@
   .tree{font-size:13px;padding:6px 0;}
   .tree .tnode{padding:5px 0 5px 0;}
   .tree .trow{display:inline-flex;align-items:center;gap:8px;padding:5px 12px;background:#fff;
-    border:1px solid var(--line);border-radius:8px;box-shadow:var(--shadow);}
+    border:1px solid var(--line);border-radius:8px;box-shadow:var(--shadow);max-width:100%;flex-wrap:wrap;}
   .tree .trow .tb{font-weight:800;}
   .tree .kids{margin-left:34px;border-left:2px solid var(--line);padding-left:18px;margin-top:6px;}
-  .tree .cable-lbl{font-size:11px;color:var(--cyan);font-family:var(--mono);}
+  .tree .cable-lbl{font-size:11px;color:var(--cyan);font-family:var(--mono);overflow-wrap:anywhere;}
 
   /* viewer */
   .viewer-layout{display:grid;grid-template-columns:120px 1fr 280px;gap:12px;align-items:start;}
@@ -412,6 +434,10 @@
     .appbar{padding:0 12px;gap:8px;}
     .appbar .brand .bt{white-space:nowrap;}
     .appbar .crumb{display:none;}
+    .processing-dock-inner{padding:9px 22px;grid-template-columns:minmax(0,1fr);gap:7px;}
+    .processing-steps{display:none;}
+    .processing-copy{grid-template-columns:auto minmax(0,1fr);}
+    .tree .kids{margin-left:12px;padding-left:10px;}
     .proj-head{display:grid;grid-template-columns:34px minmax(0,1fr);align-items:start;}
     .proj-head #reanalyzeBtn{grid-column:2;justify-self:start;}
     .report-matrix .report-category{position:static;width:80px;min-width:80px;}
@@ -447,6 +473,21 @@
     <div class="crumb" id="crumb"><b>Projects</b></div>
     <div class="right">
       <button class="link-btn" id="lockBtn">Lock</button>
+    </div>
+  </div>
+
+  <div class="processing-dock" id="processingDock" role="status" aria-live="polite" hidden>
+    <div class="processing-dock-inner">
+      <div class="processing-summary">
+        <span class="processing-spinner" aria-hidden="true"></span>
+        <div class="processing-copy">
+          <span class="processing-label">Processing</span>
+          <strong id="processingStage">Reading documents</strong>
+          <small id="processingDetail">Preparing files</small>
+        </div>
+      </div>
+      <div class="processing-track" aria-hidden="true"><span class="processing-fill" id="processingFill"></span></div>
+      <div class="processing-steps" id="processingSteps" aria-hidden="true"></div>
     </div>
   </div>
 
@@ -821,6 +862,7 @@ const state = {
   viewer: {fileId:null, page:1, zoom:1, rot:0, dark:false, boardHl:null, evidenceId:null, pdfDocs:{}, assist:{enabled:false,boardNorm:null,seed:null,results:[]}},
   selectedBoard: null,  // §5.4 — board selected in the merged Boards & Devices page ('__none__' = unassigned rows), null = roll-up
 };
+const ANALYSIS_VERSION=2;
 const uid = () => 'x'+(state.nextId++)+'_'+Math.random().toString(36).slice(2,6);
 
 /* ====================== PERSISTENCE (IndexedDB) ====================== */
@@ -1253,7 +1295,7 @@ function setTab(name){
   if (name==='compare') renderCompareSel();
 }
 $$('.ptab').forEach(t=>t.addEventListener('click',()=>setTab(t.dataset.pt)));
-$('#backBtn').addEventListener('click', ()=>{ state.cur=null; renderProjects(); show('home'); });
+$('#backBtn').addEventListener('click', ()=>{ state.cur=null;if(!analysisBusy)hideProcessing();renderProjects(); show('home'); });
 
 /* ============================ PROJECT MODEL ============================ */
 function newProject(name){
@@ -1346,6 +1388,7 @@ function renderProjects(){
 function openProject(id){
   state.cur = state.projects.find(p=>p.id===id);
   if (!state.cur) return;
+  if(!analysisBusy)hideProcessing();
   ensureAssistedState(state.cur);
   show('proj');
   $('#projTitle').textContent=state.cur.name;
@@ -1353,6 +1396,10 @@ function openProject(id){
   state.selectedBoard=null;
   renderProjHeader(); renderDocs(); renderPgclass(); renderAnalysisControls(); renderResults();
   setTab('docs');
+  if(state.cur.analysis&&state.cur.analysis.version!==ANALYSIS_VERSION&&state.cur.files.some(file=>file.status==='ready')){
+    setProcessingDock(STAGES[0],'Updating saved analysis',2,0);
+    setTimeout(()=>runAnalysis({auto:true}),0);
+  }
 }
 function renderProjHeader(){
   const p=state.cur; if(!p) return;
@@ -1376,7 +1423,7 @@ function loadPdfjs(){
   });
   return pdfjsPromise;
 }
-let tesseractPromise=null, ocrWorkerPromise=null, ocrBusy=false;
+let tesseractPromise=null, ocrWorkerPromise=null, ocrBusy=false,ocrProgressContext='';
 function loadTesseract(){
   if (tesseractPromise) return tesseractPromise;
   tesseractPromise=new Promise((res,rej)=>{
@@ -1398,6 +1445,8 @@ async function getOcrWorker(){
         const label=(m.status||'Reading page').replace(/(^|\s)\S/g,c=>c.toUpperCase())+pct;
         const btn=$('#vOcrBtn'); if(btn) btn.textContent=label;
         const status=$('#vOcrStatus'); if(status) status.textContent=label;
+        const dock=$('#processingDock'),detail=$('#processingDetail');
+        if(dock&&!dock.hidden&&detail)detail.textContent=[ocrProgressContext,label].filter(Boolean).join(' | ');
       },
     }));
   }
@@ -1521,7 +1570,15 @@ async function ocrPdfPage(f,pageNo,{reanalyze=true,quiet=false}={}){
     const worker=await getOcrWorker();
     if(worker.setParameters)await worker.setParameters({preserve_interword_spaces:'1',user_defined_dpi:'300'});
     const metrics=inspectOcrCanvas(cv),pageRecord=f.pages[pageNo-1],expectedType=pageRecord?.sub_format||pageRecord?.type||'unknown';
+    const embeddedLines=(pageRecord?.embeddedLines?.length?pageRecord.embeddedLines:pageRecord?.source!=='ocr'?pageRecord?.lines:[])||[];
+    if(embeddedLines.length&&!pageRecord.embeddedLines)pageRecord.embeddedLines=embeddedLines;
     let plan=core.buildOcrCandidatePlan(metrics),attempts=[];
+    if(embeddedLines.length){
+      const quality=core.assessPageText(embeddedLines,{expectedType,pageWidth:pageRecord.w,pageHeight:pageRecord.h});
+      const embedded={id:'embedded-text',preprocessing:null,confidence:quality.score*100,text:embeddedLines.map(line=>line.text).join('\n'),
+        lines:embeddedLines,expectedType,mappedWords:[]};
+      embedded.scoring=core.scoreOcrCandidate(embedded);embedded.score=embedded.scoring.score;attempts.push(embedded);
+    }
     const runCandidate=async config=>{
       const prepared=renderOcrCandidate(cv,config,baseScale);prepared.sourceWidth=cv.width;prepared.sourceHeight=cv.height;
       const status=$('#vOcrStatus');if(status)status.textContent=`Testing ${config.id.replace(/-/g,' ')}…`;
@@ -1541,8 +1598,10 @@ async function ocrPdfPage(f,pageNo,{reanalyze=true,quiet=false}={}){
       for(const config of plan.filter(item=>!attempts.some(done=>done.id===item.id)).slice(0,3)){attempts.push(await runCandidate(config));}
       selected=core.selectBestOcrCandidate(attempts);
     }
-    const chosen=selected.candidate;
+    const chosen=selected.candidate,keptEmbedded=chosen?.id==='embedded-text';
     const lines=(chosen?.lines||[]).map(line=>{
+      if(keptEmbedded)return {...line,originalText:line.originalText||line.text,corrections:line.corrections||[],
+        extractionMethod:line.extractionMethod||'Embedded text / deterministic parser'};
       const corrected=core.correctElectricalOcrText(line.text);
       return {...line,text:corrected.text,originalText:corrected.originalText,corrections:corrected.corrections,extractionMethod:`OCR (${chosen.id})`};
     });
@@ -1557,13 +1616,13 @@ async function ocrPdfPage(f,pageNo,{reanalyze=true,quiet=false}={}){
       corrections:lines.flatMap((line,lineIndex)=>line.corrections.map(correction=>({...correction,line:lineIndex}))),at:new Date().toISOString()};
     const c=classifyPage(lines.map(l=>l.text).join('\n'),pageNo-1,f.pages.length);
     if(!pg.typeManual){ pg.type=c.type;pg.conf=c.conf;pg.sub_format=c.type;pg.threeType=toThreeType(c.type); }
-    pg.source='ocr';
+    pg.source=keptEmbedded?'native_text':'ocr';
     f.ocrReady=true;
     const remaining=f.pages.filter(x=>x.needsOcr).length;
     f.warn=remaining?`${remaining} page${remaining===1?'':'s'} still need OCR.`:null;
     saveProject(state.cur);renderDocs();renderPgclass();
     if(reanalyze) await runAnalysis({auto:true});
-    if(!quiet) toast(`OCR read ${lines.length} lines from page ${pageNo} using ${chosen.id.replace(/-/g,' ')}`);
+    if(!quiet) toast(keptEmbedded?`Embedded text retained on page ${pageNo} after OCR comparison`:`OCR read ${lines.length} lines from page ${pageNo} using ${chosen.id.replace(/-/g,' ')}`);
     return lines;
   }finally{
     ocrBusy=false;
@@ -1575,10 +1634,14 @@ async function ocrScannedPages(f,limit=20,{reanalyze=true,quiet=false}={}){
   const queue=f.pages.map((pg,i)=>({pg,page:i+1})).filter(x=>x.pg.needsOcr||!(x.pg.lines||[]).length).slice(0,limit);
   if(!queue.length){if(!quiet)toast('Every page has a reliable text result');return 0;}
   let done=0;
-  for(const item of queue){
+  for(const [index,item] of queue.entries()){
+    ocrProgressContext=`${f.name} | Page ${item.page} of ${f.pages.length}`;
+    setProcessingDock('Reading scanned pages',ocrProgressContext,Math.max(2,Math.round((index+1)/queue.length*(100/STAGES.length))),0);
+    await paintProcessing();
     try{await ocrPdfPage(f,item.page,{reanalyze:false,quiet:true});done++;}
     catch(e){toast(`OCR stopped on page ${item.page}: ${e.message}`);break;}
   }
+  ocrProgressContext='';
   if(done&&reanalyze) await runAnalysis({auto:true});
   const remain=f.pages.filter(pg=>pg.needsOcr||!(pg.lines||[]).length).length;
   if(!quiet||remain) toast(`OCR completed ${done} page${done===1?'':'s'}${remain?`; ${remain} remain — run OCR scans again`:''}`);
@@ -1771,7 +1834,8 @@ async function ingestFile(file){
   const p=state.cur; if(!p) return;
   const ext=(file.name.split('.').pop()||'').toLowerCase();
   const rec={id:uid(), name:file.name, ext, size:file.size||0, status:'processing', native:true, pages:[], error:null, warn:null, pct:8};
-  p.files.push(rec); renderDocs();
+  p.files.push(rec); renderDocs();renderProjHeader();
+  setProcessingDock(STAGES[0],file.name,2,0);await paintProcessing();
   try{
     if (ext==='pdf'){
       const buf=await file.arrayBuffer(); rawStore[rec.id]=buf; rec.pct=25; renderDocs();
@@ -1790,8 +1854,10 @@ async function ingestFile(file){
           : {route:lines.length>2?'embedded_text':'ocr',reliable:lines.length>2,score:lines.length>2?0.8:0,reasons:[]};
         const needsOcr=textQuality.route==='ocr';
         if (!needsOcr) anyText=true; else ocrPages++;
-        rec.pages.push({lines, w:vp.width, h:vp.height, textQuality, needsOcr, source:needsOcr?'ocr_pending':'native_text'});
-        rec.pct=25+Math.round(65*i/doc.numPages); renderDocs();
+        rec.pages.push({lines, embeddedLines:needsOcr?lines:null, w:vp.width, h:vp.height, textQuality, needsOcr, source:needsOcr?'ocr_pending':'native_text'});
+        rec.pct=25+Math.round(65*i/doc.numPages); renderDocs();renderProjHeader();
+        setProcessingDock(STAGES[0],`${file.name} | Page ${i} of ${doc.numPages}`,Math.max(2,Math.round(i/doc.numPages*(100/STAGES.length))),0);
+        if(i===1||i===doc.numPages||i%8===0)await paintProcessing();
       }
       rec.native=anyText;
       if (ocrPages) rec.warn=`${ocrPages} page${ocrPages===1?'':'s'} need OCR because embedded text is missing or unreliable.`;
@@ -1844,15 +1910,18 @@ function classifyFilePages(f){
       pg.textQuality=window.EstimationExtractorCore.assessPageText(pg.lines||[],{expectedType:pg.sub_format||pg.type||'unknown',pageWidth:pg.w,pageHeight:pg.h});
       pg.needsOcr=pg.textQuality.route==='ocr'&&(f.ext==='pdf'||IMAGE_EXTS.has(f.ext));
     } else if (pg.ocr) pg.needsOcr=false;
-    pg.source = pg.ocr ? 'ocr' : (pg.needsOcr ? 'ocr_pending' : 'native_text');
+    pg.source = pg.ocr?.selectedCandidate==='embedded-text' ? 'native_text' : pg.ocr ? 'ocr' : (pg.needsOcr ? 'ocr_pending' : 'native_text');
   });
 }
 async function handleFiles(list){
   if (!state.cur){ toast('Open a project first'); return; }
   const files=Array.from(list);
+  if(!files.length)return;
+  setProcessingDock(STAGES[0],`${files.length} document${files.length===1?'':'s'} selected`,2,0);await paintProcessing();
   for (const f of files) await ingestFile(f);
   await autoOcrScannedFiles();
-  if (state.cur.files.some(f=>f.status==='ready')){ toast('Documents read — analysing…'); runAnalysis({auto:true}); }
+  if (state.cur.files.some(f=>f.status==='ready')){ toast('Documents read — analysing…'); await runAnalysis({auto:true}); }
+  else finishProcessing('No readable documents were available','failed',4000);
 }
 $('#fileInput').addEventListener('change', e=>{ handleFiles(e.target.files); e.target.value=''; });
 const dz=$('#dropzone');
@@ -1924,7 +1993,7 @@ function renderDocs(){
         inp.addEventListener('change', async ()=>{
           if (!inp.files.length) return;
           p.files=p.files.filter(x=>x.id!==f.id); delete rawStore[f.id];
-          await ingestFile(inp.files[0]); await autoOcrScannedFiles(); runAnalysis({auto:true});
+          await ingestFile(inp.files[0]); await autoOcrScannedFiles(); await runAnalysis({auto:true});
         });
         inp.click();
       }
@@ -2086,11 +2155,38 @@ $('#anPreviewBtn').addEventListener('click', ()=>{
 
 /* ============================ ANALYSIS PIPELINE ============================ */
 const STAGES=['Reading documents','Classifying pages','Identifying boards','Reading schedules','Extracting cables & feeders','Mapping board relationships','Compiling results'];
-function renderStages(activeIdx, doneAll){
+let processingHideTimer=null,analysisBusy=false;
+function setProcessingDock(stage,detail,progress,activeIdx=0,stateName='running'){
+  const dock=$('#processingDock');if(!dock)return;
+  if(processingHideTimer){clearTimeout(processingHideTimer);processingHideTimer=null;}
+  dock.hidden=false;dock.classList.toggle('complete',stateName==='complete');dock.classList.toggle('failed',stateName==='failed');
+  $('#processingStage').textContent=stage||'Processing';
+  $('#processingDetail').textContent=detail||'';
+  $('#processingFill').style.width=Math.max(0,Math.min(100,Number(progress)||0))+'%';
+  $('#processingSteps').innerHTML=STAGES.map((label,index)=>{
+    const cls=stateName==='complete'||index<activeIdx?'done':index===activeIdx?'run':'';
+    return `<span class="processing-step ${cls}" title="${esc(label)}"></span>`;
+  }).join('');
+}
+function finishProcessing(detail,stateName='complete',delay=1400){
+  setProcessingDock(stateName==='failed'?'Processing stopped':'Analysis complete',detail,100,STAGES.length,stateName);
+  processingHideTimer=setTimeout(()=>{const dock=$('#processingDock');if(dock&&!analysisBusy&&!ocrBusy)dock.hidden=true;},delay);
+}
+function hideProcessing(){
+  if(processingHideTimer){clearTimeout(processingHideTimer);processingHideTimer=null;}
+  const dock=$('#processingDock');if(dock)dock.hidden=true;
+}
+const paintProcessing=()=>new Promise(resolve=>requestAnimationFrame(()=>setTimeout(resolve,0)));
+function renderStages(activeIdx, doneAll, detail=''){
   $('#stageList').innerHTML=STAGES.map((s,i)=>{
     const cls = doneAll||i<activeIdx?'done': i===activeIdx?'run':'';
     return `<li class="${cls}"><span class="dot"></span>${s}</li>`;
   }).join('');
+  if(activeIdx>=0||doneAll){
+    const index=doneAll?STAGES.length:Math.min(activeIdx,STAGES.length-1);
+    const progress=doneAll?100:Math.max(2,Math.round((index/STAGES.length)*100));
+    setProcessingDock(doneAll?'Analysis complete':STAGES[index],detail||(doneAll?'Results are ready':`Step ${index+1} of ${STAGES.length}`),progress,index,doneAll?'complete':'running');
+  }
 }
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const SCHEDULE_TYPES=new Set(['db-schedule','main-schedule','equipment-schedule','cable-schedule']);
@@ -2129,17 +2225,29 @@ async function runAnalysis(opts){
   const p=state.cur; if(!p) return;
   const auto=opts&&opts.auto;
   const f = auto ? {fileIds:p.files.filter(x=>x.status==='ready').map(x=>x.id), pages:'', boards:[], devices:[], ignore:[], exclSpare:true} : gatherFilters();
-  if (!f.fileIds.length){ toast('No readable documents selected'); return; }
+  if (!f.fileIds.length){ toast('No readable documents selected');finishProcessing('No readable documents were selected','failed',4000);return; }
+  if(analysisBusy){toast('Analysis is already running');return null;}
+  analysisBusy=true;
+  const analysisButtons=[$('#reanalyzeBtn'),$('#anRunBtn')].filter(Boolean);
+  analysisButtons.forEach(button=>button.disabled=true);
+  $('#projView')?.setAttribute('aria-busy','true');
+  try{
   const pageSet=parseRanges(f.pages);
   const boardFilter=f.boards.length?new Set(f.boards):null;
   const devFilter=f.devices.length?new Set(f.devices.map(d=>d.toUpperCase())):null;
   const prev=p.analysis;
-  const A={ ranAt: todayStr(), boards:{}, rows:[], cables:[], feeders:[], legend:[], filters:f };
-  const anim = !auto && !window.__TEST__;
+  const A={ version:ANALYSIS_VERSION, ranAt: todayStr(), boards:{}, rows:[], cables:[], feeders:[], legend:[], filters:f };
+  const pageTotal=f.fileIds.reduce((sum,id)=>sum+(p.files.find(file=>file.id===id)?.pages?.length||0),0);
+  const showAnalysisStage=async(index,detail)=>{
+    renderStages(index,false,detail);
+    await paintProcessing();
+    if(!auto&&!window.__TEST__)await sleep(120);
+  };
 
-  renderStages(0); if(anim) await sleep(220);
+  await showAnalysisStage(0,`${f.fileIds.length} document${f.fileIds.length===1?'':'s'} ready`);
+  await showAnalysisStage(1,`${pageTotal} page${pageTotal===1?'':'s'}`);
   f.fileIds.forEach(id=>{ const fl=p.files.find(x=>x.id===id); if(fl) classifyFilePages(fl); });
-  renderStages(2); if(anim) await sleep(220);
+  await showAnalysisStage(2,'Locating distribution-board references');
 
   const regBoard=(b,fileId,pageNo,primary=false)=>{
     if(!A.boards[b.norm]) A.boards[b.norm]={norm:b.norm, orig:b.orig, type:b.type, pages:[], parent:null, parentConf:0, manual:false};
@@ -2153,6 +2261,7 @@ async function runAnalysis(opts){
     if (String(b.orig||'').length>String(e.orig||'').length) e.orig=b.orig;
   };
 
+  await showAnalysisStage(3,`Reading ${pageTotal} page${pageTotal===1?'':'s'}`);
   for (const id of f.fileIds){
     const fl=p.files.find(x=>x.id===id); if(!fl||fl.status!=='ready') continue;
     let prevBoard=null;
@@ -2228,7 +2337,7 @@ async function runAnalysis(opts){
       }
     });
   }
-  renderStages(4); if(anim) await sleep(220);
+  await showAnalysisStage(4,`${A.rows.length} device records | ${A.cables.length} cable records`);
   // Workstream 0 §0.0 — genuine AI extraction across all dialects + schematics
   // (regex pass above stays as the fast pre-pass; AI rows go to review, never
   // overriding a slot the schedule parser already filled).
@@ -2239,6 +2348,7 @@ async function runAnalysis(opts){
     const deduplicated=window.EstimationExtractorCore.deduplicateExtractionRows(A.rows);
     A.rows=deduplicated.rows;A.duplicates=deduplicated.duplicates;
   }
+  await showAnalysisStage(5,`${A.feeders.length} feeder relationship${A.feeders.length===1?'':'s'}`);
   A.feeders.forEach(fd=>{
     if (!fd.to) return;
     const child=A.boards[fd.to];
@@ -2246,7 +2356,7 @@ async function runAnalysis(opts){
       child.parent=fd.from; child.parentConf=fd.conf;
     }
   });
-  renderStages(6); if(anim) await sleep(220);
+  await showAnalysisStage(6,'Checking totals, coverage, and review items');
   // carry over prior manual decisions
   if (prev){
     const key=r=>[r.boardNorm,r.way,r.device,r.srcText].join('|');
@@ -2280,12 +2390,26 @@ async function runAnalysis(opts){
   }
   const rev=A.rows.filter(r=>r.status==='pending'&&r.conf<0.8).length;
   p.status = rev? 'Needs review':'Analysed';
-  renderStages(7,true);
+  const deviceCount=A.rows.filter(r=>r.status!=='rejected'&&!r.space&&r.device&&(r.kind!=='mention'||r.status==='confirmed')).reduce((sum,row)=>sum+(Number(row.qty)||1),0);
+  const completeDetail=`${deviceCount} devices | ${Object.keys(A.boards).length} boards | ${rev} review items`;
+  renderStages(7,true,completeDetail);
   renderTakeoff(); renderProjHeader(); renderAnalysisControls(); renderPgclass(); saveProject(p);
   if (!auto) toast('Analysis complete — '+A.rows.length+' evidence rows extracted');
+  finishProcessing(completeDetail,'complete',1800);
+  return A;
+  }catch(error){
+    console.error('Analysis failed:',error);
+    finishProcessing(error.message||'The analysis could not be completed','failed',5000);
+    toast('Analysis stopped: '+(error.message||'Unknown error'));
+    return null;
+  }finally{
+    analysisBusy=false;
+    analysisButtons.forEach(button=>button.disabled=false);
+    $('#projView')?.removeAttribute('aria-busy');
+  }
 }
 $('#anRunBtn').addEventListener('click', ()=>runAnalysis());
-$('#reanalyzeBtn').addEventListener('click', async ()=>{ setTab('analysis'); await autoOcrScannedFiles(); runAnalysis(); });
+$('#reanalyzeBtn').addEventListener('click', async ()=>{ setTab('analysis');setProcessingDock(STAGES[0],'Checking document text',2,0);await paintProcessing();await autoOcrScannedFiles();await runAnalysis(); });
 
 
 /* ============================ RESULTS (DEVICES TAB) ============================ */

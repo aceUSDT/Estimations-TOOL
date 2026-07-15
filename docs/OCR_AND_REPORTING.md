@@ -6,7 +6,7 @@
 2. `extractor-core.js#assessPageText` scores each page's embedded text for volume, printable characters, electrical signals, reading order, and schedule completeness.
 3. Reliable text stays native. Missing, corrupt, incomplete, or badly ordered text is queued for OCR. A mixed PDF can therefore use native text on one page and OCR on the next.
 4. OCR renders at high resolution subject to a 16-megapixel source cap. Image metrics select preprocessing candidates for upscaling, rotation, deskew, grayscale, contrast, sharpening, denoising, adaptive thresholding, and uneven-background correction.
-5. Tesseract runs at least a base and enhanced candidate. Additional adaptive or rotated candidates run when quality remains low. `scoreOcrCandidate` combines OCR confidence, text-layer quality, electrical vocabulary, and schedule-row signals. The highest-scoring result is retained.
+5. Tesseract runs at least a base and enhanced candidate. Additional adaptive or rotated candidates run when quality remains low. `scoreOcrCandidate` combines OCR confidence, text-layer quality, electrical vocabulary, and schedule-row signals. When embedded text exists, it is included in the comparison so OCR cannot silently replace a stronger native result.
 6. OCR words are reconstructed into spatial lines and table rows. Word, line, and page confidence, bounding boxes, preprocessing settings, original text, corrections, and correction reasons are retained.
 7. Deterministic parsers associate board, way, phase, rating, device family, curve, breaking capacity, poles, description, and source geometry. Optional AI extraction can add review-pending rows but does not perform final aggregation.
 8. `deduplicateExtractionRows` removes repeated circuits or source regions, retaining the clearer or approved record.
@@ -17,7 +17,7 @@
 | Setting | Current behavior |
 |---|---|
 | Engine | Tesseract.js 5.1.1, English |
-| Routing threshold | Embedded-text score at least 0.62, with no corrupt characters or reading-order failures |
+| Routing threshold | Embedded-text score at least 0.62, with no corrupt characters or widespread reading-order failures; isolated coordinate anomalies are normalized |
 | PDF source render | Target 2.25x; reduced when the page would exceed 16 megapixels |
 | Low-resolution candidate | 3x target scale when estimated text is under 9 pixels or the short page edge is under 800 pixels |
 | Candidate comparison | Base and enhanced candidates always; adaptive/deskew candidates below 0.75; orientation fallbacks below 0.58 |
@@ -28,6 +28,8 @@
 | OCR corrections | Electrical corrections are recorded; original text is never discarded |
 
 Manual **OCR page** reruns the current page even when native text was accepted. Re-analysis rebuilds the result and applies source deduplication, so an OCR rerun cannot append a second copy of the same circuit.
+
+Upload, OCR, and analysis stages share a persistent processing strip immediately below the application bar. It reports the current document/page, stage, progress, and completion result without requiring the user to keep the analysis tab open.
 
 ## Canonical device model
 
