@@ -737,6 +737,273 @@
     };
   }
 
+  function assessPageText(lines, options = {}) {
+    const records = (lines || []).map((line) => typeof line === 'string' ? { text: line } : (line || {}));
+    const source = records.map((line) => String(line.text || '')).join('\n').trim();
+    if (!source) {
+      return {
+        route: 'ocr', reliable: false, score: 0, lineCount: 0, characterCount: 0,
+        reasons: ['No embedded text was found'],
+      };
+    }
+    const characters = Array.from(source);
+    const printable = characters.filter((character) => {
+      const code = character.codePointAt(0);
+      return character === '\n' || character === '\t' || (code >= 32 && code !== 0xfffd);
+    }).length;
+    const replacementCount = (source.match(/\uFFFD|�/g) || []).length;
+    const printableRatio = printable / Math.max(1, characters.length);
+    const alphanumericRatio = (source.match(/[A-Za-z0-9]/g) || []).length / Math.max(1, characters.length);
+    const tokens = source.match(/[A-Za-z0-9][A-Za-z0-9+&./-]*/g) || [];
+    const electricalSignals = (source.match(/\b(?:DB|BOARD|WAY|CIRCUIT|L[123]|MCB|MCCB|RCBO|RCD|AFDD|SPD|\d+(?:\.\d+)?\s*(?:A|MA|KA)|SPN|DPN|TPN)\b/gi) || []).length;
+    const bboxes = records.map((line) => line.bbox).filter((bbox) => Array.isArray(bbox) && bbox.length >= 4 && bbox.every(Number.isFinite));
+    let orderingErrors = 0;
+    for (let index = 1; index < bboxes.length; index += 1) {
+      const priorY = Number(bboxes[index - 1][1]);
+      const nextY = Number(bboxes[index][1]);
+      if (nextY + Math.max(4, Number(bboxes[index][3]) || 0) < priorY) orderingErrors += 1;
+    }
+    const expectedType = String(options.expectedType || '').toLowerCase();
+    const expectsDenseTable = /schedule|table/.test(expectedType);
+    let score = 0.15
+      + Math.min(0.25, characters.length / 1200)
+      + Math.min(0.12, records.length / 30)
+      + printableRatio * 0.18
+      + Math.min(0.1, tokens.length / 120)
+      + Math.min(0.12, electricalSignals / 30);
+    if (printableRatio > 0.96 && alphanumericRatio > 0.45) score += 0.18;
+    score -= Math.min(0.45, replacementCount / Math.max(1, characters.length) * 8);
+    score -= Math.min(0.35, orderingErrors * 0.18);
+    if (expectsDenseTable && (characters.length < 80 || records.length < 3)) score -= 0.35;
+    if (tokens.length && tokens.filter((token) => token.length === 1).length / tokens.length > 0.55) score -= 0.2;
+    score = Math.max(0, Math.min(1, score));
+    const reasons = [];
+    if (replacementCount) reasons.push('The text layer contains corrupt replacement characters');
+    if (printableRatio < 0.9) reasons.push('The text layer contains too many non-printable characters');
+    if (orderingErrors) reasons.push('The text layer is not in a reliable reading order');
+    if (expectsDenseTable && (characters.length < 80 || records.length < 3)) reasons.push('The schedule text layer appears incomplete');
+    const reliable = score >= 0.62 && printableRatio >= 0.9 && replacementCount === 0 && orderingErrors === 0;
+    if (!reliable && !reasons.length) reasons.push('Embedded-text quality is below the acceptance threshold');
+    return {
+      route: reliable ? 'embedded_text' : 'ocr',
+      reliable,
+      score,
+      lineCount: records.length,
+      characterCount: characters.length,
+      printableRatio,
+      alphanumericRatio,
+      electricalSignals,
+      orderingErrors,
+      reasons,
+    };
+  }
+
+  function buildOcrCandidatePlan(metrics = {}) {
+    const candidates = [];
+    const seen = new Set();
+    const add = (candidate) => {
+      const value = {
+        id: candidate.id,
+        rotation: Number(candidate.rotation) || 0,
+        deskew: Number(candidate.deskew) || 0,
+        scale: Number(candidate.scale) || 2.25,
+        grayscale: candidate.grayscale !== false,
+        contrast: Number(candidate.contrast) || 1,
+        threshold: candidate.threshold || null,
+        denoise: Boolean(candidate.denoise),
+        sharpen: Boolean(candidate.sharpen),
+        backgroundCorrection: Boolean(candidate.backgroundCorrection),
+      };
+      const key = JSON.stringify(value);
+      if (!seen.has(key)) { seen.add(key); candidates.push(value); }
+    };
+    const orientation = [90, 180, 270].includes(Number(metrics.orientation)) ? Number(metrics.orientation) : 0;
+    const textHeight = Number(metrics.estimatedTextHeight) || 12;
+    const lowResolution = textHeight < 9 || Math.min(Number(metrics.width) || 2000, Number(metrics.height) || 2000) < 800;
+    const scale = lowResolution ? 3 : 2.25;
+    add({ id: 'base', rotation: 0, scale, grayscale: true, contrast: 1.08 });
+    add({ id: 'enhanced', rotation: orientation, scale, grayscale: true, contrast: 1.35, sharpen: true });
+    if (orientation) add({ id: `rotate-${orientation}`, rotation: orientation, scale, grayscale: true, contrast: 1.2, sharpen: true });
+    if (Math.abs(Number(metrics.skewAngle) || 0) >= 0.35) {
+      add({ id: 'deskew', rotation: orientation, deskew: -Number(metrics.skewAngle), scale, grayscale: true, contrast: 1.25, sharpen: true });
+    }
+    if (Number(metrics.contrast) < 0.2 || metrics.unevenBackground || Number(metrics.noise) > 0.2) {
+      add({
+        id: 'adaptive-threshold', rotation: orientation, scale, grayscale: true, contrast: 1.45,
+        threshold: 'adaptive', denoise: Number(metrics.noise) > 0.15, sharpen: true,
+        backgroundCorrection: Boolean(metrics.unevenBackground),
+      });
+    }
+    if (lowResolution) add({ id: 'upscaled', rotation: orientation, scale: 3, grayscale: true, contrast: 1.3, sharpen: true });
+    if (metrics.tryOrientations) {
+      [90, 180, 270].forEach((rotation) => add({ id: `fallback-${rotation}`, rotation, scale, grayscale: true, contrast: 1.25, sharpen: true }));
+    }
+    return candidates;
+  }
+
+  function scoreOcrCandidate(candidate = {}) {
+    const text = String(candidate.text || candidate.data?.text || '');
+    const lines = Array.isArray(candidate.lines) && candidate.lines.length
+      ? candidate.lines
+      : text.split(/\r?\n/).filter(Boolean).map((value) => ({ text: value }));
+    const quality = assessPageText(lines, { expectedType: candidate.expectedType });
+    const rawConfidence = Number(candidate.confidence ?? candidate.data?.confidence) || 0;
+    const confidence = rawConfidence > 1 ? rawConfidence / 100 : rawConfidence;
+    const domainHits = (text.match(/\b(?:MCB|MCCB|RCBO|RCD|AFDD|SPD|SPN|DPN|TPN|L[123]|\d+(?:\.\d+)?\s*(?:A|MA|KA))\b/gi) || []).length;
+    const tableRows = lines.filter((line) => /(?:^|\s)(?:\d{1,3}\s*(?:\/\s*)?L[123]|L[123]\s+\d+(?:\.\d+)?)/i.test(String(line.text || ''))).length;
+    const score = Math.max(0, Math.min(1,
+      confidence * 0.45 + quality.score * 0.42 + Math.min(0.08, domainHits * 0.008) + Math.min(0.05, tableRows * 0.01)));
+    return { score, confidence, textQuality: quality, domainHits, tableRows };
+  }
+
+  function selectBestOcrCandidate(candidates) {
+    const scored = (candidates || []).map((candidate, index) => ({ candidate, index, ...scoreOcrCandidate(candidate) }));
+    scored.sort((left, right) => right.score - left.score || left.index - right.index);
+    return scored.length ? { candidate: scored[0].candidate, score: scored[0].score, scored } : { candidate: null, score: 0, scored: [] };
+  }
+
+  function correctElectricalOcrText(value) {
+    const originalText = String(value || '');
+    let correctedText = originalText;
+    const corrections = [];
+    const replace = (pattern, replacement, reason) => {
+      correctedText = correctedText.replace(pattern, (...args) => {
+        const original = args[0];
+        const corrected = typeof replacement === 'function' ? replacement(...args) : replacement;
+        if (corrected !== original) corrections.push({ original, corrected, reason });
+        return corrected;
+      });
+    };
+    replace(/\b(Way|Cct|Ckt|Circuit)\s+[lI|](?=\s*[:#])/gi, (match, label) => `${label} 1`, 'OCR confused the circuit number 1 with I, l, or |');
+    replace(/\b[lI|](\d{1,2})\s*A\b/g, (match, suffix) => {
+      const candidate = Number(`1${suffix}`);
+      return [6, 10, 16, 20, 25, 32, 40, 50, 63, 80, 100, 125].includes(candidate) ? `${candidate}A` : match;
+    }, 'OCR confused the leading digit 1 in a standard current rating');
+    replace(/\bMC8\b/gi, 'MCB', 'OCR confused the letter B with the digit 8 in MCB');
+    replace(/\bMCC8\b/gi, 'MCCB', 'OCR confused the letter B with the digit 8 in MCCB');
+    replace(/\bRC8O\b/gi, 'RCBO', 'OCR confused the letter B with the digit 8 in RCBO');
+    replace(/\b(\d{1,2})[OoQ]\s*kA\b/gi, (match, prefix) => `${prefix}0kA`, 'OCR confused the digit 0 with O or Q in a breaking-capacity value');
+    return { originalText, text: correctedText, corrections };
+  }
+
+  function extractTrippingCurve(value, context = {}) {
+    const source = String(value || '');
+    const explicit = source.match(/\b(?:TYPE|CURVE|CHARACTERISTIC)\s*[-:]?\s*([BCDKZ])\b/i)
+      || source.match(/\b([BCDKZ])\s*[- ]?CURVE\b/i);
+    if (explicit) return { value: explicit[1].toUpperCase(), original: explicit[0], confidence: 0.98, reason: 'Explicit tripping-curve wording' };
+    const hasDevice = Boolean(context.deviceContext) || /\b(?:MCB|MCCB|RCBO|AFDD|CIRCUIT BREAKER)\b/i.test(source);
+    if (!hasDevice) return null;
+    const compact = source.match(/(?:^|\s)([BCDKZ])\s*[-]?\s*(\d{1,3})(?=\s|$|[,;])/i);
+    if (!compact) return null;
+    if (/\b(?:DB|BOARD|REV(?:ISION)?)\s*[- ]?\s*[BCDKZ]\s*[-]?\s*\d{1,3}\b/i.test(source) && !/\b(?:MCB|MCCB|RCBO|AFDD)\b/i.test(source)) return null;
+    return { value: compact[1].toUpperCase(), rating: Number(compact[2]), original: compact[0].trim(), confidence: 0.94, reason: 'Compact curve-and-rating value in device context' };
+  }
+
+  function extractBreakingCapacity(value) {
+    const source = String(value || '');
+    const match = source.match(/\b(\d+(?:\.\d+)?)\s*kA\b/i);
+    if (!match) return null;
+    const amount = Number(match[1]);
+    if (!Number.isFinite(amount) || amount <= 0 || amount > 150) return null;
+    return { value: amount, original: match[0], confidence: 0.98, reason: 'Explicit kA unit' };
+  }
+
+  function reconstructSpatialRows(words) {
+    const clean = (words || []).map((word) => {
+      const box = word?.bbox || word?.boundingBox || {};
+      const x0 = Number(box.x0 ?? box.left);
+      const y0 = Number(box.y0 ?? box.top);
+      const x1 = Number(box.x1 ?? box.right);
+      const y1 = Number(box.y1 ?? box.bottom);
+      return { text: String(word?.text || '').trim(), x0, y0, x1, y1, confidence: Number(word?.confidence ?? word?.conf) };
+    }).filter((word) => word.text && [word.x0, word.y0, word.x1, word.y1].every(Number.isFinite));
+    clean.sort((left, right) => left.y0 - right.y0 || left.x0 - right.x0);
+    const rows = [];
+    clean.forEach((word) => {
+      const cy = (word.y0 + word.y1) / 2;
+      const height = Math.max(1, word.y1 - word.y0);
+      let row = rows.find((candidate) => Math.abs(candidate.cy - cy) <= Math.max(4, Math.min(candidate.height, height) * 0.65));
+      if (!row) {
+        row = { words: [], cy, height };
+        rows.push(row);
+      }
+      row.words.push(word);
+      row.cy = row.words.reduce((sum, item) => sum + (item.y0 + item.y1) / 2, 0) / row.words.length;
+      row.height = Math.max(...row.words.map((item) => item.y1 - item.y0));
+    });
+    return rows.sort((left, right) => left.cy - right.cy).map((row) => {
+      row.words.sort((left, right) => left.x0 - right.x0);
+      const cells = [];
+      row.words.forEach((word) => {
+        const prior = cells[cells.length - 1];
+        const gap = prior ? word.x0 - prior.x1 : 0;
+        if (!prior || gap > Math.max(18, row.height * 2.2)) {
+          cells.push({ text: word.text, x0: word.x0, y0: word.y0, x1: word.x1, y1: word.y1, words: [word] });
+        } else {
+          prior.text += ` ${word.text}`;
+          prior.x1 = Math.max(prior.x1, word.x1); prior.y0 = Math.min(prior.y0, word.y0); prior.y1 = Math.max(prior.y1, word.y1); prior.words.push(word);
+        }
+      });
+      cells.forEach((cell) => {
+        cell.bbox = [cell.x0, cell.y0, cell.x1 - cell.x0, cell.y1 - cell.y0];
+        cell.confidence = cell.words.reduce((sum, word) => sum + (Number.isFinite(word.confidence) ? word.confidence : 0), 0) / Math.max(1, cell.words.length) / 100;
+      });
+      const x0 = Math.min(...row.words.map((word) => word.x0));
+      const y0 = Math.min(...row.words.map((word) => word.y0));
+      const x1 = Math.max(...row.words.map((word) => word.x1));
+      const y1 = Math.max(...row.words.map((word) => word.y1));
+      return { text: row.words.map((word) => word.text).join(' '), bbox: [x0, y0, x1 - x0, y1 - y0], cells };
+    });
+  }
+
+  function stitchSchedulePages(pages) {
+    const output = [];
+    let boardRef = null;
+    const headerKeys = new Set();
+    (pages || []).forEach((page) => {
+      if (page && page.boardRef) boardRef = page.boardRef;
+      (page && page.rows || []).forEach((row) => {
+        const text = String(row && row.text || '').replace(/\s+/g, ' ').trim();
+        if (!text) return;
+        const header = /\b(?:WAY|CCT|CIRCUIT)\b.*\b(?:DESCRIPTION|RATING|DEVICE|PROTECTION)\b/i.test(text);
+        if (header) { headerKeys.add(text.toUpperCase()); return; }
+        if (headerKeys.has(text.toUpperCase())) return;
+        output.push({ ...row, text, page: page.page, boardRef: page.boardRef || boardRef });
+      });
+    });
+    return output;
+  }
+
+  function deduplicateExtractionRows(rows) {
+    const output = [];
+    const duplicates = [];
+    const indexes = new Map();
+    const keyFor = (row) => {
+      const board = String(row?.boardNorm || '').toUpperCase();
+      const capacity = row?.breakingCapacity ?? row?.breakingCapacityKa ?? row?.ka ?? '';
+      const poles = row?.poleConfiguration ?? row?.poleConfig ?? row?.pole ?? row?.poles ?? '';
+      if (board && row?.way != null) return ['circuit', board, row.way, row.phase || '', row.device || '', row.rating ?? '', row.curve || '', capacity, poles].join('|');
+      const bbox = Array.isArray(row?.bbox) ? row.bbox.map((value) => Number(value).toFixed(1)).join(',') : '';
+      if (row?.fileId && row?.page != null && bbox) return ['region', row.fileId, row.page, bbox, row.device || '', row.rating ?? ''].join('|');
+      return ['source', row?.id || '', row?.fileId || '', row?.page ?? '', row?.line ?? '', row?.srcText || ''].join('|');
+    };
+    (rows || []).forEach((row) => {
+      const key = keyFor(row);
+      const index = indexes.get(key);
+      if (index == null) { indexes.set(key, output.length); output.push(row); return; }
+      const prior = output[index];
+      const priorScore = Number(prior?.conf || 0) + (prior?.status === 'confirmed' ? 1 : 0);
+      const nextScore = Number(row?.conf || 0) + (row?.status === 'confirmed' ? 1 : 0);
+      if (nextScore > priorScore) {
+        output[index] = row;
+        duplicates.push({ retained: row, excluded: prior, key });
+      } else {
+        duplicates.push({ retained: prior, excluded: row, key });
+      }
+    });
+    return { rows: output, duplicates };
+  }
+
   function ocrWordsToLines(words, renderedWidth, renderedHeight, pageWidth, pageHeight) {
     const sx = Number(pageWidth) / Math.max(1, Number(renderedWidth));
     const sy = Number(pageHeight) / Math.max(1, Number(renderedHeight));
@@ -746,7 +1013,7 @@
       const y0 = Number(box.y0 ?? box.top);
       const x1 = Number(box.x1 ?? box.right);
       const y1 = Number(box.y1 ?? box.bottom);
-      return { text: String(word?.text || '').trim(), x0, y0, x1, y1 };
+      return { text: String(word?.text || '').trim(), x0, y0, x1, y1, confidence: Number(word?.confidence ?? word?.conf) };
     }).filter((word) => word.text && [word.x0, word.y0, word.x1, word.y1].every(Number.isFinite));
     clean.sort((a, b) => {
       const ay = (a.y0 + a.y1) / 2;
@@ -774,6 +1041,12 @@
       return {
         text: line.words.map((word) => word.text).join(' '),
         bbox: [line.x0 * sx, line.y0 * sy, (line.x1 - line.x0) * sx, (line.y1 - line.y0) * sy],
+        confidence: line.words.reduce((sum, word) => sum + (Number.isFinite(word.confidence) ? word.confidence : 0), 0) / Math.max(1, line.words.length) / 100,
+        words: line.words.map((word) => ({
+          text: word.text,
+          bbox: [word.x0 * sx, word.y0 * sy, (word.x1 - word.x0) * sx, (word.y1 - word.y0) * sy],
+          confidence: Number.isFinite(word.confidence) ? word.confidence / 100 : null,
+        })),
         ocr: true,
       };
     });
@@ -962,6 +1235,16 @@
     normaliseAssistedDevice,
     assistedSeedFromText,
     matchAssistedRows,
+    assessPageText,
+    buildOcrCandidatePlan,
+    scoreOcrCandidate,
+    selectBestOcrCandidate,
+    correctElectricalOcrText,
+    extractTrippingCurve,
+    extractBreakingCapacity,
+    reconstructSpatialRows,
+    stitchSchedulePages,
+    deduplicateExtractionRows,
     ocrWordsToLines,
   };
 })(globalThis);

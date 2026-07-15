@@ -27,31 +27,39 @@ const model = Report.buildModel({
 });
 
 assert.deepEqual(Array.from(model.boards, (board) => board.label), ["DB-2", "DB-10"]);
-assert.equal(model.reviewCount, 2);
+assert.equal(model.reviewCount, 3);
 assert.equal(model.unassignedQty, 1);
 assert.equal(model.grandTotal, 5);
 assert.equal(model.deviceLineCount, 3);
 assert.deepEqual(Array.from(model.boardTotals), [3, 2]);
 assert.deepEqual(Array.from(model.groups, (group) => group.name), ["MCB's", "RCBO's"]);
-assert.equal(model.groups[0].rows[0].label, "10A SPN MCB - Lighting");
+assert.equal(model.groups[0].rows[0].label, "10A SPN MCB");
 assert.deepEqual(Array.from(model.groups[0].rows[0].quantities), [2, 1]);
-assert.equal(model.groups[0].rows[1].label, "20A TPN MCB - Mech");
+assert.deepEqual(Array.from(model.groups[0].rows[0].purposes), ["Lighting"]);
+assert.equal(model.groups[0].rows[1].label, "20A TPN MCB");
+assert.deepEqual(Array.from(model.groups[0].rows[1].purposes), ["Mechanical"]);
+assert.equal(model.groups[0].rows[0].curve, "Not specified");
+assert.equal(model.groups[0].rows[0].breakingCapacity, "Not specified");
+assert.equal(model.reconciliation.valid, true);
 assert.equal(model.associated.grandTotal, 1);
 assert.equal(model.associated.groups[0].rows[0].label, "Contactor");
 
 const workbook = Report.createExcelWorkbook(model, ExcelJS);
-const sheet = workbook.getWorksheet("DB Devices");
+const sheet = workbook.getWorksheet("Device Take-Off");
 const controlSheet = workbook.getWorksheet("Control Equipment");
 assert.equal(sheet.getCell("A1").value, "Llangatwg Test");
-assert.equal(sheet.getCell("C1").value, "DB-2");
-assert.equal(sheet.getCell("D1").value, "DB-10");
-assert.equal(sheet.getCell("E3").value, "Total");
-assert.equal(sheet.getCell("E5").value.formula, "SUM(C5:D5)");
-assert.equal(sheet.getCell("C9").value.formula, "SUM(C4:C8)");
-assert.equal(sheet.getCell("A4").fill.fgColor.argb, "FFD9D9D9");
+assert.equal(sheet.getCell("G3").value, "DB-2");
+assert.equal(sheet.getCell("H3").value, "DB-10");
+assert.equal(sheet.getCell("I3").value, "Total Quantity");
+assert.equal(sheet.getCell("I4").value.formula, "SUM(G4:H4)");
+assert.equal(sheet.getCell("G7").value.formula, "SUM(G4:G6)");
+assert.equal(sheet.getCell("E4").fill.fgColor.argb, "FFFFF2CC");
 assert.equal(sheet.getCell("A3").fill.fgColor.argb, "FFF7E0D1");
 assert.equal(sheet.views[0].ySplit, 3);
-assert.equal(sheet.pageSetup.fitToHeight, 1);
+assert.equal(workbook.getWorksheet("Device Detail").rowCount, 6);
+assert.ok(workbook.getWorksheet("Review Required"));
+assert.ok(workbook.getWorksheet("Assumptions and Qualifications"));
+assert.ok(workbook.getWorksheet("Extraction Audit"));
 assert.equal(controlSheet.getCell("A2").value, "Control & Associated Equipment");
 assert.equal(controlSheet.getCell("C5").value, 1);
 
@@ -60,7 +68,7 @@ assert.equal(buffer[0], 0x50);
 assert.equal(buffer[1], 0x4b);
 const roundTrip = new ExcelJS.Workbook();
 await roundTrip.xlsx.load(buffer);
-assert.equal(roundTrip.getWorksheet("DB Devices").getCell("E5").value.formula, "SUM(C5:D5)");
+assert.equal(roundTrip.getWorksheet("Device Take-Off").getCell("I4").value.formula, "SUM(G4:H4)");
 assert.equal(roundTrip.getWorksheet("Control Equipment").getCell("C5").value, 1);
 
 const wideBoards = Object.fromEntries(Array.from({ length: 57 }, (_, index) => {
@@ -77,7 +85,7 @@ const wideWorkbook = Report.createExcelWorkbook(wideModel, ExcelJS);
 const wideBuffer = await wideWorkbook.xlsx.writeBuffer();
 const wideRoundTrip = new ExcelJS.Workbook();
 await wideRoundTrip.xlsx.load(wideBuffer);
-assert.equal(wideRoundTrip.getWorksheet("DB Devices").getCell("C5").value, 1);
-assert.equal(wideRoundTrip.getWorksheet("DB Devices").getCell("D5").value, null);
+assert.equal(wideRoundTrip.getWorksheet("Device Take-Off").getCell("G4").value, 1);
+assert.equal(wideRoundTrip.getWorksheet("Device Take-Off").getCell("H4").value, null);
 
 console.log("Report matrix and XLSX export: OK");

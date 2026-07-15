@@ -9,7 +9,9 @@ Electrical document intelligence prototype and private training/evaluation corpu
 - `report-core.js` - deterministic board-by-device report model, CSV output, and formatted Excel workbook generation.
 - Reports workspace - review a board-by-device take-off, including a separate control-equipment sheet, then export a formatted `.xlsx` workbook or CSV.
 - Viewer - original-document PDF rendering with thumbnails, search, source highlighting, rotation, 25–1000% zoom, and drag panning in every direction. Saved PDFs rehydrate their renderer when reopened.
-- Automatic browser OCR - scanned PDFs and PNG/JPG/WebP image scans are read on upload, with OCR confidence and source-page provenance retained for each extracted record.
+- Page-quality OCR - every PDF page independently keeps reliable embedded text or runs adaptive OCR. Candidate preprocessing, confidence, coordinates, original text, corrections, and reasons are retained.
+- Canonical procurement reporting - devices group by family, rating, curve, breaking capacity, and poles. Circuit purpose remains in contributor detail and never splits an otherwise identical product.
+- Reconciliation-gated exports - source, board, consolidated, and workbook totals must agree before CSV or Excel is issued.
 - `tools/coverage/` - deterministic regression tests for board references, schedule dialects, reconciliation, report exports, and the extraction endpoint.
 - `training/` - schema, confirmed labels, fixtures, evaluation results, and corpus analysis.
 - `data/electrical_corpus/manifest.json` - file-level inventory and hashes.
@@ -39,6 +41,8 @@ npm test
 3. Use **Boards & Devices** and **Review** to inspect, edit, confirm, reject, or add extracted items. Every item keeps its document and page source.
 4. Use **Viewer** to search the document, highlight a board, inspect the source page, or zoom from 25% to 1000%.
 5. Use **Reports** to export the checked device take-off. Control items such as contactors, time clocks, photocells, relays, starters, and DALI controllers are kept separate from protective-device totals.
+
+See [OCR, extraction, and reporting architecture](docs/OCR_AND_REPORTING.md) for routing thresholds, preprocessing, grouping rules, workbook sheets, measured sample results, and known limitations.
 
 The take-off report intentionally covers distribution-board devices. Main switchboard and panelboard feeder schedules are retained in the project but are excluded from the distribution-board completeness total unless their device rows are part of the take-off scope.
 

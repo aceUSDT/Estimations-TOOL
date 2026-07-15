@@ -363,12 +363,17 @@
   table.report-matrix{border-collapse:separate;border-spacing:0;min-width:max-content;width:100%;font-size:11px;}
   .report-matrix th,.report-matrix td{height:28px;padding:5px 7px;border-right:1px solid #d5d9de;border-bottom:1px solid #d5d9de;text-align:center;background:#fff;}
   .report-matrix thead th{position:sticky;z-index:6;font-weight:700;}
-  .report-matrix .report-row-project th{top:0;height:106px;background:#181a1d;color:#fff;vertical-align:middle;}
-  .report-matrix .report-row-title th{top:106px;height:30px;background:#181a1d;color:#fff;}
-  .report-matrix .report-row-head th{top:136px;height:30px;background:#f7e0d1;color:#24272b;}
-  .report-matrix .report-device{position:sticky;left:0;z-index:4;width:260px;min-width:260px;text-align:left;}
-  .report-matrix .report-unit{position:sticky;left:260px;z-index:4;width:54px;min-width:54px;}
-  .report-matrix thead .report-device,.report-matrix thead .report-unit{z-index:8;}
+  .report-matrix .report-row-project th{top:0;height:52px;background:#181a1d;color:#fff;vertical-align:middle;}
+  .report-matrix .report-row-title th{top:52px;height:30px;background:#181a1d;color:#fff;}
+  .report-matrix .report-row-head th{top:82px;height:36px;background:#f7e0d1;color:#24272b;}
+  .report-matrix .report-category{position:sticky;left:0;z-index:4;width:150px;min-width:150px;text-align:left;}
+  .report-matrix .report-device{position:sticky;left:150px;z-index:4;width:260px;min-width:260px;text-align:left;}
+  .report-matrix .report-row-project .report-device,.report-matrix .report-row-title .report-device{left:0;width:auto;min-width:0;z-index:8;}
+  .report-matrix thead .report-category,.report-matrix thead .report-device{z-index:8;}
+  .report-matrix .report-tech{width:90px;min-width:90px;}
+  .report-matrix .report-purpose{width:150px;min-width:150px;text-align:left;}
+  .report-matrix .report-source{width:220px;min-width:220px;text-align:left;}
+  .report-matrix .report-review{width:122px;min-width:122px;}
   .report-matrix .report-board{width:48px;min-width:48px;padding:0;vertical-align:bottom;}
   .report-board button{display:flex;align-items:center;justify-content:center;width:100%;height:100%;padding:8px 0;color:inherit;font-weight:600;writing-mode:vertical-rl;transform:rotate(180deg);}
   .report-matrix .report-total{width:58px;min-width:58px;font-weight:700;}
@@ -377,11 +382,11 @@
   .report-matrix .report-section .report-device{z-index:5;background:#e3e5e8;}
   .report-matrix .report-data .report-device{font-weight:600;}
   .report-matrix .report-data:hover td{background:#f7fafc;}
-  .report-matrix .report-data:hover .report-device,.report-matrix .report-data:hover .report-unit{background:#f7fafc;}
+  .report-matrix .report-data:hover .report-category,.report-matrix .report-data:hover .report-device{background:#f7fafc;}
   .report-qty{width:100%;min-height:22px;font-weight:700;color:#1668e3;}
   .report-qty:hover{background:#e8f0fd;}
   .report-matrix .report-final td{background:#e3e5e8;font-weight:700;}
-  .report-matrix .report-final .report-device,.report-matrix .report-final .report-unit{z-index:5;background:#e3e5e8;}
+  .report-matrix .report-final .report-category,.report-matrix .report-final .report-device{z-index:5;background:#e3e5e8;}
   .report-subhead{padding:14px 18px 10px;border-top:4px solid #181a1d;background:#fff;}
   .report-subhead h3{font-size:14px;font-weight:700;}
   .report-subhead p{font-size:11.5px;color:var(--txt2);margin-top:2px;}
@@ -399,10 +404,19 @@
     .report-top{align-items:flex-start;flex-wrap:wrap;}
     .report-facts{order:3;width:100%;margin:0;overflow-x:auto;}
     .report-actions{margin-left:auto;}
-    .report-matrix .report-device{width:190px;min-width:190px;}
-    .report-matrix .report-unit{left:190px;}
+    .report-matrix .report-category{width:120px;min-width:120px;}
+    .report-matrix .report-device{left:120px;width:190px;min-width:190px;}
+    .report-matrix .report-row-project .report-device,.report-matrix .report-row-title .report-device{left:0;width:auto;min-width:0;}
   }
   @media(max-width:540px){
+    .appbar{padding:0 12px;gap:8px;}
+    .appbar .brand .bt{white-space:nowrap;}
+    .appbar .crumb{display:none;}
+    .proj-head{display:grid;grid-template-columns:34px minmax(0,1fr);align-items:start;}
+    .proj-head #reanalyzeBtn{grid-column:2;justify-self:start;}
+    .report-matrix .report-category{position:static;width:80px;min-width:80px;}
+    .report-matrix .report-device{left:0;width:170px;min-width:170px;}
+    .report-matrix .report-row-project .report-device,.report-matrix .report-row-title .report-device{left:0;width:auto;min-width:0;}
     .report-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px 18px;overflow:visible;}
     .report-fact{min-width:0;}
     .report-fact dt{line-height:1.25;white-space:normal;}
@@ -804,7 +818,7 @@ const state = {
   projects: [],
   cur: null,           // current project
   nextId: 1,
-  viewer: {fileId:null, page:1, zoom:1, rot:0, dark:false, boardHl:null, pdfDocs:{}, assist:{enabled:false,boardNorm:null,seed:null,results:[]}},
+  viewer: {fileId:null, page:1, zoom:1, rot:0, dark:false, boardHl:null, evidenceId:null, pdfDocs:{}, assist:{enabled:false,boardNorm:null,seed:null,results:[]}},
   selectedBoard: null,  // §5.4 — board selected in the merged Boards & Devices page ('__none__' = unassigned rows), null = roll-up
 };
 const uid = () => 'x'+(state.nextId++)+'_'+Math.random().toString(36).slice(2,6);
@@ -967,8 +981,24 @@ const CABLE_PATTERNS = [
 const CONSTRUCTIONS = ['XLPE','SWA','PVC','LSZH','LSF','FP200','MICC','AWA'];
 
 /* rating / poles / curve / sensitivity */
-const ratingOf = s => { const m=s.match(/\b(\d+(?:\.\d+)?)\s*A(?:mps?)?\b/i); return m?parseFloat(m[1]):null; };
-const curveOf  = s => { const m=s.match(/\b(?:type|curve)\s*([BCD])\b/i); return m?m[1].toUpperCase():null; };
+const curveEvidenceOf = s => window.EstimationExtractorCore
+  ? window.EstimationExtractorCore.extractTrippingCurve(s,{deviceContext:/\b(?:MCB|MCCB|RCBO|AFDD|circuit breaker)\b/i.test(s)})
+  : null;
+const ratingOf = s => {
+  const m=s.match(/\b(\d+(?:\.\d+)?)\s*A(?:mps?)?\b/i); if(m)return parseFloat(m[1]);
+  return curveEvidenceOf(s)?.rating??null;
+};
+const curveOf  = s => curveEvidenceOf(s)?.value||null;
+const poleConfigOf = s => {
+  if (/\b(?:SPN|single\s+pole\s+(?:and|&)\s+neutral|1P\s*\+\s*N)\b/i.test(s)) return 'SPN';
+  if (/\b(?:DPN|double\s+pole\s+(?:and|&)\s+neutral|2P\s*\+\s*N)\b/i.test(s)) return 'DPN';
+  if (/\b(?:TPN|TP\s*&\s*N|triple\s+pole\s+(?:and|&)\s+neutral|3P\s*\+\s*N)\b/i.test(s)) return 'TPN';
+  if (/\b(?:4P|four[- ]pole)\b/i.test(s)) return '4P';
+  if (/\b(?:SP|single[- ]pole|1P)\b/i.test(s)) return 'SP';
+  if (/\b(?:DP|double[- ]pole|2P)\b/i.test(s)) return 'DP';
+  if (/\b(?:TP|triple[- ]pole|three[- ]pole|3P)\b/i.test(s)) return 'TP';
+  return null;
+};
 const polesOf  = s => {
   const m=s.match(/\b([1234])\s*P(?:ole)?\b/i); if(m) return +m[1];
   if (/\bTP&?N\b|\bfour[- ]pole\b/i.test(s)) return 4;
@@ -979,7 +1009,7 @@ const polesOf  = s => {
 };
 const sensOf   = s => { const m=s.match(/\b(\d+)\s*mA\b/); return m?+m[1]:null; };
 const phaseOf  = s => { const m=s.match(/\b(L[123])\b/); return m?m[1]:(/\bTP&?N\b|\b3PH\b|\bthree phase\b/i.test(s)?'3PH':null); };
-const kaOf     = s => { const m=s.match(/\b(\d+(?:\.\d+)?)\s*kA\b/i); return m?parseFloat(m[1]):null; };
+const kaOf     = s => window.EstimationExtractorCore?.extractBreakingCapacity(s)?.value??null;
 
 /* ==================== BOARD DETECTION ==================== */
 function detectBoards(line){
@@ -1150,7 +1180,7 @@ function parseScheduleLine(line, ctx){
     way: wayM? +wayM[1] : null,
     desc: line.replace(/^\s*(?:way|cct|ckt|circuit)?\s*[:#]?\s*\d{1,3}\s*/i,'').trim(),
     device, rating,
-    poles: polesOf(line), curve: curveOf(line), sens: sensOf(line),
+    poles: polesOf(line), poleConfiguration:poleConfigOf(line), curve: curveOf(line), sens: sensOf(line),
     phase: phaseOf(line), ka: kaOf(line),
     cable: cables.length? cables[0] : null,
     spare, space, incomer: isIncomer,
@@ -1319,7 +1349,7 @@ function openProject(id){
   ensureAssistedState(state.cur);
   show('proj');
   $('#projTitle').textContent=state.cur.name;
-  state.viewer={fileId:null,page:1,zoom:1,rot:0,dark:state.viewer.dark,boardHl:null,pdfDocs:state.viewer.pdfDocs,assist:{enabled:false,boardNorm:null,seed:null,results:[]}};
+  state.viewer={fileId:null,page:1,zoom:1,rot:0,dark:state.viewer.dark,boardHl:null,evidenceId:null,pdfDocs:state.viewer.pdfDocs,assist:{enabled:false,boardNorm:null,seed:null,results:[]}};
   state.selectedBoard=null;
   renderProjHeader(); renderDocs(); renderPgclass(); renderAnalysisControls(); renderResults();
   setTab('docs');
@@ -1383,13 +1413,88 @@ function flattenOcrWords(blocks){
   };
   walk(blocks); return out;
 }
+function inspectOcrCanvas(cv){
+  const ctx=cv.getContext('2d',{willReadFrequently:true}),step=Math.max(2,Math.floor(Math.max(cv.width,cv.height)/700));
+  const data=ctx.getImageData(0,0,cv.width,cv.height).data;
+  let count=0,sum=0,sumSq=0,diff=0,diffCount=0;
+  const tileSums=Array(16).fill(0),tileCounts=Array(16).fill(0),dark=[];
+  for(let y=0;y<cv.height;y+=step){
+    for(let x=0;x<cv.width;x+=step){
+      const i=(y*cv.width+x)*4,lum=.299*data[i]+.587*data[i+1]+.114*data[i+2];
+      count++;sum+=lum;sumSq+=lum*lum;
+      const tile=Math.min(3,Math.floor(y*4/cv.height))*4+Math.min(3,Math.floor(x*4/cv.width));tileSums[tile]+=lum;tileCounts[tile]++;
+      if(x+step<cv.width){const j=(y*cv.width+x+step)*4,n=.299*data[j]+.587*data[j+1]+.114*data[j+2];diff+=Math.abs(lum-n);diffCount++;}
+      if(lum<150&&dark.length<140000)dark.push([x/step,y/step]);
+    }
+  }
+  const mean=sum/Math.max(1,count),variance=Math.max(0,sumSq/Math.max(1,count)-mean*mean);
+  const tileMeans=tileSums.map((value,index)=>value/Math.max(1,tileCounts[index]));
+  let bestAngle=0,bestScore=-1,zeroScore=0;
+  for(let angle=-3;angle<=3;angle+=.75){
+    const tan=Math.tan(angle*Math.PI/180),offset=Math.ceil(Math.abs(tan)*cv.width/step)+3;
+    const bins=new Uint32Array(Math.ceil(cv.height/step)+offset*2+8);
+    dark.forEach(([x,y])=>{const bin=Math.round(y-x*tan)+offset;if(bin>=0&&bin<bins.length)bins[bin]++;});
+    let score=0;bins.forEach(value=>{score+=value*value;});
+    if(Math.abs(angle)<.01)zeroScore=score;
+    if(score>bestScore){bestScore=score;bestAngle=angle;}
+  }
+  if(!zeroScore||bestScore<zeroScore*1.025)bestAngle=0;
+  return {
+    width:cv.width,height:cv.height,contrast:Math.sqrt(variance)/128,noise:(diff/Math.max(1,diffCount))/255,
+    unevenBackground:(Math.max(...tileMeans)-Math.min(...tileMeans))/255>.18,
+    estimatedTextHeight:Math.max(7,Math.min(14,cv.height/110)),skewAngle:Number(bestAngle.toFixed(2)),
+  };
+}
+function renderOcrCandidate(source,config,baseScale){
+  const rotation=(Number(config.rotation)||0)+(Number(config.deskew)||0),rad=rotation*Math.PI/180;
+  let factor=Math.max(1,Number(config.scale||baseScale)/Math.max(.1,baseScale));
+  const cos=Math.cos(rad),sin=Math.sin(rad),sw=source.width,sh=source.height;
+  let width=Math.ceil((Math.abs(sw*cos)+Math.abs(sh*sin))*factor),height=Math.ceil((Math.abs(sw*sin)+Math.abs(sh*cos))*factor);
+  const pixels=width*height;if(pixels>20000000){const cap=Math.sqrt(20000000/pixels);factor*=cap;width=Math.ceil(width*cap);height=Math.ceil(height*cap);}
+  const cv=document.createElement('canvas');cv.width=Math.max(1,width);cv.height=Math.max(1,height);
+  const ctx=cv.getContext('2d',{alpha:false,willReadFrequently:true});ctx.fillStyle='#fff';ctx.fillRect(0,0,cv.width,cv.height);
+  ctx.translate(cv.width/2,cv.height/2);ctx.rotate(rad);ctx.scale(factor,factor);ctx.drawImage(source,-sw/2,-sh/2);
+  const image=ctx.getImageData(0,0,cv.width,cv.height),data=image.data,contrast=Number(config.contrast)||1;
+  const gray=new Uint8ClampedArray(cv.width*cv.height);
+  for(let p=0,i=0;p<data.length;p+=4,i++){
+    const lum=.299*data[p]+.587*data[p+1]+.114*data[p+2];gray[i]=Math.max(0,Math.min(255,(lum-128)*contrast+128));
+  }
+  if(config.denoise){
+    const copy=gray.slice();
+    for(let y=1;y<cv.height-1;y++)for(let x=1;x<cv.width-1;x++){
+      const i=y*cv.width+x;if(copy[i]<90&&copy[i-1]>220&&copy[i+1]>220&&copy[i-cv.width]>220&&copy[i+cv.width]>220)gray[i]=255;
+    }
+  }
+  let tileMeans=null,tileSize=48;
+  if(config.threshold==='adaptive'){
+    const tx=Math.ceil(cv.width/tileSize),ty=Math.ceil(cv.height/tileSize),sums=new Float64Array(tx*ty),counts=new Uint32Array(tx*ty);
+    for(let y=0;y<cv.height;y++)for(let x=0;x<cv.width;x++){const t=Math.floor(y/tileSize)*tx+Math.floor(x/tileSize);sums[t]+=gray[y*cv.width+x];counts[t]++;}
+    tileMeans=Array.from(sums,(value,index)=>value/Math.max(1,counts[index]));
+  }
+  for(let p=0,i=0;p<data.length;p+=4,i++){
+    let value=gray[i];
+    if(tileMeans){const tx=Math.ceil(cv.width/tileSize),x=i%cv.width,y=Math.floor(i/cv.width),mean=tileMeans[Math.floor(y/tileSize)*tx+Math.floor(x/tileSize)];value=value<mean-10?0:255;}
+    data[p]=data[p+1]=data[p+2]=value;data[p+3]=255;
+  }
+  ctx.putImageData(image,0,0);
+  const mapPoint=(x,y)=>{const dx=x-cv.width/2,dy=y-cv.height/2;return {x:(cos*dx+sin*dy)/factor+sw/2,y:(-sin*dx+cos*dy)/factor+sh/2};};
+  return {canvas:cv,mapPoint,config:{...config,actualScale:Number((baseScale*factor).toFixed(2))}};
+}
+function mapOcrWords(words,candidate){
+  return (words||[]).map(word=>{
+    const box=word.bbox||word.boundingBox||{},corners=[candidate.mapPoint(+box.x0,+box.y0),candidate.mapPoint(+box.x1,+box.y0),candidate.mapPoint(+box.x1,+box.y1),candidate.mapPoint(+box.x0,+box.y1)];
+    if(corners.some(point=>!Number.isFinite(point.x)||!Number.isFinite(point.y)))return null;
+    const xs=corners.map(point=>point.x),ys=corners.map(point=>point.y);
+    return {...word,bbox:{x0:Math.max(0,Math.min(...xs)),y0:Math.max(0,Math.min(...ys)),x1:Math.min(candidate.sourceWidth,Math.max(...xs)),y1:Math.min(candidate.sourceHeight,Math.max(...ys))}};
+  }).filter(Boolean);
+}
 async function ocrPdfPage(f,pageNo,{reanalyze=true,quiet=false}={}){
   if (ocrBusy) throw new Error('OCR is already running');
   if (!f || (f.ext!=='pdf'&&!IMAGE_EXTS.has(f.ext)) || !rawStore[f.id]) throw new Error('The original document is not available for OCR');
   ocrBusy=true;
   const btn=$('#vOcrBtn'); if(btn){btn.disabled=true;btn.textContent='Loading OCR…';}
   try{
-    let base,cv;
+    let base,cv,baseScale=1;
     if(f.ext==='pdf'){
       const lib=await loadPdfjs();
       let doc=state.viewer.pdfDocs[f.id];
@@ -1398,6 +1503,7 @@ async function ocrPdfPage(f,pageNo,{reanalyze=true,quiet=false}={}){
       base=page.getViewport({scale:1});
       let scale=2.25;
       if(base.width*base.height*scale*scale>16000000) scale=Math.sqrt(16000000/(base.width*base.height));
+      baseScale=scale;
       const vp=page.getViewport({scale});
       cv=document.createElement('canvas');cv.width=Math.ceil(vp.width);cv.height=Math.ceil(vp.height);
       await page.render({canvasContext:cv.getContext('2d',{alpha:false}),viewport:vp}).promise;
@@ -1406,27 +1512,58 @@ async function ocrPdfPage(f,pageNo,{reanalyze=true,quiet=false}={}){
       base={width:bitmap.width,height:bitmap.height};
       let scale=Math.min(2.25,Math.sqrt(16000000/(base.width*base.height)));
       if(!Number.isFinite(scale)||scale<=0)scale=1;
+      baseScale=scale;
       cv=document.createElement('canvas');cv.width=Math.ceil(base.width*scale);cv.height=Math.ceil(base.height*scale);
       cv.getContext('2d',{alpha:false}).drawImage(bitmap,0,0,cv.width,cv.height);bitmap.close();
     }
-    const worker=await getOcrWorker();
-    const result=await worker.recognize(cv,{}, {blocks:true});
-    const words=flattenOcrWords(result.data.blocks||[]);
     const core=window.EstimationExtractorCore;
-    const lines=core?core.ocrWordsToLines(words,cv.width,cv.height,base.width,base.height):[];
+    if(!core)throw new Error('The OCR quality module is unavailable');
+    const worker=await getOcrWorker();
+    if(worker.setParameters)await worker.setParameters({preserve_interword_spaces:'1',user_defined_dpi:'300'});
+    const metrics=inspectOcrCanvas(cv),pageRecord=f.pages[pageNo-1],expectedType=pageRecord?.sub_format||pageRecord?.type||'unknown';
+    let plan=core.buildOcrCandidatePlan(metrics),attempts=[];
+    const runCandidate=async config=>{
+      const prepared=renderOcrCandidate(cv,config,baseScale);prepared.sourceWidth=cv.width;prepared.sourceHeight=cv.height;
+      const status=$('#vOcrStatus');if(status)status.textContent=`Testing ${config.id.replace(/-/g,' ')}…`;
+      const result=await worker.recognize(prepared.canvas,{}, {blocks:true});
+      const rawWords=flattenOcrWords(result.data.blocks||result.data.words||[]),mappedWords=mapOcrWords(rawWords,prepared);
+      const lines=core.ocrWordsToLines(mappedWords,cv.width,cv.height,base.width,base.height);
+      const text=lines.map(line=>line.text).join('\n'),candidate={id:config.id,preprocessing:prepared.config,confidence:result.data.confidence??0,text,lines,expectedType,mappedWords};
+      candidate.scoring=core.scoreOcrCandidate(candidate);candidate.score=candidate.scoring.score;return candidate;
+    };
+    for(const config of plan.slice(0,2))attempts.push(await runCandidate(config));
+    let selected=core.selectBestOcrCandidate(attempts);
+    if(selected.score<.75){
+      for(const config of plan.slice(2,4)){attempts.push(await runCandidate(config));selected=core.selectBestOcrCandidate(attempts);if(selected.score>=.82)break;}
+    }
+    if(selected.score<.58){
+      plan=core.buildOcrCandidatePlan({...metrics,tryOrientations:true});
+      for(const config of plan.filter(item=>!attempts.some(done=>done.id===item.id)).slice(0,3)){attempts.push(await runCandidate(config));}
+      selected=core.selectBestOcrCandidate(attempts);
+    }
+    const chosen=selected.candidate;
+    const lines=(chosen?.lines||[]).map(line=>{
+      const corrected=core.correctElectricalOcrText(line.text);
+      return {...line,text:corrected.text,originalText:corrected.originalText,corrections:corrected.corrections,extractionMethod:`OCR (${chosen.id})`};
+    });
     if(!lines.length) throw new Error('OCR completed but found no readable words on this page');
     const pg=f.pages[pageNo-1];
     pg.lines=lines;pg.w=base.width;pg.h=base.height;
-    pg.ocr={status:'done',confidence:result.data.confidence??null,at:new Date().toISOString()};
+    const pageWords=(chosen.mappedWords||[]).map(word=>{const box=word.bbox;return {...word,bbox:{x0:box.x0*base.width/cv.width,y0:box.y0*base.height/cv.height,x1:box.x1*base.width/cv.width,y1:box.y1*base.height/cv.height}};});
+    pg.tableRows=core.reconstructSpatialRows(pageWords);
+    pg.textQuality=chosen.scoring.textQuality;pg.needsOcr=false;
+    pg.ocr={status:'done',confidence:chosen.confidence??null,qualityScore:chosen.score,selectedCandidate:chosen.id,
+      candidates:attempts.map(item=>({id:item.id,preprocessing:item.preprocessing,confidence:item.confidence,qualityScore:item.score,lineCount:item.lines.length,textQuality:item.scoring.textQuality})),
+      corrections:lines.flatMap((line,lineIndex)=>line.corrections.map(correction=>({...correction,line:lineIndex}))),at:new Date().toISOString()};
     const c=classifyPage(lines.map(l=>l.text).join('\n'),pageNo-1,f.pages.length);
     if(!pg.typeManual){ pg.type=c.type;pg.conf=c.conf;pg.sub_format=c.type;pg.threeType=toThreeType(c.type); }
     pg.source='ocr';
     f.ocrReady=true;
-    const remaining=f.pages.filter(x=>!(x.lines||[]).length).length;
-    f.warn=remaining?`${remaining} scanned page${remaining===1?'':'s'} still need OCR.`:null;
+    const remaining=f.pages.filter(x=>x.needsOcr).length;
+    f.warn=remaining?`${remaining} page${remaining===1?'':'s'} still need OCR.`:null;
     saveProject(state.cur);renderDocs();renderPgclass();
     if(reanalyze) await runAnalysis({auto:true});
-    if(!quiet) toast(`OCR read ${lines.length} text lines from page ${pageNo}`);
+    if(!quiet) toast(`OCR read ${lines.length} lines from page ${pageNo} using ${chosen.id.replace(/-/g,' ')}`);
     return lines;
   }finally{
     ocrBusy=false;
@@ -1435,28 +1572,28 @@ async function ocrPdfPage(f,pageNo,{reanalyze=true,quiet=false}={}){
   }
 }
 async function ocrScannedPages(f,limit=20,{reanalyze=true,quiet=false}={}){
-  const queue=f.pages.map((pg,i)=>({pg,page:i+1})).filter(x=>!(x.pg.lines||[]).length).slice(0,limit);
-  if(!queue.length){if(!quiet)toast('Every page already has readable text');return 0;}
+  const queue=f.pages.map((pg,i)=>({pg,page:i+1})).filter(x=>x.pg.needsOcr||!(x.pg.lines||[]).length).slice(0,limit);
+  if(!queue.length){if(!quiet)toast('Every page has a reliable text result');return 0;}
   let done=0;
   for(const item of queue){
     try{await ocrPdfPage(f,item.page,{reanalyze:false,quiet:true});done++;}
     catch(e){toast(`OCR stopped on page ${item.page}: ${e.message}`);break;}
   }
   if(done&&reanalyze) await runAnalysis({auto:true});
-  const remain=f.pages.filter(pg=>!(pg.lines||[]).length).length;
+  const remain=f.pages.filter(pg=>pg.needsOcr||!(pg.lines||[]).length).length;
   if(!quiet||remain) toast(`OCR completed ${done} page${done===1?'':'s'}${remain?`; ${remain} remain — run OCR scans again`:''}`);
   renderViewer();
   return done;
 }
-/* Workstream 0 (§0.2‑4): scanned pages are OCR'd automatically on ingest —
-   a page with no text layer must never silently contribute zero rows. */
+/* Page-quality routing: missing, corrupt, incomplete, or badly ordered text
+   layers are OCR'd automatically; reliable digital pages keep their text. */
 async function autoOcrScannedFiles(){
   const p=state.cur; if(!p) return 0;
   let total=0;
   for (const f of p.files){
     if (f.status!=='ready'||(f.ext!=='pdf'&&!IMAGE_EXTS.has(f.ext))) continue;
-    if (!f.pages.some(pg=>!(pg.lines||[]).length)) continue;
-    toast(`Reading scanned pages in ${f.name} with OCR…`);
+    if (!f.pages.some(pg=>pg.needsOcr||!(pg.lines||[]).length)) continue;
+    toast(`Reading pages with missing or unreliable text in ${f.name}…`);
     try{ total+=await ocrScannedPages(f, Infinity, {reanalyze:false, quiet:true}); }
     catch(e){ toast('Auto-OCR: '+e.message); }
   }
@@ -1545,16 +1682,20 @@ function mergeAiResult(A,out,fileId,pageNo){
     const space=d.device_class==='space';
     const spare=d.is_spare||d.device_class==='spare';
     const device=(d.afdd&&d.device_class==='RCBO')?'AFDD+RCBO':(AI_DEVICE_MAP[d.device_class]|| (d.is_spd?'SPD':null));
-    A.rows.push({id:uid(), boardNorm:bn, fileId, page:pageNo, line:null, status:'pending', kind:'ai',
+    const aiRow={id:uid(), boardNorm:bn, fileId, page:pageNo, line:null, status:'pending', kind:'ai',
       way:d.way??null, phase:d.phase&&d.phase!=='L1L2L3'?d.phase:(d.phase==='L1L2L3'?'3PH':null),
-      desc:d.description||'', device, rating:d.rating_a??null, poles:d.poles??null,
-      curve:d.trip_curve||null, sens:d.rcd_ma??null, afdd:!!d.afdd, ka:null,
+      desc:d.description||'', device, rating:d.rating_a??null, poles:d.poles??null, poleConfiguration:d.pole_configuration||null,
+      curve:d.trip_curve||null, sens:d.rcd_ma??null, afdd:!!d.afdd, ka:d.breaking_capacity_ka??null,
       cable:(d.phase_csa_mm2!=null||d.cable_type)?{orig:[d.phase_csa_mm2?d.phase_csa_mm2+'mm²':null,d.cable_type].filter(Boolean).join(' '),
         size:d.phase_csa_mm2??null, cpc:typeof d.cpc_csa_mm2==='number'?d.cpc_csa_mm2:null, cores:null,
         construction:typeof d.cpc_csa_mm2==='string'?d.cpc_csa_mm2:null, typeCode:d.cable_type||null, installMethod:d.install_method||null}:null,
       circuitConfig:d.circuit_config||null, spare, space, incomer:!!d.is_incomer, isSpd:!!d.is_spd,
       qty:space?0:1, srcText:(d.description||d.device_class||'Device')+(d.way!=null?' (way '+d.way+(d.phase?'/'+d.phase:'')+')':''),
-      conf:Math.max(0.2,Math.min(0.95,Number(d.confidence)||0.6))});
+      conf:Math.max(0.2,Math.min(0.95,Number(d.confidence)||0.6))};
+    const fl=state.cur?.files?.find(file=>file.id===fileId),bbox=Array.isArray(d.bbox||d.source_region)?(d.bbox||d.source_region):null;
+    const trace=sourceTrace(aiRow,{text:d.source_text||aiRow.srcText,originalText:d.source_text||aiRow.srcText,bbox,confidence:aiRow.conf,corrections:[],extractionMethod:'AI-assisted extraction'},
+      {source:'ai',ocr:{confidence:aiRow.conf*100}},fl?.name||fileId);
+    A.rows.push({...aiRow,...trace,extractionMethod:'AI-assisted extraction'});
   });
   (out.feeds||[]).forEach(fd=>{
     if(!fd.to_ref) return;
@@ -1637,18 +1778,23 @@ async function ingestFile(file){
       const lib=await loadPdfjs();
       const doc=await lib.getDocument({data:buf.slice(0)}).promise;
       state.viewer.pdfDocs[rec.id]=doc;
-      let anyText=false;
+      let anyText=false,ocrPages=0;
       for (let i=1;i<=doc.numPages;i++){
         const pg=await doc.getPage(i);
         const vp=pg.getViewport({scale:1});
         const tc=await pg.getTextContent();
         const lines=linesFromTextContent(tc,vp);
-        if (lines.length>2) anyText=true;
-        rec.pages.push({lines, w:vp.width, h:vp.height});
+        const preliminary=classifyPage(lines.map(line=>line.text).join('\n'),i-1,doc.numPages);
+        const textQuality=window.EstimationExtractorCore
+          ? window.EstimationExtractorCore.assessPageText(lines,{expectedType:preliminary.type,pageWidth:vp.width,pageHeight:vp.height})
+          : {route:lines.length>2?'embedded_text':'ocr',reliable:lines.length>2,score:lines.length>2?0.8:0,reasons:[]};
+        const needsOcr=textQuality.route==='ocr';
+        if (!needsOcr) anyText=true; else ocrPages++;
+        rec.pages.push({lines, w:vp.width, h:vp.height, textQuality, needsOcr, source:needsOcr?'ocr_pending':'native_text'});
         rec.pct=25+Math.round(65*i/doc.numPages); renderDocs();
       }
       rec.native=anyText;
-      if (!anyText) rec.warn='Scanned PDF — no selectable text found. Pages will be read automatically with OCR.';
+      if (ocrPages) rec.warn=`${ocrPages} page${ocrPages===1?'':'s'} need OCR because embedded text is missing or unreliable.`;
     } else if (ext==='xlsx'){
       if(!window.ExcelJS) throw new Error('The Excel reader is unavailable');
       const buf=await file.arrayBuffer();rawStore[rec.id]=buf;rec.pct=35;renderDocs();
@@ -1668,7 +1814,7 @@ async function ingestFile(file){
     } else if (IMAGE_EXTS.has(ext)){
       const buf=await file.arrayBuffer();rawStore[rec.id]=buf;
       const size=await imageSize(new Blob([buf],{type:file.type||imageMime(ext)}));
-      rec.pages=[{lines:[],w:size.width,h:size.height,image:true}];rec.native=false;
+      rec.pages=[{lines:[],w:size.width,h:size.height,image:true,needsOcr:true,source:'ocr_pending',textQuality:{route:'ocr',reliable:false,score:0,reasons:['Image documents require OCR']}}];rec.native=false;
       rec.warn='Image scan — text will be read automatically with OCR.';
     } else if (ext==='txt'||ext==='csv'||ext==='md'||ext==='text'){
       const txt=await file.text();
@@ -1687,13 +1833,18 @@ function classifyFilePages(f){
   Object.keys(boardScanCache).forEach(k=>{ if(k.startsWith(f.id+'|')) delete boardScanCache[k]; });  // lines may have changed (ingest/OCR)
   const tot=f.pages.length;
   f.pages.forEach((pg,i)=>{
-    pg.source = pg.ocr ? 'ocr' : (f.native ? 'native_text' : 'ocr');   // §5.1 provenance
-    if (pg.typeManual){ pg.threeType = pg.threeType || toThreeType(pg.type); return; }
     const text=pg.lines.map(l=>l.text).join('\n');
-    const c=classifyPage(text,i,tot);
-    pg.type=c.type; pg.conf=c.conf;
-    pg.sub_format=c.type;               // §5.1 fine-grained tag kept for routing/insight
-    pg.threeType=toThreeType(c.type);   // §5.1 coarse three-type shown in the UI
+    if (!pg.typeManual){
+      const c=classifyPage(text,i,tot);
+      pg.type=c.type; pg.conf=c.conf;
+      pg.sub_format=c.type;
+      pg.threeType=toThreeType(c.type);
+    } else pg.threeType = pg.threeType || toThreeType(pg.type);
+    if (!pg.ocr && window.EstimationExtractorCore){
+      pg.textQuality=window.EstimationExtractorCore.assessPageText(pg.lines||[],{expectedType:pg.sub_format||pg.type||'unknown',pageWidth:pg.w,pageHeight:pg.h});
+      pg.needsOcr=pg.textQuality.route==='ocr'&&(f.ext==='pdf'||IMAGE_EXTS.has(f.ext));
+    } else if (pg.ocr) pg.needsOcr=false;
+    pg.source = pg.ocr ? 'ocr' : (pg.needsOcr ? 'ocr_pending' : 'native_text');
   });
 }
 async function handleFiles(list){
@@ -1805,10 +1956,12 @@ function renderPgclass(){
       ? `<div class="sub" style="margin-top:3px">sub-format: ${esc(PAGE_TYPES[subFmt])}</div>` : '';
     const boardsOn=[]; pg.lines.forEach(l=>detectBoards(l.text).forEach(b=>{ if(!boardsOn.includes(b.orig)) boardsOn.push(b.orig); }));
     const rows=A? A.rows.filter(r=>r.fileId===f.id&&r.page===i+1&&r.kind!=='manual').length : 0;
+    const quality=pg.ocr?.qualityScore??pg.textQuality?.score,qualityText=Number.isFinite(quality)?' '+Math.round(quality*100)+'%':'';
+    const sourceLabel=pg.source==='native_text'?'Text'+qualityText:pg.source==='ocr'?'OCR'+qualityText:'OCR queued';
     tr.innerHTML=`<td class="num">${i+1}</td>
       <td><select class="sel pg-type">${opts}</select>${subChip}</td>
       <td>${pg.typeManual?'<span class="chip blue">Manually set</span>':confChip(pg.conf||0.3)}</td>
-      <td>${pg.source==='native_text'?'Text':pg.source==='ocr'||pg.ocr?'OCR':f.native?'Text':'Scan'}</td>
+      <td><span title="${esc((pg.textQuality?.reasons||[]).join('; '))}">${esc(sourceLabel)}</span></td>
       <td>${boardsOn.slice(0,4).map(b=>'<span class="chip grey">'+esc(b)+'</span>').join(' ')||'—'}</td>
       <td class="num">${rows||'—'}</td>
       <td><button class="btn sm ghost" data-a="view">View</button></td>`;
@@ -1942,6 +2095,35 @@ function renderStages(activeIdx, doneAll){
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const SCHEDULE_TYPES=new Set(['db-schedule','main-schedule','equipment-schedule','cable-schedule']);
 const MENTION_TYPES=new Set(['lighting-plan','power-plan','fire-plan','containment-plan','unknown','spec']);
+function sourceTrace(row,line,pg,fileName){
+  if(!line)return {fileName,extractionMethod:pg?.source==='ocr'?'OCR':'Embedded text / deterministic parser'};
+  const confidence=Number.isFinite(Number(line.confidence))?Number(line.confidence):Math.max(0,Math.min(1,Number(pg?.ocr?.confidence||100)/100));
+  const corrections=Array.isArray(line.corrections)?line.corrections:[];
+  const correctionFor=(field)=>corrections.find(item=>{
+    const value=`${item.original||''} ${item.corrected||''}`;
+    if(field==='Device Family')return /MCB|MCCB|RCBO|RCD|AFDD|SPD/i.test(value);
+    if(field==='Current Rating')return /\d+\s*A\b/i.test(value);
+    if(field==='Pole Configuration')return /\b(?:SPN|DPN|TPN|[1234]P)\b/i.test(value);
+    if(field==='Tripping Curve')return /\b(?:curve|type|characteristic)\b/i.test(value);
+    if(field==='Breaking Capacity')return /kA\b/i.test(value);
+    return false;
+  });
+  const evidence=(field,normalised)=>{
+    const correction=correctionFor(field);
+    return {originalText:line.originalText||line.text,normalisedValue:normalised??'Not specified',bbox:line.bbox||null,confidence,
+      method:line.extractionMethod||(pg?.source==='ocr'?'OCR':'Embedded text / deterministic parser'),
+      correction:correction?.corrected||null,correctionReason:correction?.reason||null,reviewStatus:correction?'Review required':'Pending'};
+  };
+  return {fileName,bbox:line.bbox||null,originalOcrText:line.originalText||line.text,corrections,
+    extractionMethod:line.extractionMethod||(pg?.source==='ocr'?'OCR':'Embedded text / deterministic parser'),
+    fieldEvidence:{
+      'Device Family':evidence('Device Family',row.device),
+      'Current Rating':evidence('Current Rating',row.rating==null?'Not specified':row.rating+'A'),
+      'Pole Configuration':evidence('Pole Configuration',row.poleConfiguration||row.poles||'Unclear'),
+      'Tripping Curve':evidence('Tripping Curve',row.curve||'Not specified'),
+      'Breaking Capacity':evidence('Breaking Capacity',row.ka==null?'Not specified':row.ka+'kA'),
+    },lineConfidence:confidence};
+}
 
 async function runAnalysis(opts){
   const p=state.cur; if(!p) return;
@@ -2001,7 +2183,9 @@ async function runAnalysis(opts){
       const addScheduleRow=(row,line)=>{
         if (boardFilter && (!ctx.board || !boardFilter.has(ctx.board))) return;
         if (devFilter && row.device && !devFilter.has(row.device.toUpperCase()) && !row.spare && !row.space && !row.incomer) return;
-        A.rows.push({id:uid(), boardNorm:ctx.board, boardSection:ctx.boardSection, fileId:id, page:pageNo, line, status:'pending', kind:'schedule', ...row});
+        const trace=sourceTrace(row,Number.isInteger(line)?pg.lines[line]:null,pg,fl.name);
+        const confidence=trace.lineConfidence?Math.min(Number(row.conf??1),trace.lineConfidence):row.conf;
+        A.rows.push({id:uid(), boardNorm:ctx.board, boardSection:ctx.boardSection, fileId:id, page:pageNo, line, status:'pending', kind:'schedule', ...row,...trace,conf:confidence});
       };
       if(codedPage.matched) codedPage.rows.forEach(row=>addScheduleRow(row,row.line));
       lines.forEach((t,li)=>{
@@ -2030,10 +2214,12 @@ async function runAnalysis(opts){
             const bs=detectBoards(t);
             const bn=bs.length?bs[0].norm:null;
             if (boardFilter && (!bn||!boardFilter.has(bn))) return;
-            A.rows.push({id:uid(), boardNorm:bn, fileId:id, page:pageNo, line:li, status:'pending', kind:'mention',
-              way:null, desc:t.trim(), device:dev, rating:ratingOf(t), poles:polesOf(t), curve:curveOf(t),
+            const mention={way:null, desc:t.trim(), device:dev, rating:ratingOf(t), poles:polesOf(t), poleConfiguration:poleConfigOf(t), curve:curveOf(t),
               sens:sensOf(t), phase:phaseOf(t), ka:kaOf(t), cable:detectCables(t)[0]||null,
-              spare:false, space:false, incomer:false, qty:qtyIn(t,dev), srcText:t.trim(), conf:0.55});
+              spare:false, space:false, incomer:false, qty:qtyIn(t,dev), srcText:t.trim(), conf:0.55};
+            const trace=sourceTrace(mention,pg.lines[li],pg,fl.name);
+            A.rows.push({id:uid(), boardNorm:bn, fileId:id, page:pageNo, line:li, status:'pending', kind:'mention',
+              ...mention,...trace,conf:trace.lineConfidence?Math.min(mention.conf,trace.lineConfidence):mention.conf});
           }
         }
       });
@@ -2048,6 +2234,10 @@ async function runAnalysis(opts){
   // overriding a slot the schedule parser already filled).
   if (!(opts&&opts.noAi)){
     try{ await runAiExtraction(A, f, p, pageSet); }catch(e){ console.warn('AI extraction unavailable:', e.message); }
+  }
+  if(window.EstimationExtractorCore?.deduplicateExtractionRows){
+    const deduplicated=window.EstimationExtractorCore.deduplicateExtractionRows(A.rows);
+    A.rows=deduplicated.rows;A.duplicates=deduplicated.duplicates;
   }
   A.feeders.forEach(fd=>{
     if (!fd.to) return;
@@ -2356,20 +2546,32 @@ function openRowEditor(r, isNew){
     <div class="fgroup" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
       <div><label class="lbl">Device type</label><select class="sel" id="eDev" style="width:100%">${deviceOptions(r.device)}</select></div>
       <div><label class="lbl">Quantity</label><input class="in" id="eQty" type="number" min="1" value="${r.qty||1}"></div></div>
-    <div class="fgroup" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
+    <div class="fgroup" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px">
       <div><label class="lbl">Rating (A)</label><input class="in" id="eRat" value="${r.rating??''}"></div>
-      <div><label class="lbl">Curve</label><select class="sel" id="eCur" style="width:100%"><option ${!r.curve?'selected':''} value="">—</option><option ${r.curve==='B'?'selected':''}>B</option><option ${r.curve==='C'?'selected':''}>C</option><option ${r.curve==='D'?'selected':''}>D</option></select></div>
-      <div><label class="lbl">Poles</label><input class="in" id="ePol" value="${r.poles??''}"></div></div>
+      <div><label class="lbl">Curve</label><select class="sel" id="eCur" style="width:100%"><option ${!r.curve?'selected':''} value="">Not specified</option>${['B','C','D','K','Z'].map(value=>`<option ${r.curve===value?'selected':''}>${value}</option>`).join('')}</select></div>
+      <div><label class="lbl">Pole configuration</label><select class="sel" id="ePol" style="width:100%"><option value="" ${!r.poleConfiguration&&!r.poles?'selected':''}>Unclear</option>${['SP','SPN','DP','DPN','TP','TPN','4P'].map(value=>`<option ${value===(r.poleConfiguration||(r.poles===1?'SPN':r.poles===2?'DPN':r.poles===3?'TPN':r.poles===4?'4P':''))?'selected':''}>${value}</option>`).join('')}</select></div>
+      <div><label class="lbl">Breaking capacity (kA)</label><input class="in" id="eKa" inputmode="decimal" value="${r.ka??''}" placeholder="Not specified"></div></div>
     <div class="fgroup"><label class="lbl">Description / note</label><input class="in" id="eDesc" value="${esc(r.desc||'')}"></div>
     ${isNew?'':`<div class="hint">Original text: <span class="mono">${esc(r.srcText)}</span></div>`}
   `, ()=>{
+    const before={rating:r.rating??null,curve:r.curve||null,poleConfiguration:r.poleConfiguration||null,ka:r.ka??null,device:r.device||null};
     r.boardNorm=$('#eBoard').value||null;
     r.device=$('#eDev').value||null;
     r.qty=Math.max(1,parseInt($('#eQty').value,10)||1);
     r.rating=$('#eRat').value?parseFloat($('#eRat').value):null;
     r.curve=$('#eCur').value||null;
-    r.poles=$('#ePol').value?parseInt($('#ePol').value,10):null;
+    r.poleConfiguration=$('#ePol').value||null;
+    r.poles={SP:1,SPN:1,DP:2,DPN:2,TP:3,TPN:3,'4P':4}[r.poleConfiguration]||null;
+    r.ka=$('#eKa').value?parseFloat($('#eKa').value):null;
     r.desc=$('#eDesc').value;
+    const changed=[['Device Family','device'],['Current Rating','rating'],['Tripping Curve','curve'],['Pole Configuration','poleConfiguration'],['Breaking Capacity','ka']];
+    r.corrections=Array.isArray(r.corrections)?r.corrections:[];r.fieldEvidence=r.fieldEvidence||{};
+    changed.forEach(([field,key])=>{
+      const prior=before[key],next=r[key]??null;if(String(prior??'')===String(next??''))return;
+      const correction={field,original:prior==null?'Not specified':String(prior),corrected:next==null?'Not specified':String(next),reason:'User correction in review interface'};
+      r.corrections.push(correction);r.fieldEvidence[field]={...(r.fieldEvidence[field]||{}),originalText:r.originalOcrText||r.srcText,
+        normalisedValue:correction.corrected,correction:correction.corrected,correctionReason:correction.reason,reviewStatus:'Approved'};
+    });
     r.status='confirmed'; r.edited=true;
     if (isNew) A.rows.push(r);
     renderTakeoff(); renderProjHeader(); saveProject(p);
@@ -2387,8 +2589,8 @@ $('#addManualBtn').addEventListener('click', ()=>{
   const p=state.cur; if(!p) return;
   if (!p.analysis) p.analysis={ranAt:todayStr(),boards:{},rows:[],cables:[],feeders:[],legend:[],filters:null};
   openRowEditor({id:uid(), boardNorm:null, fileId:null, page:null, line:null, status:'confirmed', kind:'manual',
-    way:null, desc:'', device:'MCB', rating:null, poles:null, curve:null, sens:null, phase:null, ka:null,
-    cable:null, spare:false, space:false, incomer:false, qty:1, srcText:'(added manually)', conf:1}, true);
+    way:null, desc:'', device:'MCB', rating:null, poles:null, poleConfiguration:null, curve:null, sens:null, phase:null, ka:null,
+    cable:null, spare:false, space:false, incomer:false, qty:1, srcText:'(added manually)', extractionMethod:'Manual entry', conf:1}, true);
 });
 
 /* ============================ REPORTS / EXPORTS ============================ */
@@ -2405,6 +2607,7 @@ function currentReportModel(){
     projectName:p.name,
     boards:A.boards,
     rows:A.rows,
+    files:p.files,
     coverage:A.coverage,
     generatedAt:new Date(),
   });
@@ -2424,6 +2627,7 @@ function renderReport(){
     return;
   }
   const factItems=[['Boards',model.boards.length],['Device lines',model.deviceLineCount],['Total devices',model.grandTotal]];
+  factItems.push(['Reconciled',model.reconciliation?.valid?'Yes':'No']);
   if(model.associated&&model.associated.grandTotal) factItems.push(['Control items',model.associated.grandTotal]);
   facts.innerHTML=factItems
     .map(([k,v])=>`<div class="report-fact"><dt>${esc(k)}</dt><dd>${v}</dd></div>`).join('');
@@ -2431,27 +2635,29 @@ function renderReport(){
   if (model.reviewCount) issues.push(model.reviewCount+' row'+(model.reviewCount===1?'':'s')+' need review');
   if (model.coverageIssueCount) issues.push(model.coverageIssueCount+' coverage check'+(model.coverageIssueCount===1?'':'s')+' need attention');
   if (model.unassignedQty) issues.push(model.unassignedQty+' device'+(model.unassignedQty===1?'':'s')+' have no board reference');
-  status.className='report-status '+(model.unassignedQty?'bad':(model.reviewCount||model.coverageIssueCount)?'warn':'ok');
+  if (model.duplicateCount) issues.push(model.duplicateCount+' duplicate source record'+(model.duplicateCount===1?' was':'s were')+' excluded');
+  if (!model.reconciliation?.valid) issues.push('quantities do not reconcile');
+  status.className='report-status '+(!model.reconciliation?.valid||model.unassignedQty?'bad':(model.reviewCount||model.coverageIssueCount)?'warn':'ok');
   status.textContent=issues.length?issues.join(' · '):'Ready for issue';
-  const colSpan=model.boards.length+4;
+  const colSpan=model.boards.length+11;
   const matrix=(groups,title,totalLabel,boardTotals,grandTotal)=>{
     let table='<table class="report-matrix"><thead>'+
-      `<tr class="report-row-project"><th class="report-device">${esc(model.projectName)}</th><th class="report-unit">DB Reference</th>`+
+      `<tr class="report-row-project"><th class="report-device" colspan="${colSpan}">${esc(model.projectName)}</th></tr>`+
+      `<tr class="report-row-title"><th class="report-device" colspan="${colSpan}">${esc(title)}</th></tr>`+
+      `<tr class="report-row-head"><th class="report-category">Category</th><th class="report-device">Device</th><th class="report-tech">Rating</th><th class="report-tech">Poles</th><th class="report-tech">Curve</th><th class="report-tech">Capacity</th>`+
       model.boards.map(b=>`<th class="report-board"><button data-report-board="${esc(b.norm)}" title="Open ${esc(b.label)}">${esc(b.label)}</button></th>`).join('')+
-      '<th class="report-total"></th><th>WS</th></tr>'+
-      `<tr class="report-row-title"><th class="report-device">${esc(title)}</th><th class="report-unit"></th>${model.boards.map(()=>'<th></th>').join('')}<th></th><th></th></tr>`+
-      `<tr class="report-row-head"><th class="report-device">Discipline</th><th class="report-unit">Unit</th>${model.boards.map(()=>'<th>Qty</th>').join('')}<th class="report-total">Total</th><th>WS</th></tr></thead><tbody>`;
+      '<th class="report-total">Total</th><th class="report-purpose">Applications</th><th class="report-source">Source pages</th><th class="report-tech">Confidence</th><th class="report-review">Review</th></tr></thead><tbody>';
     groups.forEach(group=>{
-      table+=`<tr class="report-section"><td class="report-device" colspan="${colSpan}">${esc(group.name)}</td></tr>`;
       group.rows.forEach(row=>{
-        table+=`<tr class="report-data"><td class="report-device">${esc(row.label)}</td><td class="report-unit">Nr</td>`+
+        table+=`<tr class="report-data"><td class="report-category">${esc(group.name)}</td><td class="report-device"><b>${esc(row.label)}</b>${row.reviewReasons.length?`<div class="hint" style="margin:3px 0 0" title="${esc(row.notes.join(' '))}">${esc(row.reviewReasons.join('; '))}</div>`:''}</td>`+
+          `<td>${row.rating??'Not specified'}</td><td>${esc(row.pole)}</td><td>${esc(row.curve)}</td><td>${esc(row.breakingCapacity)}</td>`+
           row.quantities.map((qty,index)=>`<td>${qty?`<button class="report-qty" data-report-board="${esc(model.boards[index].norm)}" title="Open ${esc(model.boards[index].label)}">${qty}</button>`:''}</td>`).join('')+
-          `<td class="report-total">${row.total}</td><td></td></tr>`;
+          `<td class="report-total">${row.total}</td><td class="report-purpose">${esc(row.purposes.join(', '))}</td><td class="report-source">${esc(row.sourcePages.join('; '))}</td><td>${Math.round(row.confidence*100)}%</td><td class="report-review"><span class="chip ${row.reviewStatus==='Ready'?'green':'amber'}">${esc(row.reviewStatus)}</span></td></tr>`;
       });
     });
-    return table+`<tr class="report-final"><td class="report-device">${esc(totalLabel)}</td><td class="report-unit"></td>${boardTotals.map(v=>`<td>${v||''}</td>`).join('')}<td class="report-total">${grandTotal}</td><td></td></tr></tbody></table>`;
+    return table+`<tr class="report-final"><td class="report-category">${esc(totalLabel)}</td><td class="report-device"></td><td></td><td></td><td></td><td></td>${boardTotals.map(v=>`<td>${v||''}</td>`).join('')}<td class="report-total">${grandTotal}</td><td></td><td></td><td></td><td></td></tr></tbody></table>`;
   };
-  let html=matrix(model.groups,'Distribution Board Devices','DB Device Total',model.boardTotals,model.grandTotal);
+  let html=matrix(model.groups,'Consolidated Device Take-Off','Grand Total',model.boardTotals,model.grandTotal);
   if(model.associated&&model.associated.grandTotal){
     html+='<div class="report-subhead"><h3>Control &amp; associated equipment</h3></div>'+
       matrix(model.associated.groups,'Control & Associated Equipment','Associated Equipment Total',model.associated.boardTotals,model.associated.grandTotal);
@@ -2471,8 +2677,8 @@ $('#openReportBtn').addEventListener('click',()=>setTab('reports'));
 $('#reportCsvBtn').addEventListener('click',()=>{
   const model=currentReportModel();
   if (!model || !model.groups.length){ toast('Nothing to export yet'); return; }
-  download(reportFileName('csv'),'text/csv;charset=utf-8',window.EstimationReport.csv(model));
-  toast('Take-off CSV exported');
+  try{download(reportFileName('csv'),'text/csv;charset=utf-8',window.EstimationReport.csv(model));toast('Take-off CSV exported');}
+  catch(error){console.error(error);toast(error.message||'CSV export could not be created');}
 });
 $('#reportXlsxBtn').addEventListener('click',async()=>{
   const model=currentReportModel();
@@ -2486,7 +2692,7 @@ $('#reportXlsxBtn').addEventListener('click',async()=>{
     toast('Excel take-off exported');
   }catch(error){
     console.error(error);
-    toast('Excel export could not be created');
+    toast(error.message||'Excel export could not be created');
   }finally{
     button.disabled=false; button.textContent=label;
   }
@@ -2849,8 +3055,8 @@ function viewerFile(){
 function pageDetections(f, pageNo){
   const p=state.cur, A=p.analysis; const out=[];
   if (A){
-    A.rows.forEach(r=>{ if(r.fileId===f.id&&r.page===pageNo) out.push({kind:'row', r, line:r.line,
-      color: r.status==='confirmed'?'green': r.status==='rejected'?'red': r.conf>=0.8?'green':'amber',
+    A.rows.forEach(r=>{ if(r.fileId===f.id&&r.page===pageNo) out.push({kind:'row', r, line:r.line,bbox:r.bbox,
+      color: state.viewer.evidenceId===r.id?'boardhl':r.status==='confirmed'?'green': r.status==='rejected'?'red': r.conf>=0.8?'green':'amber',
       label:(r.qty>1?r.qty+'× ':'')+(r.device||(r.spare?'Spare':r.space?'Space':'Row'))+(r.rating?' '+r.rating+'A':'')}); });
     A.cables.forEach(c=>{ if(c.fileId===f.id&&c.page===pageNo) out.push({kind:'cable', r:c, line:c.line, color:'cyan', label:'Cable '+c.orig}); });
   }
@@ -2971,7 +3177,7 @@ async function renderViewer(){
   $('#vMetaRow').innerHTML=`<span class="chip blue">${esc(THREE_TYPE_LABELS[pageThreeType(pg)]||'Unknown')}</span>
     ${pg.sub_format&&PAGE_TYPES[pg.sub_format]&&pg.sub_format!==THREE_TO_FINE[pageThreeType(pg)]?`<span class="chip grey">${esc(PAGE_TYPES[pg.sub_format])}</span>`:''}
     ${pg.typeManual?'<span class="chip grey">manually set</span>':confChip(pg.conf||0.3)}
-    ${pg.ocr?'<span class="chip purple">OCR text</span>':(!pg.lines?.length?'<span class="chip amber">Scan — run OCR</span>':'')}
+    ${pg.ocr?`<span class="chip purple" title="${esc(pg.ocr.selectedCandidate||'OCR')}">OCR ${Math.round((pg.ocr.qualityScore||0)*100)}%</span>${pg.ocr.corrections?.length?`<span class="chip amber">${pg.ocr.corrections.length} correction${pg.ocr.corrections.length===1?'':'s'} to review</span>`:''}`:(pg.needsOcr?'<span class="chip amber">OCR queued</span>':'')}
     <span class="hint" style="margin:0">${nDets} detection${nDets===1?'':'s'} on this page</span>
     ${V.boardHl?`<span class="chip blue">${esc(boardLabel(V.boardHl))} on:</span> `+
       (hlPages.length?hlPages.map(n=>`<span class="chip ${n===V.page?'blue':'grey'}" data-goto="${n}" style="cursor:pointer">p${n}</span>`).join(' '):'<span class="hint" style="margin:0">not found in this document</span>'):''}`;
@@ -3015,14 +3221,14 @@ async function renderViewer(){
       const sc=renderScale;
       if (pg.lines){
         if (showOvl) dets.forEach(d=>{
-          const ln=pg.lines[d.line]; if(!ln||!ln.bbox) return;
+          const ln=pg.lines[d.line],bbox=d.bbox||ln?.bbox; if(!bbox) return;
           const o=document.createElement('div'); o.className='ovl '+d.color+(d.kind==='assisted'?' assisted':''); o.title=d.label;
-          o.style.left=(ln.bbox[0]*sc-2)+'px'; o.style.top=(ln.bbox[1]*sc-1)+'px';
-          o.style.width=(ln.bbox[2]*sc+4)+'px'; o.style.height=(ln.bbox[3]*sc+2)+'px';
+          o.style.left=(bbox[0]*sc-2)+'px'; o.style.top=(bbox[1]*sc-1)+'px';
+          o.style.width=(bbox[2]*sc+4)+'px'; o.style.height=(bbox[3]*sc+2)+'px';
           wrap.appendChild(o);
           if(d.kind==='assisted'){
             const note=document.createElement('div');note.className='markup-note';note.textContent=`${d.label} · matched`;
-            note.style.left=Math.max(0,ln.bbox[0]*sc)+'px';note.style.top=Math.max(0,ln.bbox[1]*sc-20)+'px';wrap.appendChild(note);
+            note.style.left=Math.max(0,bbox[0]*sc)+'px';note.style.top=Math.max(0,bbox[1]*sc-20)+'px';wrap.appendChild(note);
           }
         });
         if (q) pg.lines.forEach(ln=>{                    // §5.2 in-document search overlays
@@ -3050,10 +3256,10 @@ async function renderViewer(){
     const imageUrl=URL.createObjectURL(new Blob([rawStore[f.id]],{type:imageMime(f.ext)}));
     img.onload=()=>URL.revokeObjectURL(imageUrl);img.src=imageUrl;wrap.appendChild(img);
     if(showOvl&&pg.lines) dets.forEach(d=>{
-      const line=pg.lines[d.line];if(!line||!line.bbox)return;
+      const line=pg.lines[d.line],bbox=d.bbox||line?.bbox;if(!bbox)return;
       const overlay=document.createElement('div');overlay.className='ovl '+d.color;overlay.title=d.label;
-      overlay.style.left=(line.bbox[0]*scale-2)+'px';overlay.style.top=(line.bbox[1]*scale-1)+'px';
-      overlay.style.width=(line.bbox[2]*scale+4)+'px';overlay.style.height=(line.bbox[3]*scale+2)+'px';wrap.appendChild(overlay);
+      overlay.style.left=(bbox[0]*scale-2)+'px';overlay.style.top=(bbox[1]*scale-1)+'px';
+      overlay.style.width=(bbox[2]*scale+4)+'px';overlay.style.height=(bbox[3]*scale+2)+'px';wrap.appendChild(overlay);
     });
     bindAssistedDrag(wrap,f,pg,scale);
     stage.innerHTML='';stage.appendChild(wrap);
@@ -3106,7 +3312,7 @@ async function renderViewer(){
 }
 function jumpToEvidence(r){
   if (!r.fileId){ toast('Manually-added rows have no source document'); return; }
-  state.viewer.fileId=r.fileId; state.viewer.page=r.page||1;
+  state.viewer.fileId=r.fileId; state.viewer.page=r.page||1;state.viewer.evidenceId=r.id;
   setTab('viewer');
   setTimeout(()=>{
     const tgt=document.getElementById('vline-'+r.line);

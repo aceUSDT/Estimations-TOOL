@@ -79,8 +79,19 @@ const CABLE_PATTERNS = [
 ];
 const CONSTRUCTIONS = ['XLPE','SWA','PVC','LSZH','LSF','FP200','MICC','AWA'];
 
-const ratingOf = s => { const m=s.match(/\b(\d+(?:\.\d+)?)\s*A(?:mps?)?\b/i); return m?parseFloat(m[1]):null; };
-const curveOf  = s => { const m=s.match(/\b(?:type|curve)\s*([BCD])\b/i); return m?m[1].toUpperCase():null; };
+const curveEvidenceOf = s => EstimationExtractorCore.extractTrippingCurve(s,{deviceContext:/\b(?:MCB|MCCB|RCBO|AFDD|circuit breaker)\b/i.test(s)});
+const ratingOf = s => { const m=s.match(/\b(\d+(?:\.\d+)?)\s*A(?:mps?)?\b/i); return m?parseFloat(m[1]):curveEvidenceOf(s)?.rating??null; };
+const curveOf  = s => curveEvidenceOf(s)?.value||null;
+const poleConfigOf = s => {
+  if (/\b(?:SPN|single\s+pole\s+(?:and|&)\s+neutral|1P\s*\+\s*N)\b/i.test(s)) return 'SPN';
+  if (/\b(?:DPN|double\s+pole\s+(?:and|&)\s+neutral|2P\s*\+\s*N)\b/i.test(s)) return 'DPN';
+  if (/\b(?:TPN|TP\s*&\s*N|triple\s+pole\s+(?:and|&)\s+neutral|3P\s*\+\s*N)\b/i.test(s)) return 'TPN';
+  if (/\b(?:4P|four[- ]pole)\b/i.test(s)) return '4P';
+  if (/\b(?:SP|single[- ]pole|1P)\b/i.test(s)) return 'SP';
+  if (/\b(?:DP|double[- ]pole|2P)\b/i.test(s)) return 'DP';
+  if (/\b(?:TP|triple[- ]pole|three[- ]pole|3P)\b/i.test(s)) return 'TP';
+  return null;
+};
 const polesOf  = s => {
   const m=s.match(/\b([1234])\s*P(?:ole)?\b/i); if(m) return +m[1];
   if (/\bTP&?N\b|\bfour[- ]pole\b/i.test(s)) return 4;
@@ -91,7 +102,7 @@ const polesOf  = s => {
 };
 const sensOf   = s => { const m=s.match(/\b(\d+)\s*mA\b/); return m?+m[1]:null; };
 const phaseOf  = s => { const m=s.match(/\b(L[123])\b/); return m?m[1]:(/\bTP&?N\b|\b3PH\b|\bthree phase\b/i.test(s)?'3PH':null); };
-const kaOf     = s => { const m=s.match(/\b(\d+(?:\.\d+)?)\s*kA\b/i); return m?parseFloat(m[1]):null; };
+const kaOf     = s => EstimationExtractorCore.extractBreakingCapacity(s)?.value??null;
 
 /* ==================== BOARD DETECTION (index.html:806) ==================== */
 function detectBoards(line){
@@ -253,7 +264,7 @@ function parseScheduleLine(line, ctx){
     way: wayM? +wayM[1] : null,
     desc: line.replace(/^\s*(?:way|cct|ckt|circuit)?\s*[:#]?\s*\d{1,3}\s*/i,'').trim(),
     device, rating,
-    poles: polesOf(line), curve: curveOf(line), sens: sensOf(line),
+    poles: polesOf(line), poleConfiguration:poleConfigOf(line), curve: curveOf(line), sens: sensOf(line),
     phase: phaseOf(line), ka: kaOf(line),
     cable: cables.length? cables[0] : null,
     spare, space, incomer: isIncomer,
@@ -357,7 +368,7 @@ function analyseDocument(pages){
           const bs=detectBoards(t);
           const bn=bs.length?bs[0].norm:null;
           A.rows.push({boardNorm:bn, page:pageNo, line:li, status:'pending', kind:'mention',
-            way:null, desc:t.trim(), device:dev, rating:ratingOf(t), poles:polesOf(t), curve:curveOf(t),
+            way:null, desc:t.trim(), device:dev, rating:ratingOf(t), poles:polesOf(t), poleConfiguration:poleConfigOf(t), curve:curveOf(t),
             sens:sensOf(t), phase:phaseOf(t), ka:kaOf(t), cable:detectCables(t)[0]||null,
             spare:false, space:false, incomer:false, qty:qtyIn(t,dev), srcText:t.trim(), conf:0.55});
         }
