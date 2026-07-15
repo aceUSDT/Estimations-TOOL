@@ -24,6 +24,7 @@ export const EXTRACTION_SYSTEM_PROMPT = `You are the extraction engine of an ele
 - cu (consumer unit): Board Identity e.g. "Consumer Unit (General Apartment)", No of Ways, DB Incomer Device; several CU variants may share one page — extract each as its own board.
 - switchboard / mccb: one row per outgoing device/board; MCCB schedules often carry a Summary Index (Ref/Location/Size) — extract index entries as boards too.
 - hager_grid: TPN grid with way number spanning three phase sub-rows ("7-L1 / 7-L2 / 7-L3" or a way cell beside an L1/L2/L3 column); merged rating/description/cable cells spanning all three phase rows = ONE common multi-pole device; per-phase rows with their own ratings = independent single-phase circuits; RCD often Yes/No; "Spare" may be printed per phase row.
+- imsc_tba: three phase rows per numbered way with coded protective-device letters. Read the page legend: J=MCCB, K=MCB, L=fuse, M=RCBO, N=RCBO combined with AFDD/AFFD. "Ri/Ra" means ring/radial and the following L/P token is lighting/power service. A single coded row between two genuinely blank phase rows is one TPN device; three coded phase rows are three SPN devices.
 - simple: Way No / Device Rating(A) / Device Type / Phase + hand notes.
 
 ## SPN vs TPN board classification (phase_config — classify EVERY board)
@@ -41,6 +42,7 @@ export const EXTRACTION_SYSTEM_PROMPT = `You are the extraction engine of an ele
 
 ## Legends (read the page's own legend when present; these are the defaults)
 - Device codes: P1=MCB curve C, P2=RCBO Type A 30mA, P3=MCB/fuse + separate 30mA RCD, P4=HRC fuse, P5=MCB user-defined, B=fitted blank (space).
+- IMSC/TBA device codes: J=MCCB, K=MCB, L=fuse, M=RCBO, N=RCBO combined with AFDD (some legends print AFFD). These letters are device classes, not description initials.
 - BAM cable codes: T1=LS0H singles in conduit/trunking, T2=XLPE/SWA/LS0H, T3=MICC/LSF, T4=XLPE/SWA/PVC, T5=XLPE/LS0H flat twin & earth, T6=T1 + separate 4mm² CPC.
 - Syntegral cable codes: 1=LS0H multi flat, 2=Cu XLPE/SWA/LS0H armoured, 3=Cu XLPE/LS0H soft-skin fire-rated PH120, 4=Cu XLPE/SWA/LS0H armoured fire-rated F120, 5=LS0H Cu singles.
 - Legends are per-document: map codes to normalised descriptions using the legend on THIS page/document when it differs.
@@ -110,7 +112,7 @@ const DEVICE = {
     way: { type: 'string', description: 'way number as a string; "" if none' },
     phase: { type: 'string', enum: ['L1', 'L2', 'L3', 'L1L2L3', 'SP', ''] },
     description: STR,
-    device_class: { type: 'string', enum: ['MCB', 'RCBO', 'MCCB', 'ACB', 'RCD', 'SPD', 'fuse', 'switch_disconnector', 'isolator', 'contactor', 'meter', 'spare', 'space', 'other'] },
+    device_class: { type: 'string', enum: ['MCB', 'RCBO', 'afdd_rcbo', 'MCCB', 'ACB', 'RCD', 'SPD', 'fuse', 'switch_disconnector', 'isolator', 'contactor', 'time_clock', 'photocell', 'relay', 'timer', 'starter', 'overload', 'transformer', 'dali_controller', 'meter', 'spare', 'space', 'other'] },
     rating_a: NUM,
     trip_curve: { type: 'string', enum: ['B', 'C', 'D', ''] },
     rcd_ma: NUM,
@@ -158,7 +160,7 @@ export const EXTRACTION_SCHEMA = {
       required: ['type', 'sub_format', 'confidence'],
       properties: {
         type: { type: 'string', enum: ['schematic', 'db_schedule', 'specification', 'other'] },
-        sub_format: { type: 'string', enum: ['amtech', 'trimble', 'bes', 'bam_epo', 'syntegral', 'hevacomp', 'cu', 'switchboard', 'mccb', 'hager_grid', 'simple', 'unknown'] },
+        sub_format: { type: 'string', enum: ['amtech', 'trimble', 'bes', 'bam_epo', 'syntegral', 'hevacomp', 'imsc_tba', 'cu', 'switchboard', 'mccb', 'hager_grid', 'simple', 'unknown'] },
         confidence: NUM,
       },
     },

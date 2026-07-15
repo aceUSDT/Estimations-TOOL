@@ -76,6 +76,26 @@
     return String(value || '').toUpperCase().replace(/[\s._/-]+/g, '');
   }
 
+  function canonicalBoardReference(value) {
+    const original = String(value || '').trim();
+    let display = original.toUpperCase()
+      .replace(/\s*[._/\\-]\s*/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '');
+    let splitSection = null;
+    const split = display.match(/^(DB(?:-[A-Z0-9]+)+)-(LP|L|P)$/i);
+    if (split && /(?:^|-)\d{1,3}$/.test(split[1])) {
+      display = split[1];
+      splitSection = split[2].toUpperCase();
+    }
+    return {
+      original,
+      display: display || original,
+      normalised: normaliseBoardReference(display || original),
+      splitSection,
+    };
+  }
+
   // Words that can follow "DB" in prose without naming a board ("DB Schedule",
   // "DB Fed From", …). A candidate whose first token is one of these is prose.
   const BOARD_REF_STOPWORDS = new Set([
@@ -162,6 +182,8 @@
     const protectionCodes = (source.match(/\bP[1-5]\b/g) || []).length;
     const phaseRows = (source.match(/\bL[123]\b/g) || []).length;
     if (protectionCodes >= 4 && phaseRows >= 6) add('db-schedule', 7);
+    const codedRows = (source.match(/(?:^|\n)\s*(?:\d{1,3}\s+)?(?:L[123]\s+)?\d+(?:\.\d+)?\s+[JKLMN]\s+[BCD]\b[^\n]*\b(?:Ri|Ra)\s+[LP]\b/gim) || []).length;
+    if (codedRows >= 2 && phaseRows >= 3) add('db-schedule', 9);
     const boardCount = extractBoardReferences(source).length;
     if (boardCount >= 3 && /mccb|fuse|cable|connected from|connected to/i.test(source)) add('sld', 5);
     if (pageIndex === 0 && totalPages > 1 && /project|issued|revision/.test(lower) && !Object.keys(scores).length) add('cover', 3);
@@ -233,6 +255,387 @@
     }
     context.lastPhase = phase;
     return row;
+  }
+
+  const TBA_PROTECTION_LEGEND = {
+    J: { device: 'MCCB' },
+    K: { device: 'MCB' },
+    L: { device: 'Fuse' },
+    M: { device: 'RCBO' },
+    N: { device: 'AFDD+RCBO', afdd: true },
+  };
+
+  const ASSOCIATED_EQUIPMENT_DEFS = [
+    { device: 'Contactor', re: /\bcontactors?\b/i },
+    { device: 'Time clock', re: /\b(?:time\s*clock|timeclock)\b/i },
+    { device: 'Photocell', re: /\b(?:photo\s*cell|photocell)\b/i },
+    { device: 'Relay', re: /\brelays?\b/i },
+    { device: 'Timer', re: /\btimers?\b/i },
+    { device: 'Motor starter', re: /\b(?:motor\s+)?starters?\b/i },
+    { device: 'Overload', re: /\boverloads?\b/i },
+    { device: 'Transformer', re: /\btransformers?\b/i },
+    { device: 'DALI controller', re: /\bDALI\s+(?:headend|controller|control\s+unit)\b/i },
+    { device: 'Lighting controller', re: /\blighting\s+(?:controller|control\s+(?:module|unit))\b/i },
+    { device: 'Key switch', re: /\bkey\s+switch(?:es)?\b/i },
+  ];
+
+  function extractAssociatedEquipment(description) {
+    const source = String(description || '');
+    const equipment = [];
+    for (const definition of ASSOCIATED_EQUIPMENT_DEFS) {
+      const match = source.match(definition.re);
+      if (!match) continue;
+      const before = source.slice(Math.max(0, match.index - 12), match.index);
+      const quantity = Number(before.match(/(\d{1,3})\s*(?:x|×)\s*$/i)?.[1]) || 1;
+      equipment.push({ device: definition.device, qty: quantity });
+    }
+    return equipment;
+  }
+
+  function cleanTbaDescription(value) {
+    const source = String(value || '').replace(/\s+/g, ' ').trim();
+    const cablePattern = /(?:^|\s)([A-I])\s+(\d+)\s+(\d+(?:\.\d+)?(?:\s*[x×]\s*\d+(?:\.\d+)?)?)\s+(\d+(?:\.\d+)?(?:\s*[x×]\s*\d+(?:\.\d+)?)?)\s+([WXYZ])\s+([NY])\s+(N\/A|[A-Z])\s+([NY])(?=\s|$)/ig;
+    let cableMatch = null;
+    for (const match of source.matchAll(cablePattern)) cableMatch = match;
+    if (!cableMatch) return { description: source, cable: null };
+    const sizeValue = cableMatch[3].replace(/\s+/g, '');
+    const cpcValue = cableMatch[4].replace(/\s+/g, '');
+    const description = `${source.slice(0, cableMatch.index)} ${source.slice(cableMatch.index + cableMatch[0].length)}`
+      .replace(/\s+/g, ' ')
+      .trim();
+    return {
+      description,
+      cable: {
+        typeCode: cableMatch[1].toUpperCase(),
+        cores: Number(cableMatch[2]),
+        size: /^\d+(?:\.\d+)?$/.test(sizeValue) ? Number(sizeValue) : sizeValue,
+        cpc: /^\d+(?:\.\d+)?$/.test(cpcValue) ? Number(cpcValue) : cpcValue,
+        cpcType: cableMatch[5].toUpperCase(),
+        orig: `${cableMatch[2]}C ${sizeValue}mm2`,
+      },
+    };
+  }
+
+  function parseTbaProtectionLine(line) {
+    const text = String(line || '').replace(/\s+/g, ' ').trim();
+    const match = text.match(/^(?:(\d{1,3})\s+)?(L[123])\s+(\d+(?:\.\d+)?)\s+([JKLMN])(?:\s+([BCD]))?\s+(.*?)\s+(Ri|Ra)\s+([LP])(?:\s+(.*))?$/i);
+    if (!match) return null;
+    const protectionCode = match[4].toUpperCase();
+    const resolved = TBA_PROTECTION_LEGEND[protectionCode];
+    if (!resolved) return null;
+    const middleNumbers = (match[6].match(/\d+(?:\.\d+)?/g) || []).map(Number);
+    const ka = middleNumbers.length ? middleNumbers[middleNumbers.length - 1] : null;
+    const sensitivity = middleNumbers.length > 1 ? middleNumbers[0] : null;
+    const cleaned = cleanTbaDescription(match[9]);
+    const associatedDevices = extractAssociatedEquipment(cleaned.description);
+    return {
+      way: match[1] ? Number(match[1]) : null,
+      phase: match[2].toUpperCase(),
+      rating: Number(match[3]),
+      protectionCode,
+      device: resolved.device,
+      curve: match[5] ? match[5].toUpperCase() : null,
+      sens: sensitivity,
+      poles: 1,
+      ka,
+      circuitConfig: match[7].toLowerCase() === 'ri' ? 'ring' : 'radial',
+      serviceCode: match[8].toUpperCase(),
+      discipline: match[8].toUpperCase() === 'L' ? 'Lighting' : '',
+      cable: cleaned.cable,
+      desc: cleaned.description,
+      associatedDevices,
+      afdd: Boolean(resolved.afdd),
+      spare: false,
+      space: false,
+      incomer: false,
+      qty: 1,
+      resolutionSource: 'document_legend',
+      srcText: text,
+      conf: 0.98,
+    };
+  }
+
+  function parseTbaSchedulePage(lines, context = {}) {
+    const sourceLines = (lines || []).map((line, index) => ({
+      index,
+      text: String(line && line.text != null ? line.text : line || '').replace(/\s+/g, ' ').trim(),
+    }));
+    const consumed = new Set();
+    const reconstructed = [];
+    let detachedCount = 0;
+
+    for (let index = 0; index < sourceLines.length; index += 1) {
+      if (consumed.has(index)) continue;
+      const source = sourceLines[index];
+      const detached = source.text.match(/^(?:(\d{1,3})\s+)?(\d+(?:\.\d+)?)\s+([JKLMN])\b(.*)$/i);
+      if (detached && /\b(?:Ri|Ra)\s+[LP]\b/i.test(source.text)) {
+        const embedded = detached[4].match(/\b(L[123])\b/i);
+        if (embedded) {
+          const phase = embedded[1].toUpperCase();
+          const remainder = `${detached[4].slice(0, embedded.index)} ${detached[4].slice(embedded.index + embedded[0].length)}`.trim();
+          reconstructed.push({
+            index: source.index,
+            text: `${detached[1] ? `${detached[1]} ` : ''}${phase} ${detached[2]} ${detached[3]} ${remainder}`,
+          });
+          detachedCount += 1;
+          continue;
+        }
+        let joined = false;
+        for (let lookahead = index + 1; lookahead <= Math.min(index + 2, sourceLines.length - 1); lookahead += 1) {
+          if (consumed.has(lookahead)) continue;
+          const phaseOnly = sourceLines[lookahead].text.match(/^(?:(\d{1,3})\s+)?(L[123])(?:\s+(.*))?$/i);
+          if (!phaseOnly || /^\d+(?:\.\d+)?\s+[JKLMN]\b/i.test(phaseOnly[3] || '')) continue;
+          const way = detached[1] || phaseOnly[1];
+          reconstructed.push({
+            index: source.index,
+            text: `${way ? `${way} ` : ''}${phaseOnly[2].toUpperCase()} ${detached[2]} ${detached[3]} ${detached[4]} ${phaseOnly[3] || ''}`,
+          });
+          consumed.add(lookahead);
+          detachedCount += 1;
+          joined = true;
+          break;
+        }
+        if (joined) continue;
+      }
+      reconstructed.push(source);
+    }
+
+    const slots = [];
+    for (const source of reconstructed) {
+      const phaseLine = source.text.match(/^(?:(\d{1,3})\s+)?(L[123])(?:\s+(.*))?$/i);
+      if (!phaseLine) continue;
+      const payload = String(phaseLine[3] || '').trim();
+      const row = parseTbaProtectionLine(source.text);
+      slots.push({
+        line: source.index,
+        explicitWay: phaseLine[1] ? Number(phaseLine[1]) : null,
+        phase: phaseLine[2].toUpperCase(),
+        payload,
+        row,
+        spare: /\bsp\s*;?\s*are\b/i.test(payload),
+        blank: !payload,
+      });
+    }
+
+    const rows = [];
+    let group = [];
+    const finalizeGroup = () => {
+      if (!group.length) return;
+      const explicit = group.find((slot) => Number.isInteger(slot.explicitWay));
+      const way = explicit ? explicit.explicitWay
+        : (Number.isInteger(context.lastTbaWay) ? context.lastTbaWay + 1 : null);
+      if (Number.isInteger(way)) context.lastTbaWay = way;
+      const deviceSlots = group.filter((slot) => slot.row);
+      const phases = new Set(group.map((slot) => slot.phase));
+      const isThreePole = deviceSlots.length === 1
+        && phases.size === 3
+        && group.filter((slot) => !slot.row).every((slot) => slot.blank && !slot.spare);
+      for (const slot of deviceSlots) {
+        rows.push({
+          ...slot.row,
+          way,
+          phase: isThreePole ? '3PH' : slot.phase,
+          poles: isThreePole ? 3 : 1,
+          line: slot.line,
+        });
+      }
+      if (!deviceSlots.length && Number.isInteger(way)) {
+        const isSpare = group.some((slot) => slot.spare);
+        const slot = group.find((candidate) => candidate.spare) || group[0];
+        rows.push({
+          way,
+          phase: null,
+          rating: null,
+          protectionCode: null,
+          device: null,
+          poles: 1,
+          desc: isSpare ? 'Spare' : 'Space',
+          spare: isSpare,
+          space: !isSpare,
+          incomer: false,
+          qty: 0,
+          srcText: slot.payload || (isSpare ? 'Spare' : 'Blank way'),
+          conf: 0.98,
+          line: slot.line,
+        });
+      }
+      group = [];
+    };
+
+    for (const slot of slots) {
+      if (group.length && (slot.phase === 'L1'
+        || (Number.isInteger(slot.explicitWay) && group.some((candidate) => Number.isInteger(candidate.explicitWay))))) {
+        finalizeGroup();
+      }
+      group.push(slot);
+      if (slot.phase === 'L3') finalizeGroup();
+    }
+    finalizeGroup();
+
+    const codedCount = rows.filter((row) => row.device).length;
+    return { matched: codedCount > 0, rows, codedCount, detachedCount };
+  }
+
+  function dialectSpareRow(text, way, phase = null) {
+    return {
+      way,
+      phase,
+      rating: null,
+      device: null,
+      poles: 1,
+      desc: 'Spare',
+      spare: true,
+      space: false,
+      incomer: false,
+      qty: 0,
+      srcText: text,
+      conf: 0.96,
+      resolutionSource: 'schedule_columns',
+    };
+  }
+
+  function dialectDevice({ rcdMa = null, afdd = false } = {}) {
+    if (afdd) return 'AFDD+RCBO';
+    return Number(rcdMa) > 0 ? 'RCBO' : 'MCB';
+  }
+
+  function parseKnownScheduleLine(line) {
+    const text = String(line || '').replace(/\s+/g, ' ').trim();
+    if (!text) return null;
+
+    const slash = text.match(/^(\d{1,3})\s*\/\s*(L[123])\s+(.+)$/i);
+    if (slash) {
+      const way = Number(slash[1]);
+      const phase = slash[2].toUpperCase();
+      const body = slash[3].trim();
+      if (/^spare\b|\bspare$/i.test(body)) return dialectSpareRow(text, way, phase);
+
+      const syntegral = body.match(/^(\d+(?:\.\d+)?)\s+([BCD])\s+(\d+(?:\.\d+)?|-)\s+(YES|NO)\s+(\d+)\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?|SWA)\s+(RAD|RING)\s+(.+)$/i);
+      if (syntegral) {
+        const rcdMa = syntegral[3] === '-' ? null : Number(syntegral[3]);
+        const afdd = syntegral[4].toUpperCase() === 'YES';
+        const description = syntegral[9].trim();
+        return {
+          way,
+          phase,
+          rating: Number(syntegral[1]),
+          device: dialectDevice({ rcdMa, afdd }),
+          curve: syntegral[2].toUpperCase(),
+          sens: rcdMa,
+          afdd,
+          poles: 1,
+          circuitConfig: syntegral[8].toUpperCase() === 'RING' ? 'ring' : 'radial',
+          cable: {
+            typeCode: syntegral[5],
+            size: Number(syntegral[6]),
+            cpc: /^\d/.test(syntegral[7]) ? Number(syntegral[7]) : syntegral[7].toUpperCase(),
+            orig: `${syntegral[6]}mm2 type ${syntegral[5]}`,
+          },
+          desc: description,
+          associatedDevices: extractAssociatedEquipment(description),
+          spare: false,
+          space: false,
+          incomer: false,
+          qty: 1,
+          srcText: text,
+          conf: 0.94,
+          resolutionSource: 'schedule_columns',
+        };
+      }
+
+      const heavacomp = body.match(/^(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?|SWA)\s+(.+?)\s+(Fixed power|Lighting)\s+(.+)$/i);
+      if (heavacomp) {
+        const service = heavacomp[5].toLowerCase();
+        const description = `${heavacomp[5]} ${heavacomp[6]}`.trim();
+        return {
+          way,
+          phase,
+          rating: Number(heavacomp[1]),
+          device: service === 'lighting' ? 'MCB' : 'RCBO',
+          curve: null,
+          sens: service === 'lighting' ? null : 30,
+          poles: 1,
+          serviceCode: service === 'lighting' ? 'L' : 'P',
+          discipline: service === 'lighting' ? 'Lighting' : '',
+          cable: {
+            size: Number(heavacomp[2]),
+            cpc: /^\d/.test(heavacomp[3]) ? Number(heavacomp[3]) : heavacomp[3].toUpperCase(),
+            construction: heavacomp[4],
+            orig: `${heavacomp[2]}mm2 ${heavacomp[4]}`,
+          },
+          desc: description,
+          associatedDevices: extractAssociatedEquipment(description),
+          spare: false,
+          space: false,
+          incomer: false,
+          qty: 1,
+          srcText: text,
+          conf: 0.9,
+          resolutionSource: 'schedule_columns',
+        };
+      }
+    }
+
+    const bes = text.match(/^(\d{1,3})\s+(L[123])\s+(.+?)\s+(RAD|RING)\s+(\d+(?:\.\d+)?)\s+([BCD])\s+(\d+(?:\.\d+)?|-)\s+(YES|NO)$/i);
+    if (bes) {
+      const rcdMa = bes[7] === '-' ? null : Number(bes[7]);
+      const afdd = bes[8].toUpperCase() === 'YES';
+      const description = bes[3].trim();
+      return {
+        way: Number(bes[1]),
+        phase: bes[2].toUpperCase(),
+        rating: Number(bes[5]),
+        device: dialectDevice({ rcdMa, afdd }),
+        curve: bes[6].toUpperCase(),
+        sens: rcdMa,
+        afdd,
+        poles: 1,
+        circuitConfig: bes[4].toUpperCase() === 'RING' ? 'ring' : 'radial',
+        desc: description,
+        associatedDevices: extractAssociatedEquipment(description),
+        spare: false,
+        space: false,
+        incomer: false,
+        qty: 1,
+        srcText: text,
+        conf: 0.93,
+        resolutionSource: 'schedule_columns',
+      };
+    }
+
+    const amtechSpare = text.match(/^(\d{1,3})\s+Spare(?:\s+0)?$/i);
+    if (amtechSpare) return dialectSpareRow(text, Number(amtechSpare[1]));
+    const amtech = text.match(/^(\d{1,3})\s+(.+?)\s+(\d+(?:\.\d+)?)\s+([BCD])\s+(\d+(?:\.\d+)?|-)\s+(\d+(?:\.\d+)?)\s+(\d+)\s+(\d+(?:\.\d+)?)$/i);
+    if (amtech) {
+      const rcdMa = amtech[5] === '-' ? null : Number(amtech[5]);
+      const description = amtech[2].trim();
+      return {
+        way: Number(amtech[1]),
+        phase: null,
+        rating: Number(amtech[3]),
+        device: dialectDevice({ rcdMa }),
+        curve: amtech[4].toUpperCase(),
+        sens: rcdMa,
+        poles: 1,
+        discipline: /\blighting\b/i.test(description) ? 'Lighting' : '',
+        cable: {
+          size: Number(amtech[6]),
+          cores: Number(amtech[7]),
+          cpc: Number(amtech[8]),
+          orig: `${amtech[7]}C ${amtech[6]}mm2`,
+        },
+        desc: description,
+        associatedDevices: extractAssociatedEquipment(description),
+        spare: false,
+        space: false,
+        incomer: false,
+        qty: 1,
+        srcText: text,
+        conf: 0.91,
+        resolutionSource: 'schedule_columns',
+      };
+    }
+    return null;
   }
 
   function aggregateDevices(rows) {
@@ -389,6 +792,11 @@
 
   function expectedWaysFromText(text) {
     const source = String(text || '');
+    const split = source.match(/\b(\d{1,3})\s*[- ]?Ways?\s+Power\s*\+\s*(\d{1,3})\s*[- ]?Ways?\s+Lighting\b/i);
+    if (split) {
+      const ways = Number(split[1]) + Number(split[2]);
+      if (ways >= 2 && ways <= 200) return { ways, evidence: split[0].trim(), split: true };
+    }
     for (const pattern of WAY_HEADER_PATTERNS) {
       const match = source.match(pattern);
       if (match) {
@@ -405,6 +813,7 @@
     for (const line of lines) {
       if (/^\s*\d{1,3}\s*[\/ ]\s*L[123]\b/i.test(line)) hits += 1;                 // "4/L1 …"
       else if (/^\s*(?:way|cct|ckt|circuit)\s*\d{1,3}\b/i.test(line)) hits += 1;   // "CCT 4 …"
+      else if (/^\s*(?:\d{1,3}\s+)?L[123]\b/i.test(line)) hits += 1;              // TBA phase slots
     }
     return hits >= 4;
   }
@@ -420,12 +829,29 @@
     const pageMap = new Map();
     for (const pg of pages || []) pageMap.set(`${pg.fileId}#${pg.page}`, pg);
     const scheduleRows = (rows || []).filter((r) => r && r.kind !== 'mention' && r.kind !== 'manual');
+    const boardValues = Object.values(boards || {});
+    const hasPrimaryMetadata = boardValues.some((board) =>
+      (board.pages || []).some((ref) => ref && ref.primary));
+    const primaryBoardsByPage = new Map();
+    if (hasPrimaryMetadata) {
+      for (const board of boardValues) {
+        for (const ref of board.pages || []) {
+          if (!ref || !ref.primary) continue;
+          const key = `${ref.fileId}#${ref.page}`;
+          if (!primaryBoardsByPage.has(key)) primaryBoardsByPage.set(key, new Set());
+          primaryBoardsByPage.get(key).add(board.norm);
+        }
+      }
+    }
 
     const perBoard = [];
-    for (const board of Object.values(boards || {})) {
+    for (const board of boardValues) {
       let expected = null;
       let evidence = null;
-      for (const ref of board.pages || []) {
+      const boardPages = hasPrimaryMetadata
+        ? (board.pages || []).filter((ref) => ref && ref.primary)
+        : (board.pages || []);
+      for (const ref of boardPages) {
         const pg = pageMap.get(`${ref.fileId}#${ref.page}`);
         const found = pg && expectedWaysFromText(pg.text);
         if (found && (!expected || found.ways > expected)) {
@@ -434,39 +860,59 @@
         }
       }
       const boardRows = scheduleRows.filter((r) => r.boardNorm === board.norm);
-      const ways = new Set(boardRows.filter((r) => r.way != null).map((r) => r.way));
+      const ways = new Set(boardRows.filter((r) => r.way != null).map((r) => `${r.boardSection || ''}:${r.way}`));
       const unaccounted = expected != null ? Math.max(0, expected - ways.size) : null;
+      const upstreamType = /^(?:MAIN|MDB|SMDB|MCC|SB|PB)$/.test(String(board.type || '').toUpperCase());
+      const upstreamReference = /^(?:MAIN|MSB|SWB|SMDB|MDB|PB|MCC|MCP|GENERATOR)/i.test(String(board.orig || '').replace(/[\s._/\\-]+/g, ''));
+      const inScope = hasPrimaryMetadata ? boardPages.length > 0 && !upstreamType && !upstreamReference : true;
       perBoard.push({
         norm: board.norm, orig: board.orig,
         expectedWays: expected, evidence,
         capturedWays: ways.size, rowsCaptured: boardRows.length,
-        unaccountedWays: unaccounted,
+        unaccountedWays: unaccounted, inScope,
       });
     }
 
+    const scopedBoardNorms = new Set(perBoard.filter((board) => board.inScope).map((board) => board.norm));
     const zeroRowSchedulePages = [];
     for (const pg of pages || []) {
       if (!String(pg.text || '').trim()) continue;
-      const scheduleish = COVERAGE_SCHEDULE_TYPES.has(pg.type)
-        || pageLooksTabular(pg.text) || Boolean(expectedWaysFromText(pg.text));
+      const pageKey = `${pg.fileId}#${pg.page}`;
+      const primaryBoards = primaryBoardsByPage.get(pageKey);
+      if (hasPrimaryMetadata && (!primaryBoards || !primaryBoards.size)) continue;
+      if (hasPrimaryMetadata && !Array.from(primaryBoards).some((norm) => scopedBoardNorms.has(norm))) continue;
+      const hasHeader = /\bDB\s+REFERENCE\b|\b(?:DISTRIBUTION\s+)?BOARD\s*(?:REFERENCE|REF|IDENTITY)?\s*[:=\-]/i.test(pg.text);
+      const scheduleish = hasPrimaryMetadata
+        ? hasHeader || pageLooksTabular(pg.text) || Boolean(expectedWaysFromText(pg.text))
+        : COVERAGE_SCHEDULE_TYPES.has(pg.type) || pageLooksTabular(pg.text) || Boolean(expectedWaysFromText(pg.text));
       if (!scheduleish) continue;
-      if (!scheduleRows.some((r) => r.fileId === pg.fileId && r.page === pg.page)) {
-        zeroRowSchedulePages.push({ fileId: pg.fileId, page: pg.page, type: pg.type });
+      const hasRows = scheduleRows.some((r) =>
+        r.fileId === pg.fileId && r.page === pg.page
+        && (!hasPrimaryMetadata || primaryBoards.has(r.boardNorm)));
+      if (!hasRows) {
+        zeroRowSchedulePages.push({
+          fileId: pg.fileId,
+          page: pg.page,
+          type: pg.type,
+          boardNorm: primaryBoards && primaryBoards.size === 1 ? Array.from(primaryBoards)[0] : null,
+          boardNorms: primaryBoards ? Array.from(primaryBoards) : [],
+        });
       }
     }
 
-    const expectedTotal = perBoard.reduce((sum, b) => sum + (b.expectedWays || 0), 0);
-    const capturedTotal = perBoard.reduce((sum, b) => sum + (b.expectedWays != null ? Math.min(b.capturedWays, b.expectedWays) : 0), 0);
+    const scopedBoards = perBoard.filter((board) => board.inScope);
+    const expectedTotal = scopedBoards.reduce((sum, b) => sum + (b.expectedWays || 0), 0);
+    const capturedTotal = scopedBoards.reduce((sum, b) => sum + (b.expectedWays != null ? Math.min(b.capturedWays, b.expectedWays) : 0), 0);
     return {
       perBoard,
       zeroRowSchedulePages,
       summary: {
-        boards: perBoard.length,
-        boardsWithRows: perBoard.filter((b) => b.rowsCaptured > 0).length,
+        boards: scopedBoards.length,
+        boardsWithRows: scopedBoards.filter((b) => b.rowsCaptured > 0).length,
         expectedWays: expectedTotal,
         capturedWays: capturedTotal,
         pctComplete: expectedTotal ? Math.round((100 * capturedTotal) / expectedTotal) : null,
-        unaccountedBoards: perBoard.filter((b) => (b.unaccountedWays || 0) > 0).length,
+        unaccountedBoards: scopedBoards.filter((b) => (b.unaccountedWays || 0) > 0).length,
       },
     };
   }
@@ -503,9 +949,14 @@
     parseProtectionLegend,
     parseTrailingCable,
     normaliseBoardReference,
+    canonicalBoardReference,
     extractBoardReferences,
     classifyPageText,
     parseBamScheduleLine,
+    parseTbaProtectionLine,
+    parseTbaSchedulePage,
+    parseKnownScheduleLine,
+    extractAssociatedEquipment,
     aggregateDevices,
     finalizeScheduleContext,
     normaliseAssistedDevice,

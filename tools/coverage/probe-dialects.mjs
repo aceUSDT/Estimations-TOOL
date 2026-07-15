@@ -53,6 +53,7 @@ const FIXTURES = {
 };
 
 console.log('=== parseScheduleLine on PERFECT text (ctx.board set, as in runAnalysis) ===\n');
+let failureCount = 0;
 for (const [name, lines] of Object.entries(FIXTURES)) {
   const ctx = { board: 'TESTBOARD', sawHeader: true, inNotes: false, lastWay: null, lastPhase: null, pendingRows: [], protectionLegend: null };
   let parsed = 0;
@@ -62,6 +63,7 @@ for (const [name, lines] of Object.entries(FIXTURES)) {
     if (r) parsed++;
     else misses.push(t);
   }
+  failureCount += misses.length;
   P.EstimationExtractorCore.finalizeScheduleContext(ctx);
   console.log(`${name}\n  parsed ${parsed}/${lines.length} rows${misses.length ? '  — MISSED: ' + misses.slice(0, 3).map(m => JSON.stringify(m.slice(0, 45))).join(' | ') : ''}\n`);
 }
@@ -71,5 +73,8 @@ const REFS = ['DB-00-08P', 'DB-MECH', 'DB-AV', 'DB/GF', 'G1-GF-DB-LL', 'PB01', '
 for (const ref of REFS) {
   const app = P.detectBoards(`Board Reference: ${ref}`).map(b => b.orig);
   const core = P.EstimationExtractorCore.extractBoardReferences(`Board Reference: ${ref}`).map(b => b.original);
+  if (!app.length || !core.length) failureCount += 1;
   console.log(`  ${ref.padEnd(22)} app detectBoards: ${app.length ? app.join(',') : '✗ MISS'}   core extractBoardReferences: ${core.length ? core.join(',') : '✗ MISS'}`);
 }
+
+if (failureCount) throw new Error(`${failureCount} dialect regression${failureCount === 1 ? '' : 's'} detected`);

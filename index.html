@@ -245,7 +245,9 @@
   .v-doctab.act{background:#fafbfd;color:var(--txt);border-color:var(--line);position:relative;top:1px;}
   /* full-flexibility document stage — fills the viewport instead of a small fixed box */
   .v-stage{position:relative;overflow:auto;height:calc(100vh - 330px);min-height:440px;background:#e7ebf1;
-    border-radius:0 0 12px 12px;display:flex;justify-content:center;padding:16px;}
+    border-radius:0 0 12px 12px;display:block;padding:16px;cursor:grab;overscroll-behavior:contain;}
+  .v-stage.is-panning{cursor:grabbing;user-select:none;}
+  .v-zoom-input{width:64px!important;min-width:64px;padding:5px 6px!important;text-align:right;font-size:11px!important;}
   .thumbs{max-height:calc(100vh - 300px)!important;}
   /* §5.2 dark canvas mode */
   .v-stage.v-dark{background:#141a22;}
@@ -254,10 +256,11 @@
     border-radius:4px;padding:0 4px;}
   .ovl.search{background:rgba(240,180,20,.35);outline:2px solid #d99a06;z-index:3;}
   .ovl.boardhl{background:rgba(22,104,227,.22);outline:3px solid var(--blue);z-index:3;}
-  .v-pagewrap{position:relative;box-shadow:0 4px 20px rgba(22,32,46,.18);background:#fff;}
+  .v-pagewrap{position:relative;width:max-content;margin:0 auto;box-shadow:0 4px 20px rgba(22,32,46,.18);background:#fff;text-align:left;}
   .v-pagewrap canvas{display:block;}
   .v-textpage{width:840px;min-height:600px;padding:34px 38px;font-family:var(--mono);font-size:11.5px;
     line-height:1.85;white-space:pre-wrap;color:#26303f;}
+  .v-textsizer{position:relative;margin:0 auto;text-align:left;}
   .v-textpage .hl{border-radius:3px;padding:0 2px;margin:0 -2px;}
   .hl.green{background:var(--green-soft);outline:1px solid #bfe5d2;}
   .hl.amber{background:var(--amber-soft);outline:1px solid #f0d9a8;}
@@ -379,6 +382,9 @@
   .report-qty:hover{background:#e8f0fd;}
   .report-matrix .report-final td{background:#e3e5e8;font-weight:700;}
   .report-matrix .report-final .report-device,.report-matrix .report-final .report-unit{z-index:5;background:#e3e5e8;}
+  .report-subhead{padding:14px 18px 10px;border-top:4px solid #181a1d;background:#fff;}
+  .report-subhead h3{font-size:14px;font-weight:700;}
+  .report-subhead p{font-size:11.5px;color:var(--txt2);margin-top:2px;}
   .report-empty{padding:64px 24px;text-align:center;color:var(--txt2);}
 
   /* restrained operational finish */
@@ -395,6 +401,14 @@
     .report-actions{margin-left:auto;}
     .report-matrix .report-device{width:190px;min-width:190px;}
     .report-matrix .report-unit{left:190px;}
+  }
+  @media(max-width:540px){
+    .report-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px 18px;overflow:visible;}
+    .report-fact{min-width:0;}
+    .report-fact dt{line-height:1.25;white-space:normal;}
+    .viewer-layout{grid-template-columns:minmax(0,1fr);}
+    .viewer-layout>.thumbs{display:none;}
+    .v-stage{height:calc(100vh - 300px);min-height:440px;}
   }
 </style>
 </head>
@@ -454,9 +468,9 @@
     <div class="subview active" id="pt-docs">
       <div class="dropzone" id="dropzone">
         <h3>Drop electrical documents here — or click to browse</h3>
-        <p>Floor plans · schematics · DB schedules · cable schedules — <b>PDF</b>, <b>TXT</b>, <b>CSV</b>. Analysis starts automatically.</p>
+        <p>Floor plans · schematics · DB schedules · cable schedules — <b>PDF</b>, <b>Excel</b>, <b>images</b>, <b>TXT</b>, <b>CSV</b>.</p>
       </div>
-      <input type="file" id="fileInput" multiple accept=".pdf,.txt,.csv,.md,.xlsx" style="display:none">
+      <input type="file" id="fileInput" multiple accept=".pdf,.txt,.csv,.md,.xlsx,.png,.jpg,.jpeg,.webp" style="display:none">
       <div class="panel" style="margin-bottom:16px">
         <div class="p-head">Documents <span class="sub" id="docCountSub"></span></div>
         <div style="overflow-x:auto"><table class="t doc-table">
@@ -505,9 +519,9 @@
             <button class="btn sm" id="vNext" title="Next page (→)">›</button>
             <div class="vsep"></div>
             <button class="btn sm" id="vZoomOut" title="Zoom out (−)">−</button>
-            <span style="font-size:11px;color:var(--txt2);min-width:38px;text-align:center" id="vZoomPct">100%</span>
+            <input class="in v-zoom-input" id="vZoomPct" type="number" min="25" max="1000" step="25" value="100" aria-label="Zoom percentage" title="Zoom percentage (25–1000)"><span style="font-size:11px;color:var(--txt2)">%</span>
             <button class="btn sm" id="vZoomIn" title="Zoom in (+)">+</button>
-            <button class="btn sm" id="vFit" title="Fit page to window">Fit</button>
+            <button class="btn sm" id="vFit" title="Fit page width to window">Fit</button>
             <button class="btn sm" id="vRotate" title="Rotate 90°">⟳</button>
             <div class="vsep"></div>
             <label class="check-row" style="padding:0"><input type="checkbox" id="vOvl" checked> Overlays</label>
@@ -520,7 +534,7 @@
             </select>
             <select class="sel" id="vBoardHl" title="Smart-highlight every mention of a board reference"><option value="">Highlight board…</option></select>
             <div class="vsep"></div>
-            <button class="btn sm" id="vAssistMode" title="Highlight one device to find every matching device on the current board">✦ Assisted canvas</button>
+            <button class="btn sm" id="vAssistMode" title="Find matching devices on the selected board">Match rows</button>
             <button class="btn sm" id="vOcrBtn" title="Read a scanned page with OCR">OCR page</button>
             <button class="btn sm" id="vDark" title="Dark / light canvas">◐</button>
             <button class="btn sm" id="vPrint" title="Print current page">⎙</button>
@@ -530,11 +544,10 @@
             <button class="btn sm" id="vSearchNext" title="Jump to next page with a match" style="display:none">↓</button>
           </div>
           <div class="assist-bar" id="vAssistBar" hidden>
-            <span class="step">1 Board</span>
+            <span class="step">Board</span>
             <select class="sel" id="vAssistBoard"></select>
-            <span class="step">2 Highlight</span>
-            <span class="assist-help">Drag a box over one device row, such as “16A RCBO”.</span>
-            <span class="chip purple" id="vAssistSeed">No device selected</span>
+            <span class="step">Device</span>
+            <span class="chip purple" id="vAssistSeed">None selected</span>
             <span class="chip purple" id="vAssistCount">0 matches</span>
             <button class="btn sm" id="vAssistClear">Clear markup</button>
             <span class="ocr-progress" id="vOcrStatus"></span>
@@ -864,6 +877,7 @@ $('#lockBtn').addEventListener('click', ()=>{ $('#appView').classList.remove('ac
 
 /* ==================== ELECTRICAL KNOWLEDGE BASE ==================== */
 const DEVICE_DEFS = [
+  {name:'AFDD+RCBO', re:/\b(?:AFDD|AFFD)\s*(?:\+|combined\s+with)?\s*RCBO\b|\bRCBO\s*(?:\+|combined\s+with)\s*(?:AFDD|AFFD)\b/i},
   {name:'RCBO',      re:/\bRCBOs?\b/i},
   {name:'MCCB',      re:/\bMCCBs?\b/i},
   {name:'ACB',       re:/\bACBs?\b/i},
@@ -872,11 +886,19 @@ const DEVICE_DEFS = [
   {name:'SPD',       re:/\bSPDs?\b|\bsurge protect(?:ion|ive) device\b/i},
   {name:'Isolator',  re:/\bisolators?\b|\bswitch[- ]disconnectors?\b/i},
   {name:'Contactor', re:/\bcontactors?\b/i},
+  {name:'Time clock',re:/\b(?:time\s*clock|timeclock)s?\b/i},
+  {name:'Photocell', re:/\b(?:photo\s*cell|photocell)s?\b/i},
+  {name:'Relay',     re:/\brelays?\b/i},
+  {name:'Timer',     re:/\btimers?\b/i},
+  {name:'Starter',   re:/\b(?:motor\s+)?starters?\b/i},
+  {name:'Overload',  re:/\boverloads?\b/i},
+  {name:'Transformer',re:/\btransformers?\b/i},
+  {name:'DALI controller',re:/\bDALI\s+(?:headend|controller|control\s+unit)\b/i},
   {name:'Fuse',      re:/\bfuses?\b|\bHRC\b/i},
   {name:'Meter',     re:/\bMID meter\b|\bkWh meter\b|\bmeters?\b/i},
   {name:'Switch',    re:/\bmain switch\b|\bswitch fuse\b/i},
 ];
-const QUICK_DEVICES = ['RCBO','MCB','MCCB','RCD','SPD','Isolator','Contactor','Fuse','Meter'];
+const QUICK_DEVICES = ['RCBO','MCB','MCCB','AFDD+RCBO','RCD','SPD','Isolator','Contactor','Time clock','Photocell','Relay','Fuse','Meter'];
 
 const PAGE_TYPES = {
   'cover':'Cover page','register':'Drawing register','legend':'Electrical legend',
@@ -930,6 +952,8 @@ const BOARD_PATTERNS = [
   {re:/\b[Pp]anel\s+([A-Z](?:[\s.\-_]?\d+)?)\b/g, type:'CTRL', prefix:'Panel '},
 ];
 const normBoard = s => String(s).toUpperCase().replace(/[\s.\-_\/]+/g,'');
+const canonicalBoardRef = (window.EstimationExtractorCore && window.EstimationExtractorCore.canonicalBoardReference)
+  || (value => ({display:String(value||'').trim(),normalised:normBoard(value),splitSection:null}));
 
 /* cable patterns */
 const CABLE_PATTERNS = [
@@ -975,7 +999,9 @@ function detectBoards(line){
         orig = orig.replace(/[.,:]+$/,'');
         if (!/[\d\/-]/.test(orig) || BOARD_REF_STOPWORDS.has(orig.toUpperCase())) continue;
       }
-      const norm = normBoard(orig);
+      const canonical = canonicalBoardRef(orig);
+      orig = canonical.display;
+      const norm = canonical.normalised;
       if (!norm || /^(DB|MDB|SMDB|LDB|PDB|MCC|MCP)$/.test(norm) && !bp.fixed && !/\d/.test(norm) && norm!=='MDB' && norm!=='SMDB') continue;
       if (found.some(f=>f.norm===norm)) continue;
       // avoid matching DB inside SMDB/LDB/PDB/MDB occurrences
@@ -983,14 +1009,42 @@ function detectBoards(line){
         const pre = line[m.index-1];
         if (pre && /[A-Za-z]/.test(pre)) continue;
       }
-      found.push({orig, norm, type:bp.type, start:m.index, end:m.index+m[0].length});
+      found.push({orig, norm, type:bp.type, section:canonical.splitSection, start:m.index, end:m.index+m[0].length});
     }
   }
   // drop matches fully contained inside a longer match of the same text
   // (e.g. keep DB-00-SUBEXT, drop the DB-00 sub-match)
   return found
     .filter(f=>!found.some(o=>o!==f && o.start<=f.start && o.end>=f.end && (o.end-o.start)>(f.end-f.start)))
-    .map(({orig,norm,type})=>({orig,norm,type}));
+    .map(({orig,norm,type,section})=>({orig,norm,type,section}));
+}
+
+function scheduleBoardFromLines(lines){
+  let sawLabel=false;
+  for(const line of lines){
+    const source=String(line||'');
+    const label=source.match(/\bDB\s+REFERENCE\b|\b(?:DISTRIBUTION\s+)?BOARD\s*(?:REFERENCE|REF|IDENTITY)?\s*[:=\-]|\bDISTRIBUTION\s+BOARD\s+SCHEDULE\b\s*[—–:\-]\s*(?=[A-Z0-9])/i);
+    if(!label) continue;
+    sawLabel=true;
+    const tail=source.slice(label.index+label[0].length).trim();
+    const detected=detectBoards(tail)[0];
+    if(detected) return detected;
+    const token=tail.match(/^([A-Z0-9][A-Z0-9._\/-]{1,30})/i)?.[1];
+    if(!token||!/[\d._\/-]/.test(token)) continue;
+    const canonical=canonicalBoardRef(token);
+    if(canonical.normalised) return {orig:canonical.display,norm:canonical.normalised,type:'UNK',section:canonical.splitSection};
+  }
+  if(sawLabel) return null;
+  const topN=Math.max(6,Math.ceil(lines.length/3));
+  for(let index=0;index<Math.min(topN,lines.length);index++){
+    if(!/\b(?:board|panel)\b/i.test(String(lines[index]||''))) continue;
+    const boards=detectBoards(lines[index]);if(boards.length)return boards[0];
+  }
+  return null;
+}
+
+function hasScheduleBoardHeader(lines){
+  return (lines||[]).some(line=>/\bDB\s+REFERENCE\b|\b(?:DISTRIBUTION\s+)?BOARD\s*(?:REFERENCE|REF|IDENTITY)?\s*[:=\-]|\bDISTRIBUTION\s+BOARD\s+SCHEDULE\b\s*[—–:\-]\s*(?=[A-Z0-9])/i.test(String(line||'')));
 }
 
 /* ==================== CABLE DETECTION ==================== */
@@ -1038,6 +1092,9 @@ function classifyPage(text, pageIdx, totalPages){
   const hasWays = (low.match(/\bway\s*\d+|\bcct\s*\d+|\bcircuit\s*\d+/g)||[]).length;
   if (hasWays>=3) add('db-schedule',4);
   if (/board ref|board reference/.test(low)) add('db-schedule',2);
+  const phaseRows=(text.match(/\bL[123]\b/g)||[]).length;
+  const codedRows=(text.match(/(?:^|\n)\s*(?:\d{1,3}\s+)?(?:L[123]\s+)?\d+(?:\.\d+)?\s+[JKLMN]\s+[BCD]\b[^\n]*\b(?:Ri|Ra)\s+[LP]\b/gim)||[]).length;
+  if(codedRows>=2&&phaseRows>=3) add('db-schedule',9);
   if (pageIdx===0 && totalPages>1 && /project|issued|revision/.test(low) && hasWays===0) add('cover',3);
   if (/contents/.test(low) && pageIdx===0) add('register',2);
   let best='unknown', bestS=0;
@@ -1078,6 +1135,8 @@ function parseScheduleLine(line, ctx){
   if (isHeaderLine(line)) { ctx.sawHeader=true; return null; }
   const structured = window.EstimationExtractorCore && window.EstimationExtractorCore.parseBamScheduleLine(line, ctx);
   if (structured) return structured;
+  const dialect = window.EstimationExtractorCore && window.EstimationExtractorCore.parseKnownScheduleLine(line, ctx);
+  if (dialect) return dialect;
   const wayM = line.match(/^\s*(?:way|cct|ckt|circuit)?\s*[:#]?\s*(\d{1,3})\b/i);
   const spare = /\bspare\b/i.test(line);
   const space = /\bspace\b/i.test(line);
@@ -1326,20 +1385,30 @@ function flattenOcrWords(blocks){
 }
 async function ocrPdfPage(f,pageNo,{reanalyze=true,quiet=false}={}){
   if (ocrBusy) throw new Error('OCR is already running');
-  if (!f || f.ext!=='pdf' || !rawStore[f.id]) throw new Error('The original PDF is not available for OCR');
+  if (!f || (f.ext!=='pdf'&&!IMAGE_EXTS.has(f.ext)) || !rawStore[f.id]) throw new Error('The original document is not available for OCR');
   ocrBusy=true;
   const btn=$('#vOcrBtn'); if(btn){btn.disabled=true;btn.textContent='Loading OCR…';}
   try{
-    const lib=await loadPdfjs();
-    let doc=state.viewer.pdfDocs[f.id];
-    if(!doc){doc=await lib.getDocument({data:rawStore[f.id].slice(0)}).promise;state.viewer.pdfDocs[f.id]=doc;}
-    const page=await doc.getPage(pageNo);
-    const base=page.getViewport({scale:1});
-    let scale=2.25;
-    if(base.width*base.height*scale*scale>16000000) scale=Math.sqrt(16000000/(base.width*base.height));
-    const vp=page.getViewport({scale});
-    const cv=document.createElement('canvas');cv.width=Math.ceil(vp.width);cv.height=Math.ceil(vp.height);
-    await page.render({canvasContext:cv.getContext('2d',{alpha:false}),viewport:vp}).promise;
+    let base,cv;
+    if(f.ext==='pdf'){
+      const lib=await loadPdfjs();
+      let doc=state.viewer.pdfDocs[f.id];
+      if(!doc){doc=await lib.getDocument({data:rawStore[f.id].slice(0)}).promise;state.viewer.pdfDocs[f.id]=doc;}
+      const page=await doc.getPage(pageNo);
+      base=page.getViewport({scale:1});
+      let scale=2.25;
+      if(base.width*base.height*scale*scale>16000000) scale=Math.sqrt(16000000/(base.width*base.height));
+      const vp=page.getViewport({scale});
+      cv=document.createElement('canvas');cv.width=Math.ceil(vp.width);cv.height=Math.ceil(vp.height);
+      await page.render({canvasContext:cv.getContext('2d',{alpha:false}),viewport:vp}).promise;
+    }else{
+      const blob=new Blob([rawStore[f.id]],{type:imageMime(f.ext)}),bitmap=await createImageBitmap(blob);
+      base={width:bitmap.width,height:bitmap.height};
+      let scale=Math.min(2.25,Math.sqrt(16000000/(base.width*base.height)));
+      if(!Number.isFinite(scale)||scale<=0)scale=1;
+      cv=document.createElement('canvas');cv.width=Math.ceil(base.width*scale);cv.height=Math.ceil(base.height*scale);
+      cv.getContext('2d',{alpha:false}).drawImage(bitmap,0,0,cv.width,cv.height);bitmap.close();
+    }
     const worker=await getOcrWorker();
     const result=await worker.recognize(cv,{}, {blocks:true});
     const words=flattenOcrWords(result.data.blocks||[]);
@@ -1385,7 +1454,7 @@ async function autoOcrScannedFiles(){
   const p=state.cur; if(!p) return 0;
   let total=0;
   for (const f of p.files){
-    if (f.status!=='ready'||f.ext!=='pdf') continue;
+    if (f.status!=='ready'||(f.ext!=='pdf'&&!IMAGE_EXTS.has(f.ext))) continue;
     if (!f.pages.some(pg=>!(pg.lines||[]).length)) continue;
     toast(`Reading scanned pages in ${f.name} with OCR…`);
     try{ total+=await ocrScannedPages(f, Infinity, {reanalyze:false, quiet:true}); }
@@ -1416,7 +1485,9 @@ function aiExtractReady(){
   return aiProbePromise;
 }
 const AI_DEVICE_MAP={MCB:'MCB',RCBO:'RCBO',MCCB:'MCCB',ACB:'ACB',RCD:'RCD',SPD:'SPD',fuse:'Fuse',
-  switch_disconnector:'Isolator',isolator:'Isolator',contactor:'Contactor',meter:'Meter'};
+  afdd_rcbo:'AFDD+RCBO',switch_disconnector:'Isolator',isolator:'Isolator',contactor:'Contactor',
+  time_clock:'Time clock',photocell:'Photocell',relay:'Relay',timer:'Timer',starter:'Starter',
+  overload:'Overload',transformer:'Transformer',dali_controller:'DALI controller',meter:'Meter'};
 async function aiExtractPage(f,pageNo,pg){
   let image_base64=null;
   if (f.ext==='pdf'&&rawStore[f.id]){
@@ -1452,28 +1523,28 @@ function mergeAiResult(A,out,fileId,pageNo){
   if(!out) return;
   (out.boards||[]).forEach(b=>{
     if(!b.ref) return;
-    const norm=normBoard(b.ref); if(!norm) return;
+    const canonical=canonicalBoardRef(b.ref), norm=canonical.normalised; if(!norm) return;
     if(!A.boards[norm]){
       const det=detectBoards(b.ref)[0];
-      A.boards[norm]={norm, orig:b.ref, type:det?det.type:'UNK', pages:[], parent:null, parentConf:0, manual:false};
+      A.boards[norm]={norm, orig:canonical.display, type:det?det.type:'UNK', pages:[], parent:null, parentConf:0, manual:false};
     }
     const e=A.boards[norm];
     if(!e.pages.some(x=>x.fileId===fileId&&x.page===pageNo)) e.pages.push({fileId,page:pageNo});
     e.header=Object.assign(e.header||{}, Object.fromEntries(Object.entries(b).filter(([k,v])=>v!==null&&v!==''&&k!=='ref'&&k!=='confidence')));
     if (b.fed_from_ref && !e.manual){
-      const fb=normBoard(b.fed_from_ref);
+      const fb=canonicalBoardRef(b.fed_from_ref).normalised;
       if (fb && fb!==norm && 0.75>(e.parentConf||0)){ e.parent=fb; e.parentConf=0.75; }
     }
   });
   (out.devices||[]).forEach(d=>{
-    const bn=d.board_ref?normBoard(d.board_ref):null;
+    const bn=d.board_ref?canonicalBoardRef(d.board_ref).normalised:null;
     // regex rows win: skip AI rows for slots the schedule parser already filled
     const dup=A.rows.some(r=>r.kind==='schedule'&&r.boardNorm===bn&&r.way===d.way
       &&(!r.phase||!d.phase||r.phase===d.phase||d.phase==='L1L2L3'));
     if (dup) return;
     const space=d.device_class==='space';
     const spare=d.is_spare||d.device_class==='spare';
-    const device=AI_DEVICE_MAP[d.device_class]|| (d.is_spd?'SPD':null);
+    const device=(d.afdd&&d.device_class==='RCBO')?'AFDD+RCBO':(AI_DEVICE_MAP[d.device_class]|| (d.is_spd?'SPD':null));
     A.rows.push({id:uid(), boardNorm:bn, fileId, page:pageNo, line:null, status:'pending', kind:'ai',
       way:d.way??null, phase:d.phase&&d.phase!=='L1L2L3'?d.phase:(d.phase==='L1L2L3'?'3PH':null),
       desc:d.description||'', device, rating:d.rating_a??null, poles:d.poles??null,
@@ -1488,7 +1559,7 @@ function mergeAiResult(A,out,fileId,pageNo){
   (out.feeds||[]).forEach(fd=>{
     if(!fd.to_ref) return;
     A.feeders.push({id:uid(), fileId, page:pageNo, line:null,
-      from:fd.from_ref?normBoard(fd.from_ref):null, to:normBoard(fd.to_ref),
+      from:fd.from_ref?canonicalBoardRef(fd.from_ref).normalised:null, to:canonicalBoardRef(fd.to_ref).normalised,
       cable:(fd.cable_csa_mm2!=null||fd.cable_desc)?{orig:fd.cable_desc||(fd.cable_csa_mm2+'mm²'), size:fd.cable_csa_mm2??null,
         cpc:typeof fd.cable_cpc_mm2==='number'?fd.cable_cpc_mm2:null, cores:null, construction:null, ref:fd.cable_ref||null}:null,
       device:fd.device_class||null, rating:fd.rating_a??null, poles:fd.poles??null,
@@ -1547,6 +1618,14 @@ function splitTextPages(txt){
   return parts.map(t=>({lines: t.replace(/^\n+/,'').split(/\r?\n/).map(x=>({text:x}))}));
 }
 const fmtSize = b => b>=1048576 ? (b/1048576).toFixed(1)+' MB' : b>=1024 ? Math.round(b/1024)+' KB' : (b||0)+' B';
+const IMAGE_EXTS=new Set(['png','jpg','jpeg','webp']);
+const imageMime=ext=>ext==='jpg'||ext==='jpeg'?'image/jpeg':'image/'+ext;
+async function imageSize(blob){
+  if(window.createImageBitmap){const bitmap=await createImageBitmap(blob);const size={width:bitmap.width,height:bitmap.height};bitmap.close();return size;}
+  return new Promise((resolve,reject)=>{const url=URL.createObjectURL(blob),img=new Image();
+    img.onload=()=>{resolve({width:img.naturalWidth,height:img.naturalHeight});URL.revokeObjectURL(url);};
+    img.onerror=()=>{reject(new Error('The image could not be read'));URL.revokeObjectURL(url);};img.src=url;});
+}
 async function ingestFile(file){
   const p=state.cur; if(!p) return;
   const ext=(file.name.split('.').pop()||'').toLowerCase();
@@ -1570,11 +1649,32 @@ async function ingestFile(file){
       }
       rec.native=anyText;
       if (!anyText) rec.warn='Scanned PDF — no selectable text found. Pages will be read automatically with OCR.';
+    } else if (ext==='xlsx'){
+      if(!window.ExcelJS) throw new Error('The Excel reader is unavailable');
+      const buf=await file.arrayBuffer();rawStore[rec.id]=buf;rec.pct=35;renderDocs();
+      const workbook=new window.ExcelJS.Workbook();await workbook.xlsx.load(buf);
+      workbook.eachSheet(worksheet=>{
+        const lines=[{text:'Worksheet: '+worksheet.name}];
+        worksheet.eachRow({includeEmpty:false},row=>{
+          const cells=[];
+          for(let column=1;column<=Math.max(1,row.cellCount);column++) cells.push(row.getCell(column).text||'');
+          while(cells.length&&!cells[cells.length-1])cells.pop();
+          if(cells.some(Boolean)) lines.push({text:cells.join('\t')});
+        });
+        rec.pages.push({lines,w:840,h:Math.max(600,lines.length*20+80),sheetName:worksheet.name});
+      });
+      if(!rec.pages.length) throw new Error('The workbook contains no visible worksheets');
+      rec.native=true;
+    } else if (IMAGE_EXTS.has(ext)){
+      const buf=await file.arrayBuffer();rawStore[rec.id]=buf;
+      const size=await imageSize(new Blob([buf],{type:file.type||imageMime(ext)}));
+      rec.pages=[{lines:[],w:size.width,h:size.height,image:true}];rec.native=false;
+      rec.warn='Image scan — text will be read automatically with OCR.';
     } else if (ext==='txt'||ext==='csv'||ext==='md'||ext==='text'){
       const txt=await file.text();
       rec.pages=splitTextPages(txt); rec.native=true;
     } else {
-      throw new Error('Unsupported file type ".'+ext+'". Please upload PDF, TXT or CSV. (For Excel schedules, save the sheet as CSV first.)');
+      throw new Error('Unsupported file type ".'+ext+'". Please upload PDF, XLSX, PNG, JPG, WebP, TXT or CSV.');
     }
     rec.status='ready'; rec.pct=100;
     classifyFilePages(rec);
@@ -1669,7 +1769,7 @@ function renderDocs(){
         }, 'Remove');
       }
       if (a==='replace'){
-        const inp=document.createElement('input'); inp.type='file'; inp.accept='.pdf,.txt,.csv,.md';
+        const inp=document.createElement('input'); inp.type='file'; inp.accept='.pdf,.txt,.csv,.md,.xlsx,.png,.jpg,.jpeg,.webp';
         inp.addEventListener('change', async ()=>{
           if (!inp.files.length) return;
           p.files=p.files.filter(x=>x.id!==f.id); delete rawStore[f.id];
@@ -1736,7 +1836,7 @@ function renderCoverage(){
   sum.textContent = (s.pctComplete!=null? s.pctComplete+'% of header-declared ways captured · ':'')
     + s.boardsWithRows+'/'+s.boards+' boards have rows';
   sum.className = 'chip '+(s.pctComplete==null?'grey': s.pctComplete>=95?'green': s.pctComplete>=60?'amber':'red');
-  const rows=[...cov.perBoard].sort((a,b)=>(b.unaccountedWays||0)-(a.unaccountedWays||0)||(b.expectedWays||0)-(a.expectedWays||0));
+  const rows=cov.perBoard.filter(b=>b.inScope!==false).sort((a,b)=>(b.unaccountedWays||0)-(a.unaccountedWays||0)||(b.expectedWays||0)-(a.expectedWays||0));
   body.innerHTML = rows.map(b=>{
     const un=b.unaccountedWays;
     const unCell = un==null?'—': un>0?`<span class="chip red">${un} missing</span>`:'<span class="chip green">0</span>';
@@ -1859,11 +1959,16 @@ async function runAnalysis(opts){
   f.fileIds.forEach(id=>{ const fl=p.files.find(x=>x.id===id); if(fl) classifyFilePages(fl); });
   renderStages(2); if(anim) await sleep(220);
 
-  const regBoard=(b,fileId,pageNo)=>{
+  const regBoard=(b,fileId,pageNo,primary=false)=>{
     if(!A.boards[b.norm]) A.boards[b.norm]={norm:b.norm, orig:b.orig, type:b.type, pages:[], parent:null, parentConf:0, manual:false};
     const e=A.boards[b.norm];
-    if (!e.pages.some(x=>x.fileId===fileId&&x.page===pageNo)) e.pages.push({fileId,page:pageNo});
-    if (/[-.]/.test(b.orig) && !/[-.]/.test(e.orig)) e.orig=b.orig;
+    const pageRef=e.pages.find(x=>x.fileId===fileId&&x.page===pageNo);
+    if (!pageRef) e.pages.push({fileId,page:pageNo,section:b.section||null,primary:Boolean(primary)});
+    else {
+      if(b.section) pageRef.section=b.section;
+      if(primary) pageRef.primary=true;
+    }
+    if (String(b.orig||'').length>String(e.orig||'').length) e.orig=b.orig;
   };
 
   for (const id of f.fileIds){
@@ -1879,19 +1984,26 @@ async function runAnalysis(opts){
       const isSched=SCHEDULE_TYPES.has(pg.type) && pg.type!=='cable-schedule';
       let ctxBoard=null;
       if (isSched){
-        const topN=Math.max(6, Math.ceil(lines.length/3));
-        for (let i=0;i<Math.min(topN,lines.length);i++){
-          const bs=detectBoards(lines[i]); if(bs.length){ctxBoard=bs[0];break;}
-        }
-        if (!ctxBoard && pageBoards.length===1) ctxBoard=pageBoards[0];
-        if (!ctxBoard && prevBoard) ctxBoard=prevBoard; // continuation page
-        if (ctxBoard) prevBoard=ctxBoard;
+        ctxBoard=scheduleBoardFromLines(lines);
+        const hasBoardHeader=hasScheduleBoardHeader(lines);
+        if (!ctxBoard && !hasBoardHeader && prevBoard) ctxBoard=prevBoard; // continuation page
+        if (ctxBoard){ regBoard(ctxBoard,id,pageNo,true); prevBoard=ctxBoard; }
+        else if(hasBoardHeader) prevBoard=null;
       } else prevBoard=null;
       const parsedLegend=window.EstimationExtractorCore
         ? window.EstimationExtractorCore.parseProtectionLegend(lines.join('\n'))
         : {legend:null};
-      const ctx={board:ctxBoard?ctxBoard.norm:null, boardOrig:ctxBoard?ctxBoard.orig:null, sawHeader:false, inNotes:false,
+      const ctx={board:ctxBoard?ctxBoard.norm:null, boardOrig:ctxBoard?ctxBoard.orig:null, boardSection:ctxBoard?ctxBoard.section||null:null, sawHeader:false, inNotes:false,
         lastWay:null, lastPhase:null, pendingRows:[], protectionLegend:parsedLegend.legend};
+      const codedPage=isSched&&window.EstimationExtractorCore&&window.EstimationExtractorCore.parseTbaSchedulePage
+        ? window.EstimationExtractorCore.parseTbaSchedulePage(lines,ctx)
+        : {matched:false,rows:[]};
+      const addScheduleRow=(row,line)=>{
+        if (boardFilter && (!ctx.board || !boardFilter.has(ctx.board))) return;
+        if (devFilter && row.device && !devFilter.has(row.device.toUpperCase()) && !row.spare && !row.space && !row.incomer) return;
+        A.rows.push({id:uid(), boardNorm:ctx.board, boardSection:ctx.boardSection, fileId:id, page:pageNo, line, status:'pending', kind:'schedule', ...row});
+      };
+      if(codedPage.matched) codedPage.rows.forEach(row=>addScheduleRow(row,row.line));
       lines.forEach((t,li)=>{
         const lower=t.toLowerCase();
         if (f.ignore.length && f.ignore.some(w=>lower.includes(w))) return;
@@ -1900,11 +2012,9 @@ async function runAnalysis(opts){
             conf: (isSched||pg.type==='cable-schedule')?0.85:0.7, status:'pending', ...c});
         });
         if (isSched){
-          const row=parseScheduleLine(t, ctx);
+          const row=codedPage.matched?null:parseScheduleLine(t, ctx);
           if (row){
-            if (boardFilter && (!ctx.board || !boardFilter.has(ctx.board))) return;
-            if (devFilter && row.device && !devFilter.has(row.device.toUpperCase()) && !row.spare && !row.space && !row.incomer) return;
-            A.rows.push({id:uid(), boardNorm:ctx.board, fileId:id, page:pageNo, line:li, status:'pending', kind:'schedule', ...row});
+            addScheduleRow(row,li);
           }
           parseFeeders(t, pageBoards, ctx.board).forEach(fd=>A.feeders.push({id:uid(),fileId:id,page:pageNo,line:li,...fd}));
         } else if (pg.type==='sld'||pg.type==='schematic'||pg.type==='notes'){
@@ -1927,7 +2037,7 @@ async function runAnalysis(opts){
           }
         }
       });
-      if (isSched && window.EstimationExtractorCore){
+      if (isSched && !codedPage.matched && window.EstimationExtractorCore){
         window.EstimationExtractorCore.finalizeScheduleContext(ctx);
       }
     });
@@ -2313,7 +2423,9 @@ function renderReport(){
     host.innerHTML='<div class="report-empty">Analyse documents to build the take-off.</div>';
     return;
   }
-  facts.innerHTML=[['Boards',model.boards.length],['Device lines',model.deviceLineCount],['Total devices',model.grandTotal]]
+  const factItems=[['Boards',model.boards.length],['Device lines',model.deviceLineCount],['Total devices',model.grandTotal]];
+  if(model.associated&&model.associated.grandTotal) factItems.push(['Control items',model.associated.grandTotal]);
+  facts.innerHTML=factItems
     .map(([k,v])=>`<div class="report-fact"><dt>${esc(k)}</dt><dd>${v}</dd></div>`).join('');
   const issues=[];
   if (model.reviewCount) issues.push(model.reviewCount+' row'+(model.reviewCount===1?'':'s')+' need review');
@@ -2322,21 +2434,28 @@ function renderReport(){
   status.className='report-status '+(model.unassignedQty?'bad':(model.reviewCount||model.coverageIssueCount)?'warn':'ok');
   status.textContent=issues.length?issues.join(' · '):'Ready for issue';
   const colSpan=model.boards.length+4;
-  let html='<table class="report-matrix"><thead>'+
-    `<tr class="report-row-project"><th class="report-device">${esc(model.projectName)}</th><th class="report-unit">DB Reference</th>`+
-    model.boards.map(b=>`<th class="report-board"><button data-report-board="${esc(b.norm)}" title="Open ${esc(b.label)}">${esc(b.label)}</button></th>`).join('')+
-    '<th class="report-total"></th><th>WS</th></tr>'+
-    `<tr class="report-row-title"><th class="report-device">Distribution Board Devices</th><th class="report-unit"></th>${model.boards.map(()=>'<th></th>').join('')}<th></th><th></th></tr>`+
-    `<tr class="report-row-head"><th class="report-device">Discipline</th><th class="report-unit">Unit</th>${model.boards.map(()=>'<th>Qty</th>').join('')}<th class="report-total">Total</th><th>WS</th></tr></thead><tbody>`;
-  model.groups.forEach(group=>{
-    html+=`<tr class="report-section"><td class="report-device" colspan="${colSpan}">${esc(group.name)}</td></tr>`;
-    group.rows.forEach(row=>{
-      html+=`<tr class="report-data"><td class="report-device">${esc(row.label)}</td><td class="report-unit">Nr</td>`+
-        row.quantities.map((qty,index)=>`<td>${qty?`<button class="report-qty" data-report-board="${esc(model.boards[index].norm)}" title="Open ${esc(model.boards[index].label)}">${qty}</button>`:''}</td>`).join('')+
-        `<td class="report-total">${row.total}</td><td></td></tr>`;
+  const matrix=(groups,title,totalLabel,boardTotals,grandTotal)=>{
+    let table='<table class="report-matrix"><thead>'+
+      `<tr class="report-row-project"><th class="report-device">${esc(model.projectName)}</th><th class="report-unit">DB Reference</th>`+
+      model.boards.map(b=>`<th class="report-board"><button data-report-board="${esc(b.norm)}" title="Open ${esc(b.label)}">${esc(b.label)}</button></th>`).join('')+
+      '<th class="report-total"></th><th>WS</th></tr>'+
+      `<tr class="report-row-title"><th class="report-device">${esc(title)}</th><th class="report-unit"></th>${model.boards.map(()=>'<th></th>').join('')}<th></th><th></th></tr>`+
+      `<tr class="report-row-head"><th class="report-device">Discipline</th><th class="report-unit">Unit</th>${model.boards.map(()=>'<th>Qty</th>').join('')}<th class="report-total">Total</th><th>WS</th></tr></thead><tbody>`;
+    groups.forEach(group=>{
+      table+=`<tr class="report-section"><td class="report-device" colspan="${colSpan}">${esc(group.name)}</td></tr>`;
+      group.rows.forEach(row=>{
+        table+=`<tr class="report-data"><td class="report-device">${esc(row.label)}</td><td class="report-unit">Nr</td>`+
+          row.quantities.map((qty,index)=>`<td>${qty?`<button class="report-qty" data-report-board="${esc(model.boards[index].norm)}" title="Open ${esc(model.boards[index].label)}">${qty}</button>`:''}</td>`).join('')+
+          `<td class="report-total">${row.total}</td><td></td></tr>`;
+      });
     });
-  });
-  html+=`<tr class="report-final"><td class="report-device">DB Device Total</td><td class="report-unit"></td>${model.boardTotals.map(v=>`<td>${v||''}</td>`).join('')}<td class="report-total">${model.grandTotal}</td><td></td></tr></tbody></table>`;
+    return table+`<tr class="report-final"><td class="report-device">${esc(totalLabel)}</td><td class="report-unit"></td>${boardTotals.map(v=>`<td>${v||''}</td>`).join('')}<td class="report-total">${grandTotal}</td><td></td></tr></tbody></table>`;
+  };
+  let html=matrix(model.groups,'Distribution Board Devices','DB Device Total',model.boardTotals,model.grandTotal);
+  if(model.associated&&model.associated.grandTotal){
+    html+='<div class="report-subhead"><h3>Control &amp; associated equipment</h3></div>'+
+      matrix(model.associated.groups,'Control & Associated Equipment','Associated Equipment Total',model.associated.boardTotals,model.associated.grandTotal);
+  }
   host.innerHTML=html;
   host.querySelectorAll('[data-report-board]').forEach(control=>control.addEventListener('click',()=>{
     state.selectedBoard=control.dataset.reportBoard;
@@ -2660,8 +2779,8 @@ function renderAssistControls(f){
   const pageBoards=A&&f?[...new Set(A.rows.filter(r=>r.fileId===f.id&&r.page===V.page&&r.boardNorm).map(r=>r.boardNorm))]:[];
   if(!as.boardNorm&&pageBoards.length===1) as.boardNorm=pageBoards[0];
   if(as.boardNorm&&!boards.some(b=>b.norm===as.boardNorm))as.boardNorm=null;
-  sel.innerHTML='<option value="">Choose current board…</option>'+boards.map(b=>`<option value="${b.norm}" ${b.norm===as.boardNorm?'selected':''}>${esc(b.orig)}</option>`).join('');
-  $('#vAssistSeed').textContent=as.seed?as.seed.label:'No device selected';
+  sel.innerHTML='<option value="">Choose a board…</option>'+boards.map(b=>`<option value="${b.norm}" ${b.norm===as.boardNorm?'selected':''}>${esc(b.orig)}</option>`).join('');
+  $('#vAssistSeed').textContent=as.seed?as.seed.label:'None selected';
   const qty=(as.results||[]).reduce((sum,r)=>sum+(Number(r.qty)||1),0);
   $('#vAssistCount').textContent=qty+' match'+(qty===1?'':'es');
 }
@@ -2811,13 +2930,17 @@ async function renderViewer(){
   if (!f){ stage.innerHTML='<div class="empty">Upload a document first.</div>'; $('#vThumbs').innerHTML=''; $('#vDetList').innerHTML='<div class="empty">No detections.</div>'; return; }
   state.viewer.fileId=f.id;
   const V=state.viewer;
+  if (f.ext==='pdf' && rawStore[f.id] && !window.pdfjsLib){
+    try { await loadPdfjs(); }
+    catch (error) { stage.innerHTML='<div class="empty">PDF preview is unavailable: '+esc(error.message)+'</div>'; return; }
+  }
   V.page=Math.min(Math.max(1,V.page), f.pages.length);
   $('#vPageNo').textContent=V.page; $('#vPageCt').textContent=f.pages.length;
-  $('#vZoomPct').textContent=Math.round(V.zoom*100)+'%';
+  $('#vZoomPct').value=Math.round(V.zoom*100);
   stage.classList.toggle('v-dark', !!V.dark);
   const pg=f.pages[V.page-1];
   renderAssistControls(f);
-  $('#vOcrBtn').style.display=f.ext==='pdf'?'':'none';
+  $('#vOcrBtn').style.display=(f.ext==='pdf'||IMAGE_EXTS.has(f.ext))?'':'none';
   // §5.2 smart-highlight board select
   const bsel=$('#vBoardHl'); const A=p.analysis;
   const bkeep=V.boardHl||'';
@@ -2857,11 +2980,14 @@ async function renderViewer(){
   const th=$('#vThumbs'); th.innerHTML='';
   const tcache=vThumbCache[f.id]||{};
   const matchSet=new Set(matchPages.map(x=>x.page));
+  const imagePreviewUrl=IMAGE_EXTS.has(f.ext)&&rawStore[f.id]
+    ? URL.createObjectURL(new Blob([rawStore[f.id]],{type:imageMime(f.ext)})):null;
   f.pages.forEach((tp,i)=>{
     const d=document.createElement('div'); d.className='thumb-it'+(i+1===V.page?' sel':''); d.dataset.pg=i+1;
     const badge=(V.boardHl&&hlPages.includes(i+1))?'<span class="bdot">◈</span>':(q&&matchSet.has(i+1)?'<span class="bdot" style="background:#d99a06">●</span>':'');
-    d.innerHTML=(tcache[i+1]?`<img src="${tcache[i+1]}" alt="p${i+1}">`
+    d.innerHTML=(imagePreviewUrl?`<img src="${imagePreviewUrl}" alt="p${i+1}">`:tcache[i+1]?`<img src="${tcache[i+1]}" alt="p${i+1}">`
       :`<div class="txtpre">${esc(tp.lines.slice(0,26).map(l=>l.text).join('\n'))}</div>`)+badge+`<span class="tn">${i+1}</span>`;
+    if(imagePreviewUrl){const preview=d.querySelector('img');if(preview)preview.onload=()=>URL.revokeObjectURL(imagePreviewUrl);}
     d.addEventListener('click',()=>{V.page=i+1; renderViewer();});
     th.appendChild(d);
   });
@@ -2869,12 +2995,13 @@ async function renderViewer(){
   // stage
   const showOvl=$('#vOvl').checked;
   const isPdf=f.ext==='pdf' && rawStore[f.id] && window.pdfjsLib;
+  const isImage=IMAGE_EXTS.has(f.ext)&&rawStore[f.id];
   if (isPdf){
     try{
       let doc=V.pdfDocs[f.id];
       if (!doc){ doc=await window.pdfjsLib.getDocument({data:rawStore[f.id].slice(0)}).promise; V.pdfDocs[f.id]=doc; }
       const page=await doc.getPage(V.page);
-      // §5.2 25–800% zoom: render the canvas up to a safe pixel cap, CSS-scale the rest
+      // Render the canvas up to a safe pixel cap, then CSS-scale through 1000%.
       const rot=(page.rotate+V.rot)%360;
       const vp1=page.getViewport({scale:1, rotation:rot});
       const desired=1.35*V.zoom;
@@ -2911,14 +3038,29 @@ async function renderViewer(){
         wrap.style.transform='scale('+cssR+')'; wrap.style.transformOrigin='top left';
         const sizer=document.createElement('div');
         sizer.style.width=(cv.width*cssR)+'px'; sizer.style.height=(cv.height*cssR)+'px'; sizer.style.flex='none';
+        sizer.style.margin='0 auto';
         sizer.appendChild(wrap);
         stage.innerHTML=''; stage.appendChild(sizer);
       } else { stage.innerHTML=''; stage.appendChild(wrap); }
     }catch(e){ stage.innerHTML='<div class="empty">Could not render this PDF page: '+esc(e.message)+'</div>'; }
+  } else if(isImage){
+    const scale=V.zoom,wrap=document.createElement('div');wrap.className='v-pagewrap';
+    wrap.style.width=(pg.w*scale)+'px';wrap.style.height=(pg.h*scale)+'px';
+    const img=document.createElement('img');img.alt=f.name;img.style.width='100%';img.style.height='100%';img.style.display='block';
+    const imageUrl=URL.createObjectURL(new Blob([rawStore[f.id]],{type:imageMime(f.ext)}));
+    img.onload=()=>URL.revokeObjectURL(imageUrl);img.src=imageUrl;wrap.appendChild(img);
+    if(showOvl&&pg.lines) dets.forEach(d=>{
+      const line=pg.lines[d.line];if(!line||!line.bbox)return;
+      const overlay=document.createElement('div');overlay.className='ovl '+d.color;overlay.title=d.label;
+      overlay.style.left=(line.bbox[0]*scale-2)+'px';overlay.style.top=(line.bbox[1]*scale-1)+'px';
+      overlay.style.width=(line.bbox[2]*scale+4)+'px';overlay.style.height=(line.bbox[3]*scale+2)+'px';wrap.appendChild(overlay);
+    });
+    bindAssistedDrag(wrap,f,pg,scale);
+    stage.innerHTML='';stage.appendChild(wrap);
   } else {
     // text page rendering with inline highlights
     const div=document.createElement('div'); div.className='v-textpage';
-    div.style.transform='scale('+V.zoom+')'; div.style.transformOrigin='top center';
+    div.style.transform='scale('+V.zoom+')'; div.style.transformOrigin='top left';
     const byLine={};
     if (showOvl) dets.forEach(d=>{ (byLine[d.line]=byLine[d.line]||[]).push(d); });
     div.innerHTML=(pg.lines||[]).map((l,li)=>{
@@ -2929,7 +3071,9 @@ async function renderViewer(){
       if (ds && !q){ const top=ds.find(x=>x.kind==='assisted')||ds.find(x=>x.kind==='boardhl')||ds[0]; t=`<span class="hl ${top.color}" data-line="${li}" title="${esc(ds.map(x=>x.label).join(' · '))}">${t}</span>`; }
       return `<span id="vline-${li}" data-line="${li}">${t}</span>`;
     }).join('\n');
-    stage.innerHTML=''; stage.appendChild(div);
+    const sizer=document.createElement('div');sizer.className='v-textsizer';sizer.appendChild(div);
+    stage.innerHTML='';stage.appendChild(sizer);
+    sizer.style.width=(div.offsetWidth*V.zoom)+'px';sizer.style.height=(div.offsetHeight*V.zoom)+'px';
     if(V.assist.enabled) div.querySelectorAll('[data-line]').forEach(el=>el.addEventListener('click',()=>{
       const li=Number(el.dataset.line),row=p.analysis?.rows.find(r=>r.fileId===f.id&&r.page===V.page&&r.line===li&&r.device&&r.rating!==null);
       applyAssistedSeed(pg.lines[li]?.text||'',row,{fileId:f.id,page:V.page,line:li});
@@ -2971,18 +3115,33 @@ function jumpToEvidence(r){
 }
 $('#vPrev').addEventListener('click', ()=>{ state.viewer.page--; renderViewer(); });
 $('#vNext').addEventListener('click', ()=>{ state.viewer.page++; renderViewer(); });
-/* §5.2 — zoom 25%–800% */
-const vZoomBy=k=>{ state.viewer.zoom=Math.max(.25,Math.min(8,state.viewer.zoom*k)); renderViewer(); };
+const clampViewerZoom=value=>Math.max(.25,Math.min(10,Number(value)||1));
+async function setViewerZoom(next,anchor){
+  const stage=$('#vStage'),oldZoom=state.viewer.zoom,newZoom=clampViewerZoom(next);
+  const rect=stage.getBoundingClientRect();
+  const anchorX=anchor?Math.max(0,Math.min(stage.clientWidth,anchor.clientX-rect.left)):stage.clientWidth/2;
+  const anchorY=anchor?Math.max(0,Math.min(stage.clientHeight,anchor.clientY-rect.top)):stage.clientHeight/2;
+  const contentX=(stage.scrollLeft+anchorX)/Math.max(.01,oldZoom);
+  const contentY=(stage.scrollTop+anchorY)/Math.max(.01,oldZoom);
+  state.viewer.zoom=newZoom;
+  await renderViewer();
+  stage.scrollLeft=Math.max(0,contentX*newZoom-anchorX);
+  stage.scrollTop=Math.max(0,contentY*newZoom-anchorY);
+}
+const vZoomBy=(factor,anchor)=>setViewerZoom(state.viewer.zoom*factor,anchor);
 $('#vZoomIn').addEventListener('click', ()=>vZoomBy(1.25));
 $('#vZoomOut').addEventListener('click', ()=>vZoomBy(1/1.25));
+$('#vZoomPct').addEventListener('change',e=>setViewerZoom(Number(e.target.value)/100));
+$('#vZoomPct').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();e.target.blur();}});
 $('#vFit').addEventListener('click', async ()=>{
   const V=state.viewer, f=viewerFile(); V.rot=0;
   if (f&&f.ext==='pdf'&&V.pdfDocs[f.id]){
     try{ const page=await V.pdfDocs[f.id].getPage(V.page);
       const vp=page.getViewport({scale:1.35, rotation:page.rotate%360});
-      V.zoom=Math.max(.25,Math.min(8,($('#vStage').clientWidth-40)/vp.width)); }
+      V.zoom=clampViewerZoom(($('#vStage').clientWidth-40)/vp.width); }
     catch(e){ V.zoom=1; }
-  } else V.zoom=1;
+  } else if(f&&IMAGE_EXTS.has(f.ext)) V.zoom=clampViewerZoom(($('#vStage').clientWidth-40)/Math.max(1,f.pages[V.page-1].w||1));
+  else V.zoom=clampViewerZoom(($('#vStage').clientWidth-40)/840);
   renderViewer();
 });
 $('#vRotate').addEventListener('click', ()=>{ state.viewer.rot=(state.viewer.rot+90)%360; renderViewer(); });
@@ -2994,16 +3153,21 @@ $('#vPrint').addEventListener('click', ()=>{
   const cv=$('#vStage canvas'), tp=$('#vStage .v-textpage');
   const w=window.open('','_blank'); if(!w){ toast('Pop-up blocked — allow pop-ups to print'); return; }
   if (cv) w.document.write('<img src="'+cv.toDataURL('image/png')+'" style="max-width:100%">');
+  else if (IMAGE_EXTS.has(viewerFile()?.ext)&&rawStore[viewerFile().id]){
+    const url=URL.createObjectURL(new Blob([rawStore[viewerFile().id]],{type:imageMime(viewerFile().ext)}));
+    w.document.write('<img src="'+url+'" style="max-width:100%">');setTimeout(()=>URL.revokeObjectURL(url),5000);
+  }
   else if (tp) w.document.write('<pre style="font:11px/1.7 monospace;white-space:pre-wrap">'+esc(tp.textContent)+'</pre>');
   w.document.close(); w.focus(); setTimeout(()=>w.print(),250);
 });
 $('#vDownload').addEventListener('click', ()=>{
   const f=viewerFile(); if(!f) return;
-  const blob = (f.ext==='pdf'&&rawStore[f.id])
-    ? new Blob([rawStore[f.id]],{type:'application/pdf'})
+  const binary=rawStore[f.id]&&(f.ext==='pdf'||f.ext==='xlsx'||IMAGE_EXTS.has(f.ext));
+  const blob = binary
+    ? new Blob([rawStore[f.id]],{type:f.ext==='pdf'?'application/pdf':f.ext==='xlsx'?'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':imageMime(f.ext)})
     : new Blob([f.pages.map(pg=>(pg.lines||[]).map(l=>l.text).join('\n')).join('\n\n— page break —\n\n')],{type:'text/plain'});
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
-  a.download=f.ext==='pdf'?f.name:(f.name.replace(/\.[^.]+$/,'')+'.txt');
+  a.download=binary?f.name:(f.name.replace(/\.[^.]+$/,'')+'.txt');
   a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),4000);
 });
 $('#vSearch').addEventListener('input', ()=>renderViewer());
@@ -3016,8 +3180,27 @@ $('#vSearchNext').addEventListener('click', ()=>{     // jump to the next page c
   state.viewer.page=nxt; renderViewer();
 });
 $('#vSearch').addEventListener('keydown', e=>{ if(e.key==='Enter') $('#vSearchNext').click(); });
-/* §5.2 — ctrl+wheel zoom on the canvas, keyboard page/zoom */
-$('#vStage').addEventListener('wheel', e=>{ if(e.ctrlKey){ e.preventDefault(); vZoomBy(e.deltaY<0?1.15:1/1.15); } }, {passive:false});
+/* Ctrl+wheel zooms around the pointer; drag the page to pan in any direction. */
+$('#vStage').addEventListener('wheel', e=>{ if(e.ctrlKey){ e.preventDefault(); vZoomBy(e.deltaY<0?1.15:1/1.15,e); } }, {passive:false});
+let viewerPan=null;
+$('#vStage').addEventListener('pointerdown',e=>{
+  if(e.button!==0||state.viewer.assist.enabled) return;
+  const stage=$('#vStage');
+  viewerPan={id:e.pointerId,x:e.clientX,y:e.clientY,left:stage.scrollLeft,top:stage.scrollTop};
+  stage.classList.add('is-panning');stage.setPointerCapture(e.pointerId);e.preventDefault();
+});
+$('#vStage').addEventListener('pointermove',e=>{
+  if(!viewerPan||viewerPan.id!==e.pointerId) return;
+  const stage=$('#vStage');stage.scrollLeft=viewerPan.left-(e.clientX-viewerPan.x);stage.scrollTop=viewerPan.top-(e.clientY-viewerPan.y);
+});
+const stopViewerPan=e=>{
+  if(!viewerPan||viewerPan.id!==e.pointerId) return;
+  const stage=$('#vStage');stage.classList.remove('is-panning');
+  if(stage.hasPointerCapture(e.pointerId)) stage.releasePointerCapture(e.pointerId);
+  viewerPan=null;
+};
+$('#vStage').addEventListener('pointerup',stopViewerPan);
+$('#vStage').addEventListener('pointercancel',stopViewerPan);
 document.addEventListener('keydown', e=>{
   if (!$('#pt-viewer').classList.contains('active')) return;
   if (e.target.matches('input,select,textarea')) return;
@@ -3059,21 +3242,27 @@ function fileSchedule(f){
     const lines=(pg.lines||[]).map(l=>l.text);
     const isSched=SCHEDULE_TYPES.has(pg.type)&&pg.type!=='cable-schedule';
     if (!isSched){ prevBoard=null; return; }
-    let ctxBoard=null;
-    for (let i=0;i<Math.min(8,lines.length);i++){ const bs=detectBoards(lines[i]); if(bs.length){ctxBoard=bs[0];break;} }
+    let ctxBoard=scheduleBoardFromLines(lines);
     if (!ctxBoard&&prevBoard) ctxBoard=prevBoard;
     if (ctxBoard) prevBoard=ctxBoard;
     const parsedLegend=window.EstimationExtractorCore
       ? window.EstimationExtractorCore.parseProtectionLegend(lines.join('\n'))
       : {legend:null};
-    const ctx={board:ctxBoard?ctxBoard.norm:null, sawHeader:false, inNotes:false,
+    const ctx={board:ctxBoard?ctxBoard.norm:null, boardSection:ctxBoard?ctxBoard.section||null:null, sawHeader:false, inNotes:false,
       lastWay:null, lastPhase:null, pendingRows:[], protectionLegend:parsedLegend.legend};
+    const codedPage=window.EstimationExtractorCore&&window.EstimationExtractorCore.parseTbaSchedulePage
+      ? window.EstimationExtractorCore.parseTbaSchedulePage(lines,ctx)
+      : {matched:false,rows:[]};
+    if(codedPage.matched) codedPage.rows.forEach(row=>{
+      const bn=ctx.board||'?';row.fileId=f.id;row.page=pi+1;
+      (rowsByBoard[bn]=rowsByBoard[bn]||[]).push(row);
+    });
     lines.forEach((t,li)=>{
-      const row=parseScheduleLine(t,ctx);
+      const row=codedPage.matched?null:parseScheduleLine(t,ctx);
       if (row){ const bn=ctx.board||'?'; row.fileId=f.id; row.page=pi+1; row.line=li;
         (rowsByBoard[bn]=rowsByBoard[bn]||[]).push(row); }
     });
-    if (window.EstimationExtractorCore) window.EstimationExtractorCore.finalizeScheduleContext(ctx);
+    if (!codedPage.matched&&window.EstimationExtractorCore) window.EstimationExtractorCore.finalizeScheduleContext(ctx);
   });
   return rowsByBoard;
 }
