@@ -1580,9 +1580,7 @@ function renderProjHeader(){
 }
 
 /* ============================ FILE INGESTION ============================ */
-/* PDF + OCR engines are vendored (vendor/pdfjs, vendor/tesseract) so the
- * viewer and OCR work offline — required for the downloadable desktop app.
- * The CDN is only a fallback if the local copies are missing. */
+/* PDF and OCR engines are packaged locally so document reading also works offline. */
 function loadScript(src){
   return new Promise((res,rej)=>{
     const s=document.createElement('script');
