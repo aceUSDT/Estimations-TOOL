@@ -1410,35 +1410,61 @@ function renderProjHeader(){
 }
 
 /* ============================ FILE INGESTION ============================ */
+/* PDF + OCR engines are vendored (vendor/pdfjs, vendor/tesseract) so the
+ * viewer and OCR work offline — required for the downloadable desktop app.
+ * The CDN is only a fallback if the local copies are missing. */
+function loadScript(src){
+  return new Promise((res,rej)=>{
+    const s=document.createElement('script');
+    s.src=src; s.onload=()=>res(); s.onerror=()=>rej(new Error('failed '+src));
+    document.head.appendChild(s);
+  });
+}
 let pdfjsPromise=null;
 function loadPdfjs(){
   if (pdfjsPromise) return pdfjsPromise;
-  pdfjsPromise = new Promise((res,rej)=>{
-    if (window.pdfjsLib) return res(window.pdfjsLib);
-    const s=document.createElement('script');
-    s.src='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
-    s.onload=()=>{ try{ window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'; }catch(e){} res(window.pdfjsLib); };
-    s.onerror=()=>rej(new Error('Could not load the PDF engine (no internet access?)'));
-    document.head.appendChild(s);
-  });
+  pdfjsPromise = (async()=>{
+    if (window.pdfjsLib) return window.pdfjsLib;
+    try{
+      await loadScript('./vendor/pdfjs/pdf.min.js');
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc=new URL('vendor/pdfjs/pdf.worker.min.js', location.href).href;
+    }catch(e){
+      await loadScript('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js')
+        .catch(()=>{ throw new Error('Could not load the PDF engine (no internet access?)'); });
+      try{ window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'; }catch(_){}
+    }
+    return window.pdfjsLib;
+  })();
+  pdfjsPromise.catch(()=>{ pdfjsPromise=null; });
   return pdfjsPromise;
 }
 let tesseractPromise=null, ocrWorkerPromise=null, ocrBusy=false,ocrProgressContext='';
+let tesseractLocal=false; // true when the vendored engine loaded (use vendored worker/core/lang too)
 function loadTesseract(){
   if (tesseractPromise) return tesseractPromise;
-  tesseractPromise=new Promise((res,rej)=>{
-    if (window.Tesseract) return res(window.Tesseract);
-    const s=document.createElement('script');
-    s.src='https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
-    s.onload=()=>res(window.Tesseract);
-    s.onerror=()=>rej(new Error('Could not load the OCR engine. Check the internet connection and try again.'));
-    document.head.appendChild(s);
-  });
+  tesseractPromise=(async()=>{
+    if (window.Tesseract) return window.Tesseract;
+    try{
+      await loadScript('./vendor/tesseract/tesseract.min.js');
+      tesseractLocal=true;
+    }catch(e){
+      await loadScript('https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js')
+        .catch(()=>{ throw new Error('Could not load the OCR engine. Check the internet connection and try again.'); });
+    }
+    return window.Tesseract;
+  })();
+  tesseractPromise.catch(()=>{ tesseractPromise=null; });
   return tesseractPromise;
 }
 async function getOcrWorker(){
   if (!ocrWorkerPromise){
     ocrWorkerPromise=loadTesseract().then(T=>T.createWorker('eng',1,{
+      ...(tesseractLocal?{
+        workerPath:new URL('vendor/tesseract/worker.min.js',location.href).href,
+        corePath:new URL('vendor/tesseract/',location.href).href,
+        langPath:new URL('vendor/tesseract',location.href).href,
+        gzip:false,
+      }:{}),
       logger:m=>{
         if (!ocrBusy) return;
         const pct=Number.isFinite(m.progress)?' '+Math.round(m.progress*100)+'%':'';
