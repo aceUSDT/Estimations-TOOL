@@ -13,6 +13,7 @@ const PACK = path.resolve(HERE, '../../netlify/functions/lib/domain-pack.mjs');
 
 delete process.env.ANTHROPIC_API_KEY;
 delete process.env.ANTHROPIC_AUTH_TOKEN;
+delete process.env.GEMINI_API_KEY;
 const { default: handler } = await import(pathToFileURL(FN));
 const { EXTRACTION_SCHEMA, EXTRACTION_SYSTEM_PROMPT, coerceResult } = await import(pathToFileURL(PACK));
 
@@ -26,6 +27,8 @@ let res = await handler(new Request('http://x/extract', { method: 'GET' }));
 let body = await res.json();
 check('GET health 200', res.status === 200);
 check('GET reports unconfigured without key', body.configured === false);
+check('GET health reports providers', body.providers && body.providers.anthropic === false && body.providers.gemini === false);
+check('GET health verify off without both keys', body.verify === false);
 
 /* method guard */
 res = await handler(new Request('http://x/extract', { method: 'DELETE' }));
