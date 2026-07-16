@@ -1,4 +1,4 @@
-# Estimation 101 — desktop app (Windows + macOS)
+# Estimation 101 — desktop app (Windows first, plus macOS)
 
 A native desktop wrapper (Electron) around the deployed web app. It opens a real
 application window pointing at the live site (`estimationtoolz.netlify.app`), so:
@@ -11,7 +11,17 @@ application window pointing at the live site (`estimationtoolz.netlify.app`), so
 
 Override the target site with the `ESTIMATION101_URL` env var (e.g. a staging deploy).
 
-## Build the installers
+## Build the installers — CI (recommended)
+
+The repo has a GitHub Actions workflow (`.github/workflows/desktop.yml`) that builds
+both installers on native runners — no local toolchain needed:
+
+- **On demand:** GitHub → Actions → *Desktop installers* → *Run workflow*, then download
+  `estimation101-Windows` / `estimation101-macOS` from the run's artifacts.
+- **Release:** push a tag like `desktop-v1.0.0` — the `.exe`, `.dmg` and mac `.zip` are
+  attached to a GitHub Release automatically, giving users a permanent download page.
+
+## Build locally (alternative)
 
 Requires Node 18+. Run from this `desktop/` folder:
 
@@ -20,10 +30,10 @@ cd desktop
 npm install
 
 # Windows installer (.exe / NSIS) — buildable on Windows, or on Linux/macOS via wine:
-npm run dist:win        # → desktop/release/Estimation 101 Setup <version>.exe
+npm run dist:win        # → desktop/release/Estimation 101-<version>-win-x64.exe
 
-# macOS installer (.dmg) — must be built ON macOS (Apple toolchain):
-npm run dist:mac        # → desktop/release/Estimation 101-<version>.dmg
+# macOS installer (.dmg + .zip) — must be built ON macOS (Apple toolchain):
+npm run dist:mac        # → desktop/release/Estimation 101-<version>-mac-*.dmg
 
 # Run locally without packaging:
 npm start
@@ -32,34 +42,51 @@ npm start
 `electron-builder` downloads the Electron binaries on first `npm install`; the produced
 installers are unsigned unless you configure signing (below).
 
+## Windows distribution — getting into the "software centre"
+
+Three routes, in increasing order of polish. The priority platform is Windows.
+
+1. **Now (no accounts needed):** the CI `.exe` from a GitHub Release. Users download and
+   install; SmartScreen shows a one-time "unrecognised app" warning ("More info" → "Run
+   anyway") because the build is unsigned.
+2. **Signed `.exe` (removes the warning):** buy an Authenticode code-signing certificate
+   (OV/EV, or Azure Trusted Signing), add it as repo secrets (`CSC_LINK`,
+   `CSC_KEY_PASSWORD`), and remove `CSC_IDENTITY_AUTO_DISCOVERY: 'false'` from the
+   workflow. Same download flow, no scare page.
+3. **Microsoft Store (searchable, one-click install — the true "software centre"):**
+   needs a **Partner Center developer account** (one-off ~$19 individual / $99 company).
+   Then electron-builder's `appx` target produces the Store package:
+   `npx electron-builder --win appx` with `win.appx.identityName` / `publisher` /
+   `publisherDisplayName` set to the values Partner Center assigns. Store packages are
+   signed by Microsoft on ingestion — no certificate purchase required. Submit the
+   `.appx` in Partner Center → certification → users find it by searching the Store.
+   (For corporate SCCM/Intune "Software Center", IT deploys either the signed `.exe`
+   or the Store package via Intune — both work.)
+
 ## Icons
 
-Add before building (placeholders referenced by `package.json`):
+Optional — the default Electron icon is used until you add branded ones. To brand the app,
+add the files below **and** point `win.icon` / `mac.icon` at them in `desktop/package.json`:
 
 - `desktop/build/icon.ico` — Windows, 256×256 multi-size `.ico`
 - `desktop/build/icon.icns` — macOS, from a 1024×1024 master
-
-Without them electron-builder falls back to the default Electron icon.
 
 ---
 
 ## NEEDS HUMAN ACTION — code signing & store submission
 
 Installers build without these, but "download from a software centre" and no OS security
-warnings require signing identities only the account owner can provide:
+warnings require identities only the account owner can provide:
 
-1. **Windows — Microsoft Store / signed `.exe`:** an Authenticode code-signing certificate
-   (OV or EV). For the Microsoft Store you also need a Partner Center account. Configure via
-   electron-builder `win.certificateFile` / `certificatePassword` (or Azure Trusted Signing).
-   Unsigned `.exe` installs but shows a SmartScreen warning.
-2. **macOS — Mac App Store / notarized `.dmg`:** an Apple Developer Program membership
-   ($99/yr), a "Developer ID Application" certificate, and notarization (`notarytool`).
-   Configure via electron-builder `mac.identity` + `afterSign` notarize hook. Unsigned
-   `.dmg` will be blocked by Gatekeeper.
-3. **CI to produce both from one place:** a GitHub Actions matrix (windows-latest +
-   macos-latest) running `npm run dist:win` / `dist:mac` and uploading the artifacts, with the
-   signing secrets stored as repo secrets. Say the word and I'll add the workflow — it needs
-   the certificates/credentials from steps 1–2 to actually sign.
+1. **Windows — Microsoft Store:** a Partner Center account (route 3 above). Once you have
+   the `identityName` / `publisher` values, I can add the `appx` target + a Store build to
+   the CI workflow.
+2. **Windows — signed `.exe`:** an Authenticode certificate (route 2 above), added as
+   `CSC_LINK` / `CSC_KEY_PASSWORD` repo secrets.
+3. **macOS — notarized `.dmg`:** Apple Developer Program ($99/yr), a "Developer ID
+   Application" certificate, and notarization (`APPLE_ID` / `APPLE_APP_SPECIFIC_PASSWORD` /
+   `APPLE_TEAM_ID` secrets + `mac.identity` and an `afterSign` notarize hook). Unsigned
+   `.dmg` needs right-click → Open on first launch.
 
-Until signing is set up, the installers are usable for internal distribution (users click
+Until signing is set up, the CI installers are usable for internal distribution (users click
 through the OS warning), which is the fastest way to get the app in testers' hands.

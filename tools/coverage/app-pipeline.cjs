@@ -15,6 +15,7 @@ const EstimationExtractorCore = globalThis.EstimationExtractorCore;
 
 /* ==================== ELECTRICAL KNOWLEDGE BASE (index.html:733) ==================== */
 const DEVICE_DEFS = [
+  {name:'AFDD+RCBO', re:/\b(?:AFDD|AFFD)\s*(?:\+|combined\s+with)?\s*RCBO\b|\bRCBO\s*(?:\+|combined\s+with)\s*(?:AFDD|AFFD)\b/i},
   {name:'RCBO',      re:/\bRCBOs?\b/i},
   {name:'MCCB',      re:/\bMCCBs?\b/i},
   {name:'ACB',       re:/\bACBs?\b/i},
@@ -23,6 +24,14 @@ const DEVICE_DEFS = [
   {name:'SPD',       re:/\bSPDs?\b|\bsurge protect(?:ion|ive) device\b/i},
   {name:'Isolator',  re:/\bisolators?\b|\bswitch[- ]disconnectors?\b/i},
   {name:'Contactor', re:/\bcontactors?\b/i},
+  {name:'Time clock',re:/\b(?:time\s*clock|timeclock)s?\b/i},
+  {name:'Photocell', re:/\b(?:photo\s*cell|photocell)s?\b/i},
+  {name:'Relay',     re:/\brelays?\b/i},
+  {name:'Timer',     re:/\btimers?\b/i},
+  {name:'Starter',   re:/\b(?:motor\s+)?starters?\b/i},
+  {name:'Overload',  re:/\boverloads?\b/i},
+  {name:'Transformer',re:/\btransformers?\b/i},
+  {name:'DALI controller',re:/\bDALI\s+(?:headend|controller|control\s+unit)\b/i},
   {name:'Fuse',      re:/\bfuses?\b|\bHRC\b/i},
   {name:'Meter',     re:/\bMID meter\b|\bkWh meter\b|\bmeters?\b/i},
   {name:'Switch',    re:/\bmain switch\b|\bswitch fuse\b/i},
@@ -59,6 +68,7 @@ const BOARD_PATTERNS = [
   {re:/\b[Pp]anel\s+([A-Z](?:[\s.\-_]?\d+)?)\b/g, type:'CTRL', prefix:'Panel '},
 ];
 const normBoard = s => String(s).toUpperCase().replace(/[\s.\-_\/]+/g,'');
+const canonicalBoardRef = EstimationExtractorCore.canonicalBoardReference;
 
 const CABLE_PATTERNS = [
   {re:/(\d+)\s*[Cc]\s*(?:\+\s*E)?\s*[x×]?\s*(\d+(?:\.\d+)?)\s*mm[²2]?/g, cores:1, size:2},
@@ -69,8 +79,19 @@ const CABLE_PATTERNS = [
 ];
 const CONSTRUCTIONS = ['XLPE','SWA','PVC','LSZH','LSF','FP200','MICC','AWA'];
 
-const ratingOf = s => { const m=s.match(/\b(\d+(?:\.\d+)?)\s*A(?:mps?)?\b/i); return m?parseFloat(m[1]):null; };
-const curveOf  = s => { const m=s.match(/\b(?:type|curve)\s*([BCD])\b/i); return m?m[1].toUpperCase():null; };
+const curveEvidenceOf = s => EstimationExtractorCore.extractTrippingCurve(s,{deviceContext:/\b(?:MCB|MCCB|RCBO|AFDD|circuit breaker)\b/i.test(s)});
+const ratingOf = s => { const m=s.match(/\b(\d+(?:\.\d+)?)\s*A(?:mps?)?\b/i); return m?parseFloat(m[1]):curveEvidenceOf(s)?.rating??null; };
+const curveOf  = s => curveEvidenceOf(s)?.value||null;
+const poleConfigOf = s => {
+  if (/\b(?:SPN|single\s+pole\s+(?:and|&)\s+neutral|1P\s*\+\s*N)\b/i.test(s)) return 'SPN';
+  if (/\b(?:DPN|double\s+pole\s+(?:and|&)\s+neutral|2P\s*\+\s*N)\b/i.test(s)) return 'DPN';
+  if (/\b(?:TPN|TP\s*&\s*N|triple\s+pole\s+(?:and|&)\s+neutral|3P\s*\+\s*N)\b/i.test(s)) return 'TPN';
+  if (/\b(?:4P|four[- ]pole)\b/i.test(s)) return '4P';
+  if (/\b(?:SP|single[- ]pole|1P)\b/i.test(s)) return 'SP';
+  if (/\b(?:DP|double[- ]pole|2P)\b/i.test(s)) return 'DP';
+  if (/\b(?:TP|triple[- ]pole|three[- ]pole|3P)\b/i.test(s)) return 'TP';
+  return null;
+};
 const polesOf  = s => {
   const m=s.match(/\b([1234])\s*P(?:ole)?\b/i); if(m) return +m[1];
   if (/\bTP&?N\b|\bfour[- ]pole\b/i.test(s)) return 4;
@@ -81,7 +102,7 @@ const polesOf  = s => {
 };
 const sensOf   = s => { const m=s.match(/\b(\d+)\s*mA\b/); return m?+m[1]:null; };
 const phaseOf  = s => { const m=s.match(/\b(L[123])\b/); return m?m[1]:(/\bTP&?N\b|\b3PH\b|\bthree phase\b/i.test(s)?'3PH':null); };
-const kaOf     = s => { const m=s.match(/\b(\d+(?:\.\d+)?)\s*kA\b/i); return m?parseFloat(m[1]):null; };
+const kaOf     = s => EstimationExtractorCore.extractBreakingCapacity(s)?.value??null;
 
 /* ==================== BOARD DETECTION (index.html:806) ==================== */
 function detectBoards(line){
@@ -99,19 +120,49 @@ function detectBoards(line){
         orig = orig.replace(/[.,:]+$/,'');
         if (!/[\d\/-]/.test(orig) || BOARD_REF_STOPWORDS.has(orig.toUpperCase())) continue;
       }
-      const norm = normBoard(orig);
+      const canonical = canonicalBoardRef(orig);
+      orig = canonical.display;
+      const norm = canonical.normalised;
       if (!norm || /^(DB|MDB|SMDB|LDB|PDB|MCC|MCP)$/.test(norm) && !bp.fixed && !/\d/.test(norm) && norm!=='MDB' && norm!=='SMDB') continue;
       if (found.some(f=>f.norm===norm)) continue;
       if (bp.type==='DB' && !bp.guard){
         const pre = line[m.index-1];
         if (pre && /[A-Za-z]/.test(pre)) continue;
       }
-      found.push({orig, norm, type:bp.type, start:m.index, end:m.index+m[0].length});
+      found.push({orig, norm, type:bp.type, section:canonical.splitSection, start:m.index, end:m.index+m[0].length});
     }
   }
   return found
     .filter(f=>!found.some(o=>o!==f && o.start<=f.start && o.end>=f.end && (o.end-o.start)>(f.end-f.start)))
-    .map(({orig,norm,type})=>({orig,norm,type}));
+    .map(({orig,norm,type,section})=>({orig,norm,type,section}));
+}
+
+function scheduleBoardFromLines(lines){
+  let sawLabel=false;
+  for(const line of lines){
+    const source=String(line||'');
+    const label=source.match(/\bDB\s+REFERENCE\b|\b(?:DISTRIBUTION\s+)?BOARD\s*(?:REFERENCE|REF|IDENTITY)?\s*[:=\-]|\bDISTRIBUTION\s+BOARD\s+SCHEDULE\b\s*[—–:\-]\s*(?=[A-Z0-9])/i);
+    if(!label) continue;
+    sawLabel=true;
+    const tail=source.slice(label.index+label[0].length).trim();
+    const detected=detectBoards(tail)[0];
+    if(detected) return detected;
+    const token=tail.match(/^([A-Z0-9][A-Z0-9._\/-]{1,30})/i)?.[1];
+    if(!token||!/[\d._\/-]/.test(token)) continue;
+    const canonical=canonicalBoardRef(token);
+    if(canonical.normalised) return {orig:canonical.display,norm:canonical.normalised,type:'UNK',section:canonical.splitSection};
+  }
+  if(sawLabel) return null;
+  const topN=Math.max(6,Math.ceil(lines.length/3));
+  for(let index=0;index<Math.min(topN,lines.length);index++){
+    if(!/\b(?:board|panel)\b/i.test(String(lines[index]||''))) continue;
+    const boards=detectBoards(lines[index]);if(boards.length)return boards[0];
+  }
+  return null;
+}
+
+function hasScheduleBoardHeader(lines){
+  return (lines||[]).some(line=>/\bDB\s+REFERENCE\b|\b(?:DISTRIBUTION\s+)?BOARD\s*(?:REFERENCE|REF|IDENTITY)?\s*[:=\-]|\bDISTRIBUTION\s+BOARD\s+SCHEDULE\b\s*[—–:\-]\s*(?=[A-Z0-9])/i.test(String(line||'')));
 }
 
 /* ==================== CABLE DETECTION (index.html:828) ==================== */
@@ -157,6 +208,9 @@ function classifyPage(text, pageIdx, totalPages){
   const hasWays = (low.match(/\bway\s*\d+|\bcct\s*\d+|\bcircuit\s*\d+/g)||[]).length;
   if (hasWays>=3) add('db-schedule',4);
   if (/board ref|board reference/.test(low)) add('db-schedule',2);
+  const phaseRows=(text.match(/\bL[123]\b/g)||[]).length;
+  const codedRows=(text.match(/(?:^|\n)\s*(?:\d{1,3}\s+)?(?:L[123]\s+)?\d+(?:\.\d+)?\s+[JKLMN]\s+[BCD]\b[^\n]*\b(?:Ri|Ra)\s+[LP]\b/gim)||[]).length;
+  if(codedRows>=2&&phaseRows>=3) add('db-schedule',9);
   if (pageIdx===0 && totalPages>1 && /project|issued|revision/.test(low) && hasWays===0) add('cover',3);
   if (/contents/.test(low) && pageIdx===0) add('register',2);
   let best='unknown', bestS=0;
@@ -196,6 +250,8 @@ function parseScheduleLine(line, ctx){
   if (isHeaderLine(line)) { ctx.sawHeader=true; return null; }
   const structured = EstimationExtractorCore && EstimationExtractorCore.parseBamScheduleLine(line, ctx);
   if (structured) return structured;
+  const dialect = EstimationExtractorCore && EstimationExtractorCore.parseKnownScheduleLine(line, ctx);
+  if (dialect) return dialect;
   const wayM = line.match(/^\s*(?:way|cct|ckt|circuit)?\s*[:#]?\s*(\d{1,3})\b/i);
   const spare = /\bspare\b/i.test(line);
   const space = /\bspace\b/i.test(line);
@@ -208,7 +264,7 @@ function parseScheduleLine(line, ctx){
     way: wayM? +wayM[1] : null,
     desc: line.replace(/^\s*(?:way|cct|ckt|circuit)?\s*[:#]?\s*\d{1,3}\s*/i,'').trim(),
     device, rating,
-    poles: polesOf(line), curve: curveOf(line), sens: sensOf(line),
+    poles: polesOf(line), poleConfiguration:poleConfigOf(line), curve: curveOf(line), sens: sensOf(line),
     phase: phaseOf(line), ka: kaOf(line),
     cable: cables.length? cables[0] : null,
     spare, space, incomer: isIncomer,
@@ -263,7 +319,7 @@ function analyseDocument(pages){
     if(!A.boards[b.norm]) A.boards[b.norm]={norm:b.norm, orig:b.orig, type:b.type, pages:[], parent:null, parentConf:0};
     const e=A.boards[b.norm];
     if (!e.pages.includes(pageNo)) e.pages.push(pageNo);
-    if (/[-.]/.test(b.orig) && !/[-.]/.test(e.orig)) e.orig=b.orig;
+    if (String(b.orig||'').length>String(e.orig||'').length) e.orig=b.orig;
   };
   let prevBoard=null;
   for (const pg of pages){
@@ -275,26 +331,31 @@ function analyseDocument(pages){
     const isSched=SCHEDULE_TYPES.has(pg.type) && pg.type!=='cable-schedule';
     let ctxBoard=null;
     if (isSched){
-      const topN=Math.max(6, Math.ceil(lines.length/3));
-      for (let i=0;i<Math.min(topN,lines.length);i++){
-        const bs=detectBoards(lines[i]); if(bs.length){ctxBoard=bs[0];break;}
-      }
-      if (!ctxBoard && pageBoards.length===1) ctxBoard=pageBoards[0];
-      if (!ctxBoard && prevBoard) ctxBoard=prevBoard;
-      if (ctxBoard) prevBoard=ctxBoard;
+      ctxBoard=scheduleBoardFromLines(lines);
+      const hasBoardHeader=hasScheduleBoardHeader(lines);
+      if (!ctxBoard && !hasBoardHeader && prevBoard) ctxBoard=prevBoard;
+      if (ctxBoard){ regBoard(ctxBoard,pageNo); prevBoard=ctxBoard; }
+      else if(hasBoardHeader) prevBoard=null;
     } else prevBoard=null;
     const parsedLegend=EstimationExtractorCore.parseProtectionLegend(lines.join('\n'));
-    const ctx={board:ctxBoard?ctxBoard.norm:null, boardOrig:ctxBoard?ctxBoard.orig:null, sawHeader:false, inNotes:false,
+    const ctx={board:ctxBoard?ctxBoard.norm:null, boardOrig:ctxBoard?ctxBoard.orig:null, boardSection:ctxBoard?ctxBoard.section||null:null, sawHeader:false, inNotes:false,
       lastWay:null, lastPhase:null, pendingRows:[], protectionLegend:parsedLegend.legend};
+    const codedPage=isSched&&EstimationExtractorCore.parseTbaSchedulePage
+      ? EstimationExtractorCore.parseTbaSchedulePage(lines,ctx)
+      : {matched:false,rows:[]};
+    if(codedPage.matched){
+      codedPage.rows.forEach(row=>A.rows.push({boardNorm:ctx.board, boardSection:ctx.boardSection, page:pageNo, line:row.line,
+        status:'pending', kind:'schedule', ...row}));
+    }
     lines.forEach((t,li)=>{
       detectCables(t).forEach(c=>{
         A.cables.push({page:pageNo, line:li, boardNorm:ctx.board, srcText:t.trim(),
           conf: (isSched||pg.type==='cable-schedule')?0.85:0.7, status:'pending', ...c});
       });
       if (isSched){
-        const row=parseScheduleLine(t, ctx);
+        const row=codedPage.matched?null:parseScheduleLine(t, ctx);
         if (row){
-          A.rows.push({boardNorm:ctx.board, page:pageNo, line:li, status:'pending', kind:'schedule', ...row});
+          A.rows.push({boardNorm:ctx.board, boardSection:ctx.boardSection, page:pageNo, line:li, status:'pending', kind:'schedule', ...row});
         }
         parseFeeders(t, pageBoards, ctx.board).forEach(fd=>A.feeders.push({page:pageNo,line:li,...fd}));
       } else if (pg.type==='sld'||pg.type==='schematic'||pg.type==='notes'){
@@ -307,13 +368,13 @@ function analyseDocument(pages){
           const bs=detectBoards(t);
           const bn=bs.length?bs[0].norm:null;
           A.rows.push({boardNorm:bn, page:pageNo, line:li, status:'pending', kind:'mention',
-            way:null, desc:t.trim(), device:dev, rating:ratingOf(t), poles:polesOf(t), curve:curveOf(t),
+            way:null, desc:t.trim(), device:dev, rating:ratingOf(t), poles:polesOf(t), poleConfiguration:poleConfigOf(t), curve:curveOf(t),
             sens:sensOf(t), phase:phaseOf(t), ka:kaOf(t), cable:detectCables(t)[0]||null,
             spare:false, space:false, incomer:false, qty:qtyIn(t,dev), srcText:t.trim(), conf:0.55});
         }
       }
     });
-    if (isSched){
+    if (isSched&&!codedPage.matched){
       const flushed = EstimationExtractorCore.finalizeScheduleContext(ctx);
       flushed.forEach(row=>{ /* rows already pushed by parseBamScheduleLine path; nothing extra */ });
     }
@@ -332,6 +393,7 @@ module.exports = {
   EstimationExtractorCore,
   BOARD_TYPES, normBoard,
   detectBoards, detectCables, classifyPage,
+  scheduleBoardFromLines,
   isHeaderLine, isSeparator, isNoteLine, detectDeviceIn, qtyIn,
   parseScheduleLine, parseFeeders, analyseDocument,
   SCHEDULE_TYPES, MENTION_TYPES,

@@ -3,24 +3,25 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Estimation 101 — Electrical Document Intelligence</title>
+<title>Estimation Tools</title>
 <style>
   :root{
-    --nav:#0e1a2b; --nav2:#14243a; --navline:#22354e;
-    --bg:#eef1f5; --card:#ffffff; --line:#dde3ec; --line2:#c3cddc;
-    --txt:#16202e; --txt2:#54617a; --txt3:#8b96ab;
+    --nav:#191c20; --nav2:#252a30; --navline:#343a40;
+    --bg:#f3f5f7; --card:#ffffff; --line:#d9dee4; --line2:#bdc6d0;
+    --txt:#20252b; --txt2:#5a6570; --txt3:#7c8792;
     --blue:#1668e3; --blue2:#0f54ba; --blue-soft:#e8f0fd;
+    --brand:#009ee2; --brand2:#0083bd;   /* Hager brand blue */
     --cyan:#0aa2c0; --cyan-soft:#e2f5f9;
     --green:#0f9960; --green-soft:#e3f5ec;
     --amber:#c87d0e; --amber-soft:#fdf3e0;
     --red:#d33c43; --red-soft:#fcebec;
     --purple:#7b5cd6; --purple-soft:#f0ebfb;
     --mono:"SF Mono",ui-monospace,Menlo,Consolas,monospace;
-    --shadow:0 1px 2px rgba(22,32,46,.06), 0 4px 14px rgba(22,32,46,.05);
+    --shadow:0 1px 2px rgba(22,32,46,.05);
   }
   *{box-sizing:border-box;margin:0;padding:0;}
   html,body{height:100%;}
-  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Inter",Helvetica,Arial,sans-serif;
+  body{font-family:"Segoe UI",-apple-system,BlinkMacSystemFont,Roboto,"Helvetica Neue",Arial,sans-serif;
     background:var(--bg); color:var(--txt); font-size:13.5px;}
   button{font:inherit;color:inherit;background:none;border:none;cursor:pointer;}
   input,select,textarea{font:inherit;color:inherit;}
@@ -30,8 +31,8 @@
   .btn{display:inline-flex;align-items:center;gap:7px;padding:8px 15px;border-radius:8px;background:#fff;
     border:1px solid var(--line2);font-weight:600;font-size:13px;color:var(--txt);white-space:nowrap;}
   .btn:hover{border-color:var(--blue);color:var(--blue);}
-  .btn.primary{background:var(--blue);border-color:var(--blue);color:#fff;}
-  .btn.primary:hover{background:var(--blue2);color:#fff;}
+  .btn.primary{background:var(--brand);border-color:var(--brand);color:#fff;}
+  .btn.primary:hover{background:var(--brand2);color:#fff;}
   .btn.ghost{border-color:transparent;color:var(--txt2);}
   .btn.ghost:hover{background:var(--blue-soft);color:var(--blue);}
   .btn.sm{padding:4px 10px;font-size:12px;border-radius:7px;}
@@ -71,23 +72,20 @@
   .empty .ico{font-size:26px;margin-bottom:8px;opacity:.7;}
 
   /* ---------- lock ---------- */
-  #lockView.active{display:flex;align-items:center;justify-content:center;min-height:100vh;
-    background:radial-gradient(1200px 700px at 70% -10%, #1d3a5f 0%, var(--nav) 55%);}
-  .lock-card{background:#fff;border-radius:14px;padding:40px 38px 32px;width:392px;max-width:92vw;
-    box-shadow:0 30px 70px rgba(4,10,20,.55);}
-  .brand{display:flex;align-items:center;gap:10px;}
-  .brand .mark{width:36px;height:36px;border-radius:9px;background:var(--blue);color:#fff;display:flex;
-    align-items:center;justify-content:center;font-weight:800;font-size:14px;letter-spacing:-.5px;}
-  .brand .bt{font-size:17px;font-weight:800;letter-spacing:-.2px;}
-  .brand .bt small{display:block;font-size:10px;font-weight:700;color:var(--txt3);letter-spacing:1.2px;text-transform:uppercase;}
-  .lock-sub{color:var(--txt2);margin:20px 0 18px;font-size:13px;}
-  .lock-card input{width:100%;padding:12px 14px;border:1px solid var(--line2);border-radius:9px;font-size:14px;
+  #lockView.active{display:flex;align-items:center;justify-content:center;min-height:100vh;background:var(--nav);}
+  .lock-card{background:#fff;border-radius:12px;padding:44px 40px 34px;width:392px;max-width:92vw;
+    box-shadow:0 30px 70px rgba(4,10,20,.55);text-align:center;}
+  .lock-logo{height:44px;display:block;margin:0 auto 14px;}
+  .lock-name{font-size:19px;font-weight:700;letter-spacing:-.2px;margin-bottom:26px;color:var(--txt);}
+  .brand{display:flex;align-items:center;gap:11px;}
+  .brand-logo{height:22px;display:block;}
+  .brand .bt{font-size:15px;font-weight:700;letter-spacing:-.2px;}
+  .lock-card input{width:100%;padding:12px 14px;border:1px solid var(--line2);border-radius:8px;font-size:14px;
     margin-bottom:10px;outline:none;}
-  .lock-card input:focus{border-color:var(--blue);box-shadow:0 0 0 3px var(--blue-soft);}
-  .lock-card .go{width:100%;padding:12px;border-radius:9px;background:var(--blue);color:#fff;font-weight:700;font-size:14px;}
-  .lock-card .go:hover{background:var(--blue2);}
+  .lock-card input:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(0,158,226,.18);}
+  .lock-card .go{width:100%;padding:12px;border-radius:8px;background:var(--brand);color:#fff;font-weight:700;font-size:14px;}
+  .lock-card .go:hover{background:var(--brand2);}
   .lock-err{color:var(--red);font-size:12px;height:16px;margin-top:8px;font-weight:600;}
-  .lock-foot{margin-top:14px;font-size:11px;color:var(--txt3);}
   @keyframes shake{10%,90%{transform:translateX(-2px)}20%,80%{transform:translateX(4px)}30%,50%,70%{transform:translateX(-6px)}40%,60%{transform:translateX(6px)}}
   .shake{animation:shake .45s;}
 
@@ -103,6 +101,27 @@
   .appbar .link-btn:hover{background:var(--nav2);color:#fff;}
   .avatar{width:30px;height:30px;border-radius:50%;background:var(--blue);color:#fff;font-weight:700;
     display:flex;align-items:center;justify-content:center;font-size:12px;}
+  .processing-dock{position:sticky;top:54px;z-index:45;background:#fff;border-bottom:1px solid var(--line2);
+    box-shadow:0 5px 14px rgba(15,31,51,.08);}
+  .processing-dock[hidden]{display:none;}
+  .processing-dock-inner{max-width:1600px;margin:0 auto;padding:9px 22px;display:grid;
+    grid-template-columns:minmax(280px,auto) minmax(180px,1fr) auto;align-items:center;gap:14px;}
+  .processing-summary{display:flex;align-items:center;gap:10px;min-width:0;}
+  .processing-spinner{width:16px;height:16px;border:2px solid #b9c7d6;border-top-color:var(--brand);
+    border-radius:50%;flex:0 0 auto;animation:processing-spin .8s linear infinite;}
+  .processing-copy{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:baseline;gap:4px 8px;min-width:0;}
+  .processing-copy .processing-label{font-size:10px;color:var(--txt3);font-weight:800;text-transform:uppercase;}
+  .processing-copy strong{font-size:12.5px;color:var(--txt);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .processing-copy small{grid-column:2;font-size:11px;color:var(--txt2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .processing-track{height:6px;background:#e5ebf1;overflow:hidden;}
+  .processing-fill{display:block;width:0;height:100%;background:var(--brand);transition:width .2s ease;}
+  .processing-steps{display:flex;align-items:center;gap:7px;}
+  .processing-step{width:9px;height:9px;border-radius:50%;border:2px solid #b9c7d6;background:#fff;}
+  .processing-step.done{border-color:var(--green);background:var(--green);}
+  .processing-step.run{border-color:var(--brand);background:var(--brand);box-shadow:0 0 0 3px rgba(0,158,226,.14);}
+  .processing-dock.complete .processing-spinner{animation:none;border-color:var(--green);background:var(--green);}
+  .processing-dock.failed .processing-spinner{animation:none;border-color:var(--red);background:var(--red);}
+  @keyframes processing-spin{to{transform:rotate(360deg);}}
   .page{max-width:1340px;margin:0 auto;padding:24px 22px 70px;}
   h1.pg{font-size:20px;font-weight:800;letter-spacing:-.2px;}
   .pg-sub{color:var(--txt2);font-size:12.5px;margin-top:3px;}
@@ -139,7 +158,7 @@
   .ptab{padding:9px 16px;font-weight:700;font-size:13px;color:var(--txt2);border-bottom:2px solid transparent;
     margin-bottom:-2px;display:flex;align-items:center;gap:7px;}
   .ptab:hover{color:var(--txt);}
-  .ptab.active{color:var(--blue);border-bottom-color:var(--blue);}
+  .ptab.active{color:var(--brand2);border-bottom-color:var(--brand);}
   .ptab .badge{background:#e8edf4;color:var(--txt2);border-radius:9px;padding:0 7px;font-size:10.5px;font-weight:800;}
   .ptab.active .badge{background:var(--blue-soft);color:var(--blue);}
   .subview{display:none;} .subview.active{display:block;}
@@ -161,10 +180,13 @@
   .pgclass-file{margin:14px 0 8px;}
 
   /* analysis tab */
-  .an-layout{display:grid;grid-template-columns:330px 1fr;gap:16px;align-items:start;}
-  @media(max-width:980px){.an-layout{grid-template-columns:1fr;}}
-  .bd-explorer{display:grid;grid-template-columns:minmax(260px,320px) 1fr;gap:14px;align-items:start;}
-  @media(max-width:1200px){.bd-explorer{grid-template-columns:1fr;}}
+  .an-layout{display:grid;grid-template-columns:minmax(0,330px) minmax(0,1fr);gap:16px;align-items:start;}
+  .an-layout>*,.bd-explorer>*{min-width:0;}
+  @media(max-width:980px){.an-layout{grid-template-columns:minmax(0,1fr);}}
+  .bd-explorer{display:grid;grid-template-columns:minmax(260px,320px) minmax(0,1fr);gap:14px;align-items:start;}
+  .bd-explorer>.panel{position:sticky;top:64px;max-height:calc(100vh - 84px);overflow-y:auto;}
+  .bd-explorer .tree .trow{padding:4px 10px;font-size:12.5px;}
+  @media(max-width:1200px){.bd-explorer{grid-template-columns:minmax(0,1fr);}.bd-explorer>.panel{position:static;max-height:none;}}
   .bd-hdr{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;padding:14px 18px;border-bottom:1px solid var(--line);}
   .bd-hdr .k{font-size:10.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--txt3);font-weight:700;}
   .bd-hdr .v{font-size:13px;font-weight:600;margin-top:2px;}
@@ -172,8 +194,8 @@
   #boardBody tr.sel td{background:var(--blue-soft,#eaf2ff);}
   .fgroup{margin-bottom:16px;}
   .fgroup:last-child{margin-bottom:0;}
-  .check-row{display:flex;align-items:center;gap:8px;padding:4px 1px;font-size:12.5px;cursor:pointer;color:var(--txt2);}
-  .check-row input{width:15px;height:15px;accent-color:var(--blue);}
+  .check-row{display:flex;align-items:center;gap:8px;padding:4px 1px;font-size:12.5px;cursor:pointer;color:var(--txt2);min-width:0;overflow-wrap:anywhere;}
+  .check-row input{width:15px;height:15px;accent-color:var(--blue);flex:0 0 auto;}
   .qchips{display:flex;flex-wrap:wrap;gap:6px;}
   .qchip{padding:4px 11px;border-radius:14px;border:1px solid var(--line2);font-size:11.5px;font-weight:700;
     color:var(--txt2);background:#fff;user-select:none;cursor:pointer;}
@@ -216,10 +238,10 @@
   .tree{font-size:13px;padding:6px 0;}
   .tree .tnode{padding:5px 0 5px 0;}
   .tree .trow{display:inline-flex;align-items:center;gap:8px;padding:5px 12px;background:#fff;
-    border:1px solid var(--line);border-radius:8px;box-shadow:var(--shadow);}
+    border:1px solid var(--line);border-radius:8px;box-shadow:var(--shadow);max-width:100%;flex-wrap:wrap;}
   .tree .trow .tb{font-weight:800;}
   .tree .kids{margin-left:34px;border-left:2px solid var(--line);padding-left:18px;margin-top:6px;}
-  .tree .cable-lbl{font-size:11px;color:var(--cyan);font-family:var(--mono);}
+  .tree .cable-lbl{font-size:11px;color:var(--cyan);font-family:var(--mono);overflow-wrap:anywhere;}
 
   /* viewer */
   .viewer-layout{display:grid;grid-template-columns:120px 1fr 280px;gap:12px;align-items:start;}
@@ -233,20 +255,42 @@
   .thumb-it .txtpre{font-size:3.2px;line-height:1.4;padding:4px;height:74px;overflow:hidden;color:var(--txt2);
     font-family:var(--mono);white-space:pre-wrap;}
   .v-toolbar{display:flex;align-items:center;gap:6px;padding:8px 12px;border-bottom:1px solid var(--line);
-    flex-wrap:wrap;background:#fafbfd;border-radius:12px 12px 0 0;}
+    flex-wrap:wrap;background:#fafbfd;}
   .v-toolbar .vsep{width:1px;height:20px;background:var(--line);margin:0 4px;}
-  .v-stage{position:relative;overflow:auto;max-height:66vh;background:#e7ebf1;border-radius:0 0 12px 12px;
-    display:flex;justify-content:center;padding:16px;}
-  .v-pagewrap{position:relative;box-shadow:0 4px 20px rgba(22,32,46,.18);background:#fff;}
+  /* §5.2 multi-document tabs */
+  .v-doctabs{display:flex;gap:2px;padding:6px 8px 0;border-bottom:1px solid var(--line);background:#f2f5f9;
+    border-radius:12px 12px 0 0;overflow-x:auto;}
+  .v-doctabs:empty{display:none;}
+  .v-doctab{border:1px solid var(--line);border-bottom:none;border-radius:8px 8px 0 0;padding:6px 12px;font-size:12px;
+    font-weight:600;color:var(--txt2);background:#e8edf3;cursor:pointer;white-space:nowrap;max-width:220px;
+    overflow:hidden;text-overflow:ellipsis;}
+  .v-doctab.act{background:#fafbfd;color:var(--txt);border-color:var(--line);position:relative;top:1px;}
+  /* full-flexibility document stage — fills the viewport instead of a small fixed box */
+  .v-stage{position:relative;overflow:auto;height:calc(100vh - 330px);min-height:440px;background:#e7ebf1;
+    border-radius:0 0 12px 12px;display:block;padding:16px;cursor:grab;overscroll-behavior:contain;}
+  .v-stage.is-panning{cursor:grabbing;user-select:none;}
+  .v-zoom-input{width:64px!important;min-width:64px;padding:5px 6px!important;text-align:right;font-size:11px!important;}
+  .thumbs{max-height:calc(100vh - 300px)!important;}
+  /* §5.2 dark canvas mode */
+  .v-stage.v-dark{background:#141a22;}
+  .v-stage.v-dark .v-pagewrap canvas,.v-stage.v-dark .v-textpage{filter:invert(.93) hue-rotate(180deg);}
+  .thumb-it .bdot{position:absolute;top:3px;left:4px;background:var(--blue);color:#fff;font-size:9px;font-weight:800;
+    border-radius:4px;padding:0 4px;}
+  .ovl.search{background:rgba(240,180,20,.35);outline:2px solid #d99a06;z-index:3;}
+  .ovl.boardhl{background:rgba(22,104,227,.22);outline:3px solid var(--blue);z-index:3;}
+  .v-pagewrap{position:relative;width:max-content;margin:0 auto;box-shadow:0 4px 20px rgba(22,32,46,.18);background:#fff;text-align:left;}
   .v-pagewrap canvas{display:block;}
   .v-textpage{width:840px;min-height:600px;padding:34px 38px;font-family:var(--mono);font-size:11.5px;
     line-height:1.85;white-space:pre-wrap;color:#26303f;}
+  .v-textsizer{position:relative;margin:0 auto;text-align:left;}
   .v-textpage .hl{border-radius:3px;padding:0 2px;margin:0 -2px;}
   .hl.green{background:var(--green-soft);outline:1px solid #bfe5d2;}
   .hl.amber{background:var(--amber-soft);outline:1px solid #f0d9a8;}
   .hl.red{background:var(--red-soft);outline:1px solid #f2c2c5;}
   .hl.cyan{background:var(--cyan-soft);outline:1px solid #b6e2ec;}
   .hl.blue{background:var(--blue-soft);outline:2px solid var(--blue);}
+  .hl.boardhl{background:rgba(22,104,227,.22);outline:3px solid var(--blue);}
+  .devdot{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:7px;vertical-align:-1px;}
   .ovl{position:absolute;border-radius:2px;pointer-events:none;}
   .ovl.green{background:rgba(15,153,96,.16);outline:1.5px solid rgba(15,153,96,.7);}
   .ovl.amber{background:rgba(200,125,14,.14);outline:1.5px solid rgba(200,125,14,.7);}
@@ -321,6 +365,91 @@
     color:#fff;padding:10px 20px;border-radius:9px;font-size:12.5px;font-weight:600;opacity:0;
     pointer-events:none;transition:.22s;z-index:99;box-shadow:0 10px 30px rgba(0,0,0,.3);}
   #toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+
+  /* ---------- reporting workspace ---------- */
+  .report-shell{background:#fff;border:1px solid var(--line);border-radius:6px;overflow:hidden;}
+  .report-top{display:flex;align-items:center;gap:18px;padding:15px 18px;border-bottom:1px solid var(--line);}
+  .report-heading{min-width:210px;}
+  .report-heading h2{font-size:16px;line-height:1.25;font-weight:700;}
+  .report-heading p{font-size:12px;color:var(--txt2);margin-top:3px;}
+  .report-facts{display:flex;align-items:center;gap:20px;margin-left:auto;}
+  .report-fact{display:grid;gap:2px;min-width:70px;}
+  .report-fact dt{font-size:10px;color:var(--txt3);text-transform:uppercase;font-weight:700;}
+  .report-fact dd{font-size:15px;font-weight:700;}
+  .report-actions{display:flex;align-items:center;gap:7px;}
+  .report-status{display:flex;align-items:center;gap:8px;min-height:38px;padding:8px 18px;border-bottom:1px solid var(--line);font-size:12px;}
+  .report-status.ok{background:#f2faf6;color:#176c48;}
+  .report-status.warn{background:#fff8eb;color:#87570b;}
+  .report-status.bad{background:#fff1f2;color:#a52d35;}
+  .report-matrix-scroll{max-height:calc(100vh - 275px);min-height:430px;overflow:auto;background:#fff;}
+  table.report-matrix{border-collapse:separate;border-spacing:0;min-width:max-content;width:100%;font-size:11px;}
+  .report-matrix th,.report-matrix td{height:28px;padding:5px 7px;border-right:1px solid #d5d9de;border-bottom:1px solid #d5d9de;text-align:center;background:#fff;}
+  .report-matrix thead th{position:sticky;z-index:6;font-weight:700;}
+  .report-matrix .report-row-project th{top:0;height:52px;background:#181a1d;color:#fff;vertical-align:middle;}
+  .report-matrix .report-row-title th{top:52px;height:30px;background:#181a1d;color:#fff;}
+  .report-matrix .report-row-head th{top:82px;height:36px;background:#f7e0d1;color:#24272b;}
+  .report-matrix .report-category{position:sticky;left:0;z-index:4;width:150px;min-width:150px;text-align:left;}
+  .report-matrix .report-device{position:sticky;left:150px;z-index:4;width:260px;min-width:260px;text-align:left;}
+  .report-matrix .report-row-project .report-device,.report-matrix .report-row-title .report-device{left:0;width:auto;min-width:0;z-index:8;}
+  .report-matrix thead .report-category,.report-matrix thead .report-device{z-index:8;}
+  .report-matrix .report-tech{width:90px;min-width:90px;}
+  .report-matrix .report-purpose{width:150px;min-width:150px;text-align:left;}
+  .report-matrix .report-source{width:220px;min-width:220px;text-align:left;}
+  .report-matrix .report-review{width:122px;min-width:122px;}
+  .report-matrix .report-board{width:48px;min-width:48px;padding:0;vertical-align:bottom;}
+  .report-board button{display:flex;align-items:center;justify-content:center;width:100%;height:100%;padding:8px 0;color:inherit;font-weight:600;writing-mode:vertical-rl;transform:rotate(180deg);}
+  .report-matrix .report-total{width:58px;min-width:58px;font-weight:700;}
+  .report-matrix th:last-child,.report-matrix td:last-child{width:48px;min-width:48px;}
+  .report-matrix .report-section td{background:#e3e5e8;font-weight:700;text-align:left;}
+  .report-matrix .report-section .report-device{z-index:5;background:#e3e5e8;}
+  .report-matrix .report-data .report-device{font-weight:600;}
+  .report-matrix .report-data:hover td{background:#f7fafc;}
+  .report-matrix .report-data:hover .report-category,.report-matrix .report-data:hover .report-device{background:#f7fafc;}
+  .report-qty{width:100%;min-height:22px;font-weight:700;color:#1668e3;}
+  .report-qty:hover{background:#e8f0fd;}
+  .report-matrix .report-final td{background:#e3e5e8;font-weight:700;}
+  .report-matrix .report-final .report-category,.report-matrix .report-final .report-device{z-index:5;background:#e3e5e8;}
+  .report-subhead{padding:14px 18px 10px;border-top:4px solid #181a1d;background:#fff;}
+  .report-subhead h3{font-size:14px;font-weight:700;}
+  .report-subhead p{font-size:11.5px;color:var(--txt2);margin-top:2px;}
+  .report-empty{padding:64px 24px;text-align:center;color:var(--txt2);}
+
+  /* restrained operational finish */
+  .panel,.proj-card,.dropzone,.cmp-pane,.modal,.lock-card{border-radius:6px;}
+  .panel,.proj-card,.cmp-pane{box-shadow:var(--shadow);}
+  .btn,.in,.sel,.back-btn{border-radius:5px;}
+  .page{max-width:1600px;}
+  .appbar{border-bottom:3px solid var(--brand);}
+  .ptabs{padding:0 10px;background:#fff;border:1px solid var(--line);border-radius:6px;}
+  .ptab{padding:11px 14px;}
+  @media(max-width:900px){
+    .report-top{align-items:flex-start;flex-wrap:wrap;}
+    .report-facts{order:3;width:100%;margin:0;overflow-x:auto;}
+    .report-actions{margin-left:auto;}
+    .report-matrix .report-category{width:120px;min-width:120px;}
+    .report-matrix .report-device{left:120px;width:190px;min-width:190px;}
+    .report-matrix .report-row-project .report-device,.report-matrix .report-row-title .report-device{left:0;width:auto;min-width:0;}
+  }
+  @media(max-width:540px){
+    .appbar{padding:0 12px;gap:8px;}
+    .appbar .brand .bt{white-space:nowrap;}
+    .appbar .crumb{display:none;}
+    .processing-dock-inner{padding:9px 22px;grid-template-columns:minmax(0,1fr);gap:7px;}
+    .processing-steps{display:none;}
+    .processing-copy{grid-template-columns:auto minmax(0,1fr);}
+    .tree .kids{margin-left:12px;padding-left:10px;}
+    .proj-head{display:grid;grid-template-columns:34px minmax(0,1fr);align-items:start;}
+    .proj-head #reanalyzeBtn{grid-column:2;justify-self:start;}
+    .report-matrix .report-category{position:static;width:80px;min-width:80px;}
+    .report-matrix .report-device{left:0;width:170px;min-width:170px;}
+    .report-matrix .report-row-project .report-device,.report-matrix .report-row-title .report-device{left:0;width:auto;min-width:0;}
+    .report-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px 18px;overflow:visible;}
+    .report-fact{min-width:0;}
+    .report-fact dt{line-height:1.25;white-space:normal;}
+    .viewer-layout{grid-template-columns:minmax(0,1fr);}
+    .viewer-layout>.thumbs{display:none;}
+    .v-stage{height:calc(100vh - 300px);min-height:440px;}
+  }
 </style>
 </head>
 <body>
@@ -328,34 +457,44 @@
 <!-- ================= LOCK ================= -->
 <div class="view active" id="lockView">
   <div class="lock-card" id="lockCard">
-    <div class="brand"><div class="mark">E1</div>
-      <div class="bt">Estimation 101<small>Electrical document intelligence</small></div></div>
-    <div class="lock-sub">Enter your workspace password to continue.</div>
+    <img class="lock-logo" src="./assets/hager-logo.png" alt="Hager">
+    <div class="lock-name">Estimation Tools</div>
     <input type="password" id="pwInput" placeholder="Password" autocomplete="off">
     <button class="go" id="pwBtn">Sign in</button>
     <div class="lock-err" id="pwErr"></div>
-    <div class="lock-foot">🔒 Private workspace · estimation101</div>
   </div>
 </div>
 
 <!-- ================= APP ================= -->
 <div class="view" id="appView">
   <div class="appbar">
-    <div class="brand"><div class="mark">E1</div>
-      <div class="bt">Estimation 101<small>Electrical document intelligence</small></div></div>
+    <div class="brand"><img class="brand-logo" src="./assets/hager-logo.png" alt="Hager">
+      <div class="bt">Estimation Tools</div></div>
     <div class="crumb" id="crumb"><b>Projects</b></div>
     <div class="right">
-      <span class="chip cyan" id="storeChip" title="Where your work is saved">local</span>
       <button class="link-btn" id="lockBtn">Lock</button>
-      <div class="avatar">Y</div>
+    </div>
+  </div>
+
+  <div class="processing-dock" id="processingDock" role="status" aria-live="polite" hidden>
+    <div class="processing-dock-inner">
+      <div class="processing-summary">
+        <span class="processing-spinner" aria-hidden="true"></span>
+        <div class="processing-copy">
+          <span class="processing-label">Processing</span>
+          <strong id="processingStage">Reading documents</strong>
+          <small id="processingDetail">Preparing files</small>
+        </div>
+      </div>
+      <div class="processing-track" aria-hidden="true"><span class="processing-fill" id="processingFill"></span></div>
+      <div class="processing-steps" id="processingSteps" aria-hidden="true"></div>
     </div>
   </div>
 
   <!-- HOME -->
   <div class="page subview active" id="homeView">
     <div class="home-head">
-      <div><h1 class="pg">Projects</h1>
-      <div class="pg-sub">Each project holds its drawings, schedules and extraction results.</div></div>
+      <div><h1 class="pg">Projects</h1></div>
     </div>
     <div class="proj-grid" id="projGrid"></div>
   </div>
@@ -368,13 +507,14 @@
         <h1 class="pg" id="projTitle">Project</h1>
         <div class="pg-sub" id="projMeta"></div>
       </div>
-      <button class="btn primary" id="reanalyzeBtn">⚙ Analyse documents</button>
+      <button class="btn primary" id="reanalyzeBtn">Analyse documents</button>
     </div>
 
     <div class="ptabs">
       <button class="ptab active" data-pt="docs">Documents <span class="badge" id="bDocs">0</span></button>
       <button class="ptab" data-pt="viewer">Viewer</button>
       <button class="ptab" data-pt="analysis">Boards &amp; Devices <span class="badge" id="bBoards" title="boards">0</span><span class="badge" id="bDev" title="devices">0</span></button>
+      <button class="ptab" data-pt="reports">Reports</button>
       <button class="ptab" data-pt="review">Review <span class="badge" id="bRev">0</span></button>
       <button class="ptab" data-pt="compare">Compare</button>
     </div>
@@ -383,9 +523,9 @@
     <div class="subview active" id="pt-docs">
       <div class="dropzone" id="dropzone">
         <h3>Drop electrical documents here — or click to browse</h3>
-        <p>Floor plans · schematics · DB schedules · cable schedules — <b>PDF</b>, <b>TXT</b>, <b>CSV</b>. Analysis starts automatically.</p>
+        <p>Floor plans · schematics · DB schedules · cable schedules — <b>PDF</b>, <b>Excel</b>, <b>images</b>, <b>TXT</b>, <b>CSV</b>.</p>
       </div>
-      <input type="file" id="fileInput" multiple accept=".pdf,.txt,.csv,.md,.xlsx" style="display:none">
+      <input type="file" id="fileInput" multiple accept=".pdf,.txt,.csv,.md,.xlsx,.png,.jpg,.jpeg,.webp" style="display:none">
       <div class="panel" style="margin-bottom:16px">
         <div class="p-head">Documents <span class="sub" id="docCountSub"></span></div>
         <div style="overflow-x:auto"><table class="t doc-table">
@@ -427,17 +567,17 @@
       <div class="viewer-layout">
         <div class="panel thumbs" id="vThumbs"></div>
         <div class="panel" style="overflow:hidden">
+          <div class="v-doctabs" id="vDocTabs"></div>
           <div class="v-toolbar">
-            <select class="sel" id="vFileSel" style="max-width:210px"></select>
-            <div class="vsep"></div>
-            <button class="btn sm" id="vPrev">‹</button>
+            <button class="btn sm" id="vPrev" title="Previous page (←)">‹</button>
             <span style="font-size:12px;color:var(--txt2)"><span id="vPageNo">1</span> / <span id="vPageCt">1</span></span>
-            <button class="btn sm" id="vNext">›</button>
+            <button class="btn sm" id="vNext" title="Next page (→)">›</button>
             <div class="vsep"></div>
-            <button class="btn sm" id="vZoomOut">−</button>
-            <button class="btn sm" id="vZoomIn">+</button>
-            <button class="btn sm" id="vFit">Fit</button>
-            <button class="btn sm" id="vRotate">⟳</button>
+            <button class="btn sm" id="vZoomOut" title="Zoom out (−)">−</button>
+            <input class="in v-zoom-input" id="vZoomPct" type="number" min="25" max="1000" step="25" value="100" aria-label="Zoom percentage" title="Zoom percentage (25–1000)"><span style="font-size:11px;color:var(--txt2)">%</span>
+            <button class="btn sm" id="vZoomIn" title="Zoom in (+)">+</button>
+            <button class="btn sm" id="vFit" title="Fit page width to window">Fit</button>
+            <button class="btn sm" id="vRotate" title="Rotate 90°">⟳</button>
             <div class="vsep"></div>
             <label class="check-row" style="padding:0"><input type="checkbox" id="vOvl" checked> Overlays</label>
             <select class="sel" id="vOvlFilter">
@@ -447,17 +587,22 @@
               <option value="cable">Cables</option>
               <option value="board">Boards</option>
             </select>
+            <select class="sel" id="vBoardHl" title="Smart-highlight every mention of a board reference"><option value="">Highlight board…</option></select>
             <div class="vsep"></div>
-            <button class="btn sm" id="vAssistMode" title="Highlight one device to find every matching device on the current board">✦ Assisted canvas</button>
+            <button class="btn sm" id="vAssistMode" title="Find matching devices on the selected board">Match rows</button>
             <button class="btn sm" id="vOcrBtn" title="Read a scanned page with OCR">OCR page</button>
-            <input class="in" id="vSearch" placeholder="Search text…" style="width:150px;margin-left:auto">
+            <button class="btn sm" id="vDark" title="Dark / light canvas">◐</button>
+            <button class="btn sm" id="vPrint" title="Print current page">⎙</button>
+            <button class="btn sm" id="vDownload" title="Download original document">⤓</button>
+            <input class="in" id="vSearch" placeholder="Search in document…" style="width:150px;margin-left:auto">
+            <span style="font-size:11px;color:var(--txt2);white-space:nowrap" id="vSearchInfo"></span>
+            <button class="btn sm" id="vSearchNext" title="Jump to next page with a match" style="display:none">↓</button>
           </div>
           <div class="assist-bar" id="vAssistBar" hidden>
-            <span class="step">1 Board</span>
+            <span class="step">Board</span>
             <select class="sel" id="vAssistBoard"></select>
-            <span class="step">2 Highlight</span>
-            <span class="assist-help">Drag a box over one device row, such as “16A RCBO”.</span>
-            <span class="chip purple" id="vAssistSeed">No device selected</span>
+            <span class="step">Device</span>
+            <span class="chip purple" id="vAssistSeed">None selected</span>
             <span class="chip purple" id="vAssistCount">0 matches</span>
             <button class="btn sm" id="vAssistClear">Clear markup</button>
             <span class="ocr-progress" id="vOcrStatus"></span>
@@ -500,7 +645,7 @@
                 <label class="check-row"><input type="checkbox" id="anExclSpare" checked> Exclude only unpopulated spare &amp; space ways</label>
                 <button class="btn sm ghost" id="anPreviewBtn" style="margin-top:4px">Preview excluded rows</button>
               </div>
-              <button class="btn primary" id="anRunBtn" style="width:100%">⚙ Count devices</button>
+              <button class="btn primary" id="anRunBtn" style="width:100%">Count devices</button>
             </div>
           </div>
           <div class="panel">
@@ -515,10 +660,9 @@
             <div style="display:flex;gap:8px;align-items:center;padding:11px 18px;flex-wrap:wrap">
               <span style="font-weight:800;font-size:13px">Take-off</span>
               <span class="sub" style="margin-left:2px">roll-up across all boards — select a board to drill in</span>
-              <button class="btn sm" id="bulkApproveBtn" style="margin-left:auto">✓ Approve all high-confidence</button>
-              <button class="btn sm" id="addManualBtn">+ Add manually</button>
-              <button class="btn sm" id="expCsvBtn">⤓ CSV</button>
-              <button class="btn sm" id="expXlsxBtn">⤓ XLSX</button>
+              <button class="btn sm" id="bulkApproveBtn" style="margin-left:auto">Approve checked rows</button>
+              <button class="btn sm" id="addManualBtn">Add device</button>
+              <button class="btn sm primary" id="openReportBtn">Open report</button>
             </div>
           </div>
 
@@ -551,6 +695,27 @@
       </div>
     </div>
 
+    <!-- ==== REPORTS ==== -->
+    <div class="subview" id="pt-reports">
+      <section class="report-shell" aria-labelledby="reportTitle">
+        <div class="report-top">
+          <div class="report-heading">
+            <h2 id="reportTitle">DB device take-off</h2>
+            <p id="reportProject">No project selected</p>
+          </div>
+          <dl class="report-facts" id="reportFacts"></dl>
+          <div class="report-actions">
+            <button class="btn" id="reportCsvBtn">Export CSV</button>
+            <button class="btn primary" id="reportXlsxBtn">Export Excel</button>
+          </div>
+        </div>
+        <div class="report-status" id="reportStatus"></div>
+        <div class="report-matrix-scroll" id="reportMatrixHost">
+          <div class="report-empty">Analyse documents to build the take-off.</div>
+        </div>
+      </section>
+    </div>
+
     <!-- ==== REVIEW ==== -->
     <div class="subview" id="pt-review">
       <div class="panel" id="xrefPanel" style="margin-bottom:16px;display:none">
@@ -570,12 +735,13 @@
           <div class="fgroup"><label class="lbl">Document A (original)</label><select class="sel" id="cmpA" style="width:100%"></select></div>
           <div class="fgroup"><label class="lbl">Document B (revision)</label><select class="sel" id="cmpB" style="width:100%"></select></div>
           <button class="btn primary" id="runCmpBtn">⇄ Compare</button>
+          <button class="btn" id="cmpTextBtn" style="display:none">≋ Text diff</button>
           <button class="btn" id="nextChgBtn" style="display:none">↓ Next</button>
         </div>
         <div id="cmpSummary" style="display:flex;gap:8px;flex-wrap:wrap"></div>
       </div></div>
       <div class="panel" id="chgPanel" style="display:none;margin-bottom:14px">
-        <div class="p-head">Electrical changes
+        <div class="p-head">Electrical changes <span class="sub">structured, per board — click a change to see it in the document</span>
           <select class="sel" id="chgFilter" style="margin-left:auto">
             <option value="all">All change types</option>
             <option value="circuit-added">Circuit added</option>
@@ -588,7 +754,7 @@
         </div>
         <div class="chg-list" id="chgList"></div>
       </div>
-      <div class="cmp-panes">
+      <div class="cmp-panes" id="cmpPanes" style="display:none">
         <div class="cmp-pane"><div class="pane-head" id="cmpHeadA">Document A</div><div class="cmp-body" id="cmpBodyA"><div class="empty">Pick two documents and press Compare.</div></div></div>
         <div class="cmp-pane"><div class="pane-head" id="cmpHeadB">Document B</div><div class="cmp-body" id="cmpBodyB"><div class="empty"> </div></div></div>
       </div>
@@ -604,6 +770,8 @@
 </div></div>
 <div id="toast"></div>
 
+<script src="./vendor/exceljs.min.js"></script>
+<script src="./report-core.js"></script>
 <script src="./extractor-core.js"></script>
 <script>
 'use strict';
@@ -691,9 +859,10 @@ const state = {
   projects: [],
   cur: null,           // current project
   nextId: 1,
-  viewer: {fileId:null, page:1, zoom:1, rot:0, pdfDocs:{}, assist:{enabled:false,boardNorm:null,seed:null,results:[]}},
+  viewer: {fileId:null, page:1, zoom:1, rot:0, dark:false, boardHl:null, evidenceId:null, pdfDocs:{}, assist:{enabled:false,boardNorm:null,seed:null,results:[]}},
   selectedBoard: null,  // §5.4 — board selected in the merged Boards & Devices page ('__none__' = unassigned rows), null = roll-up
 };
+const ANALYSIS_VERSION=2;
 const uid = () => 'x'+(state.nextId++)+'_'+Math.random().toString(36).slice(2,6);
 
 /* ====================== PERSISTENCE (IndexedDB) ====================== */
@@ -715,13 +884,13 @@ function serializeProject(p){
   return JSON.parse(JSON.stringify(p, (k,v)=> k==='_doc'||k==='raw' ? undefined : v));
 }
 const rawStore = {}; // fileId -> ArrayBuffer (kept in memory; also persisted as blob)
-let saveTimer=null;
+const saveTimers={};  // per-project debounce — a single shared timer let one project's save clobber another's
 function saveProject(p){
-  if (!p) return;
+  if (!p || p.testFixture) return;
   p.updated = todayStr();
   if (!idbOk) return;
-  clearTimeout(saveTimer);
-  saveTimer = setTimeout(()=>{
+  clearTimeout(saveTimers[p.id]);
+  saveTimers[p.id] = setTimeout(()=>{
     try{
       const tx = idb.transaction(DB_STORE,'readwrite');
       const rec = serializeProject(p);
@@ -764,6 +933,7 @@ $('#lockBtn').addEventListener('click', ()=>{ $('#appView').classList.remove('ac
 
 /* ==================== ELECTRICAL KNOWLEDGE BASE ==================== */
 const DEVICE_DEFS = [
+  {name:'AFDD+RCBO', re:/\b(?:AFDD|AFFD)\s*(?:\+|combined\s+with)?\s*RCBO\b|\bRCBO\s*(?:\+|combined\s+with)\s*(?:AFDD|AFFD)\b/i},
   {name:'RCBO',      re:/\bRCBOs?\b/i},
   {name:'MCCB',      re:/\bMCCBs?\b/i},
   {name:'ACB',       re:/\bACBs?\b/i},
@@ -772,11 +942,19 @@ const DEVICE_DEFS = [
   {name:'SPD',       re:/\bSPDs?\b|\bsurge protect(?:ion|ive) device\b/i},
   {name:'Isolator',  re:/\bisolators?\b|\bswitch[- ]disconnectors?\b/i},
   {name:'Contactor', re:/\bcontactors?\b/i},
+  {name:'Time clock',re:/\b(?:time\s*clock|timeclock)s?\b/i},
+  {name:'Photocell', re:/\b(?:photo\s*cell|photocell)s?\b/i},
+  {name:'Relay',     re:/\brelays?\b/i},
+  {name:'Timer',     re:/\btimers?\b/i},
+  {name:'Starter',   re:/\b(?:motor\s+)?starters?\b/i},
+  {name:'Overload',  re:/\boverloads?\b/i},
+  {name:'Transformer',re:/\btransformers?\b/i},
+  {name:'DALI controller',re:/\bDALI\s+(?:headend|controller|control\s+unit)\b/i},
   {name:'Fuse',      re:/\bfuses?\b|\bHRC\b/i},
   {name:'Meter',     re:/\bMID meter\b|\bkWh meter\b|\bmeters?\b/i},
   {name:'Switch',    re:/\bmain switch\b|\bswitch fuse\b/i},
 ];
-const QUICK_DEVICES = ['RCBO','MCB','MCCB','RCD','SPD','Isolator','Contactor','Fuse','Meter'];
+const QUICK_DEVICES = ['RCBO','MCB','MCCB','AFDD+RCBO','RCD','SPD','Isolator','Contactor','Time clock','Photocell','Relay','Fuse','Meter'];
 
 const PAGE_TYPES = {
   'cover':'Cover page','register':'Drawing register','legend':'Electrical legend',
@@ -830,6 +1008,8 @@ const BOARD_PATTERNS = [
   {re:/\b[Pp]anel\s+([A-Z](?:[\s.\-_]?\d+)?)\b/g, type:'CTRL', prefix:'Panel '},
 ];
 const normBoard = s => String(s).toUpperCase().replace(/[\s.\-_\/]+/g,'');
+const canonicalBoardRef = (window.EstimationExtractorCore && window.EstimationExtractorCore.canonicalBoardReference)
+  || (value => ({display:String(value||'').trim(),normalised:normBoard(value),splitSection:null}));
 
 /* cable patterns */
 const CABLE_PATTERNS = [
@@ -843,8 +1023,24 @@ const CABLE_PATTERNS = [
 const CONSTRUCTIONS = ['XLPE','SWA','PVC','LSZH','LSF','FP200','MICC','AWA'];
 
 /* rating / poles / curve / sensitivity */
-const ratingOf = s => { const m=s.match(/\b(\d+(?:\.\d+)?)\s*A(?:mps?)?\b/i); return m?parseFloat(m[1]):null; };
-const curveOf  = s => { const m=s.match(/\b(?:type|curve)\s*([BCD])\b/i); return m?m[1].toUpperCase():null; };
+const curveEvidenceOf = s => window.EstimationExtractorCore
+  ? window.EstimationExtractorCore.extractTrippingCurve(s,{deviceContext:/\b(?:MCB|MCCB|RCBO|AFDD|circuit breaker)\b/i.test(s)})
+  : null;
+const ratingOf = s => {
+  const m=s.match(/\b(\d+(?:\.\d+)?)\s*A(?:mps?)?\b/i); if(m)return parseFloat(m[1]);
+  return curveEvidenceOf(s)?.rating??null;
+};
+const curveOf  = s => curveEvidenceOf(s)?.value||null;
+const poleConfigOf = s => {
+  if (/\b(?:SPN|single\s+pole\s+(?:and|&)\s+neutral|1P\s*\+\s*N)\b/i.test(s)) return 'SPN';
+  if (/\b(?:DPN|double\s+pole\s+(?:and|&)\s+neutral|2P\s*\+\s*N)\b/i.test(s)) return 'DPN';
+  if (/\b(?:TPN|TP\s*&\s*N|triple\s+pole\s+(?:and|&)\s+neutral|3P\s*\+\s*N)\b/i.test(s)) return 'TPN';
+  if (/\b(?:4P|four[- ]pole)\b/i.test(s)) return '4P';
+  if (/\b(?:SP|single[- ]pole|1P)\b/i.test(s)) return 'SP';
+  if (/\b(?:DP|double[- ]pole|2P)\b/i.test(s)) return 'DP';
+  if (/\b(?:TP|triple[- ]pole|three[- ]pole|3P)\b/i.test(s)) return 'TP';
+  return null;
+};
 const polesOf  = s => {
   const m=s.match(/\b([1234])\s*P(?:ole)?\b/i); if(m) return +m[1];
   if (/\bTP&?N\b|\bfour[- ]pole\b/i.test(s)) return 4;
@@ -855,7 +1051,7 @@ const polesOf  = s => {
 };
 const sensOf   = s => { const m=s.match(/\b(\d+)\s*mA\b/); return m?+m[1]:null; };
 const phaseOf  = s => { const m=s.match(/\b(L[123])\b/); return m?m[1]:(/\bTP&?N\b|\b3PH\b|\bthree phase\b/i.test(s)?'3PH':null); };
-const kaOf     = s => { const m=s.match(/\b(\d+(?:\.\d+)?)\s*kA\b/i); return m?parseFloat(m[1]):null; };
+const kaOf     = s => window.EstimationExtractorCore?.extractBreakingCapacity(s)?.value??null;
 
 /* ==================== BOARD DETECTION ==================== */
 function detectBoards(line){
@@ -875,7 +1071,9 @@ function detectBoards(line){
         orig = orig.replace(/[.,:]+$/,'');
         if (!/[\d\/-]/.test(orig) || BOARD_REF_STOPWORDS.has(orig.toUpperCase())) continue;
       }
-      const norm = normBoard(orig);
+      const canonical = canonicalBoardRef(orig);
+      orig = canonical.display;
+      const norm = canonical.normalised;
       if (!norm || /^(DB|MDB|SMDB|LDB|PDB|MCC|MCP)$/.test(norm) && !bp.fixed && !/\d/.test(norm) && norm!=='MDB' && norm!=='SMDB') continue;
       if (found.some(f=>f.norm===norm)) continue;
       // avoid matching DB inside SMDB/LDB/PDB/MDB occurrences
@@ -883,14 +1081,42 @@ function detectBoards(line){
         const pre = line[m.index-1];
         if (pre && /[A-Za-z]/.test(pre)) continue;
       }
-      found.push({orig, norm, type:bp.type, start:m.index, end:m.index+m[0].length});
+      found.push({orig, norm, type:bp.type, section:canonical.splitSection, start:m.index, end:m.index+m[0].length});
     }
   }
   // drop matches fully contained inside a longer match of the same text
   // (e.g. keep DB-00-SUBEXT, drop the DB-00 sub-match)
   return found
     .filter(f=>!found.some(o=>o!==f && o.start<=f.start && o.end>=f.end && (o.end-o.start)>(f.end-f.start)))
-    .map(({orig,norm,type})=>({orig,norm,type}));
+    .map(({orig,norm,type,section})=>({orig,norm,type,section}));
+}
+
+function scheduleBoardFromLines(lines){
+  let sawLabel=false;
+  for(const line of lines){
+    const source=String(line||'');
+    const label=source.match(/\bDB\s+REFERENCE\b|\b(?:DISTRIBUTION\s+)?BOARD\s*(?:REFERENCE|REF|IDENTITY)?\s*[:=\-]|\bDISTRIBUTION\s+BOARD\s+SCHEDULE\b\s*[—–:\-]\s*(?=[A-Z0-9])/i);
+    if(!label) continue;
+    sawLabel=true;
+    const tail=source.slice(label.index+label[0].length).trim();
+    const detected=detectBoards(tail)[0];
+    if(detected) return detected;
+    const token=tail.match(/^([A-Z0-9][A-Z0-9._\/-]{1,30})/i)?.[1];
+    if(!token||!/[\d._\/-]/.test(token)) continue;
+    const canonical=canonicalBoardRef(token);
+    if(canonical.normalised) return {orig:canonical.display,norm:canonical.normalised,type:'UNK',section:canonical.splitSection};
+  }
+  if(sawLabel) return null;
+  const topN=Math.max(6,Math.ceil(lines.length/3));
+  for(let index=0;index<Math.min(topN,lines.length);index++){
+    if(!/\b(?:board|panel)\b/i.test(String(lines[index]||''))) continue;
+    const boards=detectBoards(lines[index]);if(boards.length)return boards[0];
+  }
+  return null;
+}
+
+function hasScheduleBoardHeader(lines){
+  return (lines||[]).some(line=>/\bDB\s+REFERENCE\b|\b(?:DISTRIBUTION\s+)?BOARD\s*(?:REFERENCE|REF|IDENTITY)?\s*[:=\-]|\bDISTRIBUTION\s+BOARD\s+SCHEDULE\b\s*[—–:\-]\s*(?=[A-Z0-9])/i.test(String(line||'')));
 }
 
 /* ==================== CABLE DETECTION ==================== */
@@ -938,6 +1164,9 @@ function classifyPage(text, pageIdx, totalPages){
   const hasWays = (low.match(/\bway\s*\d+|\bcct\s*\d+|\bcircuit\s*\d+/g)||[]).length;
   if (hasWays>=3) add('db-schedule',4);
   if (/board ref|board reference/.test(low)) add('db-schedule',2);
+  const phaseRows=(text.match(/\bL[123]\b/g)||[]).length;
+  const codedRows=(text.match(/(?:^|\n)\s*(?:\d{1,3}\s+)?(?:L[123]\s+)?\d+(?:\.\d+)?\s+[JKLMN]\s+[BCD]\b[^\n]*\b(?:Ri|Ra)\s+[LP]\b/gim)||[]).length;
+  if(codedRows>=2&&phaseRows>=3) add('db-schedule',9);
   if (pageIdx===0 && totalPages>1 && /project|issued|revision/.test(low) && hasWays===0) add('cover',3);
   if (/contents/.test(low) && pageIdx===0) add('register',2);
   let best='unknown', bestS=0;
@@ -978,6 +1207,8 @@ function parseScheduleLine(line, ctx){
   if (isHeaderLine(line)) { ctx.sawHeader=true; return null; }
   const structured = window.EstimationExtractorCore && window.EstimationExtractorCore.parseBamScheduleLine(line, ctx);
   if (structured) return structured;
+  const dialect = window.EstimationExtractorCore && window.EstimationExtractorCore.parseKnownScheduleLine(line, ctx);
+  if (dialect) return dialect;
   const wayM = line.match(/^\s*(?:way|cct|ckt|circuit)?\s*[:#]?\s*(\d{1,3})\b/i);
   const spare = /\bspare\b/i.test(line);
   const space = /\bspace\b/i.test(line);
@@ -991,7 +1222,7 @@ function parseScheduleLine(line, ctx){
     way: wayM? +wayM[1] : null,
     desc: line.replace(/^\s*(?:way|cct|ckt|circuit)?\s*[:#]?\s*\d{1,3}\s*/i,'').trim(),
     device, rating,
-    poles: polesOf(line), curve: curveOf(line), sens: sensOf(line),
+    poles: polesOf(line), poleConfiguration:poleConfigOf(line), curve: curveOf(line), sens: sensOf(line),
     phase: phaseOf(line), ka: kaOf(line),
     cable: cables.length? cables[0] : null,
     spare, space, incomer: isIncomer,
@@ -1059,11 +1290,12 @@ function setTab(name){
   $$('#projView .subview').forEach(p=>p.classList.toggle('active', p.id==='pt-'+name));
   if (name==='viewer') renderViewer();
   if (name==='analysis') renderTakeoff();
+  if (name==='reports') renderReport();
   if (name==='review') renderReview();
   if (name==='compare') renderCompareSel();
 }
 $$('.ptab').forEach(t=>t.addEventListener('click',()=>setTab(t.dataset.pt)));
-$('#backBtn').addEventListener('click', ()=>{ state.cur=null; renderProjects(); show('home'); });
+$('#backBtn').addEventListener('click', ()=>{ state.cur=null;if(!analysisBusy)hideProcessing();renderProjects(); show('home'); });
 
 /* ============================ PROJECT MODEL ============================ */
 function newProject(name){
@@ -1156,13 +1388,18 @@ function renderProjects(){
 function openProject(id){
   state.cur = state.projects.find(p=>p.id===id);
   if (!state.cur) return;
+  if(!analysisBusy)hideProcessing();
   ensureAssistedState(state.cur);
   show('proj');
   $('#projTitle').textContent=state.cur.name;
-  state.viewer={fileId:null,page:1,zoom:1,rot:0,pdfDocs:state.viewer.pdfDocs,assist:{enabled:false,boardNorm:null,seed:null,results:[]}};
+  state.viewer={fileId:null,page:1,zoom:1,rot:0,dark:state.viewer.dark,boardHl:null,evidenceId:null,pdfDocs:state.viewer.pdfDocs,assist:{enabled:false,boardNorm:null,seed:null,results:[]}};
   state.selectedBoard=null;
   renderProjHeader(); renderDocs(); renderPgclass(); renderAnalysisControls(); renderResults();
   setTab('docs');
+  if(state.cur.analysis&&state.cur.analysis.version!==ANALYSIS_VERSION&&state.cur.files.some(file=>file.status==='ready')){
+    setProcessingDock(STAGES[0],'Updating saved analysis',2,0);
+    setTimeout(()=>runAnalysis({auto:true}),0);
+  }
 }
 function renderProjHeader(){
   const p=state.cur; if(!p) return;
@@ -1173,41 +1410,69 @@ function renderProjHeader(){
 }
 
 /* ============================ FILE INGESTION ============================ */
+/* PDF + OCR engines are vendored (vendor/pdfjs, vendor/tesseract) so the
+ * viewer and OCR work offline — required for the downloadable desktop app.
+ * The CDN is only a fallback if the local copies are missing. */
+function loadScript(src){
+  return new Promise((res,rej)=>{
+    const s=document.createElement('script');
+    s.src=src; s.onload=()=>res(); s.onerror=()=>rej(new Error('failed '+src));
+    document.head.appendChild(s);
+  });
+}
 let pdfjsPromise=null;
 function loadPdfjs(){
   if (pdfjsPromise) return pdfjsPromise;
-  pdfjsPromise = new Promise((res,rej)=>{
-    if (window.pdfjsLib) return res(window.pdfjsLib);
-    const s=document.createElement('script');
-    s.src='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
-    s.onload=()=>{ try{ window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'; }catch(e){} res(window.pdfjsLib); };
-    s.onerror=()=>rej(new Error('Could not load the PDF engine (no internet access?)'));
-    document.head.appendChild(s);
-  });
+  pdfjsPromise = (async()=>{
+    if (window.pdfjsLib) return window.pdfjsLib;
+    try{
+      await loadScript('./vendor/pdfjs/pdf.min.js');
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc=new URL('vendor/pdfjs/pdf.worker.min.js', location.href).href;
+    }catch(e){
+      await loadScript('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js')
+        .catch(()=>{ throw new Error('Could not load the PDF engine (no internet access?)'); });
+      try{ window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'; }catch(_){}
+    }
+    return window.pdfjsLib;
+  })();
+  pdfjsPromise.catch(()=>{ pdfjsPromise=null; });
   return pdfjsPromise;
 }
-let tesseractPromise=null, ocrWorkerPromise=null, ocrBusy=false;
+let tesseractPromise=null, ocrWorkerPromise=null, ocrBusy=false,ocrProgressContext='';
+let tesseractLocal=false; // true when the vendored engine loaded (use vendored worker/core/lang too)
 function loadTesseract(){
   if (tesseractPromise) return tesseractPromise;
-  tesseractPromise=new Promise((res,rej)=>{
-    if (window.Tesseract) return res(window.Tesseract);
-    const s=document.createElement('script');
-    s.src='https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
-    s.onload=()=>res(window.Tesseract);
-    s.onerror=()=>rej(new Error('Could not load the OCR engine. Check the internet connection and try again.'));
-    document.head.appendChild(s);
-  });
+  tesseractPromise=(async()=>{
+    if (window.Tesseract) return window.Tesseract;
+    try{
+      await loadScript('./vendor/tesseract/tesseract.min.js');
+      tesseractLocal=true;
+    }catch(e){
+      await loadScript('https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js')
+        .catch(()=>{ throw new Error('Could not load the OCR engine. Check the internet connection and try again.'); });
+    }
+    return window.Tesseract;
+  })();
+  tesseractPromise.catch(()=>{ tesseractPromise=null; });
   return tesseractPromise;
 }
 async function getOcrWorker(){
   if (!ocrWorkerPromise){
     ocrWorkerPromise=loadTesseract().then(T=>T.createWorker('eng',1,{
+      ...(tesseractLocal?{
+        workerPath:new URL('vendor/tesseract/worker.min.js',location.href).href,
+        corePath:new URL('vendor/tesseract/',location.href).href,
+        langPath:new URL('vendor/tesseract',location.href).href,
+        gzip:false,
+      }:{}),
       logger:m=>{
         if (!ocrBusy) return;
         const pct=Number.isFinite(m.progress)?' '+Math.round(m.progress*100)+'%':'';
         const label=(m.status||'Reading page').replace(/(^|\s)\S/g,c=>c.toUpperCase())+pct;
         const btn=$('#vOcrBtn'); if(btn) btn.textContent=label;
         const status=$('#vOcrStatus'); if(status) status.textContent=label;
+        const dock=$('#processingDock'),detail=$('#processingDetail');
+        if(dock&&!dock.hidden&&detail)detail.textContent=[ocrProgressContext,label].filter(Boolean).join(' | ');
       },
     }));
   }
@@ -1223,40 +1488,167 @@ function flattenOcrWords(blocks){
   };
   walk(blocks); return out;
 }
+function inspectOcrCanvas(cv){
+  const ctx=cv.getContext('2d',{willReadFrequently:true}),step=Math.max(2,Math.floor(Math.max(cv.width,cv.height)/700));
+  const data=ctx.getImageData(0,0,cv.width,cv.height).data;
+  let count=0,sum=0,sumSq=0,diff=0,diffCount=0;
+  const tileSums=Array(16).fill(0),tileCounts=Array(16).fill(0),dark=[];
+  for(let y=0;y<cv.height;y+=step){
+    for(let x=0;x<cv.width;x+=step){
+      const i=(y*cv.width+x)*4,lum=.299*data[i]+.587*data[i+1]+.114*data[i+2];
+      count++;sum+=lum;sumSq+=lum*lum;
+      const tile=Math.min(3,Math.floor(y*4/cv.height))*4+Math.min(3,Math.floor(x*4/cv.width));tileSums[tile]+=lum;tileCounts[tile]++;
+      if(x+step<cv.width){const j=(y*cv.width+x+step)*4,n=.299*data[j]+.587*data[j+1]+.114*data[j+2];diff+=Math.abs(lum-n);diffCount++;}
+      if(lum<150&&dark.length<140000)dark.push([x/step,y/step]);
+    }
+  }
+  const mean=sum/Math.max(1,count),variance=Math.max(0,sumSq/Math.max(1,count)-mean*mean);
+  const tileMeans=tileSums.map((value,index)=>value/Math.max(1,tileCounts[index]));
+  let bestAngle=0,bestScore=-1,zeroScore=0;
+  for(let angle=-3;angle<=3;angle+=.75){
+    const tan=Math.tan(angle*Math.PI/180),offset=Math.ceil(Math.abs(tan)*cv.width/step)+3;
+    const bins=new Uint32Array(Math.ceil(cv.height/step)+offset*2+8);
+    dark.forEach(([x,y])=>{const bin=Math.round(y-x*tan)+offset;if(bin>=0&&bin<bins.length)bins[bin]++;});
+    let score=0;bins.forEach(value=>{score+=value*value;});
+    if(Math.abs(angle)<.01)zeroScore=score;
+    if(score>bestScore){bestScore=score;bestAngle=angle;}
+  }
+  if(!zeroScore||bestScore<zeroScore*1.025)bestAngle=0;
+  return {
+    width:cv.width,height:cv.height,contrast:Math.sqrt(variance)/128,noise:(diff/Math.max(1,diffCount))/255,
+    unevenBackground:(Math.max(...tileMeans)-Math.min(...tileMeans))/255>.18,
+    estimatedTextHeight:Math.max(7,Math.min(14,cv.height/110)),skewAngle:Number(bestAngle.toFixed(2)),
+  };
+}
+function renderOcrCandidate(source,config,baseScale){
+  const rotation=(Number(config.rotation)||0)+(Number(config.deskew)||0),rad=rotation*Math.PI/180;
+  let factor=Math.max(1,Number(config.scale||baseScale)/Math.max(.1,baseScale));
+  const cos=Math.cos(rad),sin=Math.sin(rad),sw=source.width,sh=source.height;
+  let width=Math.ceil((Math.abs(sw*cos)+Math.abs(sh*sin))*factor),height=Math.ceil((Math.abs(sw*sin)+Math.abs(sh*cos))*factor);
+  const pixels=width*height;if(pixels>20000000){const cap=Math.sqrt(20000000/pixels);factor*=cap;width=Math.ceil(width*cap);height=Math.ceil(height*cap);}
+  const cv=document.createElement('canvas');cv.width=Math.max(1,width);cv.height=Math.max(1,height);
+  const ctx=cv.getContext('2d',{alpha:false,willReadFrequently:true});ctx.fillStyle='#fff';ctx.fillRect(0,0,cv.width,cv.height);
+  ctx.translate(cv.width/2,cv.height/2);ctx.rotate(rad);ctx.scale(factor,factor);ctx.drawImage(source,-sw/2,-sh/2);
+  const image=ctx.getImageData(0,0,cv.width,cv.height),data=image.data,contrast=Number(config.contrast)||1;
+  const gray=new Uint8ClampedArray(cv.width*cv.height);
+  for(let p=0,i=0;p<data.length;p+=4,i++){
+    const lum=.299*data[p]+.587*data[p+1]+.114*data[p+2];gray[i]=Math.max(0,Math.min(255,(lum-128)*contrast+128));
+  }
+  if(config.denoise){
+    const copy=gray.slice();
+    for(let y=1;y<cv.height-1;y++)for(let x=1;x<cv.width-1;x++){
+      const i=y*cv.width+x;if(copy[i]<90&&copy[i-1]>220&&copy[i+1]>220&&copy[i-cv.width]>220&&copy[i+cv.width]>220)gray[i]=255;
+    }
+  }
+  let tileMeans=null,tileSize=48;
+  if(config.threshold==='adaptive'){
+    const tx=Math.ceil(cv.width/tileSize),ty=Math.ceil(cv.height/tileSize),sums=new Float64Array(tx*ty),counts=new Uint32Array(tx*ty);
+    for(let y=0;y<cv.height;y++)for(let x=0;x<cv.width;x++){const t=Math.floor(y/tileSize)*tx+Math.floor(x/tileSize);sums[t]+=gray[y*cv.width+x];counts[t]++;}
+    tileMeans=Array.from(sums,(value,index)=>value/Math.max(1,counts[index]));
+  }
+  for(let p=0,i=0;p<data.length;p+=4,i++){
+    let value=gray[i];
+    if(tileMeans){const tx=Math.ceil(cv.width/tileSize),x=i%cv.width,y=Math.floor(i/cv.width),mean=tileMeans[Math.floor(y/tileSize)*tx+Math.floor(x/tileSize)];value=value<mean-10?0:255;}
+    data[p]=data[p+1]=data[p+2]=value;data[p+3]=255;
+  }
+  ctx.putImageData(image,0,0);
+  const mapPoint=(x,y)=>{const dx=x-cv.width/2,dy=y-cv.height/2;return {x:(cos*dx+sin*dy)/factor+sw/2,y:(-sin*dx+cos*dy)/factor+sh/2};};
+  return {canvas:cv,mapPoint,config:{...config,actualScale:Number((baseScale*factor).toFixed(2))}};
+}
+function mapOcrWords(words,candidate){
+  return (words||[]).map(word=>{
+    const box=word.bbox||word.boundingBox||{},corners=[candidate.mapPoint(+box.x0,+box.y0),candidate.mapPoint(+box.x1,+box.y0),candidate.mapPoint(+box.x1,+box.y1),candidate.mapPoint(+box.x0,+box.y1)];
+    if(corners.some(point=>!Number.isFinite(point.x)||!Number.isFinite(point.y)))return null;
+    const xs=corners.map(point=>point.x),ys=corners.map(point=>point.y);
+    return {...word,bbox:{x0:Math.max(0,Math.min(...xs)),y0:Math.max(0,Math.min(...ys)),x1:Math.min(candidate.sourceWidth,Math.max(...xs)),y1:Math.min(candidate.sourceHeight,Math.max(...ys))}};
+  }).filter(Boolean);
+}
 async function ocrPdfPage(f,pageNo,{reanalyze=true,quiet=false}={}){
   if (ocrBusy) throw new Error('OCR is already running');
-  if (!f || f.ext!=='pdf' || !rawStore[f.id]) throw new Error('The original PDF is not available for OCR');
+  if (!f || (f.ext!=='pdf'&&!IMAGE_EXTS.has(f.ext)) || !rawStore[f.id]) throw new Error('The original document is not available for OCR');
   ocrBusy=true;
   const btn=$('#vOcrBtn'); if(btn){btn.disabled=true;btn.textContent='Loading OCR…';}
   try{
-    const lib=await loadPdfjs();
-    let doc=state.viewer.pdfDocs[f.id];
-    if(!doc){doc=await lib.getDocument({data:rawStore[f.id].slice(0)}).promise;state.viewer.pdfDocs[f.id]=doc;}
-    const page=await doc.getPage(pageNo);
-    const base=page.getViewport({scale:1});
-    let scale=2.25;
-    if(base.width*base.height*scale*scale>16000000) scale=Math.sqrt(16000000/(base.width*base.height));
-    const vp=page.getViewport({scale});
-    const cv=document.createElement('canvas');cv.width=Math.ceil(vp.width);cv.height=Math.ceil(vp.height);
-    await page.render({canvasContext:cv.getContext('2d',{alpha:false}),viewport:vp}).promise;
-    const worker=await getOcrWorker();
-    const result=await worker.recognize(cv,{}, {blocks:true});
-    const words=flattenOcrWords(result.data.blocks||[]);
+    let base,cv,baseScale=1;
+    if(f.ext==='pdf'){
+      const lib=await loadPdfjs();
+      let doc=state.viewer.pdfDocs[f.id];
+      if(!doc){doc=await lib.getDocument({data:rawStore[f.id].slice(0)}).promise;state.viewer.pdfDocs[f.id]=doc;}
+      const page=await doc.getPage(pageNo);
+      base=page.getViewport({scale:1});
+      let scale=2.25;
+      if(base.width*base.height*scale*scale>16000000) scale=Math.sqrt(16000000/(base.width*base.height));
+      baseScale=scale;
+      const vp=page.getViewport({scale});
+      cv=document.createElement('canvas');cv.width=Math.ceil(vp.width);cv.height=Math.ceil(vp.height);
+      await page.render({canvasContext:cv.getContext('2d',{alpha:false}),viewport:vp}).promise;
+    }else{
+      const blob=new Blob([rawStore[f.id]],{type:imageMime(f.ext)}),bitmap=await createImageBitmap(blob);
+      base={width:bitmap.width,height:bitmap.height};
+      let scale=Math.min(2.25,Math.sqrt(16000000/(base.width*base.height)));
+      if(!Number.isFinite(scale)||scale<=0)scale=1;
+      baseScale=scale;
+      cv=document.createElement('canvas');cv.width=Math.ceil(base.width*scale);cv.height=Math.ceil(base.height*scale);
+      cv.getContext('2d',{alpha:false}).drawImage(bitmap,0,0,cv.width,cv.height);bitmap.close();
+    }
     const core=window.EstimationExtractorCore;
-    const lines=core?core.ocrWordsToLines(words,cv.width,cv.height,base.width,base.height):[];
+    if(!core)throw new Error('The OCR quality module is unavailable');
+    const worker=await getOcrWorker();
+    if(worker.setParameters)await worker.setParameters({preserve_interword_spaces:'1',user_defined_dpi:'300'});
+    const metrics=inspectOcrCanvas(cv),pageRecord=f.pages[pageNo-1],expectedType=pageRecord?.sub_format||pageRecord?.type||'unknown';
+    const embeddedLines=(pageRecord?.embeddedLines?.length?pageRecord.embeddedLines:pageRecord?.source!=='ocr'?pageRecord?.lines:[])||[];
+    if(embeddedLines.length&&!pageRecord.embeddedLines)pageRecord.embeddedLines=embeddedLines;
+    let plan=core.buildOcrCandidatePlan(metrics),attempts=[];
+    if(embeddedLines.length){
+      const quality=core.assessPageText(embeddedLines,{expectedType,pageWidth:pageRecord.w,pageHeight:pageRecord.h});
+      const embedded={id:'embedded-text',preprocessing:null,confidence:quality.score*100,text:embeddedLines.map(line=>line.text).join('\n'),
+        lines:embeddedLines,expectedType,mappedWords:[]};
+      embedded.scoring=core.scoreOcrCandidate(embedded);embedded.score=embedded.scoring.score;attempts.push(embedded);
+    }
+    const runCandidate=async config=>{
+      const prepared=renderOcrCandidate(cv,config,baseScale);prepared.sourceWidth=cv.width;prepared.sourceHeight=cv.height;
+      const status=$('#vOcrStatus');if(status)status.textContent=`Testing ${config.id.replace(/-/g,' ')}…`;
+      const result=await worker.recognize(prepared.canvas,{}, {blocks:true});
+      const rawWords=flattenOcrWords(result.data.blocks||result.data.words||[]),mappedWords=mapOcrWords(rawWords,prepared);
+      const lines=core.ocrWordsToLines(mappedWords,cv.width,cv.height,base.width,base.height);
+      const text=lines.map(line=>line.text).join('\n'),candidate={id:config.id,preprocessing:prepared.config,confidence:result.data.confidence??0,text,lines,expectedType,mappedWords};
+      candidate.scoring=core.scoreOcrCandidate(candidate);candidate.score=candidate.scoring.score;return candidate;
+    };
+    for(const config of plan.slice(0,2))attempts.push(await runCandidate(config));
+    let selected=core.selectBestOcrCandidate(attempts);
+    if(selected.score<.75){
+      for(const config of plan.slice(2,4)){attempts.push(await runCandidate(config));selected=core.selectBestOcrCandidate(attempts);if(selected.score>=.82)break;}
+    }
+    if(selected.score<.58){
+      plan=core.buildOcrCandidatePlan({...metrics,tryOrientations:true});
+      for(const config of plan.filter(item=>!attempts.some(done=>done.id===item.id)).slice(0,3)){attempts.push(await runCandidate(config));}
+      selected=core.selectBestOcrCandidate(attempts);
+    }
+    const chosen=selected.candidate,keptEmbedded=chosen?.id==='embedded-text';
+    const lines=(chosen?.lines||[]).map(line=>{
+      if(keptEmbedded)return {...line,originalText:line.originalText||line.text,corrections:line.corrections||[],
+        extractionMethod:line.extractionMethod||'Embedded text / deterministic parser'};
+      const corrected=core.correctElectricalOcrText(line.text);
+      return {...line,text:corrected.text,originalText:corrected.originalText,corrections:corrected.corrections,extractionMethod:`OCR (${chosen.id})`};
+    });
     if(!lines.length) throw new Error('OCR completed but found no readable words on this page');
     const pg=f.pages[pageNo-1];
     pg.lines=lines;pg.w=base.width;pg.h=base.height;
-    pg.ocr={status:'done',confidence:result.data.confidence??null,at:new Date().toISOString()};
+    const pageWords=(chosen.mappedWords||[]).map(word=>{const box=word.bbox;return {...word,bbox:{x0:box.x0*base.width/cv.width,y0:box.y0*base.height/cv.height,x1:box.x1*base.width/cv.width,y1:box.y1*base.height/cv.height}};});
+    pg.tableRows=core.reconstructSpatialRows(pageWords);
+    pg.textQuality=chosen.scoring.textQuality;pg.needsOcr=false;
+    pg.ocr={status:'done',confidence:chosen.confidence??null,qualityScore:chosen.score,selectedCandidate:chosen.id,
+      candidates:attempts.map(item=>({id:item.id,preprocessing:item.preprocessing,confidence:item.confidence,qualityScore:item.score,lineCount:item.lines.length,textQuality:item.scoring.textQuality})),
+      corrections:lines.flatMap((line,lineIndex)=>line.corrections.map(correction=>({...correction,line:lineIndex}))),at:new Date().toISOString()};
     const c=classifyPage(lines.map(l=>l.text).join('\n'),pageNo-1,f.pages.length);
     if(!pg.typeManual){ pg.type=c.type;pg.conf=c.conf;pg.sub_format=c.type;pg.threeType=toThreeType(c.type); }
-    pg.source='ocr';
+    pg.source=keptEmbedded?'native_text':'ocr';
     f.ocrReady=true;
-    const remaining=f.pages.filter(x=>!(x.lines||[]).length).length;
-    f.warn=remaining?`${remaining} scanned page${remaining===1?'':'s'} still need OCR.`:null;
+    const remaining=f.pages.filter(x=>x.needsOcr).length;
+    f.warn=remaining?`${remaining} page${remaining===1?'':'s'} still need OCR.`:null;
     saveProject(state.cur);renderDocs();renderPgclass();
     if(reanalyze) await runAnalysis({auto:true});
-    if(!quiet) toast(`OCR read ${lines.length} text lines from page ${pageNo}`);
+    if(!quiet) toast(keptEmbedded?`Embedded text retained on page ${pageNo} after OCR comparison`:`OCR read ${lines.length} lines from page ${pageNo} using ${chosen.id.replace(/-/g,' ')}`);
     return lines;
   }finally{
     ocrBusy=false;
@@ -1265,28 +1657,32 @@ async function ocrPdfPage(f,pageNo,{reanalyze=true,quiet=false}={}){
   }
 }
 async function ocrScannedPages(f,limit=20,{reanalyze=true,quiet=false}={}){
-  const queue=f.pages.map((pg,i)=>({pg,page:i+1})).filter(x=>!(x.pg.lines||[]).length).slice(0,limit);
-  if(!queue.length){if(!quiet)toast('Every page already has readable text');return 0;}
+  const queue=f.pages.map((pg,i)=>({pg,page:i+1})).filter(x=>x.pg.needsOcr||!(x.pg.lines||[]).length).slice(0,limit);
+  if(!queue.length){if(!quiet)toast('Every page has a reliable text result');return 0;}
   let done=0;
-  for(const item of queue){
+  for(const [index,item] of queue.entries()){
+    ocrProgressContext=`${f.name} | Page ${item.page} of ${f.pages.length}`;
+    setProcessingDock('Reading scanned pages',ocrProgressContext,Math.max(2,Math.round((index+1)/queue.length*(100/STAGES.length))),0);
+    await paintProcessing();
     try{await ocrPdfPage(f,item.page,{reanalyze:false,quiet:true});done++;}
     catch(e){toast(`OCR stopped on page ${item.page}: ${e.message}`);break;}
   }
+  ocrProgressContext='';
   if(done&&reanalyze) await runAnalysis({auto:true});
-  const remain=f.pages.filter(pg=>!(pg.lines||[]).length).length;
+  const remain=f.pages.filter(pg=>pg.needsOcr||!(pg.lines||[]).length).length;
   if(!quiet||remain) toast(`OCR completed ${done} page${done===1?'':'s'}${remain?`; ${remain} remain — run OCR scans again`:''}`);
   renderViewer();
   return done;
 }
-/* Workstream 0 (§0.2‑4): scanned pages are OCR'd automatically on ingest —
-   a page with no text layer must never silently contribute zero rows. */
+/* Page-quality routing: missing, corrupt, incomplete, or badly ordered text
+   layers are OCR'd automatically; reliable digital pages keep their text. */
 async function autoOcrScannedFiles(){
   const p=state.cur; if(!p) return 0;
   let total=0;
   for (const f of p.files){
-    if (f.status!=='ready'||f.ext!=='pdf') continue;
-    if (!f.pages.some(pg=>!(pg.lines||[]).length)) continue;
-    toast(`Reading scanned pages in ${f.name} with OCR…`);
+    if (f.status!=='ready'||(f.ext!=='pdf'&&!IMAGE_EXTS.has(f.ext))) continue;
+    if (!f.pages.some(pg=>pg.needsOcr||!(pg.lines||[]).length)) continue;
+    toast(`Reading pages with missing or unreliable text in ${f.name}…`);
     try{ total+=await ocrScannedPages(f, Infinity, {reanalyze:false, quiet:true}); }
     catch(e){ toast('Auto-OCR: '+e.message); }
   }
@@ -1308,14 +1704,16 @@ function aiExtractReady(){
       if(!r.ok){ window.__aiStatus='off — extraction endpoint not reachable'; return false; }
       const j=await r.json();
       if(!j.configured){ window.__aiStatus='not configured — set ANTHROPIC_API_KEY in Netlify'; return false; }
-      window.__aiStatus='active ('+(j.model||'Claude')+')';
+      window.__aiStatus='active';
       return true;
     }).catch(()=>{ window.__aiStatus='off — extraction endpoint not reachable'; return false; });
   }
   return aiProbePromise;
 }
 const AI_DEVICE_MAP={MCB:'MCB',RCBO:'RCBO',MCCB:'MCCB',ACB:'ACB',RCD:'RCD',SPD:'SPD',fuse:'Fuse',
-  switch_disconnector:'Isolator',isolator:'Isolator',contactor:'Contactor',meter:'Meter'};
+  afdd_rcbo:'AFDD+RCBO',switch_disconnector:'Isolator',isolator:'Isolator',contactor:'Contactor',
+  time_clock:'Time clock',photocell:'Photocell',relay:'Relay',timer:'Timer',starter:'Starter',
+  overload:'Overload',transformer:'Transformer',dali_controller:'DALI controller',meter:'Meter'};
 async function aiExtractPage(f,pageNo,pg){
   let image_base64=null;
   if (f.ext==='pdf'&&rawStore[f.id]){
@@ -1345,53 +1743,57 @@ async function aiExtractPage(f,pageNo,pg){
     if(s.status==='done') return s.result;
     if(s.status==='error') throw new Error(s.error||'extraction failed');
   }
-  throw new Error('AI extraction timed out (>3 min)');
+  throw new Error('Document extraction timed out (>3 min)');
 }
 function mergeAiResult(A,out,fileId,pageNo){
   if(!out) return;
   (out.boards||[]).forEach(b=>{
     if(!b.ref) return;
-    const norm=normBoard(b.ref); if(!norm) return;
+    const canonical=canonicalBoardRef(b.ref), norm=canonical.normalised; if(!norm) return;
     if(!A.boards[norm]){
       const det=detectBoards(b.ref)[0];
-      A.boards[norm]={norm, orig:b.ref, type:det?det.type:'UNK', pages:[], parent:null, parentConf:0, manual:false};
+      A.boards[norm]={norm, orig:canonical.display, type:det?det.type:'UNK', pages:[], parent:null, parentConf:0, manual:false};
     }
     const e=A.boards[norm];
     if(!e.pages.some(x=>x.fileId===fileId&&x.page===pageNo)) e.pages.push({fileId,page:pageNo});
-    e.header=Object.assign(e.header||{}, Object.fromEntries(Object.entries(b).filter(([k,v])=>v!==null&&k!=='ref'&&k!=='confidence')));
+    e.header=Object.assign(e.header||{}, Object.fromEntries(Object.entries(b).filter(([k,v])=>v!==null&&v!==''&&k!=='ref'&&k!=='confidence')));
     if (b.fed_from_ref && !e.manual){
-      const fb=normBoard(b.fed_from_ref);
+      const fb=canonicalBoardRef(b.fed_from_ref).normalised;
       if (fb && fb!==norm && 0.75>(e.parentConf||0)){ e.parent=fb; e.parentConf=0.75; }
     }
   });
   (out.devices||[]).forEach(d=>{
-    const bn=d.board_ref?normBoard(d.board_ref):null;
+    const bn=d.board_ref?canonicalBoardRef(d.board_ref).normalised:null;
     // regex rows win: skip AI rows for slots the schedule parser already filled
     const dup=A.rows.some(r=>r.kind==='schedule'&&r.boardNorm===bn&&r.way===d.way
       &&(!r.phase||!d.phase||r.phase===d.phase||d.phase==='L1L2L3'));
     if (dup) return;
     const space=d.device_class==='space';
     const spare=d.is_spare||d.device_class==='spare';
-    const device=AI_DEVICE_MAP[d.device_class]|| (d.is_spd?'SPD':null);
-    A.rows.push({id:uid(), boardNorm:bn, fileId, page:pageNo, line:null, status:'pending', kind:'ai',
+    const device=(d.afdd&&d.device_class==='RCBO')?'AFDD+RCBO':(AI_DEVICE_MAP[d.device_class]|| (d.is_spd?'SPD':null));
+    const aiRow={id:uid(), boardNorm:bn, fileId, page:pageNo, line:null, status:'pending', kind:'ai',
       way:d.way??null, phase:d.phase&&d.phase!=='L1L2L3'?d.phase:(d.phase==='L1L2L3'?'3PH':null),
-      desc:d.description||'', device, rating:d.rating_a??null, poles:d.poles??null,
-      curve:d.trip_curve||null, sens:d.rcd_ma??null, afdd:!!d.afdd, ka:null,
+      desc:d.description||'', device, rating:d.rating_a??null, poles:d.poles??null, poleConfiguration:d.pole_configuration||null,
+      curve:d.trip_curve||null, sens:d.rcd_ma??null, afdd:!!d.afdd, ka:d.breaking_capacity_ka??null,
       cable:(d.phase_csa_mm2!=null||d.cable_type)?{orig:[d.phase_csa_mm2?d.phase_csa_mm2+'mm²':null,d.cable_type].filter(Boolean).join(' '),
         size:d.phase_csa_mm2??null, cpc:typeof d.cpc_csa_mm2==='number'?d.cpc_csa_mm2:null, cores:null,
         construction:typeof d.cpc_csa_mm2==='string'?d.cpc_csa_mm2:null, typeCode:d.cable_type||null, installMethod:d.install_method||null}:null,
       circuitConfig:d.circuit_config||null, spare, space, incomer:!!d.is_incomer, isSpd:!!d.is_spd,
-      qty:space?0:1, srcText:'[AI] '+(d.description||d.device_class||'')+(d.way!=null?' (way '+d.way+(d.phase?'/'+d.phase:'')+')':''),
-      conf:Math.max(0.2,Math.min(0.95,Number(d.confidence)||0.6))});
+      qty:space?0:1, srcText:(d.description||d.device_class||'Device')+(d.way!=null?' (way '+d.way+(d.phase?'/'+d.phase:'')+')':''),
+      conf:Math.max(0.2,Math.min(0.95,Number(d.confidence)||0.6))};
+    const fl=state.cur?.files?.find(file=>file.id===fileId),bbox=Array.isArray(d.bbox||d.source_region)?(d.bbox||d.source_region):null;
+    const trace=sourceTrace(aiRow,{text:d.source_text||aiRow.srcText,originalText:d.source_text||aiRow.srcText,bbox,confidence:aiRow.conf,corrections:[],extractionMethod:'AI-assisted extraction'},
+      {source:'ai',ocr:{confidence:aiRow.conf*100}},fl?.name||fileId);
+    A.rows.push({...aiRow,...trace,extractionMethod:'AI-assisted extraction'});
   });
   (out.feeds||[]).forEach(fd=>{
     if(!fd.to_ref) return;
     A.feeders.push({id:uid(), fileId, page:pageNo, line:null,
-      from:fd.from_ref?normBoard(fd.from_ref):null, to:normBoard(fd.to_ref),
+      from:fd.from_ref?canonicalBoardRef(fd.from_ref).normalised:null, to:canonicalBoardRef(fd.to_ref).normalised,
       cable:(fd.cable_csa_mm2!=null||fd.cable_desc)?{orig:fd.cable_desc||(fd.cable_csa_mm2+'mm²'), size:fd.cable_csa_mm2??null,
         cpc:typeof fd.cable_cpc_mm2==='number'?fd.cable_cpc_mm2:null, cores:null, construction:null, ref:fd.cable_ref||null}:null,
       device:fd.device_class||null, rating:fd.rating_a??null, poles:fd.poles??null,
-      srcText:'[AI] feed '+(fd.from_ref||'?')+' → '+fd.to_ref+(fd.cable_ref?' via '+fd.cable_ref:''),
+      srcText:'Feed '+(fd.from_ref||'?')+' → '+fd.to_ref+(fd.cable_ref?' via '+fd.cable_ref:''),
       conf:Math.max(0.2,Math.min(0.9,Number(fd.confidence)||0.7)), ai:true});
   });
   (out.flags||[]).forEach(fl=>{ (A.aiFlags=A.aiFlags||[]).push({fileId, page:pageNo, kind:fl.kind, message:fl.message}); });
@@ -1411,7 +1813,7 @@ async function runAiExtraction(A,f,p,pageSet){
     });
   }
   if(!jobs.length) return;
-  toast('AI extraction: reading '+jobs.length+' page'+(jobs.length===1?'':'s')+'…');
+  toast('Extracting '+jobs.length+' page'+(jobs.length===1?'':'s')+'…');
   A.aiPages=0; A.aiErrors=0;
   const CONC=2;
   for (let i=0;i<jobs.length;i+=CONC){
@@ -1420,7 +1822,7 @@ async function runAiExtraction(A,f,p,pageSet){
       catch(e){ console.warn('AI extraction failed on '+j.fl.name+' p'+j.pageNo+':', e.message); A.aiErrors++; }
     }));
   }
-  if (A.aiErrors) toast('AI extraction: '+A.aiErrors+' page(s) failed — results kept for the rest');
+  if (A.aiErrors) toast(A.aiErrors+' page(s) could not be extracted — other results were kept');
 }
 
 /* reconstruct lines (text + bbox) from a pdf.js text content object */
@@ -1446,34 +1848,71 @@ function splitTextPages(txt){
   return parts.map(t=>({lines: t.replace(/^\n+/,'').split(/\r?\n/).map(x=>({text:x}))}));
 }
 const fmtSize = b => b>=1048576 ? (b/1048576).toFixed(1)+' MB' : b>=1024 ? Math.round(b/1024)+' KB' : (b||0)+' B';
+const IMAGE_EXTS=new Set(['png','jpg','jpeg','webp']);
+const imageMime=ext=>ext==='jpg'||ext==='jpeg'?'image/jpeg':'image/'+ext;
+async function imageSize(blob){
+  if(window.createImageBitmap){const bitmap=await createImageBitmap(blob);const size={width:bitmap.width,height:bitmap.height};bitmap.close();return size;}
+  return new Promise((resolve,reject)=>{const url=URL.createObjectURL(blob),img=new Image();
+    img.onload=()=>{resolve({width:img.naturalWidth,height:img.naturalHeight});URL.revokeObjectURL(url);};
+    img.onerror=()=>{reject(new Error('The image could not be read'));URL.revokeObjectURL(url);};img.src=url;});
+}
 async function ingestFile(file){
   const p=state.cur; if(!p) return;
   const ext=(file.name.split('.').pop()||'').toLowerCase();
   const rec={id:uid(), name:file.name, ext, size:file.size||0, status:'processing', native:true, pages:[], error:null, warn:null, pct:8};
-  p.files.push(rec); renderDocs();
+  p.files.push(rec); renderDocs();renderProjHeader();
+  setProcessingDock(STAGES[0],file.name,2,0);await paintProcessing();
   try{
     if (ext==='pdf'){
       const buf=await file.arrayBuffer(); rawStore[rec.id]=buf; rec.pct=25; renderDocs();
       const lib=await loadPdfjs();
       const doc=await lib.getDocument({data:buf.slice(0)}).promise;
       state.viewer.pdfDocs[rec.id]=doc;
-      let anyText=false;
+      let anyText=false,ocrPages=0;
       for (let i=1;i<=doc.numPages;i++){
         const pg=await doc.getPage(i);
         const vp=pg.getViewport({scale:1});
         const tc=await pg.getTextContent();
         const lines=linesFromTextContent(tc,vp);
-        if (lines.length>2) anyText=true;
-        rec.pages.push({lines, w:vp.width, h:vp.height});
-        rec.pct=25+Math.round(65*i/doc.numPages); renderDocs();
+        const preliminary=classifyPage(lines.map(line=>line.text).join('\n'),i-1,doc.numPages);
+        const textQuality=window.EstimationExtractorCore
+          ? window.EstimationExtractorCore.assessPageText(lines,{expectedType:preliminary.type,pageWidth:vp.width,pageHeight:vp.height})
+          : {route:lines.length>2?'embedded_text':'ocr',reliable:lines.length>2,score:lines.length>2?0.8:0,reasons:[]};
+        const needsOcr=textQuality.route==='ocr';
+        if (!needsOcr) anyText=true; else ocrPages++;
+        rec.pages.push({lines, embeddedLines:needsOcr?lines:null, w:vp.width, h:vp.height, textQuality, needsOcr, source:needsOcr?'ocr_pending':'native_text'});
+        rec.pct=25+Math.round(65*i/doc.numPages); renderDocs();renderProjHeader();
+        setProcessingDock(STAGES[0],`${file.name} | Page ${i} of ${doc.numPages}`,Math.max(2,Math.round(i/doc.numPages*(100/STAGES.length))),0);
+        if(i===1||i===doc.numPages||i%8===0)await paintProcessing();
       }
       rec.native=anyText;
-      if (!anyText) rec.warn='Scanned PDF — no selectable text found. Pages will be read automatically with OCR.';
+      if (ocrPages) rec.warn=`${ocrPages} page${ocrPages===1?'':'s'} need OCR because embedded text is missing or unreliable.`;
+    } else if (ext==='xlsx'){
+      if(!window.ExcelJS) throw new Error('The Excel reader is unavailable');
+      const buf=await file.arrayBuffer();rawStore[rec.id]=buf;rec.pct=35;renderDocs();
+      const workbook=new window.ExcelJS.Workbook();await workbook.xlsx.load(buf);
+      workbook.eachSheet(worksheet=>{
+        const lines=[{text:'Worksheet: '+worksheet.name}];
+        worksheet.eachRow({includeEmpty:false},row=>{
+          const cells=[];
+          for(let column=1;column<=Math.max(1,row.cellCount);column++) cells.push(row.getCell(column).text||'');
+          while(cells.length&&!cells[cells.length-1])cells.pop();
+          if(cells.some(Boolean)) lines.push({text:cells.join('\t')});
+        });
+        rec.pages.push({lines,w:840,h:Math.max(600,lines.length*20+80),sheetName:worksheet.name});
+      });
+      if(!rec.pages.length) throw new Error('The workbook contains no visible worksheets');
+      rec.native=true;
+    } else if (IMAGE_EXTS.has(ext)){
+      const buf=await file.arrayBuffer();rawStore[rec.id]=buf;
+      const size=await imageSize(new Blob([buf],{type:file.type||imageMime(ext)}));
+      rec.pages=[{lines:[],w:size.width,h:size.height,image:true,needsOcr:true,source:'ocr_pending',textQuality:{route:'ocr',reliable:false,score:0,reasons:['Image documents require OCR']}}];rec.native=false;
+      rec.warn='Image scan — text will be read automatically with OCR.';
     } else if (ext==='txt'||ext==='csv'||ext==='md'||ext==='text'){
       const txt=await file.text();
       rec.pages=splitTextPages(txt); rec.native=true;
     } else {
-      throw new Error('Unsupported file type ".'+ext+'". Please upload PDF, TXT or CSV. (For Excel schedules, save the sheet as CSV first.)');
+      throw new Error('Unsupported file type ".'+ext+'". Please upload PDF, XLSX, PNG, JPG, WebP, TXT or CSV.');
     }
     rec.status='ready'; rec.pct=100;
     classifyFilePages(rec);
@@ -1483,23 +1922,32 @@ async function ingestFile(file){
   renderDocs(); renderPgclass(); renderAnalysisControls(); renderProjHeader(); saveProject(p);
 }
 function classifyFilePages(f){
+  Object.keys(boardScanCache).forEach(k=>{ if(k.startsWith(f.id+'|')) delete boardScanCache[k]; });  // lines may have changed (ingest/OCR)
   const tot=f.pages.length;
   f.pages.forEach((pg,i)=>{
-    pg.source = pg.ocr ? 'ocr' : (f.native ? 'native_text' : 'ocr');   // §5.1 provenance
-    if (pg.typeManual){ pg.threeType = pg.threeType || toThreeType(pg.type); return; }
     const text=pg.lines.map(l=>l.text).join('\n');
-    const c=classifyPage(text,i,tot);
-    pg.type=c.type; pg.conf=c.conf;
-    pg.sub_format=c.type;               // §5.1 fine-grained tag kept for routing/insight
-    pg.threeType=toThreeType(c.type);   // §5.1 coarse three-type shown in the UI
+    if (!pg.typeManual){
+      const c=classifyPage(text,i,tot);
+      pg.type=c.type; pg.conf=c.conf;
+      pg.sub_format=c.type;
+      pg.threeType=toThreeType(c.type);
+    } else pg.threeType = pg.threeType || toThreeType(pg.type);
+    if (!pg.ocr && window.EstimationExtractorCore){
+      pg.textQuality=window.EstimationExtractorCore.assessPageText(pg.lines||[],{expectedType:pg.sub_format||pg.type||'unknown',pageWidth:pg.w,pageHeight:pg.h});
+      pg.needsOcr=pg.textQuality.route==='ocr'&&(f.ext==='pdf'||IMAGE_EXTS.has(f.ext));
+    } else if (pg.ocr) pg.needsOcr=false;
+    pg.source = pg.ocr?.selectedCandidate==='embedded-text' ? 'native_text' : pg.ocr ? 'ocr' : (pg.needsOcr ? 'ocr_pending' : 'native_text');
   });
 }
 async function handleFiles(list){
   if (!state.cur){ toast('Open a project first'); return; }
   const files=Array.from(list);
+  if(!files.length)return;
+  setProcessingDock(STAGES[0],`${files.length} document${files.length===1?'':'s'} selected`,2,0);await paintProcessing();
   for (const f of files) await ingestFile(f);
   await autoOcrScannedFiles();
-  if (state.cur.files.some(f=>f.status==='ready')){ toast('Documents read — analysing…'); runAnalysis({auto:true}); }
+  if (state.cur.files.some(f=>f.status==='ready')){ toast('Documents read — analysing…'); await runAnalysis({auto:true}); }
+  else finishProcessing('No readable documents were available','failed',4000);
 }
 $('#fileInput').addEventListener('change', e=>{ handleFiles(e.target.files); e.target.value=''; });
 const dz=$('#dropzone');
@@ -1567,11 +2015,11 @@ function renderDocs(){
         }, 'Remove');
       }
       if (a==='replace'){
-        const inp=document.createElement('input'); inp.type='file'; inp.accept='.pdf,.txt,.csv,.md';
+        const inp=document.createElement('input'); inp.type='file'; inp.accept='.pdf,.txt,.csv,.md,.xlsx,.png,.jpg,.jpeg,.webp';
         inp.addEventListener('change', async ()=>{
           if (!inp.files.length) return;
           p.files=p.files.filter(x=>x.id!==f.id); delete rawStore[f.id];
-          await ingestFile(inp.files[0]); await autoOcrScannedFiles(); runAnalysis({auto:true});
+          await ingestFile(inp.files[0]); await autoOcrScannedFiles(); await runAnalysis({auto:true});
         });
         inp.click();
       }
@@ -1603,10 +2051,12 @@ function renderPgclass(){
       ? `<div class="sub" style="margin-top:3px">sub-format: ${esc(PAGE_TYPES[subFmt])}</div>` : '';
     const boardsOn=[]; pg.lines.forEach(l=>detectBoards(l.text).forEach(b=>{ if(!boardsOn.includes(b.orig)) boardsOn.push(b.orig); }));
     const rows=A? A.rows.filter(r=>r.fileId===f.id&&r.page===i+1&&r.kind!=='manual').length : 0;
+    const quality=pg.ocr?.qualityScore??pg.textQuality?.score,qualityText=Number.isFinite(quality)?' '+Math.round(quality*100)+'%':'';
+    const sourceLabel=pg.source==='native_text'?'Text'+qualityText:pg.source==='ocr'?'OCR'+qualityText:'OCR queued';
     tr.innerHTML=`<td class="num">${i+1}</td>
       <td><select class="sel pg-type">${opts}</select>${subChip}</td>
       <td>${pg.typeManual?'<span class="chip blue">Manually set</span>':confChip(pg.conf||0.3)}</td>
-      <td>${pg.source==='native_text'?'Text':pg.source==='ocr'||pg.ocr?'OCR':f.native?'Text':'Scan'}</td>
+      <td><span title="${esc((pg.textQuality?.reasons||[]).join('; '))}">${esc(sourceLabel)}</span></td>
       <td>${boardsOn.slice(0,4).map(b=>'<span class="chip grey">'+esc(b)+'</span>').join(' ')||'—'}</td>
       <td class="num">${rows||'—'}</td>
       <td><button class="btn sm ghost" data-a="view">View</button></td>`;
@@ -1634,7 +2084,7 @@ function renderCoverage(){
   sum.textContent = (s.pctComplete!=null? s.pctComplete+'% of header-declared ways captured · ':'')
     + s.boardsWithRows+'/'+s.boards+' boards have rows';
   sum.className = 'chip '+(s.pctComplete==null?'grey': s.pctComplete>=95?'green': s.pctComplete>=60?'amber':'red');
-  const rows=[...cov.perBoard].sort((a,b)=>(b.unaccountedWays||0)-(a.unaccountedWays||0)||(b.expectedWays||0)-(a.expectedWays||0));
+  const rows=cov.perBoard.filter(b=>b.inScope!==false).sort((a,b)=>(b.unaccountedWays||0)-(a.unaccountedWays||0)||(b.expectedWays||0)-(a.expectedWays||0));
   body.innerHTML = rows.map(b=>{
     const un=b.unaccountedWays;
     const unCell = un==null?'—': un>0?`<span class="chip red">${un} missing</span>`:'<span class="chip green">0</span>';
@@ -1646,7 +2096,7 @@ function renderCoverage(){
   const ai=window.__aiStatus||'unknown';
   const aiCls = ai.startsWith('active')?'green': ai.startsWith('not configured')?'amber':'grey';
   const aiStats = p.analysis&&p.analysis.aiPages!=null ? ` · ${p.analysis.aiPages} page(s) read${p.analysis.aiErrors?', '+p.analysis.aiErrors+' failed':''}` : '';
-  pagesEl.innerHTML = `<div style="margin-bottom:7px"><span class="chip ${aiCls}">AI extraction: ${esc(ai)}${esc(aiStats)}</span></div>`
+  pagesEl.innerHTML = `<div style="margin-bottom:7px"><span class="chip ${aiCls}">Extraction service: ${esc(ai)}${esc(aiStats)}</span></div>`
     + (cov.zeroRowSchedulePages.length
     ? '<span class="chip amber">⚠ '+cov.zeroRowSchedulePages.length+' page(s) look like schedules but produced 0 rows:</span> '
       + cov.zeroRowSchedulePages.slice(0,30).map(z=>{
@@ -1731,39 +2181,113 @@ $('#anPreviewBtn').addEventListener('click', ()=>{
 
 /* ============================ ANALYSIS PIPELINE ============================ */
 const STAGES=['Reading documents','Classifying pages','Identifying boards','Reading schedules','Extracting cables & feeders','Mapping board relationships','Compiling results'];
-function renderStages(activeIdx, doneAll){
+let processingHideTimer=null,analysisBusy=false;
+function setProcessingDock(stage,detail,progress,activeIdx=0,stateName='running'){
+  const dock=$('#processingDock');if(!dock)return;
+  if(processingHideTimer){clearTimeout(processingHideTimer);processingHideTimer=null;}
+  dock.hidden=false;dock.classList.toggle('complete',stateName==='complete');dock.classList.toggle('failed',stateName==='failed');
+  $('#processingStage').textContent=stage||'Processing';
+  $('#processingDetail').textContent=detail||'';
+  $('#processingFill').style.width=Math.max(0,Math.min(100,Number(progress)||0))+'%';
+  $('#processingSteps').innerHTML=STAGES.map((label,index)=>{
+    const cls=stateName==='complete'||index<activeIdx?'done':index===activeIdx?'run':'';
+    return `<span class="processing-step ${cls}" title="${esc(label)}"></span>`;
+  }).join('');
+}
+function finishProcessing(detail,stateName='complete',delay=1400){
+  setProcessingDock(stateName==='failed'?'Processing stopped':'Analysis complete',detail,100,STAGES.length,stateName);
+  processingHideTimer=setTimeout(()=>{const dock=$('#processingDock');if(dock&&!analysisBusy&&!ocrBusy)dock.hidden=true;},delay);
+}
+function hideProcessing(){
+  if(processingHideTimer){clearTimeout(processingHideTimer);processingHideTimer=null;}
+  const dock=$('#processingDock');if(dock)dock.hidden=true;
+}
+const paintProcessing=()=>new Promise(resolve=>requestAnimationFrame(()=>setTimeout(resolve,0)));
+function renderStages(activeIdx, doneAll, detail=''){
   $('#stageList').innerHTML=STAGES.map((s,i)=>{
     const cls = doneAll||i<activeIdx?'done': i===activeIdx?'run':'';
     return `<li class="${cls}"><span class="dot"></span>${s}</li>`;
   }).join('');
+  if(activeIdx>=0||doneAll){
+    const index=doneAll?STAGES.length:Math.min(activeIdx,STAGES.length-1);
+    const progress=doneAll?100:Math.max(2,Math.round((index/STAGES.length)*100));
+    setProcessingDock(doneAll?'Analysis complete':STAGES[index],detail||(doneAll?'Results are ready':`Step ${index+1} of ${STAGES.length}`),progress,index,doneAll?'complete':'running');
+  }
 }
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const SCHEDULE_TYPES=new Set(['db-schedule','main-schedule','equipment-schedule','cable-schedule']);
 const MENTION_TYPES=new Set(['lighting-plan','power-plan','fire-plan','containment-plan','unknown','spec']);
+function sourceTrace(row,line,pg,fileName){
+  if(!line)return {fileName,extractionMethod:pg?.source==='ocr'?'OCR':'Embedded text / deterministic parser'};
+  const confidence=Number.isFinite(Number(line.confidence))?Number(line.confidence):Math.max(0,Math.min(1,Number(pg?.ocr?.confidence||100)/100));
+  const corrections=Array.isArray(line.corrections)?line.corrections:[];
+  const correctionFor=(field)=>corrections.find(item=>{
+    const value=`${item.original||''} ${item.corrected||''}`;
+    if(field==='Device Family')return /MCB|MCCB|RCBO|RCD|AFDD|SPD/i.test(value);
+    if(field==='Current Rating')return /\d+\s*A\b/i.test(value);
+    if(field==='Pole Configuration')return /\b(?:SPN|DPN|TPN|[1234]P)\b/i.test(value);
+    if(field==='Tripping Curve')return /\b(?:curve|type|characteristic)\b/i.test(value);
+    if(field==='Breaking Capacity')return /kA\b/i.test(value);
+    return false;
+  });
+  const evidence=(field,normalised)=>{
+    const correction=correctionFor(field);
+    return {originalText:line.originalText||line.text,normalisedValue:normalised??'Not specified',bbox:line.bbox||null,confidence,
+      method:line.extractionMethod||(pg?.source==='ocr'?'OCR':'Embedded text / deterministic parser'),
+      correction:correction?.corrected||null,correctionReason:correction?.reason||null,reviewStatus:correction?'Review required':'Pending'};
+  };
+  return {fileName,bbox:line.bbox||null,originalOcrText:line.originalText||line.text,corrections,
+    extractionMethod:line.extractionMethod||(pg?.source==='ocr'?'OCR':'Embedded text / deterministic parser'),
+    fieldEvidence:{
+      'Device Family':evidence('Device Family',row.device),
+      'Current Rating':evidence('Current Rating',row.rating==null?'Not specified':row.rating+'A'),
+      'Pole Configuration':evidence('Pole Configuration',row.poleConfiguration||row.poles||'Unclear'),
+      'Tripping Curve':evidence('Tripping Curve',row.curve||'Not specified'),
+      'Breaking Capacity':evidence('Breaking Capacity',row.ka==null?'Not specified':row.ka+'kA'),
+    },lineConfidence:confidence};
+}
 
 async function runAnalysis(opts){
   const p=state.cur; if(!p) return;
   const auto=opts&&opts.auto;
   const f = auto ? {fileIds:p.files.filter(x=>x.status==='ready').map(x=>x.id), pages:'', boards:[], devices:[], ignore:[], exclSpare:true} : gatherFilters();
-  if (!f.fileIds.length){ toast('No readable documents selected'); return; }
+  if (!f.fileIds.length){ toast('No readable documents selected');finishProcessing('No readable documents were selected','failed',4000);return; }
+  if(analysisBusy){toast('Analysis is already running');return null;}
+  analysisBusy=true;
+  const analysisButtons=[$('#reanalyzeBtn'),$('#anRunBtn')].filter(Boolean);
+  analysisButtons.forEach(button=>button.disabled=true);
+  $('#projView')?.setAttribute('aria-busy','true');
+  try{
   const pageSet=parseRanges(f.pages);
   const boardFilter=f.boards.length?new Set(f.boards):null;
   const devFilter=f.devices.length?new Set(f.devices.map(d=>d.toUpperCase())):null;
   const prev=p.analysis;
-  const A={ ranAt: todayStr(), boards:{}, rows:[], cables:[], feeders:[], legend:[], filters:f };
-  const anim = !auto && !window.__TEST__;
-
-  renderStages(0); if(anim) await sleep(220);
-  f.fileIds.forEach(id=>{ const fl=p.files.find(x=>x.id===id); if(fl) classifyFilePages(fl); });
-  renderStages(2); if(anim) await sleep(220);
-
-  const regBoard=(b,fileId,pageNo)=>{
-    if(!A.boards[b.norm]) A.boards[b.norm]={norm:b.norm, orig:b.orig, type:b.type, pages:[], parent:null, parentConf:0, manual:false};
-    const e=A.boards[b.norm];
-    if (!e.pages.some(x=>x.fileId===fileId&&x.page===pageNo)) e.pages.push({fileId,page:pageNo});
-    if (/[-.]/.test(b.orig) && !/[-.]/.test(e.orig)) e.orig=b.orig;
+  const A={ version:ANALYSIS_VERSION, ranAt: todayStr(), boards:{}, rows:[], cables:[], feeders:[], legend:[], filters:f };
+  const pageTotal=f.fileIds.reduce((sum,id)=>sum+(p.files.find(file=>file.id===id)?.pages?.length||0),0);
+  const showAnalysisStage=async(index,detail)=>{
+    renderStages(index,false,detail);
+    await paintProcessing();
+    if(!auto&&!window.__TEST__)await sleep(120);
   };
 
+  await showAnalysisStage(0,`${f.fileIds.length} document${f.fileIds.length===1?'':'s'} ready`);
+  await showAnalysisStage(1,`${pageTotal} page${pageTotal===1?'':'s'}`);
+  f.fileIds.forEach(id=>{ const fl=p.files.find(x=>x.id===id); if(fl) classifyFilePages(fl); });
+  await showAnalysisStage(2,'Locating distribution-board references');
+
+  const regBoard=(b,fileId,pageNo,primary=false)=>{
+    if(!A.boards[b.norm]) A.boards[b.norm]={norm:b.norm, orig:b.orig, type:b.type, pages:[], parent:null, parentConf:0, manual:false};
+    const e=A.boards[b.norm];
+    const pageRef=e.pages.find(x=>x.fileId===fileId&&x.page===pageNo);
+    if (!pageRef) e.pages.push({fileId,page:pageNo,section:b.section||null,primary:Boolean(primary)});
+    else {
+      if(b.section) pageRef.section=b.section;
+      if(primary) pageRef.primary=true;
+    }
+    if (String(b.orig||'').length>String(e.orig||'').length) e.orig=b.orig;
+  };
+
+  await showAnalysisStage(3,`Reading ${pageTotal} page${pageTotal===1?'':'s'}`);
   for (const id of f.fileIds){
     const fl=p.files.find(x=>x.id===id); if(!fl||fl.status!=='ready') continue;
     let prevBoard=null;
@@ -1777,19 +2301,28 @@ async function runAnalysis(opts){
       const isSched=SCHEDULE_TYPES.has(pg.type) && pg.type!=='cable-schedule';
       let ctxBoard=null;
       if (isSched){
-        const topN=Math.max(6, Math.ceil(lines.length/3));
-        for (let i=0;i<Math.min(topN,lines.length);i++){
-          const bs=detectBoards(lines[i]); if(bs.length){ctxBoard=bs[0];break;}
-        }
-        if (!ctxBoard && pageBoards.length===1) ctxBoard=pageBoards[0];
-        if (!ctxBoard && prevBoard) ctxBoard=prevBoard; // continuation page
-        if (ctxBoard) prevBoard=ctxBoard;
+        ctxBoard=scheduleBoardFromLines(lines);
+        const hasBoardHeader=hasScheduleBoardHeader(lines);
+        if (!ctxBoard && !hasBoardHeader && prevBoard) ctxBoard=prevBoard; // continuation page
+        if (ctxBoard){ regBoard(ctxBoard,id,pageNo,true); prevBoard=ctxBoard; }
+        else if(hasBoardHeader) prevBoard=null;
       } else prevBoard=null;
       const parsedLegend=window.EstimationExtractorCore
         ? window.EstimationExtractorCore.parseProtectionLegend(lines.join('\n'))
         : {legend:null};
-      const ctx={board:ctxBoard?ctxBoard.norm:null, boardOrig:ctxBoard?ctxBoard.orig:null, sawHeader:false, inNotes:false,
+      const ctx={board:ctxBoard?ctxBoard.norm:null, boardOrig:ctxBoard?ctxBoard.orig:null, boardSection:ctxBoard?ctxBoard.section||null:null, sawHeader:false, inNotes:false,
         lastWay:null, lastPhase:null, pendingRows:[], protectionLegend:parsedLegend.legend};
+      const codedPage=isSched&&window.EstimationExtractorCore&&window.EstimationExtractorCore.parseTbaSchedulePage
+        ? window.EstimationExtractorCore.parseTbaSchedulePage(lines,ctx)
+        : {matched:false,rows:[]};
+      const addScheduleRow=(row,line)=>{
+        if (boardFilter && (!ctx.board || !boardFilter.has(ctx.board))) return;
+        if (devFilter && row.device && !devFilter.has(row.device.toUpperCase()) && !row.spare && !row.space && !row.incomer) return;
+        const trace=sourceTrace(row,Number.isInteger(line)?pg.lines[line]:null,pg,fl.name);
+        const confidence=trace.lineConfidence?Math.min(Number(row.conf??1),trace.lineConfidence):row.conf;
+        A.rows.push({id:uid(), boardNorm:ctx.board, boardSection:ctx.boardSection, fileId:id, page:pageNo, line, status:'pending', kind:'schedule', ...row,...trace,conf:confidence});
+      };
+      if(codedPage.matched) codedPage.rows.forEach(row=>addScheduleRow(row,row.line));
       lines.forEach((t,li)=>{
         const lower=t.toLowerCase();
         if (f.ignore.length && f.ignore.some(w=>lower.includes(w))) return;
@@ -1798,11 +2331,9 @@ async function runAnalysis(opts){
             conf: (isSched||pg.type==='cable-schedule')?0.85:0.7, status:'pending', ...c});
         });
         if (isSched){
-          const row=parseScheduleLine(t, ctx);
+          const row=codedPage.matched?null:parseScheduleLine(t, ctx);
           if (row){
-            if (boardFilter && (!ctx.board || !boardFilter.has(ctx.board))) return;
-            if (devFilter && row.device && !devFilter.has(row.device.toUpperCase()) && !row.spare && !row.space && !row.incomer) return;
-            A.rows.push({id:uid(), boardNorm:ctx.board, fileId:id, page:pageNo, line:li, status:'pending', kind:'schedule', ...row});
+            addScheduleRow(row,li);
           }
           parseFeeders(t, pageBoards, ctx.board).forEach(fd=>A.feeders.push({id:uid(),fileId:id,page:pageNo,line:li,...fd}));
         } else if (pg.type==='sld'||pg.type==='schematic'||pg.type==='notes'){
@@ -1818,25 +2349,32 @@ async function runAnalysis(opts){
             const bs=detectBoards(t);
             const bn=bs.length?bs[0].norm:null;
             if (boardFilter && (!bn||!boardFilter.has(bn))) return;
-            A.rows.push({id:uid(), boardNorm:bn, fileId:id, page:pageNo, line:li, status:'pending', kind:'mention',
-              way:null, desc:t.trim(), device:dev, rating:ratingOf(t), poles:polesOf(t), curve:curveOf(t),
+            const mention={way:null, desc:t.trim(), device:dev, rating:ratingOf(t), poles:polesOf(t), poleConfiguration:poleConfigOf(t), curve:curveOf(t),
               sens:sensOf(t), phase:phaseOf(t), ka:kaOf(t), cable:detectCables(t)[0]||null,
-              spare:false, space:false, incomer:false, qty:qtyIn(t,dev), srcText:t.trim(), conf:0.55});
+              spare:false, space:false, incomer:false, qty:qtyIn(t,dev), srcText:t.trim(), conf:0.55};
+            const trace=sourceTrace(mention,pg.lines[li],pg,fl.name);
+            A.rows.push({id:uid(), boardNorm:bn, fileId:id, page:pageNo, line:li, status:'pending', kind:'mention',
+              ...mention,...trace,conf:trace.lineConfidence?Math.min(mention.conf,trace.lineConfidence):mention.conf});
           }
         }
       });
-      if (isSched && window.EstimationExtractorCore){
+      if (isSched && !codedPage.matched && window.EstimationExtractorCore){
         window.EstimationExtractorCore.finalizeScheduleContext(ctx);
       }
     });
   }
-  renderStages(4); if(anim) await sleep(220);
+  await showAnalysisStage(4,`${A.rows.length} device records | ${A.cables.length} cable records`);
   // Workstream 0 §0.0 — genuine AI extraction across all dialects + schematics
   // (regex pass above stays as the fast pre-pass; AI rows go to review, never
   // overriding a slot the schedule parser already filled).
   if (!(opts&&opts.noAi)){
     try{ await runAiExtraction(A, f, p, pageSet); }catch(e){ console.warn('AI extraction unavailable:', e.message); }
   }
+  if(window.EstimationExtractorCore?.deduplicateExtractionRows){
+    const deduplicated=window.EstimationExtractorCore.deduplicateExtractionRows(A.rows);
+    A.rows=deduplicated.rows;A.duplicates=deduplicated.duplicates;
+  }
+  await showAnalysisStage(5,`${A.feeders.length} feeder relationship${A.feeders.length===1?'':'s'}`);
   A.feeders.forEach(fd=>{
     if (!fd.to) return;
     const child=A.boards[fd.to];
@@ -1844,7 +2382,7 @@ async function runAnalysis(opts){
       child.parent=fd.from; child.parentConf=fd.conf;
     }
   });
-  renderStages(6); if(anim) await sleep(220);
+  await showAnalysisStage(6,'Checking totals, coverage, and review items');
   // carry over prior manual decisions
   if (prev){
     const key=r=>[r.boardNorm,r.way,r.device,r.srcText].join('|');
@@ -1878,12 +2416,26 @@ async function runAnalysis(opts){
   }
   const rev=A.rows.filter(r=>r.status==='pending'&&r.conf<0.8).length;
   p.status = rev? 'Needs review':'Analysed';
-  renderStages(7,true);
+  const deviceCount=A.rows.filter(r=>r.status!=='rejected'&&!r.space&&r.device&&(r.kind!=='mention'||r.status==='confirmed')).reduce((sum,row)=>sum+(Number(row.qty)||1),0);
+  const completeDetail=`${deviceCount} devices | ${Object.keys(A.boards).length} boards | ${rev} review items`;
+  renderStages(7,true,completeDetail);
   renderTakeoff(); renderProjHeader(); renderAnalysisControls(); renderPgclass(); saveProject(p);
   if (!auto) toast('Analysis complete — '+A.rows.length+' evidence rows extracted');
+  finishProcessing(completeDetail,'complete',1800);
+  return A;
+  }catch(error){
+    console.error('Analysis failed:',error);
+    finishProcessing(error.message||'The analysis could not be completed','failed',5000);
+    toast('Analysis stopped: '+(error.message||'Unknown error'));
+    return null;
+  }finally{
+    analysisBusy=false;
+    analysisButtons.forEach(button=>button.disabled=false);
+    $('#projView')?.removeAttribute('aria-busy');
+  }
 }
 $('#anRunBtn').addEventListener('click', ()=>runAnalysis());
-$('#reanalyzeBtn').addEventListener('click', async ()=>{ setTab('analysis'); await autoOcrScannedFiles(); runAnalysis(); });
+$('#reanalyzeBtn').addEventListener('click', async ()=>{ setTab('analysis');setProcessingDock(STAGES[0],'Checking document text',2,0);await paintProcessing();await autoOcrScannedFiles();await runAnalysis(); });
 
 
 /* ============================ RESULTS (DEVICES TAB) ============================ */
@@ -1914,6 +2466,14 @@ function deviceTotals(rows, exclSpare){
   return by;
 }
 const countable = k => !k.startsWith('(');
+/* Colour-coding per counted device type (design doc: estimator-style "dot off" colours).
+   Deterministic hash → fixed palette, so MCB 32A is the same colour everywhere in the app. */
+const DEVICE_PALETTE=['#1668e3','#0f9960','#c87d0e','#7b5cd6','#d33c43','#0aa2c0','#b0328f','#5b7a1e','#8a5a2c','#2f6f8f'];
+function deviceColor(name){
+  let h=0; const s=String(name).toUpperCase();
+  for (let i=0;i<s.length;i++) h=(h*31+s.charCodeAt(i))>>>0;
+  return DEVICE_PALETTE[h%DEVICE_PALETTE.length];
+}
 /* shared by the all-boards roll-up and the single-board detail view (§5.4) */
 function buildDeviceTable(devs, approveLabel){
   const p=state.cur, A=p.analysis;
@@ -1927,15 +2487,15 @@ function buildDeviceTable(devs, approveLabel){
     const allConf=rec.rows.every(r=>r.status==='confirmed');
     const isCount=countable(dev);
     tr.innerHTML=`<td><span class="car" style="color:var(--txt3);font-size:10px">▶</span></td>
-      <td class="strong">${esc(dev)}${isCount?'':' <span class="hint" style="display:inline;margin:0">not counted as devices</span>'}</td>
-      <td class="num"><b style="font-size:14px;color:${isCount?'var(--blue)':'var(--txt3)'}">${rec.qty}</b></td>
+      <td class="strong">${isCount?`<span class="devdot" style="background:${deviceColor(dev)}"></span>`:''}${esc(dev)}${isCount?'':' <span class="hint" style="display:inline;margin:0">not counted as devices</span>'}</td>
+      <td class="num"><b style="font-size:14px;color:${isCount?deviceColor(dev):'var(--txt3)'}">${rec.qty}</b></td>
       <td>${ratings.map(r=>`<span class="chip grey">${r}A</span>`).join(' ')||'—'}</td>
       <td>${allConf?'<span class="chip green">Confirmed</span>':confChip(minConf)}</td>
       <td><button class="btn sm ghost" data-a="ok" title="Approve all evidence rows">✓ Approve</button></td>`;
     const evtr=document.createElement('tr'); evtr.style.display='none';
     const evtd=document.createElement('td'); evtd.colSpan=6; evtd.style.padding='0';
     evtr.appendChild(evtd); evtr.className='evwrap';
-    evtd.innerHTML=`<table class="t" style="background:#f7fafd">${rec.rows.map(r=>evRowHtml(r)).join('')}</table>`;
+    evtd.innerHTML=`<table class="t" style="background:#f7fafd;border-left:4px solid ${countable(dev)?deviceColor(dev):'var(--line)'}">${rec.rows.map(r=>evRowHtml(r)).join('')}</table>`;
     tr.addEventListener('click', e=>{
       if (e.target.dataset&&e.target.dataset.a==='ok'){
         rec.rows.forEach(r=>{ const live=A.rows.find(x=>x.id===r.id); if(live) live.status='confirmed'; });
@@ -1997,10 +2557,34 @@ function renderResults(){
   });
 }
 /* ============================ §5.4 — MERGED BOARD DETAIL ============================ */
+/* SPN/TPN phase configuration (design doc + AI_Guide_SPN_vs_TPN):
+   prefer the model's structural classification (header.phase_config), else infer
+   deterministically from the captured rows — L1/L2/L3 spread, 3PH rows or 3+-pole
+   devices ⇒ TPN; rows all on one phase ⇒ SPN (an L1 suffix alone is never TPN).
+   Header signals (ways TP>0, "TP&N" text, 3/4-pole incomer) also count. */
+function boardPhaseConfig(norm){
+  const p=state.cur, A=p&&p.analysis; if(!A||!A.boards[norm]) return null;
+  const h=A.boards[norm].header||{};
+  if (['SPN','TPN','mixed','ambiguous'].includes(h.phase_config)) return {v:h.phase_config, src:'extracted'};
+  if ((+h.ways_tp||0)>0 || (+h.incomer_poles||0)>=3 || /TP\s*&?\s*N|3\s*P(H|\b)|THREE\s*PHASE/i.test(String(h.board_type_text||''))) return {v:'TPN', src:'header'};
+  const rows=A.rows.filter(r=>r.boardNorm===norm && r.status!=='rejected' && !r.space);
+  if (!rows.length) return null;
+  const ph=new Set(rows.map(r=>r.phase).filter(x=>x&&x!=='3PH'));
+  if (rows.some(r=>r.phase==='3PH'||(r.poles||0)>=3) || ph.size>=2) return {v:'TPN', src:'inferred'};
+  return {v:'SPN', src:'inferred'};
+}
+const phaseConfigChip=norm=>{
+  const pc=boardPhaseConfig(norm); if(!pc) return '';
+  const cl=pc.v==='TPN'?'cyan':pc.v==='SPN'?'green':'amber';
+  const lbl=pc.v==='TPN'?'TPN · 3-phase':pc.v==='SPN'?'SPN · 1-phase':pc.v;
+  return `<span class="chip ${cl}" title="Phase configuration (${pc.src}) — a TPN way holds 1× TP device or up to 3× single-phase devices">${lbl}</span>`;
+};
 function boardHeaderCard(b){
   const h=b.header||{};
   const val=v=>(v===undefined||v===null||v===''?'—':v);
+  const pc=boardPhaseConfig(b.norm);
   const fields=[
+    ['Phase config', pc? (pc.v==='TPN'?'TPN — 3-phase':pc.v==='SPN'?'SPN — single-phase':pc.v)+(pc.src!=='extracted'?' ('+pc.src+')':'') : '—'],
     ['Board type', BOARD_TYPES[b.type]||val(h.board_type_text)],
     ['Fed from', b.parent?boardLabel(b.parent):val(h.fed_from_ref)],
     ['Serving', val(h.serving)],
@@ -2112,20 +2696,32 @@ function openRowEditor(r, isNew){
     <div class="fgroup" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
       <div><label class="lbl">Device type</label><select class="sel" id="eDev" style="width:100%">${deviceOptions(r.device)}</select></div>
       <div><label class="lbl">Quantity</label><input class="in" id="eQty" type="number" min="1" value="${r.qty||1}"></div></div>
-    <div class="fgroup" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
+    <div class="fgroup" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px">
       <div><label class="lbl">Rating (A)</label><input class="in" id="eRat" value="${r.rating??''}"></div>
-      <div><label class="lbl">Curve</label><select class="sel" id="eCur" style="width:100%"><option ${!r.curve?'selected':''} value="">—</option><option ${r.curve==='B'?'selected':''}>B</option><option ${r.curve==='C'?'selected':''}>C</option><option ${r.curve==='D'?'selected':''}>D</option></select></div>
-      <div><label class="lbl">Poles</label><input class="in" id="ePol" value="${r.poles??''}"></div></div>
+      <div><label class="lbl">Curve</label><select class="sel" id="eCur" style="width:100%"><option ${!r.curve?'selected':''} value="">Not specified</option>${['B','C','D','K','Z'].map(value=>`<option ${r.curve===value?'selected':''}>${value}</option>`).join('')}</select></div>
+      <div><label class="lbl">Pole configuration</label><select class="sel" id="ePol" style="width:100%"><option value="" ${!r.poleConfiguration&&!r.poles?'selected':''}>Unclear</option>${['SP','SPN','DP','DPN','TP','TPN','4P'].map(value=>`<option ${value===(r.poleConfiguration||(r.poles===1?'SPN':r.poles===2?'DPN':r.poles===3?'TPN':r.poles===4?'4P':''))?'selected':''}>${value}</option>`).join('')}</select></div>
+      <div><label class="lbl">Breaking capacity (kA)</label><input class="in" id="eKa" inputmode="decimal" value="${r.ka??''}" placeholder="Not specified"></div></div>
     <div class="fgroup"><label class="lbl">Description / note</label><input class="in" id="eDesc" value="${esc(r.desc||'')}"></div>
     ${isNew?'':`<div class="hint">Original text: <span class="mono">${esc(r.srcText)}</span></div>`}
   `, ()=>{
+    const before={rating:r.rating??null,curve:r.curve||null,poleConfiguration:r.poleConfiguration||null,ka:r.ka??null,device:r.device||null};
     r.boardNorm=$('#eBoard').value||null;
     r.device=$('#eDev').value||null;
     r.qty=Math.max(1,parseInt($('#eQty').value,10)||1);
     r.rating=$('#eRat').value?parseFloat($('#eRat').value):null;
     r.curve=$('#eCur').value||null;
-    r.poles=$('#ePol').value?parseInt($('#ePol').value,10):null;
+    r.poleConfiguration=$('#ePol').value||null;
+    r.poles={SP:1,SPN:1,DP:2,DPN:2,TP:3,TPN:3,'4P':4}[r.poleConfiguration]||null;
+    r.ka=$('#eKa').value?parseFloat($('#eKa').value):null;
     r.desc=$('#eDesc').value;
+    const changed=[['Device Family','device'],['Current Rating','rating'],['Tripping Curve','curve'],['Pole Configuration','poleConfiguration'],['Breaking Capacity','ka']];
+    r.corrections=Array.isArray(r.corrections)?r.corrections:[];r.fieldEvidence=r.fieldEvidence||{};
+    changed.forEach(([field,key])=>{
+      const prior=before[key],next=r[key]??null;if(String(prior??'')===String(next??''))return;
+      const correction={field,original:prior==null?'Not specified':String(prior),corrected:next==null?'Not specified':String(next),reason:'User correction in review interface'};
+      r.corrections.push(correction);r.fieldEvidence[field]={...(r.fieldEvidence[field]||{}),originalText:r.originalOcrText||r.srcText,
+        normalisedValue:correction.corrected,correction:correction.corrected,correctionReason:correction.reason,reviewStatus:'Approved'};
+    });
     r.status='confirmed'; r.edited=true;
     if (isNew) A.rows.push(r);
     renderTakeoff(); renderProjHeader(); saveProject(p);
@@ -2143,52 +2739,113 @@ $('#addManualBtn').addEventListener('click', ()=>{
   const p=state.cur; if(!p) return;
   if (!p.analysis) p.analysis={ranAt:todayStr(),boards:{},rows:[],cables:[],feeders:[],legend:[],filters:null};
   openRowEditor({id:uid(), boardNorm:null, fileId:null, page:null, line:null, status:'confirmed', kind:'manual',
-    way:null, desc:'', device:'MCB', rating:null, poles:null, curve:null, sens:null, phase:null, ka:null,
-    cable:null, spare:false, space:false, incomer:false, qty:1, srcText:'(added manually)', conf:1}, true);
+    way:null, desc:'', device:'MCB', rating:null, poles:null, poleConfiguration:null, curve:null, sens:null, phase:null, ka:null,
+    cable:null, spare:false, space:false, incomer:false, qty:1, srcText:'(added manually)', extractionMethod:'Manual entry', conf:1}, true);
 });
 
-/* ============================ EXPORTS ============================ */
+/* ============================ REPORTS / EXPORTS ============================ */
 function download(name, mime, content){
   const a=document.createElement('a');
   a.href=URL.createObjectURL(new Blob([content],{type:mime}));
   a.download=name; document.body.appendChild(a); a.click();
   setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},600);
 }
-const csvCell = v => { v=String(v??''); return /[",\n]/.test(v)? '"'+v.replace(/"/g,'""')+'"' : v; };
-function exportRows(){
-  const p=state.cur, A=p&&p.analysis; if(!A) return null;
-  const out=[['Board','Board type','Device','Protection code','Qty','Rating (A)','Curve','RCD type','Poles','Sensitivity (mA)','Way','Phase','Circuit status','Cable','Review status','Confidence','Source document','Page','Original text']];
-  activeRows().forEach(r=>{
-    if (r.space || (r.spare&&!r.device)) return;
-    if (r.kind==='mention' && r.status!=='confirmed') return;
-    const f=p.files.find(x=>x.id===r.fileId);
-    const b=r.boardNorm?A.boards[r.boardNorm]:null;
-    const circuitStatus=r.space?'Fitted blank':r.spare?(r.device?'Populated spare':'Unpopulated spare'):'Active';
-    out.push([b?b.orig:'', b?BOARD_TYPES[b.type]||'':'', r.device||'', r.protectionCode||'', r.qty||1, r.rating??'', r.curve||'', r.rcdType||'', r.poles||'',
-      r.sens||'', r.way??'', r.phase||'', circuitStatus, r.cable?r.cable.orig:'', r.status==='confirmed'?'Confirmed':CONF(r.conf)[0],
-      Math.round(r.conf*100)+'%', f?f.name:'', r.page||'', r.srcText]);
+function currentReportModel(){
+  const p=state.cur, A=p&&p.analysis;
+  if (!p || !A || !window.EstimationReport) return null;
+  return window.EstimationReport.buildModel({
+    projectName:p.name,
+    boards:A.boards,
+    rows:A.rows,
+    files:p.files,
+    coverage:A.coverage,
+    generatedAt:new Date(),
   });
-  return out;
 }
-$('#expCsvBtn').addEventListener('click', ()=>{
-  const rows=exportRows(); if(!rows){toast('Nothing to export yet');return;}
-  download((state.cur.name||'estimation101')+' - device counts.csv','text/csv',
-    '\ufeff'+rows.map(r=>r.map(csvCell).join(',')).join('\r\n'));
-  toast('CSV exported');
+function renderReport(){
+  const p=state.cur;
+  const host=$('#reportMatrixHost');
+  const facts=$('#reportFacts');
+  const status=$('#reportStatus');
+  $('#reportProject').textContent=p?p.name:'No project selected';
+  const model=currentReportModel();
+  if (!model || !model.groups.length){
+    facts.innerHTML='';
+    status.className='report-status warn';
+    status.textContent='No countable devices are available.';
+    host.innerHTML='<div class="report-empty">Analyse documents to build the take-off.</div>';
+    return;
+  }
+  const factItems=[['Boards',model.boards.length],['Device lines',model.deviceLineCount],['Total devices',model.grandTotal]];
+  factItems.push(['Reconciled',model.reconciliation?.valid?'Yes':'No']);
+  if(model.associated&&model.associated.grandTotal) factItems.push(['Control items',model.associated.grandTotal]);
+  facts.innerHTML=factItems
+    .map(([k,v])=>`<div class="report-fact"><dt>${esc(k)}</dt><dd>${v}</dd></div>`).join('');
+  const issues=[];
+  if (model.reviewCount) issues.push(model.reviewCount+' row'+(model.reviewCount===1?'':'s')+' need review');
+  if (model.coverageIssueCount) issues.push(model.coverageIssueCount+' coverage check'+(model.coverageIssueCount===1?'':'s')+' need attention');
+  if (model.unassignedQty) issues.push(model.unassignedQty+' device'+(model.unassignedQty===1?'':'s')+' have no board reference');
+  if (model.duplicateCount) issues.push(model.duplicateCount+' duplicate source record'+(model.duplicateCount===1?' was':'s were')+' excluded');
+  if (!model.reconciliation?.valid) issues.push('quantities do not reconcile');
+  status.className='report-status '+(!model.reconciliation?.valid||model.unassignedQty?'bad':(model.reviewCount||model.coverageIssueCount)?'warn':'ok');
+  status.textContent=issues.length?issues.join(' · '):'Ready for issue';
+  const colSpan=model.boards.length+11;
+  const matrix=(groups,title,totalLabel,boardTotals,grandTotal)=>{
+    let table='<table class="report-matrix"><thead>'+
+      `<tr class="report-row-project"><th class="report-device" colspan="${colSpan}">${esc(model.projectName)}</th></tr>`+
+      `<tr class="report-row-title"><th class="report-device" colspan="${colSpan}">${esc(title)}</th></tr>`+
+      `<tr class="report-row-head"><th class="report-category">Category</th><th class="report-device">Device</th><th class="report-tech">Rating</th><th class="report-tech">Poles</th><th class="report-tech">Curve</th><th class="report-tech">Capacity</th>`+
+      model.boards.map(b=>`<th class="report-board"><button data-report-board="${esc(b.norm)}" title="Open ${esc(b.label)}">${esc(b.label)}</button></th>`).join('')+
+      '<th class="report-total">Total</th><th class="report-purpose">Applications</th><th class="report-source">Source pages</th><th class="report-tech">Confidence</th><th class="report-review">Review</th></tr></thead><tbody>';
+    groups.forEach(group=>{
+      group.rows.forEach(row=>{
+        table+=`<tr class="report-data"><td class="report-category">${esc(group.name)}</td><td class="report-device"><b>${esc(row.label)}</b>${row.reviewReasons.length?`<div class="hint" style="margin:3px 0 0" title="${esc(row.notes.join(' '))}">${esc(row.reviewReasons.join('; '))}</div>`:''}</td>`+
+          `<td>${row.rating??'Not specified'}</td><td>${esc(row.pole)}</td><td>${esc(row.curve)}</td><td>${esc(row.breakingCapacity)}</td>`+
+          row.quantities.map((qty,index)=>`<td>${qty?`<button class="report-qty" data-report-board="${esc(model.boards[index].norm)}" title="Open ${esc(model.boards[index].label)}">${qty}</button>`:''}</td>`).join('')+
+          `<td class="report-total">${row.total}</td><td class="report-purpose">${esc(row.purposes.join(', '))}</td><td class="report-source">${esc(row.sourcePages.join('; '))}</td><td>${Math.round(row.confidence*100)}%</td><td class="report-review"><span class="chip ${row.reviewStatus==='Ready'?'green':'amber'}">${esc(row.reviewStatus)}</span></td></tr>`;
+      });
+    });
+    return table+`<tr class="report-final"><td class="report-category">${esc(totalLabel)}</td><td class="report-device"></td><td></td><td></td><td></td><td></td>${boardTotals.map(v=>`<td>${v||''}</td>`).join('')}<td class="report-total">${grandTotal}</td><td></td><td></td><td></td><td></td></tr></tbody></table>`;
+  };
+  let html=matrix(model.groups,'Consolidated Device Take-Off','Grand Total',model.boardTotals,model.grandTotal);
+  if(model.associated&&model.associated.grandTotal){
+    html+='<div class="report-subhead"><h3>Control &amp; associated equipment</h3></div>'+
+      matrix(model.associated.groups,'Control & Associated Equipment','Associated Equipment Total',model.associated.boardTotals,model.associated.grandTotal);
+  }
+  host.innerHTML=html;
+  host.querySelectorAll('[data-report-board]').forEach(control=>control.addEventListener('click',()=>{
+    state.selectedBoard=control.dataset.reportBoard;
+    setTab('analysis');
+  }));
+}
+function reportFileName(ext){
+  const d=new Date();
+  const stamp=[String(d.getDate()).padStart(2,'0'),String(d.getMonth()+1).padStart(2,'0'),String(d.getFullYear()).slice(-2)].join('.');
+  return window.EstimationReport.safeFileName(state.cur?state.cur.name:'Electrical project')+' - DB Devices Take Off - '+stamp+'.'+ext;
+}
+$('#openReportBtn').addEventListener('click',()=>setTab('reports'));
+$('#reportCsvBtn').addEventListener('click',()=>{
+  const model=currentReportModel();
+  if (!model || !model.groups.length){ toast('Nothing to export yet'); return; }
+  try{download(reportFileName('csv'),'text/csv;charset=utf-8',window.EstimationReport.csv(model));toast('Take-off CSV exported');}
+  catch(error){console.error(error);toast(error.message||'CSV export could not be created');}
 });
-$('#expXlsxBtn').addEventListener('click', ()=>{
-  const rows=exportRows(); if(!rows){toast('Nothing to export yet');return;}
-  // Excel-compatible SpreadsheetML (opens directly in Excel)
-  const xml=`<?xml version="1.0"?><?mso-application progid="Excel.Sheet"?>
-<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
-<Worksheet ss:Name="Device counts"><Table>`+
-    rows.map((r,i)=>'<Row>'+r.map(c=>{
-      const isNum = i>0 && c!=='' && !isNaN(c) && String(c).trim()!=='';
-      return `<Cell><Data ss:Type="${isNum?'Number':'String'}">${esc(String(c)).replace(/"/g,'&quot;')}</Data></Cell>`;
-    }).join('')+'</Row>').join('')+
-    `</Table></Worksheet></Workbook>`;
-  download((state.cur.name||'estimation101')+' - device counts.xls','application/vnd.ms-excel',xml);
-  toast('Excel file exported');
+$('#reportXlsxBtn').addEventListener('click',async()=>{
+  const model=currentReportModel();
+  if (!model || !model.groups.length){ toast('Nothing to export yet'); return; }
+  const button=$('#reportXlsxBtn'), label=button.textContent;
+  button.disabled=true; button.textContent='Preparing Excel...';
+  try{
+    const workbook=window.EstimationReport.createExcelWorkbook(model,window.ExcelJS);
+    const buffer=await workbook.xlsx.writeBuffer();
+    download(reportFileName('xlsx'),'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',buffer);
+    toast('Excel take-off exported');
+  }catch(error){
+    console.error(error);
+    toast(error.message||'Excel export could not be created');
+  }finally{
+    button.disabled=false; button.textContent=label;
+  }
 });
 
 /* ============================ BOARDS TAB ============================ */
@@ -2214,7 +2871,7 @@ function renderBoards(){
     tr.className='board-row'+(state.selectedBoard===b.norm?' sel':'');
     tr.style.cursor='pointer';
     tr.innerHTML=`<td class="strong">${esc(b.orig)}</td>
-      <td>${esc(BOARD_TYPES[b.type]||'')}</td>
+      <td>${phaseConfigChip(b.norm)||esc(BOARD_TYPES[b.type]||'')}</td>
       <td>${b.parent?esc(boardLabel(b.parent))+(b.manual?' <span class="chip blue">manual</span>':''):'<span class="chip grey">unknown</span>'}
         <button class="btn sm ghost" data-a="parent">✎</button></td>
       <td class="num">${boardDeviceCount(b.norm)}</td>
@@ -2251,9 +2908,10 @@ function renderBoards(){
     const b=A.boards[norm];
     const feed=A.feeders.find(f=>f.to===norm);
     const cable=feed&&feed.cable?`<span class="cable-lbl">⌁ ${esc(feed.cable.orig)}</span>`:'';
-    const dev=b?` <span class="chip grey">${boardDeviceCount(norm)} devices</span>`:'';
+    const devCt=b?boardDeviceCount(norm):0;
+    const dev=devCt?` <span class="chip grey">${devCt} devices</span>`:'';   // hide noisy "0 devices"
     const label=b?b.orig:boardLabel(norm);
-    const typeChip=b?`<span class="chip ${b.type==='MAIN'?'blue':b.type==='SMDB'||b.type==='MDB'?'cyan':'grey'}">${esc(BOARD_TYPES[b.type]||'')}</span>`:'<span class="chip purple">Source</span>';
+    const typeChip=b?(phaseConfigChip(norm)||`<span class="chip ${b.type==='MAIN'?'blue':b.type==='SMDB'||b.type==='MDB'?'cyan':'grey'}">${esc(BOARD_TYPES[b.type]||'')}</span>`):'<span class="chip purple">Source</span>';
     const kids=(kidsOf[norm]||[]).map(k=>nodeHtml(k,depth+1)).join('');
     const selCls = b && state.selectedBoard===norm ? ' sel' : '';
     return `<div class="tnode"><span class="trow${selCls}"${b?` data-board="${esc(norm)}" style="cursor:pointer"`:''}><span class="tb">${esc(label)}</span>${typeChip}${dev}${cable}</span>
@@ -2477,8 +3135,8 @@ function renderAssistControls(f){
   const pageBoards=A&&f?[...new Set(A.rows.filter(r=>r.fileId===f.id&&r.page===V.page&&r.boardNorm).map(r=>r.boardNorm))]:[];
   if(!as.boardNorm&&pageBoards.length===1) as.boardNorm=pageBoards[0];
   if(as.boardNorm&&!boards.some(b=>b.norm===as.boardNorm))as.boardNorm=null;
-  sel.innerHTML='<option value="">Choose current board…</option>'+boards.map(b=>`<option value="${b.norm}" ${b.norm===as.boardNorm?'selected':''}>${esc(b.orig)}</option>`).join('');
-  $('#vAssistSeed').textContent=as.seed?as.seed.label:'No device selected';
+  sel.innerHTML='<option value="">Choose a board…</option>'+boards.map(b=>`<option value="${b.norm}" ${b.norm===as.boardNorm?'selected':''}>${esc(b.orig)}</option>`).join('');
+  $('#vAssistSeed').textContent=as.seed?as.seed.label:'None selected';
   const qty=(as.results||[]).reduce((sum,r)=>sum+(Number(r.qty)||1),0);
   $('#vAssistCount').textContent=qty+' match'+(qty===1?'':'es');
 }
@@ -2515,7 +3173,8 @@ function bindAssistedDrag(wrap,f,pg,scale){
   const V=state.viewer;if(!V.assist.enabled)return;
   wrap.classList.add('assist-cursor');
   let start=null,box=null;
-  const point=e=>{const r=wrap.getBoundingClientRect();return{x:e.clientX-r.left,y:e.clientY-r.top};};
+  const point=e=>{const r=wrap.getBoundingClientRect();const cs=parseFloat(wrap.dataset.cssScale||'1')||1;
+    return{x:(e.clientX-r.left)/cs,y:(e.clientY-r.top)/cs};};
   wrap.addEventListener('pointerdown',e=>{
     if(e.button!==0)return;e.preventDefault();start=point(e);
     box=document.createElement('div');box.className='canvas-selection';box.style.left=start.x+'px';box.style.top=start.y+'px';wrap.appendChild(box);
@@ -2546,8 +3205,8 @@ function viewerFile(){
 function pageDetections(f, pageNo){
   const p=state.cur, A=p.analysis; const out=[];
   if (A){
-    A.rows.forEach(r=>{ if(r.fileId===f.id&&r.page===pageNo) out.push({kind:'row', r, line:r.line,
-      color: r.status==='confirmed'?'green': r.status==='rejected'?'red': r.conf>=0.8?'green':'amber',
+    A.rows.forEach(r=>{ if(r.fileId===f.id&&r.page===pageNo) out.push({kind:'row', r, line:r.line,bbox:r.bbox,
+      color: state.viewer.evidenceId===r.id?'boardhl':r.status==='confirmed'?'green': r.status==='rejected'?'red': r.conf>=0.8?'green':'amber',
       label:(r.qty>1?r.qty+'× ':'')+(r.device||(r.spare?'Spare':r.space?'Space':'Row'))+(r.rating?' '+r.rating+'A':'')}); });
     A.cables.forEach(c=>{ if(c.fileId===f.id&&c.page===pageNo) out.push({kind:'cable', r:c, line:c.line, color:'cyan', label:'Cable '+c.orig}); });
   }
@@ -2564,6 +3223,7 @@ function pageDetections(f, pageNo){
 }
 function ovlVisible(d){
   const mode=$('#vOvlFilter').value;
+  if (d.kind==='boardhl') return true;   // §5.2 smart-highlight is independent of the overlay filter
   if (mode==='all') return true;
   if (mode==='confirmed') return d.kind==='row'&&d.r.status==='confirmed';
   if (mode==='review') return d.kind==='row'&&d.r.status==='pending'&&d.r.conf<0.8;
@@ -2572,70 +3232,191 @@ function ovlVisible(d){
   if (d.kind==='assisted') return mode==='all';
   return true;
 }
+/* §5.2 — PDF thumbnail + board-page caches (module-level, keyed by immutable file ids) */
+const vThumbCache={};      // fileId -> {page: dataURL}
+let vThumbBusy=null;       // fileId currently rendering thumbs
+const boardScanCache={};   // fileId|norm -> Set(pages)
+function boardPagesIn(f,norm){
+  const p=state.cur, A=p&&p.analysis, set=new Set();
+  if (A){
+    (A.boards[norm]&&A.boards[norm].pages||[]).forEach(x=>{ if(x.fileId===f.id) set.add(x.page); });
+    A.rows.forEach(r=>{ if(r.boardNorm===norm&&r.fileId===f.id) set.add(r.page); });
+  }
+  const key=f.id+'|'+norm;
+  if (!boardScanCache[key]){
+    const s=new Set();
+    f.pages.forEach((pg,i)=>{ if((pg.lines||[]).some(l=>detectBoards(l.text).some(b=>b.norm===norm))) s.add(i+1); });
+    boardScanCache[key]=s;
+  }
+  boardScanCache[key].forEach(x=>set.add(x));
+  return [...set].sort((a,b)=>a-b);
+}
+async function ensureThumbs(f){
+  if (f.ext!=='pdf'||!rawStore[f.id]||!window.pdfjsLib) return;
+  if (vThumbBusy===f.id) return; vThumbBusy=f.id;
+  try{
+    const V=state.viewer;
+    let doc=V.pdfDocs[f.id];
+    if (!doc){ doc=await window.pdfjsLib.getDocument({data:rawStore[f.id].slice(0)}).promise; V.pdfDocs[f.id]=doc; }
+    const cache=vThumbCache[f.id]=vThumbCache[f.id]||{};
+    for (let i=1;i<=Math.min(f.pages.length,80);i++){
+      if (cache[i]) continue;
+      if (state.viewer.fileId!==f.id) break;         // user switched docs — stop
+      const page=await doc.getPage(i);
+      const vp1=page.getViewport({scale:1});
+      const vp=page.getViewport({scale:110/vp1.width});
+      const cv=document.createElement('canvas'); cv.width=vp.width; cv.height=vp.height;
+      await page.render({canvasContext:cv.getContext('2d'), viewport:vp}).promise;
+      cache[i]=cv.toDataURL('image/jpeg',0.72);
+      const holder=document.querySelector('#vThumbs .thumb-it[data-pg="'+i+'"] .txtpre');
+      if (holder) holder.outerHTML='<img src="'+cache[i]+'" alt="p'+i+'">';
+    }
+  }catch(e){ /* thumbs are cosmetic — never break the viewer */ }
+  finally{ vThumbBusy=null; }
+}
 async function renderViewer(){
   const p=state.cur; if(!p) return;
   const f=viewerFile();
-  const sel=$('#vFileSel');
   const ready=p.files.filter(x=>x.status==='ready');
-  sel.innerHTML=ready.map(x=>`<option value="${x.id}" ${f&&x.id===f.id?'selected':''}>${esc(x.name)}</option>`).join('');
+  // §5.2 multi-document tabs
+  const tabs=$('#vDocTabs');
+  tabs.innerHTML=ready.map(x=>`<div class="v-doctab${f&&x.id===f.id?' act':''}" data-id="${x.id}" title="${esc(x.name)}">${esc(x.name)}</div>`).join('');
+  tabs.querySelectorAll('.v-doctab').forEach(t=>t.addEventListener('click',()=>{ state.viewer.fileId=t.dataset.id; state.viewer.page=1; renderViewer(); }));
   const stage=$('#vStage');
   if (!f){ stage.innerHTML='<div class="empty">Upload a document first.</div>'; $('#vThumbs').innerHTML=''; $('#vDetList').innerHTML='<div class="empty">No detections.</div>'; return; }
   state.viewer.fileId=f.id;
   const V=state.viewer;
+  if (f.ext==='pdf' && rawStore[f.id] && !window.pdfjsLib){
+    try { await loadPdfjs(); }
+    catch (error) { stage.innerHTML='<div class="empty">PDF preview is unavailable: '+esc(error.message)+'</div>'; return; }
+  }
   V.page=Math.min(Math.max(1,V.page), f.pages.length);
   $('#vPageNo').textContent=V.page; $('#vPageCt').textContent=f.pages.length;
+  $('#vZoomPct').value=Math.round(V.zoom*100);
+  stage.classList.toggle('v-dark', !!V.dark);
   const pg=f.pages[V.page-1];
   renderAssistControls(f);
-  $('#vOcrBtn').style.display=f.ext==='pdf'?'':'none';
-  // meta row
+  $('#vOcrBtn').style.display=(f.ext==='pdf'||IMAGE_EXTS.has(f.ext))?'':'none';
+  // §5.2 smart-highlight board select
+  const bsel=$('#vBoardHl'); const A=p.analysis;
+  const bkeep=V.boardHl||'';
+  bsel.innerHTML='<option value="">Highlight board…</option>'+(A?Object.values(A.boards).sort((a,b)=>a.norm<b.norm?-1:1)
+    .map(b=>`<option value="${b.norm}" ${b.norm===bkeep?'selected':''}>${esc(b.orig)}</option>`).join(''):'');
+  if (A&&bkeep&&!A.boards[bkeep]) V.boardHl=null;
+  // search state (across the whole document)
+  const q=($('#vSearch').value||'').trim().toLowerCase();
+  let matchPages=[];
+  if (q){
+    f.pages.forEach((tp,i)=>{ const n=(tp.lines||[]).filter(l=>l.text.toLowerCase().includes(q)).length; if(n) matchPages.push({page:i+1,n}); });
+    const tot=matchPages.reduce((s,x)=>s+x.n,0);
+    $('#vSearchInfo').textContent = tot? tot+' match'+(tot===1?'':'es')+' · '+matchPages.length+' page'+(matchPages.length===1?'':'s') : 'no matches';
+    $('#vSearchNext').style.display = matchPages.length?'':'none';
+  } else { $('#vSearchInfo').textContent=''; $('#vSearchNext').style.display='none'; }
+  // detections (+ §5.2 board smart-highlight pseudo-detections)
   const dets=pageDetections(f,V.page).filter(ovlVisible);
+  if (V.boardHl){
+    (pg.lines||[]).forEach((l,li)=>{
+      const hit=detectBoards(l.text).some(b=>b.norm===V.boardHl)
+        || (A&&A.rows.some(r=>r.fileId===f.id&&r.page===V.page&&r.line===li&&r.boardNorm===V.boardHl));
+      if (hit) dets.push({kind:'boardhl', line:li, color:'boardhl', label:'Board '+boardLabel(V.boardHl), r:{srcText:l.text}});
+    });
+  }
+  // meta row (+ board page map when highlighting)
+  const hlPages = V.boardHl? boardPagesIn(f,V.boardHl) : [];
+  const nDets=dets.filter(d=>d.kind!=='boardhl').length;
   $('#vMetaRow').innerHTML=`<span class="chip blue">${esc(THREE_TYPE_LABELS[pageThreeType(pg)]||'Unknown')}</span>
     ${pg.sub_format&&PAGE_TYPES[pg.sub_format]&&pg.sub_format!==THREE_TO_FINE[pageThreeType(pg)]?`<span class="chip grey">${esc(PAGE_TYPES[pg.sub_format])}</span>`:''}
     ${pg.typeManual?'<span class="chip grey">manually set</span>':confChip(pg.conf||0.3)}
-    ${pg.ocr?'<span class="chip purple">OCR text</span>':(!pg.lines?.length?'<span class="chip amber">Scan — run OCR</span>':'')}
-    <span class="hint" style="margin:0">${dets.length} detection${dets.length===1?'':'s'} on this page</span>`;
-  // thumbnails
+    ${pg.ocr?`<span class="chip purple" title="${esc(pg.ocr.selectedCandidate||'OCR')}">OCR ${Math.round((pg.ocr.qualityScore||0)*100)}%</span>${pg.ocr.corrections?.length?`<span class="chip amber">${pg.ocr.corrections.length} correction${pg.ocr.corrections.length===1?'':'s'} to review</span>`:''}`:(pg.needsOcr?'<span class="chip amber">OCR queued</span>':'')}
+    <span class="hint" style="margin:0">${nDets} detection${nDets===1?'':'s'} on this page</span>
+    ${V.boardHl?`<span class="chip blue">${esc(boardLabel(V.boardHl))} on:</span> `+
+      (hlPages.length?hlPages.map(n=>`<span class="chip ${n===V.page?'blue':'grey'}" data-goto="${n}" style="cursor:pointer">p${n}</span>`).join(' '):'<span class="hint" style="margin:0">not found in this document</span>'):''}`;
+  $('#vMetaRow').querySelectorAll('[data-goto]').forEach(ch=>ch.addEventListener('click',()=>{ V.page=+ch.dataset.goto; renderViewer(); }));
+  // thumbnails (real page images for PDFs, cached; text preview otherwise)
   const th=$('#vThumbs'); th.innerHTML='';
+  const tcache=vThumbCache[f.id]||{};
+  const matchSet=new Set(matchPages.map(x=>x.page));
+  const imagePreviewUrl=IMAGE_EXTS.has(f.ext)&&rawStore[f.id]
+    ? URL.createObjectURL(new Blob([rawStore[f.id]],{type:imageMime(f.ext)})):null;
   f.pages.forEach((tp,i)=>{
-    const d=document.createElement('div'); d.className='thumb-it'+(i+1===V.page?' sel':'');
-    d.innerHTML=`<div class="txtpre">${esc(tp.lines.slice(0,26).map(l=>l.text).join('\n'))}</div><span class="tn">${i+1}</span>`;
+    const d=document.createElement('div'); d.className='thumb-it'+(i+1===V.page?' sel':''); d.dataset.pg=i+1;
+    const badge=(V.boardHl&&hlPages.includes(i+1))?'<span class="bdot">◈</span>':(q&&matchSet.has(i+1)?'<span class="bdot" style="background:#d99a06">●</span>':'');
+    d.innerHTML=(imagePreviewUrl?`<img src="${imagePreviewUrl}" alt="p${i+1}">`:tcache[i+1]?`<img src="${tcache[i+1]}" alt="p${i+1}">`
+      :`<div class="txtpre">${esc(tp.lines.slice(0,26).map(l=>l.text).join('\n'))}</div>`)+badge+`<span class="tn">${i+1}</span>`;
+    if(imagePreviewUrl){const preview=d.querySelector('img');if(preview)preview.onload=()=>URL.revokeObjectURL(imagePreviewUrl);}
     d.addEventListener('click',()=>{V.page=i+1; renderViewer();});
     th.appendChild(d);
   });
+  ensureThumbs(f);
   // stage
-  const q=($('#vSearch').value||'').trim().toLowerCase();
   const showOvl=$('#vOvl').checked;
   const isPdf=f.ext==='pdf' && rawStore[f.id] && window.pdfjsLib;
+  const isImage=IMAGE_EXTS.has(f.ext)&&rawStore[f.id];
   if (isPdf){
     try{
       let doc=V.pdfDocs[f.id];
       if (!doc){ doc=await window.pdfjsLib.getDocument({data:rawStore[f.id].slice(0)}).promise; V.pdfDocs[f.id]=doc; }
       const page=await doc.getPage(V.page);
-      const vp=page.getViewport({scale:1.35*V.zoom, rotation:(page.rotate+V.rot)%360});
+      // Render the canvas up to a safe pixel cap, then CSS-scale through 1000%.
+      const rot=(page.rotate+V.rot)%360;
+      const vp1=page.getViewport({scale:1, rotation:rot});
+      const desired=1.35*V.zoom;
+      const renderScale=Math.min(desired, 8192/Math.max(vp1.width,vp1.height), 5.5);
+      const cssR=desired/renderScale;
+      const vp=page.getViewport({scale:renderScale, rotation:rot});
       const cv=document.createElement('canvas'); cv.width=vp.width; cv.height=vp.height;
       await page.render({canvasContext:cv.getContext('2d'), viewport:vp}).promise;
       const wrap=document.createElement('div'); wrap.className='v-pagewrap'; wrap.appendChild(cv);
-      if (showOvl && pg.lines){
-        const sc=1.35*V.zoom;
-        dets.forEach(d=>{
-          const ln=pg.lines[d.line]; if(!ln||!ln.bbox) return;
+      wrap.dataset.cssScale=cssR;
+      const sc=renderScale;
+      if (pg.lines){
+        if (showOvl) dets.forEach(d=>{
+          const ln=pg.lines[d.line],bbox=d.bbox||ln?.bbox; if(!bbox) return;
           const o=document.createElement('div'); o.className='ovl '+d.color+(d.kind==='assisted'?' assisted':''); o.title=d.label;
-          o.style.left=(ln.bbox[0]*sc-2)+'px'; o.style.top=(ln.bbox[1]*sc-1)+'px';
-          o.style.width=(ln.bbox[2]*sc+4)+'px'; o.style.height=(ln.bbox[3]*sc+2)+'px';
+          o.style.left=(bbox[0]*sc-2)+'px'; o.style.top=(bbox[1]*sc-1)+'px';
+          o.style.width=(bbox[2]*sc+4)+'px'; o.style.height=(bbox[3]*sc+2)+'px';
           wrap.appendChild(o);
           if(d.kind==='assisted'){
             const note=document.createElement('div');note.className='markup-note';note.textContent=`${d.label} · matched`;
-            note.style.left=Math.max(0,ln.bbox[0]*sc)+'px';note.style.top=Math.max(0,ln.bbox[1]*sc-20)+'px';wrap.appendChild(note);
+            note.style.left=Math.max(0,bbox[0]*sc)+'px';note.style.top=Math.max(0,bbox[1]*sc-20)+'px';wrap.appendChild(note);
           }
         });
+        if (q) pg.lines.forEach(ln=>{                    // §5.2 in-document search overlays
+          if(!ln.bbox||!ln.text.toLowerCase().includes(q)) return;
+          const o=document.createElement('div'); o.className='ovl search';
+          o.style.left=(ln.bbox[0]*sc-2)+'px'; o.style.top=(ln.bbox[1]*sc-1)+'px';
+          o.style.width=(ln.bbox[2]*sc+4)+'px'; o.style.height=(ln.bbox[3]*sc+2)+'px';
+          wrap.appendChild(o);
+        });
       }
-      bindAssistedDrag(wrap,f,pg,1.35*V.zoom);
-      stage.innerHTML=''; stage.appendChild(wrap);
+      bindAssistedDrag(wrap,f,pg,sc);
+      if (cssR!==1){
+        wrap.style.transform='scale('+cssR+')'; wrap.style.transformOrigin='top left';
+        const sizer=document.createElement('div');
+        sizer.style.width=(cv.width*cssR)+'px'; sizer.style.height=(cv.height*cssR)+'px'; sizer.style.flex='none';
+        sizer.style.margin='0 auto';
+        sizer.appendChild(wrap);
+        stage.innerHTML=''; stage.appendChild(sizer);
+      } else { stage.innerHTML=''; stage.appendChild(wrap); }
     }catch(e){ stage.innerHTML='<div class="empty">Could not render this PDF page: '+esc(e.message)+'</div>'; }
+  } else if(isImage){
+    const scale=V.zoom,wrap=document.createElement('div');wrap.className='v-pagewrap';
+    wrap.style.width=(pg.w*scale)+'px';wrap.style.height=(pg.h*scale)+'px';
+    const img=document.createElement('img');img.alt=f.name;img.style.width='100%';img.style.height='100%';img.style.display='block';
+    const imageUrl=URL.createObjectURL(new Blob([rawStore[f.id]],{type:imageMime(f.ext)}));
+    img.onload=()=>URL.revokeObjectURL(imageUrl);img.src=imageUrl;wrap.appendChild(img);
+    if(showOvl&&pg.lines) dets.forEach(d=>{
+      const line=pg.lines[d.line],bbox=d.bbox||line?.bbox;if(!bbox)return;
+      const overlay=document.createElement('div');overlay.className='ovl '+d.color;overlay.title=d.label;
+      overlay.style.left=(bbox[0]*scale-2)+'px';overlay.style.top=(bbox[1]*scale-1)+'px';
+      overlay.style.width=(bbox[2]*scale+4)+'px';overlay.style.height=(bbox[3]*scale+2)+'px';wrap.appendChild(overlay);
+    });
+    bindAssistedDrag(wrap,f,pg,scale);
+    stage.innerHTML='';stage.appendChild(wrap);
   } else {
     // text page rendering with inline highlights
     const div=document.createElement('div'); div.className='v-textpage';
-    div.style.transform='scale('+V.zoom+')'; div.style.transformOrigin='top center';
+    div.style.transform='scale('+V.zoom+')'; div.style.transformOrigin='top left';
     const byLine={};
     if (showOvl) dets.forEach(d=>{ (byLine[d.line]=byLine[d.line]||[]).push(d); });
     div.innerHTML=(pg.lines||[]).map((l,li)=>{
@@ -2643,10 +3424,12 @@ async function renderViewer(){
       if (q && l.text.toLowerCase().includes(q))
         t=t.replace(new RegExp('('+q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')','gi'),'<span class="hl blue">$1</span>');
       const ds=byLine[li];
-      if (ds && !q){ const assisted=ds.find(x=>x.kind==='assisted');const c=(assisted||ds[0]).color; t=`<span class="hl ${c}" data-line="${li}" title="${esc(ds.map(x=>x.label).join(' · '))}">${t}</span>`; }
+      if (ds && !q){ const top=ds.find(x=>x.kind==='assisted')||ds.find(x=>x.kind==='boardhl')||ds[0]; t=`<span class="hl ${top.color}" data-line="${li}" title="${esc(ds.map(x=>x.label).join(' · '))}">${t}</span>`; }
       return `<span id="vline-${li}" data-line="${li}">${t}</span>`;
     }).join('\n');
-    stage.innerHTML=''; stage.appendChild(div);
+    const sizer=document.createElement('div');sizer.className='v-textsizer';sizer.appendChild(div);
+    stage.innerHTML='';stage.appendChild(sizer);
+    sizer.style.width=(div.offsetWidth*V.zoom)+'px';sizer.style.height=(div.offsetHeight*V.zoom)+'px';
     if(V.assist.enabled) div.querySelectorAll('[data-line]').forEach(el=>el.addEventListener('click',()=>{
       const li=Number(el.dataset.line),row=p.analysis?.rows.find(r=>r.fileId===f.id&&r.page===V.page&&r.line===li&&r.device&&r.rating!==null);
       applyAssistedSeed(pg.lines[li]?.text||'',row,{fileId:f.id,page:V.page,line:li});
@@ -2664,12 +3447,13 @@ async function renderViewer(){
       const r=V.assist.results[Number(el.dataset.r)];V.fileId=r.fileId;V.page=r.page;renderViewer();
     }));
   } else {
-    dl.innerHTML = dets.length? dets.map((d,i)=>`<div class="det" data-i="${i}">
+    const listDets=dets.filter(d=>d.kind!=='boardhl');
+    dl.innerHTML = listDets.length? listDets.map((d,i)=>`<div class="det" data-i="${i}">
       <span class="chip ${d.color}">${d.kind}</span> <b>${esc(d.label)}</b>
       <div class="hint" style="margin-top:2px">${esc((d.r.srcText||'').slice(0,90))}</div></div>`).join('')
     : '<div class="empty">No detections on this page.</div>';
     dl.querySelectorAll('.det').forEach(el=>el.addEventListener('click',()=>{
-      const d=dets[+el.dataset.i];
+      const d=listDets[+el.dataset.i];
       if(V.assist.enabled&&d.kind==='row')return applyAssistedSeed(d.r.srcText,d.r,{fileId:f.id,page:V.page,line:d.line});
       const tgt=document.getElementById('vline-'+d.line);
       if (tgt&&tgt.scrollIntoView) tgt.scrollIntoView({block:'center',behavior:'smooth'});
@@ -2678,23 +3462,109 @@ async function renderViewer(){
 }
 function jumpToEvidence(r){
   if (!r.fileId){ toast('Manually-added rows have no source document'); return; }
-  state.viewer.fileId=r.fileId; state.viewer.page=r.page||1;
+  state.viewer.fileId=r.fileId; state.viewer.page=r.page||1;state.viewer.evidenceId=r.id;
   setTab('viewer');
   setTimeout(()=>{
     const tgt=document.getElementById('vline-'+r.line);
     if (tgt){ if(tgt.scrollIntoView) tgt.scrollIntoView({block:'center'}); tgt.classList.add('hl','blue'); }
   }, 60);
 }
-$('#vFileSel').addEventListener('change', e=>{ state.viewer.fileId=e.target.value; state.viewer.page=1; renderViewer(); });
 $('#vPrev').addEventListener('click', ()=>{ state.viewer.page--; renderViewer(); });
 $('#vNext').addEventListener('click', ()=>{ state.viewer.page++; renderViewer(); });
-$('#vZoomIn').addEventListener('click', ()=>{ state.viewer.zoom=Math.min(3,state.viewer.zoom*1.2); renderViewer(); });
-$('#vZoomOut').addEventListener('click', ()=>{ state.viewer.zoom=Math.max(.4,state.viewer.zoom/1.2); renderViewer(); });
-$('#vFit').addEventListener('click', ()=>{ state.viewer.zoom=1; state.viewer.rot=0; renderViewer(); });
+const clampViewerZoom=value=>Math.max(.25,Math.min(10,Number(value)||1));
+async function setViewerZoom(next,anchor){
+  const stage=$('#vStage'),oldZoom=state.viewer.zoom,newZoom=clampViewerZoom(next);
+  const rect=stage.getBoundingClientRect();
+  const anchorX=anchor?Math.max(0,Math.min(stage.clientWidth,anchor.clientX-rect.left)):stage.clientWidth/2;
+  const anchorY=anchor?Math.max(0,Math.min(stage.clientHeight,anchor.clientY-rect.top)):stage.clientHeight/2;
+  const contentX=(stage.scrollLeft+anchorX)/Math.max(.01,oldZoom);
+  const contentY=(stage.scrollTop+anchorY)/Math.max(.01,oldZoom);
+  state.viewer.zoom=newZoom;
+  await renderViewer();
+  stage.scrollLeft=Math.max(0,contentX*newZoom-anchorX);
+  stage.scrollTop=Math.max(0,contentY*newZoom-anchorY);
+}
+const vZoomBy=(factor,anchor)=>setViewerZoom(state.viewer.zoom*factor,anchor);
+$('#vZoomIn').addEventListener('click', ()=>vZoomBy(1.25));
+$('#vZoomOut').addEventListener('click', ()=>vZoomBy(1/1.25));
+$('#vZoomPct').addEventListener('change',e=>setViewerZoom(Number(e.target.value)/100));
+$('#vZoomPct').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();e.target.blur();}});
+$('#vFit').addEventListener('click', async ()=>{
+  const V=state.viewer, f=viewerFile(); V.rot=0;
+  if (f&&f.ext==='pdf'&&V.pdfDocs[f.id]){
+    try{ const page=await V.pdfDocs[f.id].getPage(V.page);
+      const vp=page.getViewport({scale:1.35, rotation:page.rotate%360});
+      V.zoom=clampViewerZoom(($('#vStage').clientWidth-40)/vp.width); }
+    catch(e){ V.zoom=1; }
+  } else if(f&&IMAGE_EXTS.has(f.ext)) V.zoom=clampViewerZoom(($('#vStage').clientWidth-40)/Math.max(1,f.pages[V.page-1].w||1));
+  else V.zoom=clampViewerZoom(($('#vStage').clientWidth-40)/840);
+  renderViewer();
+});
 $('#vRotate').addEventListener('click', ()=>{ state.viewer.rot=(state.viewer.rot+90)%360; renderViewer(); });
 $('#vOvl').addEventListener('change', renderViewer);
 $('#vOvlFilter').addEventListener('change', renderViewer);
+$('#vBoardHl').addEventListener('change', e=>{ state.viewer.boardHl=e.target.value||null; renderViewer(); });
+$('#vDark').addEventListener('click', ()=>{ state.viewer.dark=!state.viewer.dark; renderViewer(); });
+$('#vPrint').addEventListener('click', ()=>{
+  const cv=$('#vStage canvas'), tp=$('#vStage .v-textpage');
+  const w=window.open('','_blank'); if(!w){ toast('Pop-up blocked — allow pop-ups to print'); return; }
+  if (cv) w.document.write('<img src="'+cv.toDataURL('image/png')+'" style="max-width:100%">');
+  else if (IMAGE_EXTS.has(viewerFile()?.ext)&&rawStore[viewerFile().id]){
+    const url=URL.createObjectURL(new Blob([rawStore[viewerFile().id]],{type:imageMime(viewerFile().ext)}));
+    w.document.write('<img src="'+url+'" style="max-width:100%">');setTimeout(()=>URL.revokeObjectURL(url),5000);
+  }
+  else if (tp) w.document.write('<pre style="font:11px/1.7 monospace;white-space:pre-wrap">'+esc(tp.textContent)+'</pre>');
+  w.document.close(); w.focus(); setTimeout(()=>w.print(),250);
+});
+$('#vDownload').addEventListener('click', ()=>{
+  const f=viewerFile(); if(!f) return;
+  const binary=rawStore[f.id]&&(f.ext==='pdf'||f.ext==='xlsx'||IMAGE_EXTS.has(f.ext));
+  const blob = binary
+    ? new Blob([rawStore[f.id]],{type:f.ext==='pdf'?'application/pdf':f.ext==='xlsx'?'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':imageMime(f.ext)})
+    : new Blob([f.pages.map(pg=>(pg.lines||[]).map(l=>l.text).join('\n')).join('\n\n— page break —\n\n')],{type:'text/plain'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download=binary?f.name:(f.name.replace(/\.[^.]+$/,'')+'.txt');
+  a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+});
 $('#vSearch').addEventListener('input', ()=>renderViewer());
+$('#vSearchNext').addEventListener('click', ()=>{     // jump to the next page containing a match
+  const f=viewerFile(); if(!f) return;
+  const q=($('#vSearch').value||'').trim().toLowerCase(); if(!q) return;
+  const pages=[]; f.pages.forEach((tp,i)=>{ if((tp.lines||[]).some(l=>l.text.toLowerCase().includes(q))) pages.push(i+1); });
+  if (!pages.length) return;
+  const nxt=pages.find(n=>n>state.viewer.page) ?? pages[0];
+  state.viewer.page=nxt; renderViewer();
+});
+$('#vSearch').addEventListener('keydown', e=>{ if(e.key==='Enter') $('#vSearchNext').click(); });
+/* Ctrl+wheel zooms around the pointer; drag the page to pan in any direction. */
+$('#vStage').addEventListener('wheel', e=>{ if(e.ctrlKey){ e.preventDefault(); vZoomBy(e.deltaY<0?1.15:1/1.15,e); } }, {passive:false});
+let viewerPan=null;
+$('#vStage').addEventListener('pointerdown',e=>{
+  if(e.button!==0||state.viewer.assist.enabled) return;
+  const stage=$('#vStage');
+  viewerPan={id:e.pointerId,x:e.clientX,y:e.clientY,left:stage.scrollLeft,top:stage.scrollTop};
+  stage.classList.add('is-panning');stage.setPointerCapture(e.pointerId);e.preventDefault();
+});
+$('#vStage').addEventListener('pointermove',e=>{
+  if(!viewerPan||viewerPan.id!==e.pointerId) return;
+  const stage=$('#vStage');stage.scrollLeft=viewerPan.left-(e.clientX-viewerPan.x);stage.scrollTop=viewerPan.top-(e.clientY-viewerPan.y);
+});
+const stopViewerPan=e=>{
+  if(!viewerPan||viewerPan.id!==e.pointerId) return;
+  const stage=$('#vStage');stage.classList.remove('is-panning');
+  if(stage.hasPointerCapture(e.pointerId)) stage.releasePointerCapture(e.pointerId);
+  viewerPan=null;
+};
+$('#vStage').addEventListener('pointerup',stopViewerPan);
+$('#vStage').addEventListener('pointercancel',stopViewerPan);
+document.addEventListener('keydown', e=>{
+  if (!$('#pt-viewer').classList.contains('active')) return;
+  if (e.target.matches('input,select,textarea')) return;
+  if (e.key==='ArrowLeft'){ state.viewer.page--; renderViewer(); }
+  else if (e.key==='ArrowRight'){ state.viewer.page++; renderViewer(); }
+  else if (e.key==='+'||e.key==='='){ vZoomBy(1.25); }
+  else if (e.key==='-'){ vZoomBy(1/1.25); }
+});
 $('#vAssistMode').addEventListener('click',()=>{
   const V=state.viewer;V.assist.enabled=!V.assist.enabled;
   if(V.assist.enabled){V.rot=0;$('#vOvl').checked=true;}
@@ -2728,51 +3598,79 @@ function fileSchedule(f){
     const lines=(pg.lines||[]).map(l=>l.text);
     const isSched=SCHEDULE_TYPES.has(pg.type)&&pg.type!=='cable-schedule';
     if (!isSched){ prevBoard=null; return; }
-    let ctxBoard=null;
-    for (let i=0;i<Math.min(8,lines.length);i++){ const bs=detectBoards(lines[i]); if(bs.length){ctxBoard=bs[0];break;} }
+    let ctxBoard=scheduleBoardFromLines(lines);
     if (!ctxBoard&&prevBoard) ctxBoard=prevBoard;
     if (ctxBoard) prevBoard=ctxBoard;
     const parsedLegend=window.EstimationExtractorCore
       ? window.EstimationExtractorCore.parseProtectionLegend(lines.join('\n'))
       : {legend:null};
-    const ctx={board:ctxBoard?ctxBoard.norm:null, sawHeader:false, inNotes:false,
+    const ctx={board:ctxBoard?ctxBoard.norm:null, boardSection:ctxBoard?ctxBoard.section||null:null, sawHeader:false, inNotes:false,
       lastWay:null, lastPhase:null, pendingRows:[], protectionLegend:parsedLegend.legend};
-    lines.forEach(t=>{
-      const row=parseScheduleLine(t,ctx);
-      if (row){ const bn=ctx.board||'?'; (rowsByBoard[bn]=rowsByBoard[bn]||[]).push(row); }
+    const codedPage=window.EstimationExtractorCore&&window.EstimationExtractorCore.parseTbaSchedulePage
+      ? window.EstimationExtractorCore.parseTbaSchedulePage(lines,ctx)
+      : {matched:false,rows:[]};
+    if(codedPage.matched) codedPage.rows.forEach(row=>{
+      const bn=ctx.board||'?';row.fileId=f.id;row.page=pi+1;
+      (rowsByBoard[bn]=rowsByBoard[bn]||[]).push(row);
     });
-    if (window.EstimationExtractorCore) window.EstimationExtractorCore.finalizeScheduleContext(ctx);
+    lines.forEach((t,li)=>{
+      const row=codedPage.matched?null:parseScheduleLine(t,ctx);
+      if (row){ const bn=ctx.board||'?'; row.fileId=f.id; row.page=pi+1; row.line=li;
+        (rowsByBoard[bn]=rowsByBoard[bn]||[]).push(row); }
+    });
+    if (!codedPage.matched&&window.EstimationExtractorCore) window.EstimationExtractorCore.finalizeScheduleContext(ctx);
   });
   return rowsByBoard;
 }
 function cableKey(c){ return c? (c.cores?c.cores+'C':'')+(c.earth?'+E':'')+' '+(c.size??'')+(c.construction?' '+c.construction:'') : ''; }
+/* §5.5 — rows for the structured diff. Prefer the analysed rows (which include the
+   AI-extraction recall path); fall back to the regex re-parse for un-analysed files. */
+function fileRowsForDiff(f){
+  const p=state.cur, A=p&&p.analysis;
+  const byBoard={}; let n=0;
+  if (A) A.rows.forEach(r=>{
+    if (r.fileId!==f.id || r.status==='rejected' || r.kind==='mention' || r.kind==='manual') return;
+    const bn=r.boardNorm||'?'; (byBoard[bn]=byBoard[bn]||[]).push(r); n++;
+  });
+  if (n) return {rows:byBoard, source:'analysis'};
+  return {rows:fileSchedule(f), source:'regex'};
+}
+const cmpRef = r => (r&&r.fileId)? {fileId:r.fileId, page:r.page||1, line:r.line??null} : null;
 function compareSchedules(fa, fb){
-  const A=fileSchedule(fa), B=fileSchedule(fb);
+  const RA=fileRowsForDiff(fa), RB=fileRowsForDiff(fb);
+  const A=RA.rows, B=RB.rows;
+  compareSchedules.source = RA.source==='analysis'&&RB.source==='analysis' ? 'analysis'
+    : RA.source==='regex'&&RB.source==='regex' ? 'regex' : 'mixed';
   const changes=[];
   const boards=[...new Set([...Object.keys(A),...Object.keys(B)])];
   boards.forEach(bn=>{
     const ra=A[bn]||[], rb=B[bn]||[];
-    if (!ra.length){ changes.push({type:'board', txt:'Board '+bn+' added in revision', bn}); }
-    if (!rb.length){ changes.push({type:'board', txt:'Board '+bn+' removed in revision', bn}); }
-    const byWayA={}, byWayB={};
-    ra.forEach(r=>{ if(r.way!==null) byWayA[r.way]=r; });
-    rb.forEach(r=>{ if(r.way!==null) byWayB[r.way]=r; });
-    const ways=[...new Set([...Object.keys(byWayA),...Object.keys(byWayB)])].map(Number).sort((a,b)=>a-b);
-    ways.forEach(w=>{
-      const a=byWayA[w], b=byWayB[w];
-      if (a&&!b){ changes.push({type:'circuit-removed', bn, way:w, txt:`${bn} way ${w} removed (${a.device||(a.spare?'spare':'circuit')}${a.rating?' '+a.rating+'A':''})`, src:a.srcText}); return; }
-      if (!a&&b){ changes.push({type:'circuit-added', bn, way:w, txt:`${bn} way ${w} added (${b.device||(b.spare?'spare':'circuit')}${b.rating?' '+b.rating+'A':''})`, src:b.srcText}); return; }
+    if (!ra.length){ changes.push({type:'board', bn, txt:'Board '+boardLabel(bn)+' added in revision', refB:cmpRef(rb[0])}); }
+    if (!rb.length){ changes.push({type:'board', bn, txt:'Board '+boardLabel(bn)+' removed in revision', refA:cmpRef(ra[0])}); }
+    // key phase-slots independently only when both sides carry phases for this board
+    const phased = ra.some(r=>r.phase&&r.phase!=='3PH') && rb.some(r=>r.phase&&r.phase!=='3PH');
+    const keyOf = r => r.way===null||r.way===undefined? null : (phased? r.way+'/'+(r.phase||'') : String(r.way));
+    const byKeyA={}, byKeyB={};
+    ra.forEach(r=>{ const k=keyOf(r); if(k!==null&&!byKeyA[k]) byKeyA[k]=r; });
+    rb.forEach(r=>{ const k=keyOf(r); if(k!==null&&!byKeyB[k]) byKeyB[k]=r; });
+    const keys=[...new Set([...Object.keys(byKeyA),...Object.keys(byKeyB)])]
+      .sort((x,y)=>parseFloat(x)-parseFloat(y)||String(x).localeCompare(String(y)));
+    keys.forEach(k=>{
+      const a=byKeyA[k], b=byKeyB[k];
+      const lbl=phased? 'way '+k.replace('/',' ') : 'way '+k;
+      if (a&&!b){ changes.push({type:'circuit-removed', bn, way:k, txt:`${boardLabel(bn)} ${lbl} removed (${a.device||(a.spare?'spare':'circuit')}${a.rating?' '+a.rating+'A':''})`, src:a.srcText, refA:cmpRef(a)}); return; }
+      if (!a&&b){ changes.push({type:'circuit-added', bn, way:k, txt:`${boardLabel(bn)} ${lbl} added (${b.device||(b.spare?'spare':'circuit')}${b.rating?' '+b.rating+'A':''})`, src:b.srcText, refB:cmpRef(b)}); return; }
       if (a&&b){
         if ((a.device||'')!==(b.device||'') && !(a.spare&&b.spare))
-          changes.push({type:'device-changed', bn, way:w, txt:`${bn} way ${w}: device changed ${a.device||(a.spare?'SPARE':'—')} → ${b.device||(b.spare?'SPARE':'—')}`, src:b.srcText});
+          changes.push({type:'device-changed', bn, way:k, txt:`${boardLabel(bn)} ${lbl}: device changed ${a.device||(a.spare?'SPARE':'—')} → ${b.device||(b.spare?'SPARE':'—')}`, src:b.srcText, refA:cmpRef(a), refB:cmpRef(b)});
         if (a.rating!==b.rating && a.rating!==null && b.rating!==null)
-          changes.push({type:'rating-changed', bn, way:w, txt:`${bn} way ${w}: rating changed ${a.rating}A → ${b.rating}A`, src:b.srcText});
+          changes.push({type:'rating-changed', bn, way:k, txt:`${boardLabel(bn)} ${lbl}: rating changed ${a.rating}A → ${b.rating}A`, src:b.srcText, refA:cmpRef(a), refB:cmpRef(b)});
         if (cableKey(a.cable)!==cableKey(b.cable) && (a.cable||b.cable))
-          changes.push({type:'cable-changed', bn, way:w, txt:`${bn} way ${w}: cable changed ${a.cable?a.cable.orig:'—'} → ${b.cable?b.cable.orig:'—'}`, src:b.srcText});
+          changes.push({type:'cable-changed', bn, way:k, txt:`${boardLabel(bn)} ${lbl}: cable changed ${a.cable?a.cable.orig:'—'} → ${b.cable?b.cable.orig:'—'}`, src:b.srcText, refA:cmpRef(a), refB:cmpRef(b)});
         if (a.spare&&!b.spare&&b.device)
-          changes.push({type:'circuit-added', bn, way:w, txt:`${bn} way ${w}: spare way now used (${b.device}${b.rating?' '+b.rating+'A':''})`, src:b.srcText});
+          changes.push({type:'circuit-added', bn, way:k, txt:`${boardLabel(bn)} ${lbl}: spare way now used (${b.device}${b.rating?' '+b.rating+'A':''})`, src:b.srcText, refB:cmpRef(b)});
         if (!a.spare&&b.spare&&a.device)
-          changes.push({type:'circuit-removed', bn, way:w, txt:`${bn} way ${w}: circuit removed, now spare (was ${a.device}${a.rating?' '+a.rating+'A':''})`, src:a.srcText});
+          changes.push({type:'circuit-removed', bn, way:k, txt:`${boardLabel(bn)} ${lbl}: circuit removed, now spare (was ${a.device}${a.rating?' '+a.rating+'A':''})`, src:a.srcText, refA:cmpRef(a)});
       }
     });
   });
@@ -2826,10 +3724,16 @@ function runCompare(){
   const LBL={'circuit-added':['Circuits added','green'],'circuit-removed':['Circuits removed','red'],
     'rating-changed':['Ratings changed','amber'],'device-changed':['Devices changed','purple'],
     'cable-changed':['Cables changed','cyan'],'board':['Boards added/removed','blue']};
-  $('#cmpSummary').innerHTML = cmpChanges.length
+  const srcChip = compareSchedules.source==='analysis'
+    ? '<span class="chip cyan" title="Rows come from the analysed take-off">diff from analysed rows</span>'
+    : compareSchedules.source==='regex'
+      ? '<span class="chip grey" title="No analysis for these documents yet — regex re-parse only. Run ⚙ Analyse documents for full recall.">diff from regex re-parse</span>'
+      : '<span class="chip amber" title="One side has analysed rows, the other only a regex re-parse — run ⚙ Analyse documents so both sides compare equally">mixed sources — re-analyse for a fair diff</span>';
+  $('#cmpSummary').innerHTML = (cmpChanges.length
     ? Object.entries(counts).map(([t,n])=>`<span class="chip ${LBL[t]?LBL[t][1]:'grey'}">${n} ${LBL[t]?LBL[t][0].toLowerCase():t}</span>`).join('')
-    : '<span class="chip green">No electrical changes detected between these schedules</span>';
+    : '<span class="chip green">No electrical changes detected between these schedules</span>')+srcChip;
   $('#chgPanel').style.display=cmpChanges.length?'':'none';
+  $('#cmpTextBtn').style.display='';
   renderChgList();
   // text diff panes
   const la=fa.pages.flatMap(pg=>pg.lines.map(l=>l.text));
@@ -2857,22 +3761,47 @@ function runCompare(){
   const sync=(src,dst)=>()=>{ if(lockSc)return; lockSc=true; dst.scrollTop=src.scrollTop; lockSc=false; };
   bA.onscroll=sync(bA,bB); bB.onscroll=sync(bB,bA);
   cmpPtr=-1;
-  $('#nextChgBtn').style.display = $('#cmpBodyA').querySelector('.del,.chg,.blank')?'':'none';
+  $('#nextChgBtn').style.display = ($('#cmpPanes').style.display!=='none' && $('#cmpBodyA').querySelector('.del,.chg,.blank'))?'':'none';
   toast(cmpChanges.length? cmpChanges.length+' electrical changes found' : 'No electrical changes found');
 }
+/* §5.5 — grouped per board; every change clicks through to its evidence in the viewer */
 function renderChgList(){
   const filter=$('#chgFilter').value;
   const list=cmpChanges.filter(c=>filter==='all'||c.type===filter);
   const ICO={'circuit-added':['＋','green'],'circuit-removed':['−','red'],'rating-changed':['Δ','amber'],
     'device-changed':['⇄','purple'],'cable-changed':['⌁','cyan'],'board':['◫','blue']};
-  $('#chgList').innerHTML = list.length? list.map(c=>{
-    const [ic,cl]=ICO[c.type]||['•','grey'];
-    return `<div class="chg-it"><span class="chip ${cl}">${ic}</span> ${esc(c.txt)}
-      ${c.src?`<span class="hint" style="margin:0 0 0 auto;font-family:var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:340px">${esc(c.src)}</span>`:''}</div>`;
-  }).join('') : '<div class="empty">No changes of this type.</div>';
+  const byBoard={};
+  list.forEach(c=>{ (byBoard[c.bn||'?']=byBoard[c.bn||'?']||[]).push(c); });
+  const host=$('#chgList');
+  if (!list.length){ host.innerHTML='<div class="empty">No changes of this type.</div>'; return; }
+  host.innerHTML=Object.keys(byBoard).sort().map(bn=>{
+    const items=byBoard[bn];
+    return `<div style="padding:8px 14px 4px;font-weight:800;font-size:12.5px;border-top:1px solid var(--line)">
+        ${esc(bn==='?'?'No board reference':boardLabel(bn))} <span class="chip grey">${items.length} change${items.length===1?'':'s'}</span></div>`
+      + items.map(c=>{
+        const [ic,cl]=ICO[c.type]||['•','grey'];
+        const gi=cmpChanges.indexOf(c);
+        const jumpable=c.refB||c.refA;
+        return `<div class="chg-it" data-g="${gi}" style="${jumpable?'cursor:pointer':''}" title="${jumpable?'Show this change in the document':''}">
+          <span class="chip ${cl}">${ic}</span> ${esc(c.txt)}
+          ${jumpable?'<span class="chip grey" style="margin-left:auto">👁 view</span>':''}
+          ${c.src?`<span class="hint" style="margin:0;font-family:var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:280px">${esc(c.src)}</span>`:''}</div>`;
+      }).join('');
+  }).join('');
+  host.querySelectorAll('.chg-it[data-g]').forEach(el=>el.addEventListener('click',()=>{
+    const c=cmpChanges[+el.dataset.g]; const ref=c&&(c.refB||c.refA);
+    if (ref) jumpToEvidence(ref);
+  }));
 }
 $('#chgFilter').addEventListener('change', renderChgList);
 $('#runCmpBtn').addEventListener('click', runCompare);
+$('#cmpTextBtn').addEventListener('click', ()=>{               // §5.5 raw text diff behind a toggle
+  const panes=$('#cmpPanes');
+  const show=panes.style.display==='none';
+  panes.style.display=show?'':'none';
+  $('#cmpTextBtn').textContent=show?'≋ Hide text diff':'≋ Text diff';
+  $('#nextChgBtn').style.display=(show&&$('#cmpBodyA').querySelector('.del,.chg,.blank'))?'':'none';
+});
 $('#nextChgBtn').addEventListener('click', ()=>{
   const marks=$$('#cmpBodyA .dline.del, #cmpBodyA .dline.chg, #cmpBodyA .dline.blank');
   if (!marks.length) return;
@@ -3106,48 +4035,52 @@ function seedDemo(){
   return [p1,p2];
 }
 
+const BUNDLED_DEMOS={
+  'Riverside Office Fit-Out (demo)':['E-001 Register & legend.txt','E-100 Small power plans.txt','E-200 Single-line diagram.txt','E-300 Distribution board schedules.txt','E-400 Cable schedule.csv'],
+  'DB-05 revision comparison (demo)':['DB-05 schedule Rev A.txt','DB-05 schedule Rev B.txt'],
+};
+function isBundledDemoProject(project){
+  const expected=BUNDLED_DEMOS[project&&project.name];
+  if (!expected) return false;
+  const actual=(project.files||[]).map(file=>file.name).sort();
+  return actual.length===expected.length && expected.every((name,index)=>name===actual[index]);
+}
+function cleanLegacySourceLabels(project){
+  const rows=project&&project.analysis&&project.analysis.rows||[];
+  rows.forEach(row=>{
+    if (typeof row.srcText!=='string') return;
+    row.srcText=row.srcText.replace(/^\[AI\]\s*feed\s*/i,'Feed ').replace(/^\[AI\]\s*/i,'');
+  });
+}
+
 /* ============================ BOOT ============================ */
 async function boot(){
+  const params=new URLSearchParams(location.search);
   const localTestMode=['localhost','127.0.0.1','::1'].includes(location.hostname)
-    && new URLSearchParams(location.search).get('test')==='1';
+    && params.get('test')==='1';
   if (localTestMode){
     window.__TEST__=true;
     $('#lockView').classList.remove('active');
     $('#appView').classList.add('active');
   }
   const ok=await idbOpen();
-  $('#storeChip').textContent = ok? 'Saved on this device' : 'Session only';
-  $('#storeChip').className = 'chip '+(ok?'cyan':'amber');
+  if (!ok) toast('Storage unavailable — work is session-only until you export');   // header chip removed by design
   let stored=[];
   try{ stored=await loadProjects(); }catch(e){}
-  let seeded=null;
-  if (stored.length){
-    stored.forEach(rec=>state.projects.push(rec));
-    // restore max id counter
-    state.nextId += state.projects.length*50;
-  } else {
-    seeded=seedDemo();                 // synchronous: just creates the project objects
-    seeded.forEach(p=>saveProject(p)); // persist immediately so a reload keeps them
+  stored.forEach(rec=>{
+    if (isBundledDemoProject(rec)) deleteProjectStore(rec.id);
+    else { cleanLegacySourceLabels(rec); state.projects.push(rec); }
+  });
+  state.nextId += state.projects.length*50;
+  if (localTestMode && params.get('fixture')==='report' && !state.projects.length){
+    const fixtures=seedDemo();
+    fixtures.forEach(project=>project.testFixture=true);
+    state.cur=fixtures[0];
+    try{ await runAnalysis({auto:true,noAi:true}); }catch(error){ console.warn('Local report fixture could not be analysed:',error.message); }
+    state.cur=null;
   }
-  // Paint the Projects home NOW — the first render must never wait on document
-  // analysis (which can take minutes on the network AI path). Blank-page fix.
   renderProjects();
   show('home');
-  // Analyse the demo fixtures in the background, regex-only (no slow network AI
-  // call for throwaway samples), and re-render as each finishes. Never blocks boot,
-  // and yields to the user the moment they open a project.
-  if (seeded){
-    (async()=>{
-      for (const p of seeded){
-        if (state.cur) break;          // user has navigated into a project — don't fight them
-        state.cur=p;
-        try{ await runAnalysis({auto:true, noAi:true}); }catch(e){ console.warn('demo analysis skipped:', e.message); }
-        if (state.cur===p) state.cur=null;
-        saveProject(p);
-        if (!state.cur) renderProjects();
-      }
-    })();
-  }
 }
 boot();
 
