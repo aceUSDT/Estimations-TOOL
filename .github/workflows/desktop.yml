@@ -26,11 +26,19 @@ jobs:
       matrix:
         include:
           - os: windows-latest
+            artifact: estimation-tools-Windows-x64
             args: --win nsis
             out: |
               desktop/release/*.exe
           - os: macos-latest
-            args: --mac dmg zip --x64 --arm64
+            artifact: estimation-tools-macOS-x64
+            args: --mac dmg zip --x64
+            out: |
+              desktop/release/*.dmg
+              desktop/release/*-mac-*.zip
+          - os: macos-latest
+            artifact: estimation-tools-macOS-arm64
+            args: --mac dmg zip --arm64
             out: |
               desktop/release/*.dmg
               desktop/release/*-mac-*.zip
@@ -50,7 +58,7 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
       - uses: actions/upload-artifact@v4
         with:
-          name: estimation-tools-${{ runner.os }}
+          name: ${{ matrix.artifact }}
           path: ${{ matrix.out }}
           if-no-files-found: error
 
