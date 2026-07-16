@@ -6,12 +6,12 @@
   "use strict";
 
   const GROUP_ORDER = [
-    "MCB's",
-    "RCBO's",
+    "MCBs",
+    "RCBOs",
     "AFDD & Combined Protection",
-    "MCCB's",
-    "ACB's",
-    "RCD's",
+    "MCCBs",
+    "ACBs",
+    "RCDs",
     "Switches & Isolators",
     "Fuses",
     "Surge Protection",
@@ -84,12 +84,12 @@
 
   function groupForDevice(device) {
     const key = text(device).toUpperCase();
-    if (key === "MCB") return "MCB's";
-    if (key === "RCBO") return "RCBO's";
+    if (key === "MCB") return "MCBs";
+    if (key === "RCBO") return "RCBOs";
     if (key === "AFDD+RCBO") return "AFDD & Combined Protection";
-    if (key === "MCCB") return "MCCB's";
-    if (key === "ACB") return "ACB's";
-    if (key === "RCD") return "RCD's";
+    if (key === "MCCB") return "MCCBs";
+    if (key === "ACB") return "ACBs";
+    if (key === "RCD") return "RCDs";
     if (key === "ISOLATOR" || key === "SWITCH") return "Switches & Isolators";
     if (key === "FUSE") return "Fuses";
     if (key === "SPD") return "Surge Protection";

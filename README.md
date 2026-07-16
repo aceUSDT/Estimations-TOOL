@@ -1,39 +1,72 @@
-# Estimation101
+# Estimation Tools
 
-Electrical document intelligence prototype and private training/evaluation corpus.
+Local-first electrical document review and distribution-board device take-off for Windows,
+macOS, and modern browsers.
 
-## Current implementation
+The app reads PDF, XLSX, image, and text documents; identifies boards, protective devices,
+control equipment, feeders, and source locations; then produces a reconciled Excel report.
+It is designed for review, so uncertain or conflicting information is shown instead of
+being silently discarded.
 
-- `index.html` - browser application and review interface.
-- `extractor-core.js` - reusable legend-aware schedule extraction logic.
-- `report-core.js` - deterministic board-by-device report model, CSV output, and formatted Excel workbook generation.
-- Reports workspace - review a board-by-device take-off, including a separate control-equipment sheet, then export a formatted `.xlsx` workbook or CSV.
-- Viewer - original-document PDF rendering with thumbnails, search, source highlighting, rotation, 25–1000% zoom, and drag panning in every direction. Saved PDFs rehydrate their renderer when reopened.
-- Page-quality OCR - every PDF page independently keeps reliable embedded text or runs adaptive OCR. Candidate preprocessing, confidence, coordinates, original text, corrections, and reasons are retained.
-- Persistent processing status - document pages, OCR work, and analysis stages remain visible below the top bar while work is running.
-- Canonical procurement reporting - devices group by family, rating, curve, breaking capacity, and poles. Circuit purpose remains in contributor detail and never splits an otherwise identical product.
-- Reconciliation-gated exports - source, board, consolidated, and workbook totals must agree before CSV or Excel is issued.
-- `tools/coverage/` - deterministic regression tests for board references, schedule dialects, reconciliation, report exports, and the extraction endpoint.
-- `training/` - schema, confirmed labels, fixtures, evaluation results, and corpus analysis.
-- `data/electrical_corpus/manifest.json` - file-level inventory and hashes.
-- `data/electrical_corpus/derived/pages.jsonl` - page-level text, geometry, classifications, board references, and uncertainty markers for 3,222 pages.
-- `data/electrical_corpus/derived/page_index.json` - corpus/page summary and OCR queue.
+## What works
 
-The raw corpus is private work data. Do not publish it or include it in the deployment ZIP.
+- Per-page native PDF extraction with local OCR fallback for scanned pages.
+- A persistent processing strip that remains visible while documents are being read.
+- Board and device views with source page, confidence, circuit, rating, poles, curve,
+  breaking capacity, purpose, and review state.
+- Separate handling for contactors, time clocks, photocells, relays, starters, overloads,
+  transformers, and controllers.
+- A document viewer with thumbnails, search, rotation, drag panning, and 25-1000% zoom.
+- Deterministic grouping and reconciliation before CSV or Excel export.
+- Project backup and restore using `.estimation-project` files, including originals.
+- Windows and macOS installers that include the application, PDF.js, and Tesseract OCR.
 
-## Run locally
+## Privacy and storage
+
+The desktop app runs from packaged local files and does not need the deployed website.
+Projects and original documents are stored in the current operating-system user's Electron
+profile. Browser use stores them in that browser profile for the current site origin. No
+central project account or shared workspace is used.
+
+The device PIN is a local screen lock, not file encryption. Project backup files also
+contain unencrypted originals and should be handled like the source documents.
+
+Browser deployments can offer optional online extraction. It is off by default and only
+sends page images and detected text after the user enables **Use online extraction**. The
+packaged desktop app keeps document reading local and disables that option.
+
+## Run in a browser
 
 ```bash
-python3 -m http.server 8765 --bind 127.0.0.1
+npm ci
+npm run dev
 ```
 
-Open `http://127.0.0.1:8765/`. For local automated UI checks only, use `?test=1`; this bypass is restricted to localhost and does not change the production password flow.
+Open `http://127.0.0.1:8765/`. `?test=1` is reserved for automated checks and only works
+on localhost.
+
+## Run or package the desktop app
+
+```bash
+cd desktop
+npm ci
+npm run verify
+npm start
+```
+
+Use `npm run dist:win` on Windows or `npm run dist:mac` on macOS to create installers.
+Tagged releases matching `desktop-v*` are built by GitHub Actions. See
+[`desktop/README.md`](desktop/README.md) for signing and distribution details.
 
 ## Verification
 
 ```bash
 npm test
 ```
+
+The supplied 62-page `26CC07` distribution-board schedule is the primary end-to-end
+regression: 40 boards and 632 countable devices, with source, board, group, and report
+totals reconciled.
 
 ## AI extraction keys (server-side only)
 
@@ -48,26 +81,5 @@ Extraction quality comes from a vision model reading each page. Keys are set as 
 
 With **both** keys set, every page is read twice and the two extractions are compared by deterministic code: devices only the second model saw enter the take-off as pending Review rows (over-capture beats omission), and rating/class disagreements lower the row's confidence so the Review queue surfaces them. Nothing is auto-resolved — the estimator always decides. The Boards & Devices header shows a `Cross-check` chip with the per-analysis disagreement count.
 
-## Use the application
-
-1. Create a project and upload PDF, XLSX, PNG, JPG, WebP, TXT, CSV, or Markdown documents.
-2. The app reads native PDF text immediately and automatically runs OCR when a PDF or image has no usable text layer.
-3. Use **Boards & Devices** and **Review** to inspect, edit, confirm, reject, or add extracted items. Every item keeps its document and page source.
-4. Use **Viewer** to search the document, highlight a board, inspect the source page, or zoom from 25% to 1000%.
-5. Use **Reports** to export the checked device take-off. Control items such as contactors, time clocks, photocells, relays, starters, and DALI controllers are kept separate from protective-device totals.
-
-See [OCR, extraction, and reporting architecture](docs/OCR_AND_REPORTING.md) for routing thresholds, preprocessing, grouping rules, workbook sheets, measured sample results, and known limitations.
-
-The take-off report intentionally covers distribution-board devices. Main switchboard and panelboard feeder schedules are retained in the project but are excluded from the distribution-board completeness total unless their device rows are part of the take-off scope.
-
-## Corpus rebuild
-
-```bash
-python3 scripts/build_corpus_manifest.py data/electrical_corpus/raw \
-  --json data/electrical_corpus/manifest.json \
-  --csv data/electrical_corpus/manifest.csv
-
-node scripts/build_page_corpus.mjs \
-  data/electrical_corpus/raw \
-  data/electrical_corpus/derived
-```
+Architecture details are in [`docs/OCR_AND_REPORTING.md`](docs/OCR_AND_REPORTING.md).
+Optional hosted extraction is documented in [`docs/AI_EXTRACTION.md`](docs/AI_EXTRACTION.md).

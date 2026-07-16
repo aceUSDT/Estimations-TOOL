@@ -2,13 +2,13 @@
 
 ## Data flow
 
-1. `index.html` ingests PDF, XLSX, image, and text files. PDF pages are handled independently.
+1. `index.html` ingests PDF, XLSX, image, and text files. Originals and project metadata are stored locally in separate IndexedDB stores, and PDF pages are handled independently.
 2. `extractor-core.js#assessPageText` scores each page's embedded text for volume, printable characters, electrical signals, reading order, and schedule completeness.
 3. Reliable text stays native. Missing, corrupt, incomplete, or badly ordered text is queued for OCR. A mixed PDF can therefore use native text on one page and OCR on the next.
 4. OCR renders at high resolution subject to a 16-megapixel source cap. Image metrics select preprocessing candidates for upscaling, rotation, deskew, grayscale, contrast, sharpening, denoising, adaptive thresholding, and uneven-background correction.
 5. Tesseract runs at least a base and enhanced candidate. Additional adaptive or rotated candidates run when quality remains low. `scoreOcrCandidate` combines OCR confidence, text-layer quality, electrical vocabulary, and schedule-row signals. When embedded text exists, it is included in the comparison so OCR cannot silently replace a stronger native result.
 6. OCR words are reconstructed into spatial lines and table rows. Word, line, and page confidence, bounding boxes, preprocessing settings, original text, corrections, and correction reasons are retained.
-7. Deterministic parsers associate board, way, phase, rating, device family, curve, breaking capacity, poles, description, and source geometry. Optional AI extraction can add review-pending rows but does not perform final aggregation.
+7. Deterministic parsers associate board, way, phase, rating, device family, curve, breaking capacity, poles, description, and source geometry. Explicitly enabled online extraction in a hosted browser can add review-pending rows but does not perform final aggregation. Desktop analysis remains local.
 8. `deduplicateExtractionRows` removes repeated circuits or source regions, retaining the clearer or approved record.
 9. `report-core.js` builds procurement groups and contributor detail, validates all totals, and creates CSV or Excel output. Export is rejected if reconciliation fails.
 
@@ -123,6 +123,7 @@ Browser QA is also run at 1440x1000 and 390x844. The report must scroll inside i
 - Deskew handles small angular errors. Perspective correction and geometric dewarping are not currently implemented.
 - Adaptive thresholding and speck removal are browser-based heuristics, not a full computer-vision document restoration system.
 - Table reconstruction uses OCR coordinates and spacing. Complex nested tables or merged cells can still produce broken field relationships and are flagged through confidence and coverage checks.
-- Tesseract and PDF.js are loaded from CDNs in the static app on first use. Offline OCR requires vendoring those assets or serving a cached deployment.
-- Optional AI extraction requires the server-side Netlify configuration described in `docs/AI_EXTRACTION.md`; deterministic extraction and reporting continue when it is unavailable.
+- Tesseract.js 5.1.1, its English language data, and PDF.js 3.11.174 are vendored in `vendor/`. Browser and desktop document reading do not require a CDN.
+- Optional online extraction is off by default, is unavailable in desktop, and requires the server-side Netlify configuration described in `docs/AI_EXTRACTION.md`.
+- IndexedDB and `.estimation-project` backups are local but not encrypted. The device PIN is a UI lock rather than a cryptographic storage boundary.
 - Manufacturer, series, product reference, coil voltage, and accessory details can only be reported when present in the source or confirmed by a user.

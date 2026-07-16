@@ -1,92 +1,60 @@
-# Estimation 101 — desktop app (Windows first, plus macOS)
+# Estimation Tools desktop
 
-A native desktop wrapper (Electron) around the deployed web app. It opens a real
-application window pointing at the live site (`estimationtoolz.netlify.app`), so:
+The Electron package contains the complete application and its PDF/OCR runtimes. It serves
+those files from the stable `estimation://app` origin, so it does not load the Netlify site
+and does not need a network connection to read supported documents.
 
-- **The Anthropic API key is never in the desktop build** — AI extraction still runs on the
-  serverless function over HTTPS, exactly as in the browser. Nothing to leak in the installer.
-- **Updates are automatic** — a change to the deployed site reaches desktop users with no
-  re-install (the shell just loads the current site).
-- Users get a Start-menu / Applications entry, their own window, and native menus.
+Projects and original files are stored in IndexedDB inside the current operating-system
+user's application profile. Different Windows or macOS accounts therefore receive separate
+workspaces. Users can also create and restore `.estimation-project` backups.
 
-Override the target site with the `ESTIMATION101_URL` env var (e.g. a staging deploy).
+The local PIN is a screen lock, not disk encryption. Backups contain unencrypted source
+files. Desktop online extraction is disabled, so no project page is sent to the hosted
+extraction service.
 
-## Build the installers — CI (recommended)
+## Local development
 
-The repo has a GitHub Actions workflow (`.github/workflows/desktop.yml`) that builds
-both installers on native runners — no local toolchain needed:
-
-- **On demand:** GitHub → Actions → *Desktop installers* → *Run workflow*, then download
-  `estimation101-Windows` / `estimation101-macOS` from the run's artifacts.
-- **Release:** push a tag like `desktop-v1.0.0` — the `.exe`, `.dmg` and mac `.zip` are
-  attached to a GitHub Release automatically, giving users a permanent download page.
-
-## Build locally (alternative)
-
-Requires Node 18+. Run from this `desktop/` folder:
+Node 20 is recommended.
 
 ```bash
 cd desktop
-npm install
-
-# Windows installer (.exe / NSIS) — buildable on Windows, or on Linux/macOS via wine:
-npm run dist:win        # → desktop/release/Estimation 101-<version>-win-x64.exe
-
-# macOS installer (.dmg + .zip) — must be built ON macOS (Apple toolchain):
-npm run dist:mac        # → desktop/release/Estimation 101-<version>-mac-*.dmg
-
-# Run locally without packaging:
+npm ci
+npm run verify
 npm start
 ```
 
-`electron-builder` downloads the Electron binaries on first `npm install`; the produced
-installers are unsigned unless you configure signing (below).
+`npm run verify` fails when a required packaged asset is missing or the desktop entry point
+regresses to a remote site.
 
-## Windows distribution — getting into the "software centre"
+## Build installers
 
-Three routes, in increasing order of polish. The priority platform is Windows.
+On Windows:
 
-1. **Now (no accounts needed):** the CI `.exe` from a GitHub Release. Users download and
-   install; SmartScreen shows a one-time "unrecognised app" warning ("More info" → "Run
-   anyway") because the build is unsigned.
-2. **Signed `.exe` (removes the warning):** buy an Authenticode code-signing certificate
-   (OV/EV, or Azure Trusted Signing), add it as repo secrets (`CSC_LINK`,
-   `CSC_KEY_PASSWORD`), and remove `CSC_IDENTITY_AUTO_DISCOVERY: 'false'` from the
-   workflow. Same download flow, no scare page.
-3. **Microsoft Store (searchable, one-click install — the true "software centre"):**
-   needs a **Partner Center developer account** (one-off ~$19 individual / $99 company).
-   Then electron-builder's `appx` target produces the Store package:
-   `npx electron-builder --win appx` with `win.appx.identityName` / `publisher` /
-   `publisherDisplayName` set to the values Partner Center assigns. Store packages are
-   signed by Microsoft on ingestion — no certificate purchase required. Submit the
-   `.appx` in Partner Center → certification → users find it by searching the Store.
-   (For corporate SCCM/Intune "Software Center", IT deploys either the signed `.exe`
-   or the Store package via Intune — both work.)
+```bash
+npm run dist:win
+```
 
-## Icons
+On macOS:
 
-Optional — the default Electron icon is used until you add branded ones. To brand the app,
-add the files below **and** point `win.icon` / `mac.icon` at them in `desktop/package.json`:
+```bash
+npm run dist:mac
+```
 
-- `desktop/build/icon.ico` — Windows, 256×256 multi-size `.ico`
-- `desktop/build/icon.icns` — macOS, from a 1024×1024 master
+Outputs are written to `desktop/release/`. A `desktop-v*` tag runs
+`.github/workflows/desktop.yml` on native Windows and macOS runners and attaches the `.exe`,
+`.dmg`, and `.zip` files to a GitHub Release.
 
----
+## Signing and distribution
 
-## NEEDS HUMAN ACTION — code signing & store submission
+The current build is unsigned. It is usable for internal testing, but Windows SmartScreen
+and macOS Gatekeeper will warn on first launch.
 
-Installers build without these, but "download from a software centre" and no OS security
-warnings require identities only the account owner can provide:
+For production distribution:
 
-1. **Windows — Microsoft Store:** a Partner Center account (route 3 above). Once you have
-   the `identityName` / `publisher` values, I can add the `appx` target + a Store build to
-   the CI workflow.
-2. **Windows — signed `.exe`:** an Authenticode certificate (route 2 above), added as
-   `CSC_LINK` / `CSC_KEY_PASSWORD` repo secrets.
-3. **macOS — notarized `.dmg`:** Apple Developer Program ($99/yr), a "Developer ID
-   Application" certificate, and notarization (`APPLE_ID` / `APPLE_APP_SPECIFIC_PASSWORD` /
-   `APPLE_TEAM_ID` secrets + `mac.identity` and an `afterSign` notarize hook). Unsigned
-   `.dmg` needs right-click → Open on first launch.
+1. Add an Authenticode certificate or Azure Trusted Signing configuration for Windows.
+2. Add an Apple Developer ID certificate and notarisation credentials for macOS.
+3. For Microsoft Store or managed company deployment, add the assigned Partner Center or
+   Intune identity after the owner provides it.
 
-Until signing is set up, the CI installers are usable for internal distribution (users click
-through the OS warning), which is the fastest way to get the app in testers' hands.
+Signing credentials belong in GitHub Actions secrets. Never commit certificates,
+passwords, or notarisation credentials.

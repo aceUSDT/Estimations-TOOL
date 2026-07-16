@@ -1,4 +1,4 @@
-# Phase E — build the Windows and macOS desktop installers on native runners.
+# Build the local-first Windows and macOS desktop installers on native runners.
 #
 # Linux can build neither an NSIS .exe (needs wine) nor a .dmg (needs macOS),
 # so CI is the canonical build path: run this workflow and download the
@@ -6,9 +6,9 @@
 # and they are attached to a GitHub Release automatically.
 #
 # The installers are UNSIGNED — Windows SmartScreen and macOS Gatekeeper will
-# warn on first open (right-click → Open on macOS). Code-signing and store
+# warn on first open (right-click -> Open on macOS). Code-signing and store
 # submission need the owner's Apple Developer ID / Windows certificate; see
-# desktop/README.md → NEEDS HUMAN ACTION.
+# desktop/README.md.
 name: Desktop installers
 
 on:
@@ -30,25 +30,27 @@ jobs:
             out: |
               desktop/release/*.exe
           - os: macos-latest
-            args: --mac dmg zip
+            args: --mac dmg zip --x64 --arm64
             out: |
               desktop/release/*.dmg
               desktop/release/*-mac-*.zip
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
     defaults:
       run: { working-directory: desktop }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 20 }
-      - run: npm install
+      - run: npm ci
+      - run: npm run verify
       - run: npx electron-builder ${{ matrix.args }} --publish never
         env:
           # unsigned build: don't look for signing identities on the runner
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
       - uses: actions/upload-artifact@v4
         with:
-          name: estimation101-${{ runner.os }}
+          name: estimation-tools-${{ runner.os }}
           path: ${{ matrix.out }}
           if-no-files-found: error
 
@@ -62,17 +64,17 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           files: installers/*
-          name: Estimation 101 desktop ${{ github.ref_name }}
+          name: Estimation Tools ${{ github.ref_name }}
           body: |
-            Desktop installers for **Estimation 101 — Electrical Document Intelligence**.
+            Desktop installers for **Estimation Tools**.
 
             | Platform | File |
             |---|---|
             | Windows | `.exe` (NSIS installer) |
             | macOS | `.dmg` (drag to Applications) / `.zip` |
 
-            The app is a native window around the deployed tool — it always runs the
-            latest version and contains no API keys.
+            The complete app is included in every installer. Projects and original
+            documents stay in the current computer user's local application profile.
 
-            ⚠ Unsigned builds: Windows SmartScreen / macOS Gatekeeper will warn on
+            Unsigned builds: Windows SmartScreen / macOS Gatekeeper will warn on
             first launch (macOS: right-click the app → Open).

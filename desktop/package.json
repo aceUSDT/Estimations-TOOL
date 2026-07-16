@@ -1,12 +1,13 @@
 {
-  "name": "estimation101-desktop",
-  "version": "1.0.0",
+  "name": "estimation-tools-desktop",
+  "version": "1.1.0",
   "private": true,
-  "description": "Estimation 101 — Electrical Document Intelligence (desktop shell)",
-  "author": "Estimation 101",
+  "description": "Local-first electrical document estimation workspace",
+  "author": "Estimation Tools",
   "main": "main.cjs",
   "scripts": {
     "start": "electron .",
+    "verify": "node verify-assets.cjs",
     "dist": "electron-builder --publish never",
     "dist:win": "electron-builder --win nsis --publish never",
     "dist:mac": "electron-builder --mac dmg zip --publish never"
@@ -16,12 +17,20 @@
     "electron-builder": "^25.1.8"
   },
   "build": {
-    "appId": "app.netlify.estimationtoolz",
-    "productName": "Estimation 101",
+    "appId": "com.hager.estimationtools",
+    "productName": "Estimation Tools",
     "files": ["main.cjs"],
+    "extraResources": [
+      { "from": "../index.html", "to": "web/index.html" },
+      { "from": "../extractor-core.js", "to": "web/extractor-core.js" },
+      { "from": "../report-core.js", "to": "web/report-core.js" },
+      { "from": "../assets", "to": "web/assets" },
+      { "from": "../vendor", "to": "web/vendor" }
+    ],
     "directories": { "output": "release" },
     "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
     "win": {
+      "icon": "build/icon.png",
       "target": ["nsis"]
     },
     "nsis": {
@@ -30,11 +39,13 @@
       "createDesktopShortcut": true
     },
     "mac": {
+      "icon": "build/icon.png",
       "target": ["dmg", "zip"],
       "category": "public.app-category.productivity"
     },
     "dmg": {
-      "title": "Estimation 101"
-    }
+      "title": "Estimation Tools"
+    },
+    "asar": true
   }
 }

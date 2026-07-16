@@ -32,7 +32,7 @@ assert.equal(model.unassignedQty, 1);
 assert.equal(model.grandTotal, 5);
 assert.equal(model.deviceLineCount, 3);
 assert.deepEqual(Array.from(model.boardTotals), [3, 2]);
-assert.deepEqual(Array.from(model.groups, (group) => group.name), ["MCB's", "RCBO's"]);
+assert.deepEqual(Array.from(model.groups, (group) => group.name), ["MCBs", "RCBOs"]);
 assert.equal(model.groups[0].rows[0].label, "10A SPN MCB");
 assert.deepEqual(Array.from(model.groups[0].rows[0].quantities), [2, 1]);
 assert.deepEqual(Array.from(model.groups[0].rows[0].purposes), ["Lighting"]);

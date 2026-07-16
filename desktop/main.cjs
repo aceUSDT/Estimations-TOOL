@@ -1,44 +1,148 @@
-/* Estimation 101 — desktop shell (Electron).
+/* Estimation Tools desktop shell.
  *
- * A thin native window around the deployed web app. The app already talks to
- * the serverless extract function over HTTPS, so loading the live site keeps
- * the AI-extracts / key-stays-server-side model intact with zero duplication —
- * the desktop build never contains the Anthropic key, and updates to the site
- * reach desktop users without a re-install.
- *
- * Override the URL with ESTIMATION101_URL (e.g. a staging deploy).
+ * The complete web application is packaged with Electron and served through a
+ * stable private protocol. IndexedDB therefore stays inside this OS user's
+ * Electron profile and remains available without a network connection.
  */
-const { app, BrowserWindow, shell, Menu } = require('electron');
+const { app, BrowserWindow, Menu, protocol, shell, session } = require('electron');
+const fs = require('node:fs/promises');
+const path = require('node:path');
 
-const APP_URL = process.env.ESTIMATION101_URL || 'https://estimationtoolz.netlify.app/';
+const APP_SCHEME = 'estimation';
+const APP_ORIGIN = `${APP_SCHEME}://app`;
+function localDevelopmentUrl(value) {
+  if (!value) return '';
+  try {
+    const url = new URL(value);
+    return ['http:', 'https:'].includes(url.protocol) && ['127.0.0.1', 'localhost', '::1'].includes(url.hostname) ? url.href : '';
+  } catch {
+    return '';
+  }
+}
+const DEV_URL = localDevelopmentUrl(process.env.ESTIMATION_DEV_URL);
+const MIME_TYPES = {
+  '.css': 'text/css; charset=utf-8',
+  '.gz': 'application/gzip',
+  '.html': 'text/html; charset=utf-8',
+  '.ico': 'image/x-icon',
+  '.jpeg': 'image/jpeg',
+  '.jpg': 'image/jpeg',
+  '.js': 'application/javascript; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.png': 'image/png',
+  '.svg': 'image/svg+xml',
+  '.txt': 'text/plain; charset=utf-8',
+  '.wasm': 'application/wasm',
+  '.webp': 'image/webp',
+};
+
+protocol.registerSchemesAsPrivileged([{
+  scheme: APP_SCHEME,
+  privileges: {
+    standard: true,
+    secure: true,
+    supportFetchAPI: true,
+    stream: true,
+    codeCache: true,
+  },
+}]);
+
+app.setName('Estimation Tools');
+
+function webRoot() {
+  return app.isPackaged ? path.join(process.resourcesPath, 'web') : path.resolve(__dirname, '..');
+}
+
+function safeAssetPath(requestUrl) {
+  const url = new URL(requestUrl);
+  if (url.protocol !== `${APP_SCHEME}:` || url.hostname !== 'app') return null;
+  const requested = decodeURIComponent(url.pathname === '/' ? '/index.html' : url.pathname);
+  const root = webRoot();
+  const candidate = path.resolve(root, `.${requested}`);
+  const relative = path.relative(root, candidate);
+  if (relative.startsWith('..') || path.isAbsolute(relative)) return null;
+  return candidate;
+}
+
+async function handleAppRequest(request) {
+  const assetPath = safeAssetPath(request.url);
+  if (!assetPath) return new Response('Not found', { status: 404 });
+  try {
+    const body = await fs.readFile(assetPath);
+    const headers = {
+      'content-type': MIME_TYPES[path.extname(assetPath).toLowerCase()] || 'application/octet-stream',
+      'cache-control': 'no-cache',
+    };
+    if (path.extname(assetPath).toLowerCase() === '.html') {
+      headers['content-security-policy'] = [
+        "default-src 'self' data: blob:",
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:",
+        "style-src 'self' 'unsafe-inline'",
+        "img-src 'self' data: blob:",
+        "worker-src 'self' blob:",
+        "connect-src 'self' blob:",
+        "object-src 'none'",
+        "base-uri 'self'",
+        "frame-ancestors 'none'",
+      ].join('; ');
+    }
+    return new Response(body, { status: 200, headers });
+  } catch (error) {
+    return new Response(error && error.code === 'ENOENT' ? 'Not found' : 'Could not read application asset', {
+      status: error && error.code === 'ENOENT' ? 404 : 500,
+    });
+  }
+}
+
+function allowedNavigation(url) {
+  try {
+    const target = new URL(url);
+    if (target.protocol === `${APP_SCHEME}:` && target.hostname === 'app') return true;
+  } catch {
+    return false;
+  }
+  if (!DEV_URL) return false;
+  try {
+    const dev = new URL(DEV_URL);
+    const target = new URL(url);
+    return ['127.0.0.1', 'localhost', '::1'].includes(dev.hostname) && target.origin === dev.origin;
+  } catch {
+    return false;
+  }
+}
 
 function createWindow() {
   const win = new BrowserWindow({
     width: 1440,
     height: 900,
-    minWidth: 1024,
-    minHeight: 680,
-    backgroundColor: '#0f1419',
-    title: 'Estimation 101 — Electrical Document Intelligence',
+    minWidth: 900,
+    minHeight: 640,
+    backgroundColor: '#f3f5f7',
+    title: 'Estimation Tools',
+    show: false,
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
-      // no preload bridge needed: the app is self-contained and only talks to
-      // its own HTTPS endpoints. Keep the renderer sandboxed.
       sandbox: true,
+      backgroundThrottling: false,
     },
   });
 
-  win.loadURL(APP_URL);
+  win.once('ready-to-show', () => win.show());
+  win.loadURL(DEV_URL || `${APP_ORIGIN}/index.html`);
 
-  // Open target=_blank / external links in the user's real browser, not a
-  // second app window (e.g. the Netlify/help links).
   win.webContents.setWindowOpenHandler(({ url }) => {
-    if (!url.startsWith(APP_URL)) { shell.openExternal(url); return { action: 'deny' }; }
-    return { action: 'allow' };
+    if (url === 'about:blank') return { action: 'allow' };
+    if (allowedNavigation(url)) return { action: 'allow' };
+    if (/^https?:\/\//i.test(url)) shell.openExternal(url);
+    return { action: 'deny' };
+  });
+  win.webContents.on('will-navigate', (event, url) => {
+    if (allowedNavigation(url)) return;
+    event.preventDefault();
+    if (/^https?:\/\//i.test(url)) shell.openExternal(url);
   });
 
-  // A minimal, platform-appropriate menu (reload, zoom, devtools, quit).
   const isMac = process.platform === 'darwin';
   const template = [
     ...(isMac ? [{ role: 'appMenu' }] : []),
@@ -49,7 +153,8 @@ function createWindow() {
       submenu: [
         { role: 'reload' }, { role: 'forceReload' }, { type: 'separator' },
         { role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' }, { type: 'separator' },
-        { role: 'togglefullscreen' }, { role: 'toggleDevTools' },
+        { role: 'togglefullscreen' },
+        ...(!app.isPackaged ? [{ role: 'toggleDevTools' }] : []),
       ],
     },
     { role: 'windowMenu' },
@@ -57,9 +162,16 @@ function createWindow() {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  app.setAppUserModelId('com.hager.estimationtools');
+  await protocol.handle(APP_SCHEME, handleAppRequest);
+  session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
   createWindow();
-  app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+  });
 });
 
-app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') app.quit();
+});

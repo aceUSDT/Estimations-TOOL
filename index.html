@@ -43,7 +43,7 @@
   .in:focus{border-color:var(--blue);box-shadow:0 0 0 3px var(--blue-soft);}
   .sel{padding:7px 10px;border:1px solid var(--line2);border-radius:8px;background:#fff;outline:none;font-size:12.5px;}
   .sel:focus{border-color:var(--blue);}
-  .lbl{display:block;font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.8px;
+  .lbl{display:block;font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:0;
     color:var(--txt3);margin-bottom:7px;}
   .hint{font-size:11.5px;color:var(--txt3);margin-top:5px;line-height:1.5;}
   .chip{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:11px;
@@ -61,7 +61,7 @@
   .p-head .sub{font-weight:600;color:var(--txt3);font-size:12px;}
   .p-body{padding:16px 18px;}
   table.t{width:100%;border-collapse:collapse;font-size:12.5px;}
-  table.t th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.6px;color:var(--txt3);
+  table.t th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:0;color:var(--txt3);
     padding:8px 10px;border-bottom:1px solid var(--line);background:#fafbfd;white-space:nowrap;}
   table.t td{padding:7px 10px;border-bottom:1px solid #edf0f5;color:var(--txt2);vertical-align:middle;}
   table.t td.strong{color:var(--txt);font-weight:600;}
@@ -76,10 +76,11 @@
   .lock-card{background:#fff;border-radius:12px;padding:44px 40px 34px;width:392px;max-width:92vw;
     box-shadow:0 30px 70px rgba(4,10,20,.55);text-align:center;}
   .lock-logo{height:44px;display:block;margin:0 auto 14px;}
-  .lock-name{font-size:19px;font-weight:700;letter-spacing:-.2px;margin-bottom:26px;color:var(--txt);}
+  .lock-name{font-size:19px;font-weight:700;letter-spacing:0;margin-bottom:26px;color:var(--txt);}
+  .lock-prompt{font-size:12.5px;color:var(--txt2);line-height:1.5;margin:-14px 0 16px;}
   .brand{display:flex;align-items:center;gap:11px;}
   .brand-logo{height:22px;display:block;}
-  .brand .bt{font-size:15px;font-weight:700;letter-spacing:-.2px;}
+  .brand .bt{font-size:15px;font-weight:700;letter-spacing:0;}
   .lock-card input{width:100%;padding:12px 14px;border:1px solid var(--line2);border-radius:8px;font-size:14px;
     margin-bottom:10px;outline:none;}
   .lock-card input:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(0,158,226,.18);}
@@ -99,6 +100,9 @@
   .appbar .right{margin-left:auto;display:flex;align-items:center;gap:10px;}
   .appbar .link-btn{color:#aebdd6;font-size:12.5px;font-weight:600;padding:6px 11px;border-radius:7px;}
   .appbar .link-btn:hover{background:var(--nav2);color:#fff;}
+  .storage-state{display:inline-flex;align-items:center;gap:6px;color:#c8d5df;font-size:11.5px;font-weight:600;white-space:nowrap;}
+  .storage-state::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--green);}
+  .storage-state.warn{color:#ffd59a;}.storage-state.warn::before{background:var(--amber);}
   .avatar{width:30px;height:30px;border-radius:50%;background:var(--blue);color:#fff;font-weight:700;
     display:flex;align-items:center;justify-content:center;font-size:12px;}
   .processing-dock{position:sticky;top:54px;z-index:45;background:#fff;border-bottom:1px solid var(--line2);
@@ -123,7 +127,7 @@
   .processing-dock.failed .processing-spinner{animation:none;border-color:var(--red);background:var(--red);}
   @keyframes processing-spin{to{transform:rotate(360deg);}}
   .page{max-width:1340px;margin:0 auto;padding:24px 22px 70px;}
-  h1.pg{font-size:20px;font-weight:800;letter-spacing:-.2px;}
+  h1.pg{font-size:20px;font-weight:800;letter-spacing:0;}
   .pg-sub{color:var(--txt2);font-size:12.5px;margin-top:3px;}
 
   /* ---------- projects home ---------- */
@@ -137,7 +141,7 @@
   .pstats{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px;}
   .pstat{background:#f7f9fc;border:1px solid var(--line);border-radius:8px;padding:7px 9px;}
   .pstat .v{font-size:15px;font-weight:800;}
-  .pstat .k{font-size:10px;color:var(--txt3);font-weight:700;text-transform:uppercase;letter-spacing:.5px;}
+  .pstat .k{font-size:10px;color:var(--txt3);font-weight:700;text-transform:uppercase;letter-spacing:0;}
   .proj-card .foot{display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--txt3);}
   .pc-menu{position:absolute;top:12px;right:12px;display:flex;gap:2px;opacity:0;transition:.12s;}
   .proj-card:hover .pc-menu{opacity:1;}
@@ -151,6 +155,7 @@
 
   /* ---------- project view ---------- */
   .proj-head{display:flex;align-items:center;gap:13px;margin-bottom:16px;}
+  .proj-actions{display:flex;align-items:center;gap:10px;margin-left:auto;}
   .back-btn{width:34px;height:34px;border-radius:8px;background:#fff;border:1px solid var(--line2);
     display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0;}
   .back-btn:hover{border-color:var(--blue);color:var(--blue);}
@@ -188,7 +193,7 @@
   .bd-explorer .tree .trow{padding:4px 10px;font-size:12.5px;}
   @media(max-width:1200px){.bd-explorer{grid-template-columns:minmax(0,1fr);}.bd-explorer>.panel{position:static;max-height:none;}}
   .bd-hdr{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;padding:14px 18px;border-bottom:1px solid var(--line);}
-  .bd-hdr .k{font-size:10.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--txt3);font-weight:700;}
+  .bd-hdr .k{font-size:10.5px;letter-spacing:0;text-transform:uppercase;color:var(--txt3);font-weight:700;}
   .bd-hdr .v{font-size:13px;font-weight:600;margin-top:2px;}
   .tree .trow.sel{outline:2px solid var(--blue);}
   #boardBody tr.sel td{background:var(--blue-soft,#eaf2ff);}
@@ -214,7 +219,7 @@
   .sumchips{display:flex;gap:10px;flex-wrap:wrap;padding:14px 18px;border-bottom:1px solid var(--line);}
   .sumchip{background:#f7f9fc;border:1px solid var(--line);border-radius:9px;padding:8px 14px;}
   .sumchip .v{font-size:17px;font-weight:800;}
-  .sumchip .k{font-size:10px;color:var(--txt3);font-weight:700;text-transform:uppercase;letter-spacing:.5px;}
+  .sumchip .k{font-size:10px;color:var(--txt3);font-weight:700;text-transform:uppercase;letter-spacing:0;}
   .boardgrp{border-bottom:1px solid var(--line);}
   .boardgrp:last-child{border-bottom:none;}
   .bg-head{display:flex;align-items:center;gap:10px;padding:11px 18px;cursor:pointer;background:#fafbfd;}
@@ -302,7 +307,7 @@
     font-size:10px;font-weight:800;line-height:1.4;box-shadow:0 2px 6px rgba(45,30,90,.25);pointer-events:none;}
   .assist-bar{padding:9px 12px;border-bottom:1px solid #d9d0f4;background:var(--purple-soft);display:flex;
     gap:8px;align-items:center;flex-wrap:wrap;}
-  .assist-bar .step{font-size:11px;font-weight:800;color:var(--purple);text-transform:uppercase;letter-spacing:.35px;}
+  .assist-bar .step{font-size:11px;font-weight:800;color:var(--purple);text-transform:uppercase;letter-spacing:0;}
   .assist-bar .assist-help{font-size:11.5px;color:var(--txt2);}
   .assist-on{background:var(--purple)!important;border-color:var(--purple)!important;color:#fff!important;}
   .v-pagewrap.assist-cursor{cursor:crosshair;user-select:none;}
@@ -439,7 +444,8 @@
     .processing-copy{grid-template-columns:auto minmax(0,1fr);}
     .tree .kids{margin-left:12px;padding-left:10px;}
     .proj-head{display:grid;grid-template-columns:34px minmax(0,1fr);align-items:start;}
-    .proj-head #reanalyzeBtn{grid-column:2;justify-self:start;}
+    .proj-actions{grid-column:1/-1;margin:0;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.35fr);width:100%;}
+    .proj-actions .btn{width:100%;min-width:0;white-space:normal;line-height:1.2;}
     .report-matrix .report-category{position:static;width:80px;min-width:80px;}
     .report-matrix .report-device{left:0;width:170px;min-width:170px;}
     .report-matrix .report-row-project .report-device,.report-matrix .report-row-title .report-device{left:0;width:auto;min-width:0;}
@@ -459,8 +465,9 @@
   <div class="lock-card" id="lockCard">
     <img class="lock-logo" src="./assets/hager-logo.png" alt="Hager">
     <div class="lock-name">Estimation Tools</div>
-    <input type="password" id="pwInput" placeholder="Password" autocomplete="off">
-    <button class="go" id="pwBtn">Sign in</button>
+    <div class="lock-prompt" id="lockPrompt">Enter this device's PIN</div>
+    <input type="password" id="pwInput" placeholder="PIN" autocomplete="current-password">
+    <button class="go" id="pwBtn">Unlock</button>
     <div class="lock-err" id="pwErr"></div>
   </div>
 </div>
@@ -472,6 +479,7 @@
       <div class="bt">Estimation Tools</div></div>
     <div class="crumb" id="crumb"><b>Projects</b></div>
     <div class="right">
+      <span class="storage-state" id="storageState" title="Projects and original files are stored in this device profile">Stored locally</span>
       <button class="link-btn" id="lockBtn">Lock</button>
     </div>
   </div>
@@ -495,6 +503,8 @@
   <div class="page subview active" id="homeView">
     <div class="home-head">
       <div><h1 class="pg">Projects</h1></div>
+      <button class="btn" id="restoreProjectBtn" style="margin-left:auto">Restore project</button>
+      <input type="file" id="restoreProjectInput" accept=".json,.estimation-project" style="display:none">
     </div>
     <div class="proj-grid" id="projGrid"></div>
   </div>
@@ -507,13 +517,16 @@
         <h1 class="pg" id="projTitle">Project</h1>
         <div class="pg-sub" id="projMeta"></div>
       </div>
-      <button class="btn primary" id="reanalyzeBtn">Analyse documents</button>
+      <div class="proj-actions">
+        <button class="btn" id="backupProjectBtn">Back up project</button>
+        <button class="btn primary" id="reanalyzeBtn">Analyse documents</button>
+      </div>
     </div>
 
     <div class="ptabs">
       <button class="ptab active" data-pt="docs">Documents <span class="badge" id="bDocs">0</span></button>
       <button class="ptab" data-pt="viewer">Viewer</button>
-      <button class="ptab" data-pt="analysis">Boards &amp; Devices <span class="badge" id="bBoards" title="boards">0</span><span class="badge" id="bDev" title="devices">0</span></button>
+      <button class="ptab" data-pt="analysis">Boards &amp; Devices <span class="badge"><span id="bBoards">0</span> boards</span><span class="badge"><span id="bDev">0</span> devices</span></button>
       <button class="ptab" data-pt="reports">Reports</button>
       <button class="ptab" data-pt="review">Review <span class="badge" id="bRev">0</span></button>
       <button class="ptab" data-pt="compare">Compare</button>
@@ -645,6 +658,10 @@
                 <label class="check-row"><input type="checkbox" id="anExclSpare" checked> Exclude only unpopulated spare &amp; space ways</label>
                 <button class="btn sm ghost" id="anPreviewBtn" style="margin-top:4px">Preview excluded rows</button>
               </div>
+              <div class="fgroup">
+                <label class="check-row" title="When enabled, page images and detected text are sent to the configured extraction service."><input type="checkbox" id="anOnlineExtraction"> Use online extraction</label>
+                <div class="hint" id="onlineExtractionHint">Off keeps document reading on this computer. On sends pages to the configured extraction service.</div>
+              </div>
               <button class="btn primary" id="anRunBtn" style="width:100%">Count devices</button>
             </div>
           </div>
@@ -775,7 +792,7 @@
 <script src="./extractor-core.js"></script>
 <script>
 'use strict';
-/* Estimation 101 v3 — specialist electrical document reading tool.
+/* Estimation Tools - specialist electrical document reading tool.
    Single-file app: extraction engines + viewer + review + compare. */
 /* ============================ CORE ============================ */
 const $ = s => document.querySelector(s);
@@ -784,8 +801,6 @@ const esc = s => String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;');
 let toastTimer;
 const toast = m => { const t=$('#toast'); t.textContent=m; t.classList.add('show');
   clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.remove('show'),2600); };
-/* Password is stored only as a SHA-256 hash — the plain text never appears in this file. */
-const PASSWORD_HASH='0eebd979388387abe2d21379da7b5ba190e0ef3183492892f842924638f2f9d9';
 /* compact synchronous SHA-256 (public-domain style implementation) */
 function sha256(ascii){
   const rrot=(v,c)=>(v>>>c)|(v<<(32-c));
@@ -855,6 +870,12 @@ $('#modalBk').addEventListener('click', e=>{ if(e.target===$('#modalBk')) closeM
 $('#mOk').addEventListener('click', ()=>{ if(modalOk && modalOk()===false) return; closeModal(); });
 
 /* ============================ STATE ============================ */
+const APP_SETTINGS_KEY='estimation-tools-settings-v1';
+const LOCAL_DESKTOP=location.protocol==='estimation:';
+let appSettings={onlineExtraction:false};
+try{appSettings={...appSettings,...JSON.parse(localStorage.getItem(APP_SETTINGS_KEY)||'{}')};}catch(error){}
+if(LOCAL_DESKTOP)appSettings.onlineExtraction=false;
+function saveAppSettings(){try{localStorage.setItem(APP_SETTINGS_KEY,JSON.stringify(appSettings));}catch(error){reportStorageError(error);}}
 const state = {
   projects: [],
   cur: null,           // current project
@@ -866,14 +887,21 @@ const ANALYSIS_VERSION=2;
 const uid = () => 'x'+(state.nextId++)+'_'+Math.random().toString(36).slice(2,6);
 
 /* ====================== PERSISTENCE (IndexedDB) ====================== */
-const DB_NAME='estimation101', DB_STORE='projects';
+const DB_NAME='estimation101', DB_VERSION=2, DB_STORE='projects', DB_FILE_STORE='files';
 let idb=null, idbOk=false;
 function idbOpen(){
   return new Promise(res=>{
     try{
       if (typeof indexedDB==='undefined') return res(false);
-      const rq = indexedDB.open(DB_NAME, 1);
-      rq.onupgradeneeded = ()=> rq.result.createObjectStore(DB_STORE,{keyPath:'id'});
+      const rq = indexedDB.open(DB_NAME,DB_VERSION);
+      rq.onupgradeneeded = ()=>{
+        const db=rq.result;
+        if(!db.objectStoreNames.contains(DB_STORE))db.createObjectStore(DB_STORE,{keyPath:'id'});
+        if(!db.objectStoreNames.contains(DB_FILE_STORE)){
+          const files=db.createObjectStore(DB_FILE_STORE,{keyPath:'id'});
+          files.createIndex('projectId','projectId',{unique:false});
+        }
+      };
       rq.onsuccess = ()=>{ idb=rq.result; idbOk=true; res(true); };
       rq.onerror = ()=> res(false);
     }catch(e){ res(false); }
@@ -881,55 +909,146 @@ function idbOpen(){
 }
 function serializeProject(p){
   // strip runtime-only fields (pdf documents etc.)
-  return JSON.parse(JSON.stringify(p, (k,v)=> k==='_doc'||k==='raw' ? undefined : v));
+  return JSON.parse(JSON.stringify(p, (k,v)=> k==='_doc'||k==='raw'||k==='rawFiles' ? undefined : v));
 }
-const rawStore = {}; // fileId -> ArrayBuffer (kept in memory; also persisted as blob)
+const rawStore = {}; // fileId -> ArrayBuffer (runtime cache; originals live in DB_FILE_STORE)
 const saveTimers={};  // per-project debounce — a single shared timer let one project's save clobber another's
+let storageErrorShown=false;
+function transactionDone(tx){
+  return new Promise((resolve,reject)=>{
+    tx.oncomplete=()=>resolve();
+    tx.onabort=tx.onerror=()=>reject(tx.error||new Error('Local storage transaction failed'));
+  });
+}
+function reportStorageError(error){
+  console.error('Local storage failed:',error);
+  const el=$('#storageState');
+  if(el){el.textContent='Session only';el.classList.add('warn');el.title='Local storage failed. Export your report before closing the app.';}
+  if(!storageErrorShown){storageErrorShown=true;toast('Could not save to this device. Check available disk space.');}
+}
+async function putProjectRecord(p){
+  if(!idbOk||!p||p.testFixture)return false;
+  const tx=idb.transaction(DB_STORE,'readwrite');
+  tx.objectStore(DB_STORE).put(serializeProject(p));
+  try{await transactionDone(tx);return true;}catch(error){reportStorageError(error);return false;}
+}
+async function persistRawFile(projectId,fileId,data){
+  if(!idbOk||!projectId||!fileId||!data)return false;
+  const tx=idb.transaction(DB_FILE_STORE,'readwrite');
+  tx.objectStore(DB_FILE_STORE).put({id:fileId,projectId,data});
+  try{await transactionDone(tx);return true;}catch(error){reportStorageError(error);return false;}
+}
+async function removeRawFile(fileId){
+  delete rawStore[fileId];
+  if(!idbOk)return;
+  const tx=idb.transaction(DB_FILE_STORE,'readwrite');
+  tx.objectStore(DB_FILE_STORE).delete(fileId);
+  try{await transactionDone(tx);}catch(error){reportStorageError(error);}
+}
+async function removeProjectFiles(projectId){
+  if(!idbOk)return;
+  const tx=idb.transaction(DB_FILE_STORE,'readwrite'),store=tx.objectStore(DB_FILE_STORE);
+  const index=store.index('projectId'),request=index.openCursor(IDBKeyRange.only(projectId));
+  request.onsuccess=()=>{const cursor=request.result;if(!cursor)return;delete rawStore[cursor.primaryKey];cursor.delete();cursor.continue();};
+  try{await transactionDone(tx);}catch(error){reportStorageError(error);}
+}
 function saveProject(p){
   if (!p || p.testFixture) return;
   p.updated = todayStr();
   if (!idbOk) return;
   clearTimeout(saveTimers[p.id]);
-  saveTimers[p.id] = setTimeout(()=>{
-    try{
-      const tx = idb.transaction(DB_STORE,'readwrite');
-      const rec = serializeProject(p);
-      rec.rawFiles = {};
-      p.files.forEach(f=>{ if (rawStore[f.id]) rec.rawFiles[f.id]=rawStore[f.id]; });
-      tx.objectStore(DB_STORE).put(rec);
-    }catch(e){ /* non-fatal */ }
-  }, 400);
+  saveTimers[p.id]=setTimeout(()=>{delete saveTimers[p.id];putProjectRecord(p);},200);
 }
-function deleteProjectStore(id){ if(idbOk){ try{ idb.transaction(DB_STORE,'readwrite').objectStore(DB_STORE).delete(id);}catch(e){} } }
+async function flushProjectSaves(){
+  const pending=Object.keys(saveTimers).map(id=>{
+    clearTimeout(saveTimers[id]);delete saveTimers[id];
+    return putProjectRecord(state.projects.find(project=>project.id===id));
+  });
+  await Promise.all(pending);
+}
+async function deleteProjectStore(id){
+  clearTimeout(saveTimers[id]);delete saveTimers[id];
+  if(idbOk){
+    const tx=idb.transaction(DB_STORE,'readwrite');tx.objectStore(DB_STORE).delete(id);
+    try{await transactionDone(tx);}catch(error){reportStorageError(error);}
+  }
+  await removeProjectFiles(id);
+}
 function loadProjects(){
   return new Promise(res=>{
     if (!idbOk) return res([]);
     try{
-      const rq = idb.transaction(DB_STORE).objectStore(DB_STORE).getAll();
-      rq.onsuccess = ()=>{
-        const list = rq.result||[];
-        list.forEach(rec=>{ Object.entries(rec.rawFiles||{}).forEach(([fid,buf])=>rawStore[fid]=buf); delete rec.rawFiles; });
+      const tx=idb.transaction([DB_STORE,DB_FILE_STORE]),projectsReq=tx.objectStore(DB_STORE).getAll(),filesReq=tx.objectStore(DB_FILE_STORE).getAll();
+      tx.oncomplete=async()=>{
+        const list=projectsReq.result||[],files=filesReq.result||[],legacy=[];
+        files.forEach(file=>{if(file&&file.id&&file.data)rawStore[file.id]=file.data;});
+        list.forEach(rec=>{
+          Object.entries(rec.rawFiles||{}).forEach(([fileId,data])=>{rawStore[fileId]=data;legacy.push({projectId:rec.id,fileId,data});});
+          delete rec.rawFiles;
+        });
+        if(legacy.length){
+          await Promise.all(legacy.map(file=>persistRawFile(file.projectId,file.fileId,file.data)));
+          await Promise.all(list.map(putProjectRecord));
+        }
         res(list);
       };
-      rq.onerror = ()=> res([]);
+      tx.onerror = ()=> res([]);
     }catch(e){ res([]); }
   });
 }
+async function refreshStorageState(){
+  const el=$('#storageState');if(!el)return;
+  if(!idbOk){el.textContent='Session only';el.classList.add('warn');return;}
+  let persistent=false,estimate=null;
+  try{
+    if(navigator.storage?.persisted)persistent=await navigator.storage.persisted();
+    if(!persistent&&navigator.storage?.persist)persistent=await navigator.storage.persist();
+    if(navigator.storage?.estimate)estimate=await navigator.storage.estimate();
+  }catch(error){console.warn('Storage persistence check failed:',error);}
+  el.textContent='Stored locally';el.classList.remove('warn');
+  const used=estimate?.usage?fmtSize(estimate.usage):null,quota=estimate?.quota?fmtSize(estimate.quota):null;
+  el.title=`Projects and original files stay in this device profile${used&&quota?` (${used} of ${quota} used)`:''}${persistent?'':' - browser cleanup rules may apply'}`;
+}
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')flushProjectSaves();});
 
 /* ============================ LOCK ============================ */
+const LOCAL_PROFILE_KEY='estimation-tools-local-profile-v1';
+let localProfile=null;
+try{localProfile=JSON.parse(localStorage.getItem(LOCAL_PROFILE_KEY)||'null');}catch(error){localProfile=null;}
+function newProfileSalt(){
+  const values=new Uint32Array(4);crypto.getRandomValues(values);
+  return Array.from(values,value=>value.toString(16).padStart(8,'0')).join('');
+}
+function configureLock(){
+  const setup=!(localProfile&&localProfile.salt&&localProfile.pinHash);
+  $('#lockPrompt').textContent=setup?'Create a PIN for this device':'Enter this device\'s PIN';
+  $('#pwInput').placeholder=setup?'Create PIN':'PIN';
+  $('#pwBtn').textContent=setup?'Create local workspace':'Unlock';
+  $('#pwErr').textContent='';$('#pwInput').value='';
+  setTimeout(()=>$('#pwInput')?.focus(),0);
+}
+function openWorkspace(){
+  $('#lockView').classList.remove('active');$('#appView').classList.add('active');
+  $('#pwErr').textContent='';$('#pwInput').value='';
+}
 function tryUnlock(){
-  if (sha256($('#pwInput').value) === PASSWORD_HASH){
-    $('#lockView').classList.remove('active');
-    $('#appView').classList.add('active');
-    $('#pwErr').textContent=''; $('#pwInput').value='';
+  const pin=$('#pwInput').value;
+  if(!(localProfile&&localProfile.salt&&localProfile.pinHash)){
+    if(pin.length<4){$('#pwErr').textContent='Use at least 4 characters.';return;}
+    const salt=newProfileSalt();localProfile={salt,pinHash:sha256(salt+pin),createdAt:new Date().toISOString()};
+    try{localStorage.setItem(LOCAL_PROFILE_KEY,JSON.stringify(localProfile));}catch(error){$('#pwErr').textContent='This device could not save the PIN.';localProfile=null;return;}
+    openWorkspace();return;
+  }
+  if (sha256(localProfile.salt+pin) === localProfile.pinHash){
+    openWorkspace();
   } else {
-    $('#pwErr').textContent='Incorrect password.';
+    $('#pwErr').textContent='Incorrect PIN.';
     const c=$('#lockCard'); c.classList.remove('shake'); void c.offsetWidth; c.classList.add('shake');
   }
 }
 $('#pwBtn').addEventListener('click', tryUnlock);
 $('#pwInput').addEventListener('keydown', e=>{ if(e.key==='Enter') tryUnlock(); });
-$('#lockBtn').addEventListener('click', ()=>{ $('#appView').classList.remove('active'); $('#lockView').classList.add('active'); });
+$('#lockBtn').addEventListener('click', ()=>{ $('#appView').classList.remove('active');$('#lockView').classList.add('active');configureLock(); });
 
 /* ==================== ELECTRICAL KNOWLEDGE BASE ==================== */
 const DEVICE_DEFS = [
@@ -1296,11 +1415,66 @@ function setTab(name){
 }
 $$('.ptab').forEach(t=>t.addEventListener('click',()=>setTab(t.dataset.pt)));
 $('#backBtn').addEventListener('click', ()=>{ state.cur=null;if(!analysisBusy)hideProcessing();renderProjects(); show('home'); });
+$('#backupProjectBtn').addEventListener('click',()=>backupProject(state.cur));
+$('#restoreProjectBtn').addEventListener('click',()=>$('#restoreProjectInput').click());
+$('#restoreProjectInput').addEventListener('change',async event=>{
+  const file=event.target.files?.[0];event.target.value='';if(!file)return;
+  try{await restoreProject(file);}catch(error){toast('Restore failed: '+(error.message||error));}
+});
 
 /* ============================ PROJECT MODEL ============================ */
 function newProject(name){
   return { id:uid(), name, created:todayStr(), updated:todayStr(), status:'Not analysed',
     files:[], analysis:null, assistedMarkups:[] };
+}
+function bufferToBase64(buffer){
+  const bytes=new Uint8Array(buffer);let binary='';
+  for(let offset=0;offset<bytes.length;offset+=32768)binary+=String.fromCharCode(...bytes.subarray(offset,offset+32768));
+  return btoa(binary);
+}
+function base64ToBuffer(value){
+  const binary=atob(value),bytes=new Uint8Array(binary.length);
+  for(let index=0;index<binary.length;index++)bytes[index]=binary.charCodeAt(index);
+  return bytes.buffer;
+}
+function remapFileReferences(value,fileIds,seen=new WeakSet()){
+  if(!value||typeof value!=='object'||seen.has(value))return;
+  seen.add(value);
+  if(Array.isArray(value)){
+    value.forEach((item,index)=>{if(typeof item==='string'&&fileIds.has(item))value[index]=fileIds.get(item);else remapFileReferences(item,fileIds,seen);});
+    return;
+  }
+  Object.keys(value).forEach(key=>{
+    const item=value[key];
+    if(typeof item==='string'&&fileIds.has(item))value[key]=fileIds.get(item);
+    else remapFileReferences(item,fileIds,seen);
+  });
+}
+async function backupProject(project){
+  if(!project)return;
+  await flushProjectSaves();
+  const files={};
+  project.files.forEach(file=>{if(rawStore[file.id])files[file.id]=bufferToBase64(rawStore[file.id]);});
+  const payload={format:'estimation-tools-project',version:1,exportedAt:new Date().toISOString(),project:serializeProject(project),files};
+  const blob=new Blob([JSON.stringify(payload)],{type:'application/json'}),link=document.createElement('a');
+  const fileName=String(project.name||'Project').replace(/[\\/:*?"<>|]+/g,' ').replace(/\s+/g,' ').trim();
+  link.href=URL.createObjectURL(blob);link.download=fileName+' - project backup.estimation-project';link.click();
+  setTimeout(()=>URL.revokeObjectURL(link.href),4000);toast('Project backup created');
+}
+async function restoreProject(file){
+  const payload=JSON.parse(await file.text());
+  if(payload?.format!=='estimation-tools-project'||payload.version!==1||!payload.project||!Array.isArray(payload.project.files)){
+    throw new Error('This is not an Estimation Tools project backup');
+  }
+  const project=serializeProject(payload.project),fileIds=new Map();
+  project.files.forEach(item=>fileIds.set(item.id,uid()));
+  remapFileReferences(project,fileIds);project.id=uid();project.name=project.name+' (restored)';
+  project.created=todayStr();project.updated=todayStr();
+  for(const [oldId,newId] of fileIds){
+    const encoded=payload.files?.[oldId];if(!encoded)continue;
+    const data=base64ToBuffer(encoded);rawStore[newId]=data;await persistRawFile(project.id,newId,data);
+  }
+  state.projects.push(project);await putProjectRecord(project);renderProjects();openProject(project.id);toast('Project restored');
 }
 function ensureAssistedState(p){
   if (p && !Array.isArray(p.assistedMarkups)) p.assistedMarkups=[];
@@ -1327,7 +1501,7 @@ function renderProjects(){
       <div class="pc-menu">
         <button data-act="rename" title="Rename">✎</button>
         <button data-act="dup" title="Duplicate">⧉</button>
-        <button data-act="del" class="d" title="Delete">🗑</button>
+        <button data-act="del" class="d" title="Delete" aria-label="Delete">×</button>
       </div>
       <h3>${esc(p.name)}</h3>
       <div class="pdate">Created ${esc(p.created)} · Updated ${esc(p.updated)}</div>
@@ -1340,7 +1514,7 @@ function renderProjects(){
         <div class="pstat"><div class="v" style="font-size:11px;padding-top:4px">${p.analysis?esc(p.analysis.ranAt):'—'}</div><div class="k">Analysed</div></div>
       </div>
       <div class="foot"><span class="chip ${statusCl}">${esc(p.status)}</span></div>`;
-    card.addEventListener('click', e=>{
+    card.addEventListener('click', async e=>{
       const act=e.target.dataset&&e.target.dataset.act;
       if (!act){ openProject(p.id); return; }
       e.stopPropagation();
@@ -1353,15 +1527,11 @@ function renderProjects(){
       if (act==='dup'){
         const cp=serializeProject(p);
         cp.id=uid(); cp.name=p.name+' (copy)'; cp.created=todayStr(); cp.updated=todayStr();
-        cp.files.forEach(f=>{ const old=f.id; f.id=uid(); if(rawStore[old]) rawStore[f.id]=rawStore[old];
-          if (cp.analysis){ cp.analysis.rows.forEach(r=>{ if(r.fileId===old) r.fileId=f.id; });
-            cp.analysis.cables.forEach(c=>{ if(c.fileId===old) c.fileId=f.id; }); }
-          (cp.assistedMarkups||[]).forEach(m=>{
-            if(m.fileId===old)m.fileId=f.id;
-            if(m.seed?.fileId===old)m.seed.fileId=f.id;
-            (m.matches||[]).forEach(x=>{if(x.fileId===old)x.fileId=f.id;});
-          });
-        });
+        const fileIds=new Map(cp.files.map(file=>[file.id,uid()]));
+        remapFileReferences(cp,fileIds);
+        for(const [oldId,newId] of fileIds){
+          if(rawStore[oldId]){rawStore[newId]=rawStore[oldId];await persistRawFile(cp.id,newId,rawStore[oldId]);}
+        }
         state.projects.push(cp); saveProject(cp); renderProjects(); toast('Project duplicated');
       }
       if (act==='del'){
@@ -1421,50 +1591,46 @@ function loadScript(src){
   });
 }
 let pdfjsPromise=null;
+const appAssetUrl=path=>new URL(path,document.baseURI).href;
+function loadEngineScript(path,globalName,label){
+  return new Promise((resolve,reject)=>{
+    const existing=window[globalName];
+    if(existing)return resolve(existing);
+    const script=document.createElement('script');
+    script.src=appAssetUrl(path);
+    script.onload=()=>{
+      const engine=window[globalName];
+      if(engine)return resolve(engine);
+      script.remove();
+      reject(new Error(`${label} loaded without exposing its browser API`));
+    };
+    script.onerror=()=>{script.remove();reject(new Error(`${label} is missing from this installation`));};
+    document.head.appendChild(script);
+  });
+}
 function loadPdfjs(){
   if (pdfjsPromise) return pdfjsPromise;
-  pdfjsPromise = (async()=>{
-    if (window.pdfjsLib) return window.pdfjsLib;
-    try{
-      await loadScript('./vendor/pdfjs/pdf.min.js');
-      window.pdfjsLib.GlobalWorkerOptions.workerSrc=new URL('vendor/pdfjs/pdf.worker.min.js', location.href).href;
-    }catch(e){
-      await loadScript('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js')
-        .catch(()=>{ throw new Error('Could not load the PDF engine (no internet access?)'); });
-      try{ window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'; }catch(_){}
-    }
-    return window.pdfjsLib;
-  })();
-  pdfjsPromise.catch(()=>{ pdfjsPromise=null; });
+  pdfjsPromise=loadEngineScript('./vendor/pdf.min.js','pdfjsLib','The PDF engine').then(lib=>{
+    lib.GlobalWorkerOptions.workerSrc=appAssetUrl('./vendor/pdf.worker.min.js');
+    return lib;
+  }).catch(error=>{pdfjsPromise=null;throw error;});
   return pdfjsPromise;
 }
 let tesseractPromise=null, ocrWorkerPromise=null, ocrBusy=false,ocrProgressContext='';
-let tesseractLocal=false; // true when the vendored engine loaded (use vendored worker/core/lang too)
 function loadTesseract(){
   if (tesseractPromise) return tesseractPromise;
-  tesseractPromise=(async()=>{
-    if (window.Tesseract) return window.Tesseract;
-    try{
-      await loadScript('./vendor/tesseract/tesseract.min.js');
-      tesseractLocal=true;
-    }catch(e){
-      await loadScript('https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js')
-        .catch(()=>{ throw new Error('Could not load the OCR engine. Check the internet connection and try again.'); });
-    }
-    return window.Tesseract;
-  })();
-  tesseractPromise.catch(()=>{ tesseractPromise=null; });
+  tesseractPromise=loadEngineScript('./vendor/tesseract/tesseract.min.js','Tesseract','The OCR engine')
+    .catch(error=>{tesseractPromise=null;throw error;});
   return tesseractPromise;
 }
 async function getOcrWorker(){
   if (!ocrWorkerPromise){
+    const base=appAssetUrl('./vendor/tesseract/');
     ocrWorkerPromise=loadTesseract().then(T=>T.createWorker('eng',1,{
-      ...(tesseractLocal?{
-        workerPath:new URL('vendor/tesseract/worker.min.js',location.href).href,
-        corePath:new URL('vendor/tesseract/',location.href).href,
-        langPath:new URL('vendor/tesseract',location.href).href,
-        gzip:false,
-      }:{}),
+      workerPath:new URL('worker.min.js',base).href,
+      corePath:new URL('core/',base).href,
+      langPath:new URL('lang-data/',base).href,
+      gzip:true,
       logger:m=>{
         if (!ocrBusy) return;
         const pct=Number.isFinite(m.progress)?' '+Math.round(m.progress*100)+'%':'';
@@ -1474,7 +1640,7 @@ async function getOcrWorker(){
         const dock=$('#processingDock'),detail=$('#processingDetail');
         if(dock&&!dock.hidden&&detail)detail.textContent=[ocrProgressContext,label].filter(Boolean).join(' | ');
       },
-    }));
+    })).catch(error=>{ocrWorkerPromise=null;throw error;});
   }
   return ocrWorkerPromise;
 }
@@ -1659,18 +1825,19 @@ async function ocrPdfPage(f,pageNo,{reanalyze=true,quiet=false}={}){
 async function ocrScannedPages(f,limit=20,{reanalyze=true,quiet=false}={}){
   const queue=f.pages.map((pg,i)=>({pg,page:i+1})).filter(x=>x.pg.needsOcr||!(x.pg.lines||[]).length).slice(0,limit);
   if(!queue.length){if(!quiet)toast('Every page has a reliable text result');return 0;}
-  let done=0;
+  let done=0,stopped=null;
   for(const [index,item] of queue.entries()){
     ocrProgressContext=`${f.name} | Page ${item.page} of ${f.pages.length}`;
     setProcessingDock('Reading scanned pages',ocrProgressContext,Math.max(2,Math.round((index+1)/queue.length*(100/STAGES.length))),0);
     await paintProcessing();
     try{await ocrPdfPage(f,item.page,{reanalyze:false,quiet:true});done++;}
-    catch(e){toast(`OCR stopped on page ${item.page}: ${e.message}`);break;}
+    catch(error){stopped={page:item.page,error};break;}
   }
   ocrProgressContext='';
   if(done&&reanalyze) await runAnalysis({auto:true});
   const remain=f.pages.filter(pg=>pg.needsOcr||!(pg.lines||[]).length).length;
-  if(!quiet||remain) toast(`OCR completed ${done} page${done===1?'':'s'}${remain?`; ${remain} remain — run OCR scans again`:''}`);
+  if(stopped)toast(`OCR stopped on page ${stopped.page}: ${stopped.error.message||stopped.error}. ${remain} page${remain===1?'':'s'} remain.`);
+  else if(!quiet||remain) toast(`OCR completed ${done} page${done===1?'':'s'}${remain?`; ${remain} remain - run OCR scans again`:''}`);
   renderViewer();
   return done;
 }
@@ -1699,6 +1866,7 @@ const AI_STATUS_ENDPOINT='./.netlify/functions/extract-status';
 let aiProbePromise=null;
 window.__aiStatus='unknown';
 function aiExtractReady(){
+  if(!appSettings.onlineExtraction){window.__aiStatus='local only';return Promise.resolve(false);}
   if (!aiProbePromise){
     aiProbePromise=fetch(AI_EXTRACT_ENDPOINT,{method:'GET'}).then(async r=>{
       if(!r.ok){ window.__aiStatus='off — extraction endpoint not reachable'; return false; }
@@ -1894,8 +2062,13 @@ async function ingestFile(file){
   p.files.push(rec); renderDocs();renderProjHeader();
   setProcessingDock(STAGES[0],file.name,2,0);await paintProcessing();
   try{
+    if(!['pdf','xlsx','png','jpg','jpeg','webp','txt','csv','md','text'].includes(ext)){
+      throw new Error('Unsupported file type ".'+ext+'". Please upload PDF, XLSX, PNG, JPG, WebP, TXT or CSV.');
+    }
+    const buf=await file.arrayBuffer();rawStore[rec.id]=buf;
+    if(!await persistRawFile(p.id,rec.id,buf))rec.warn='The original file is available only until this app closes.';
     if (ext==='pdf'){
-      const buf=await file.arrayBuffer(); rawStore[rec.id]=buf; rec.pct=25; renderDocs();
+      rec.pct=25; renderDocs();
       const lib=await loadPdfjs();
       const doc=await lib.getDocument({data:buf.slice(0)}).promise;
       state.viewer.pdfDocs[rec.id]=doc;
@@ -1917,10 +2090,10 @@ async function ingestFile(file){
         if(i===1||i===doc.numPages||i%8===0)await paintProcessing();
       }
       rec.native=anyText;
-      if (ocrPages) rec.warn=`${ocrPages} page${ocrPages===1?'':'s'} need OCR because embedded text is missing or unreliable.`;
+      if (ocrPages) rec.warn=[rec.warn,`${ocrPages} page${ocrPages===1?'':'s'} need OCR because embedded text is missing or unreliable.`].filter(Boolean).join(' ');
     } else if (ext==='xlsx'){
       if(!window.ExcelJS) throw new Error('The Excel reader is unavailable');
-      const buf=await file.arrayBuffer();rawStore[rec.id]=buf;rec.pct=35;renderDocs();
+      rec.pct=35;renderDocs();
       const workbook=new window.ExcelJS.Workbook();await workbook.xlsx.load(buf);
       workbook.eachSheet(worksheet=>{
         const lines=[{text:'Worksheet: '+worksheet.name}];
@@ -1935,15 +2108,12 @@ async function ingestFile(file){
       if(!rec.pages.length) throw new Error('The workbook contains no visible worksheets');
       rec.native=true;
     } else if (IMAGE_EXTS.has(ext)){
-      const buf=await file.arrayBuffer();rawStore[rec.id]=buf;
       const size=await imageSize(new Blob([buf],{type:file.type||imageMime(ext)}));
       rec.pages=[{lines:[],w:size.width,h:size.height,image:true,needsOcr:true,source:'ocr_pending',textQuality:{route:'ocr',reliable:false,score:0,reasons:['Image documents require OCR']}}];rec.native=false;
-      rec.warn='Image scan — text will be read automatically with OCR.';
+      rec.warn=[rec.warn,'Image scan - text will be read automatically with OCR.'].filter(Boolean).join(' ');
     } else if (ext==='txt'||ext==='csv'||ext==='md'||ext==='text'){
-      const txt=await file.text();
+      const txt=new TextDecoder().decode(buf);
       rec.pages=splitTextPages(txt); rec.native=true;
-    } else {
-      throw new Error('Unsupported file type ".'+ext+'". Please upload PDF, XLSX, PNG, JPG, WebP, TXT or CSV.');
     }
     rec.status='ready'; rec.pct=100;
     classifyFilePages(rec);
@@ -2013,12 +2183,12 @@ function renderDocs(){
       : f.status==='error' ? `<span class="chip red">Failed</span>`
       : `<div class="prog"><i style="width:${f.pct||0}%"></i></div>`;
     const nat = f.status!=='ready' ? '—' : f.native? '<span class="chip cyan">Native text</span>' : f.ocrReady?'<span class="chip purple">OCR text</span>':'<span class="chip amber">Scanned</span>';
-    const needsOcr=f.ext==='pdf'&&f.pages.some(pg=>!(pg.lines||[]).length);
+    const needsOcr=f.ext==='pdf'&&f.pages.some(pg=>pg.needsOcr||!(pg.lines||[]).length);
     tr.innerHTML=`
       <td><div class="thumb">${esc((f.ext||'?').toUpperCase())}</div></td>
       <td class="strong">${esc(f.name)}
         ${f.error?`<div style="color:var(--red);font-size:11px;font-weight:400;margin-top:3px">${esc(f.error)}</div>`:''}
-        ${f.warn?`<div style="color:var(--amber);font-size:11px;font-weight:400;margin-top:3px">⚠ ${esc(f.warn)}</div>`:''}</td>
+        ${f.warn?`<div style="color:var(--amber);font-size:11px;font-weight:400;margin-top:3px">Check: ${esc(f.warn)}</div>`:''}</td>
       <td>${esc(docTypeLabel(f))}</td>
       <td>${fmtSize(f.size)}</td>
       <td class="num">${f.pages.length||'—'}</td>
@@ -2036,7 +2206,7 @@ function renderDocs(){
       if (a==='ocr') ocrScannedPages(f).catch(err=>toast(err.message));
       if (a==='del'){
         openModal('Remove document', `<p style="line-height:1.6">Remove <b>${esc(f.name)}</b> from this project? Analysis results from this file will be cleared.</p>`, ()=>{
-          p.files=p.files.filter(x=>x.id!==f.id); delete rawStore[f.id];
+          p.files=p.files.filter(x=>x.id!==f.id); removeRawFile(f.id);
           if (p.analysis){
             p.analysis.rows=p.analysis.rows.filter(r=>r.fileId!==f.id);
             p.analysis.cables=p.analysis.cables.filter(r=>r.fileId!==f.id);
@@ -2049,7 +2219,7 @@ function renderDocs(){
         const inp=document.createElement('input'); inp.type='file'; inp.accept='.pdf,.txt,.csv,.md,.xlsx,.png,.jpg,.jpeg,.webp';
         inp.addEventListener('change', async ()=>{
           if (!inp.files.length) return;
-          p.files=p.files.filter(x=>x.id!==f.id); delete rawStore[f.id];
+          p.files=p.files.filter(x=>x.id!==f.id); await removeRawFile(f.id);
           await ingestFile(inp.files[0]); await autoOcrScannedFiles(); await runAnalysis({auto:true});
         });
         inp.click();
@@ -2124,14 +2294,14 @@ function renderCoverage(){
       <td class="num">${unCell}</td><td class="num">${b.rowsCaptured}</td>
       <td>${b.evidence?esc(b.evidence.text)+' <span class="hint" style="display:inline;margin:0">p'+b.evidence.page+'</span>':'—'}</td></tr>`;
   }).join('') || '<tr><td colspan="6" style="color:var(--txt3)">No boards detected yet.</td></tr>';
-  const ai=window.__aiStatus||'unknown';
+  const ai=appSettings.onlineExtraction?(window.__aiStatus||'checking'):'local only';
   const aiCls = ai.startsWith('active')?'green': ai.startsWith('not configured')?'amber':'grey';
-  const aiStats = p.analysis&&p.analysis.aiPages!=null ? ` · ${p.analysis.aiPages} page(s) read${p.analysis.aiErrors?', '+p.analysis.aiErrors+' failed':''}` : '';
+  const aiStats = appSettings.onlineExtraction&&p.analysis&&p.analysis.aiPages!=null ? ` · ${p.analysis.aiPages} page(s) read${p.analysis.aiErrors?', '+p.analysis.aiErrors+' failed':''}` : '';
   const xc=p.analysis&&p.analysis.xcheck;
   const xcChip = xc&&xc.pages ? `<span class="chip ${xc.mismatches?'amber':'green'}" title="A second AI model re-read every page; disagreements are in the Review queue">Cross-check (${esc(xc.provider||'gemini')}): ${xc.pages} page(s)${xc.mismatches?', '+xc.mismatches+' disagreement(s) → Review':' — models agree'}</span> ` : '';
   pagesEl.innerHTML = `<div style="margin-bottom:7px"><span class="chip ${aiCls}">Extraction service: ${esc(ai)}${esc(aiStats)}</span> ${xcChip}</div>`
     + (cov.zeroRowSchedulePages.length
-    ? '<span class="chip amber">⚠ '+cov.zeroRowSchedulePages.length+' page(s) look like schedules but produced 0 rows:</span> '
+    ? '<span class="chip amber">Check '+cov.zeroRowSchedulePages.length+' schedule page(s) with no rows:</span> '
       + cov.zeroRowSchedulePages.slice(0,30).map(z=>{
           const fl=p.files.find(x=>x.id===z.fileId);
           return `<span class="chip grey">${esc(fl?fl.name.slice(0,24):'?')} p${z.page}</span>`;
@@ -2168,6 +2338,9 @@ function renderAnalysisControls(){
     box.dataset.built='1';
   }
   renderBoardPick($('#anBoardSearch').value);
+  $('#anOnlineExtraction').checked=!!appSettings.onlineExtraction;
+  $('#anOnlineExtraction').disabled=LOCAL_DESKTOP;
+  $('#onlineExtractionHint').textContent=LOCAL_DESKTOP?'Desktop document reading stays on this computer.':'Off keeps document reading on this computer. On sends pages to the configured extraction service.';
   if (!$('#stageList').innerHTML) renderStages(-1);
 }
 function renderBoardPick(q){
@@ -2181,6 +2354,11 @@ function renderBoardPick(q){
     : '<div class="hint">Boards appear here once documents are read. Leave unticked to include all.</div>';
 }
 $('#anBoardSearch').addEventListener('input', e=>renderBoardPick(e.target.value));
+$('#anOnlineExtraction').addEventListener('change',event=>{
+  if(LOCAL_DESKTOP){event.target.checked=false;appSettings.onlineExtraction=false;return;}
+  appSettings.onlineExtraction=event.target.checked;aiProbePromise=null;
+  window.__aiStatus=appSettings.onlineExtraction?'checking':'local only';saveAppSettings();renderCoverage();
+});
 function gatherFilters(){
   const fileIds=$$('.an-file').filter(c=>c.checked).map(c=>c.value);
   const boardsSel=$$('.an-board').filter(c=>c.checked).map(c=>c.value);
@@ -2400,7 +2578,7 @@ async function runAnalysis(opts){
   // Workstream 0 §0.0 — genuine AI extraction across all dialects + schematics
   // (regex pass above stays as the fast pre-pass; AI rows go to review, never
   // overriding a slot the schedule parser already filled).
-  if (!(opts&&opts.noAi)){
+  if (appSettings.onlineExtraction&&!(opts&&opts.noAi)){
     try{ await runAiExtraction(A, f, p, pageSet); }catch(e){ console.warn('AI extraction unavailable:', e.message); }
   }
   if(window.EstimationExtractorCore?.deduplicateExtractionRows){
@@ -2694,7 +2872,7 @@ function evRowHtml(r){
     <td style="white-space:nowrap">${esc(f?f.name:'?')} · p${r.page}</td>
     <td>${confChip(r.conf, r.status)}</td>
     <td style="white-space:nowrap"><div class="grow-actions">
-      <button data-ev="jump" title="Show in document">👁</button>
+      <button data-ev="jump" title="Show in document">View</button>
       <button data-ev="ok" class="ok" title="Approve">✓</button>
       <button data-ev="edit" title="Correct">✎</button>
       <button data-ev="no" class="no" title="Reject">✕</button>
@@ -2795,6 +2973,22 @@ function currentReportModel(){
     generatedAt:new Date(),
   });
 }
+function shortReviewReason(reason){
+  const labels={
+    'Associated control-equipment specification is incomplete':'Specification incomplete',
+    'Current rating is missing':'Rating missing',
+    'Tripping curve is not specified':'Curve missing',
+    'Breaking capacity is not specified':'Capacity missing',
+    'Pole configuration is unclear':'Poles unclear',
+    'One or more source values have low confidence':'Low confidence',
+    'One or more source records need review':'Source review needed',
+    'An automatic OCR correction needs confirmation':'OCR correction',
+    'Conflicting tripping curves appear for otherwise identical devices':'Curve conflict',
+    'Conflicting breaking capacities appear for otherwise identical devices':'Capacity conflict',
+    'Conflicting pole configurations appear for otherwise identical devices':'Pole conflict',
+  };
+  return labels[reason]||reason;
+}
 function renderReport(){
   const p=state.cur;
   const host=$('#reportMatrixHost');
@@ -2809,7 +3003,7 @@ function renderReport(){
     host.innerHTML='<div class="report-empty">Analyse documents to build the take-off.</div>';
     return;
   }
-  const factItems=[['Boards',model.boards.length],['Device lines',model.deviceLineCount],['Total devices',model.grandTotal]];
+  const factItems=[['Boards in report',model.boards.length],['Device lines',model.deviceLineCount],['Total devices',model.grandTotal]];
   factItems.push(['Reconciled',model.reconciliation?.valid?'Yes':'No']);
   if(model.associated&&model.associated.grandTotal) factItems.push(['Control items',model.associated.grandTotal]);
   facts.innerHTML=factItems
@@ -2832,7 +3026,9 @@ function renderReport(){
       '<th class="report-total">Total</th><th class="report-purpose">Applications</th><th class="report-source">Source pages</th><th class="report-tech">Confidence</th><th class="report-review">Review</th></tr></thead><tbody>';
     groups.forEach(group=>{
       group.rows.forEach(row=>{
-        table+=`<tr class="report-data"><td class="report-category">${esc(group.name)}</td><td class="report-device"><b>${esc(row.label)}</b>${row.reviewReasons.length?`<div class="hint" style="margin:3px 0 0" title="${esc(row.notes.join(' '))}">${esc(row.reviewReasons.join('; '))}</div>`:''}</td>`+
+        const compactReasons=row.reviewReasons.map(shortReviewReason);
+        const reviewDetail=[...row.reviewReasons,...row.notes].join(' ');
+        table+=`<tr class="report-data"><td class="report-category">${esc(group.name)}</td><td class="report-device"><b>${esc(row.label)}</b>${compactReasons.length?`<div class="hint" style="margin:3px 0 0" title="${esc(reviewDetail)}">${esc(compactReasons.join(' · '))}</div>`:''}</td>`+
           `<td>${row.rating??'Not specified'}</td><td>${esc(row.pole)}</td><td>${esc(row.curve)}</td><td>${esc(row.breakingCapacity)}</td>`+
           row.quantities.map((qty,index)=>`<td>${qty?`<button class="report-qty" data-report-board="${esc(model.boards[index].norm)}" title="Open ${esc(model.boards[index].label)}">${qty}</button>`:''}</td>`).join('')+
           `<td class="report-total">${row.total}</td><td class="report-purpose">${esc(row.purposes.join(', '))}</td><td class="report-source">${esc(row.sourcePages.join('; '))}</td><td>${Math.round(row.confidence*100)}%</td><td class="report-review"><span class="chip ${row.reviewStatus==='Ready'?'green':'amber'}">${esc(row.reviewStatus)}</span></td></tr>`;
@@ -2965,7 +3161,7 @@ function renderBoards(){
     if (a.norm!==b.norm && strip(a.norm)===strip(b.norm)) dupes.push([a,b]);
   }
   dl.innerHTML = dupes.length? dupes.map(([a,b])=>
-    `<div class="rev-item"><div class="ric" style="background:var(--amber-soft)">⚠</div>
+    `<div class="rev-item"><div class="ric" style="background:var(--amber-soft)">!</div>
      <div><h4>${esc(a.orig)} and ${esc(b.orig)} may be the same board</h4>
      <div class="hint">They are kept separate — merge only if you are sure they refer to one board.</div></div>
      <div class="racts"><button class="btn sm" data-m="${a.norm}|${b.norm}">Merge into ${esc(a.orig)}</button></div></div>`).join('')
@@ -3061,7 +3257,7 @@ function renderXref(){
   panel.style.display='';
   host.innerHTML='';
   const sevBg={high:'var(--red-soft)',medium:'var(--amber-soft)',low:'var(--amber-soft)',info:'var(--green-soft)'};
-  const sevIcon={high:'✕',medium:'⚠',low:'⚠',info:'✓'};
+  const sevIcon={high:'✕',medium:'!',low:'!',info:'✓'};
   [...items].sort((a,b)=>(a.status==='open'?0:1)-(b.status==='open'?0:1)).forEach(d=>{
     const div=document.createElement('div'); div.className='rev-item';
     const open=d.status==='open';
@@ -3126,7 +3322,7 @@ function renderReview(){
         renderReview(); renderTakeoff(); renderProjHeader(); saveProject(p);
       }));
     } else if (it.kind==='scan'){
-      div.innerHTML=`<div class="ric" style="background:var(--red-soft)">⚠</div>
+      div.innerHTML=`<div class="ric" style="background:var(--red-soft)">!</div>
         <div style="flex:1"><h4>${esc(it.f.name)} contains scanned pages</h4>
         <div class="hint">Use bounded OCR to create selectable lines and coordinates for device extraction. Native PDF exports remain more accurate when available.</div></div>
         <div class="racts"><button class="btn sm" data-a="ocr">OCR scanned pages</button></div>`;
@@ -3551,12 +3747,14 @@ $('#vPrint').addEventListener('click', ()=>{
 });
 $('#vDownload').addEventListener('click', ()=>{
   const f=viewerFile(); if(!f) return;
-  const binary=rawStore[f.id]&&(f.ext==='pdf'||f.ext==='xlsx'||IMAGE_EXTS.has(f.ext));
-  const blob = binary
-    ? new Blob([rawStore[f.id]],{type:f.ext==='pdf'?'application/pdf':f.ext==='xlsx'?'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':imageMime(f.ext)})
+  const original=rawStore[f.id];
+  const mime=f.ext==='pdf'?'application/pdf':f.ext==='xlsx'?'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    :IMAGE_EXTS.has(f.ext)?imageMime(f.ext):f.ext==='csv'?'text/csv':f.ext==='md'?'text/markdown':'text/plain';
+  const blob = original
+    ? new Blob([original],{type:mime})
     : new Blob([f.pages.map(pg=>(pg.lines||[]).map(l=>l.text).join('\n')).join('\n\n— page break —\n\n')],{type:'text/plain'});
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
-  a.download=binary?f.name:(f.name.replace(/\.[^.]+$/,'')+'.txt');
+  a.download=original?f.name:(f.name.replace(/\.[^.]+$/,'')+'.txt');
   a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),4000);
 });
 $('#vSearch').addEventListener('input', ()=>renderViewer());
@@ -3760,8 +3958,8 @@ function runCompare(){
   const srcChip = compareSchedules.source==='analysis'
     ? '<span class="chip cyan" title="Rows come from the analysed take-off">diff from analysed rows</span>'
     : compareSchedules.source==='regex'
-      ? '<span class="chip grey" title="No analysis for these documents yet — regex re-parse only. Run ⚙ Analyse documents for full recall.">diff from regex re-parse</span>'
-      : '<span class="chip amber" title="One side has analysed rows, the other only a regex re-parse — run ⚙ Analyse documents so both sides compare equally">mixed sources — re-analyse for a fair diff</span>';
+      ? '<span class="chip grey" title="No analysis for these documents yet. Run Analyse documents for full recall.">Basic comparison</span>'
+      : '<span class="chip amber" title="Only one side has analysed rows. Analyse both documents before comparing.">Analyse both sides</span>';
   $('#cmpSummary').innerHTML = (cmpChanges.length
     ? Object.entries(counts).map(([t,n])=>`<span class="chip ${LBL[t]?LBL[t][1]:'grey'}">${n} ${LBL[t]?LBL[t][0].toLowerCase():t}</span>`).join('')
     : '<span class="chip green">No electrical changes detected between these schedules</span>')+srcChip;
@@ -3817,7 +4015,7 @@ function renderChgList(){
         const jumpable=c.refB||c.refA;
         return `<div class="chg-it" data-g="${gi}" style="${jumpable?'cursor:pointer':''}" title="${jumpable?'Show this change in the document':''}">
           <span class="chip ${cl}">${ic}</span> ${esc(c.txt)}
-          ${jumpable?'<span class="chip grey" style="margin-left:auto">👁 view</span>':''}
+          ${jumpable?'<span class="chip grey" style="margin-left:auto">View</span>':''}
           ${c.src?`<span class="hint" style="margin:0;font-family:var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:280px">${esc(c.src)}</span>`:''}</div>`;
       }).join('');
   }).join('');
@@ -4095,9 +4293,10 @@ async function boot(){
     window.__TEST__=true;
     $('#lockView').classList.remove('active');
     $('#appView').classList.add('active');
-  }
+  }else configureLock();
   const ok=await idbOpen();
   if (!ok) toast('Storage unavailable — work is session-only until you export');   // header chip removed by design
+  await refreshStorageState();
   let stored=[];
   try{ stored=await loadProjects(); }catch(e){}
   stored.forEach(rec=>{
