@@ -1703,8 +1703,8 @@ function aiExtractReady(){
     aiProbePromise=fetch(AI_EXTRACT_ENDPOINT,{method:'GET'}).then(async r=>{
       if(!r.ok){ window.__aiStatus='off — extraction endpoint not reachable'; return false; }
       const j=await r.json();
-      if(!j.configured){ window.__aiStatus='not configured — set ANTHROPIC_API_KEY in Netlify'; return false; }
-      window.__aiStatus='active';
+      if(!j.configured){ window.__aiStatus='not configured — set ANTHROPIC_API_KEY (or free GEMINI_API_KEY) in Netlify'; return false; }
+      window.__aiStatus='active'+(j.verify?' + cross-check':j.primary==='gemini'?' (Gemini free tier)':'');
       return true;
     }).catch(()=>{ window.__aiStatus='off — extraction endpoint not reachable'; return false; });
   }
@@ -1740,10 +1740,39 @@ async function aiExtractPage(f,pageNo,pg){
   for(let i=0;i<70;i++){                                   // poll up to ~3 min
     await new Promise(res=>setTimeout(res,2500));
     let s; try{ s=await fetch(AI_STATUS_ENDPOINT+'?id='+encodeURIComponent(jobId)).then(x=>x.json()); }catch(e){ continue; }
-    if(s.status==='done') return s.result;
+    if(s.status==='done') return s;   // {result, verification?, provider, model}
     if(s.status==='error') throw new Error(s.error||'extraction failed');
   }
   throw new Error('Document extraction timed out (>3 min)');
+}
+/* Second-opinion disagreements (computed server-side by deterministic code)
+ * are never auto-resolved: devices only the second model saw enter the
+ * take-off as pending review rows (over-capture beats omission), and disputed
+ * rows get their confidence lowered so the Review queue surfaces them. */
+function applyCrossCheck(A,v,fileId,pageNo){
+  if(!v) return;
+  A.xcheck=A.xcheck||{pages:0,errors:0,mismatches:0,provider:null};
+  if(v.status!=='done'){ A.xcheck.errors++; return; }
+  A.xcheck.pages++; A.xcheck.provider=v.provider||'gemini';
+  (v.mismatches||[]).forEach(m=>{
+    A.xcheck.mismatches++;
+    const bn=m.board?canonicalBoardRef(m.board).normalised:null;
+    if (m.kind==='missing_in_primary'){
+      const sec=m.second||{};
+      A.rows.push({id:uid(), boardNorm:bn, fileId, page:pageNo, line:null, status:'pending', kind:'ai',
+        way:m.way!==''?m.way:null, phase:m.phase&&m.phase!=='L1L2L3'?m.phase:(m.phase==='L1L2L3'?'3PH':null),
+        desc:(sec.description||'Device')+' — found only by the cross-check model',
+        device:AI_DEVICE_MAP[sec.device_class]||null, rating:sec.rating_a??null,
+        poles:null, curve:null, sens:null, afdd:false, ka:null, cable:null,
+        spare:sec.device_class==='spare', space:false, incomer:false, isSpd:false, qty:1,
+        srcText:'AI cross-check: '+(m.detail||'second model found an extra device'),
+        conf:0.45, extractionMethod:'AI cross-check (second opinion)'});
+    } else {
+      const row=A.rows.find(r=>r.fileId===fileId&&r.page===pageNo&&r.boardNorm===bn
+        &&String(r.way??'')===String(m.way??''));
+      if(row && row.status==='pending'){ row.conf=Math.min(row.conf??1,0.55); row.xcheck=m.detail||'AI cross-check disagreement'; }
+    }
+  });
 }
 function mergeAiResult(A,out,fileId,pageNo){
   if(!out) return;
@@ -1818,7 +1847,9 @@ async function runAiExtraction(A,f,p,pageSet){
   const CONC=2;
   for (let i=0;i<jobs.length;i+=CONC){
     await Promise.all(jobs.slice(i,i+CONC).map(async j=>{
-      try{ mergeAiResult(A, await aiExtractPage(j.fl,j.pageNo,j.pg), j.id, j.pageNo); A.aiPages++; }
+      try{ const resp=await aiExtractPage(j.fl,j.pageNo,j.pg);
+        mergeAiResult(A, resp&&resp.result?resp.result:resp, j.id, j.pageNo);
+        applyCrossCheck(A, resp&&resp.verification, j.id, j.pageNo); A.aiPages++; }
       catch(e){ console.warn('AI extraction failed on '+j.fl.name+' p'+j.pageNo+':', e.message); A.aiErrors++; }
     }));
   }
@@ -2096,7 +2127,9 @@ function renderCoverage(){
   const ai=window.__aiStatus||'unknown';
   const aiCls = ai.startsWith('active')?'green': ai.startsWith('not configured')?'amber':'grey';
   const aiStats = p.analysis&&p.analysis.aiPages!=null ? ` · ${p.analysis.aiPages} page(s) read${p.analysis.aiErrors?', '+p.analysis.aiErrors+' failed':''}` : '';
-  pagesEl.innerHTML = `<div style="margin-bottom:7px"><span class="chip ${aiCls}">Extraction service: ${esc(ai)}${esc(aiStats)}</span></div>`
+  const xc=p.analysis&&p.analysis.xcheck;
+  const xcChip = xc&&xc.pages ? `<span class="chip ${xc.mismatches?'amber':'green'}" title="A second AI model re-read every page; disagreements are in the Review queue">Cross-check (${esc(xc.provider||'gemini')}): ${xc.pages} page(s)${xc.mismatches?', '+xc.mismatches+' disagreement(s) → Review':' — models agree'}</span> ` : '';
+  pagesEl.innerHTML = `<div style="margin-bottom:7px"><span class="chip ${aiCls}">Extraction service: ${esc(ai)}${esc(aiStats)}</span> ${xcChip}</div>`
     + (cov.zeroRowSchedulePages.length
     ? '<span class="chip amber">⚠ '+cov.zeroRowSchedulePages.length+' page(s) look like schedules but produced 0 rows:</span> '
       + cov.zeroRowSchedulePages.slice(0,30).map(z=>{
@@ -3079,7 +3112,7 @@ function renderReview(){
         <div style="flex:1"><h4>${r.qty>1?r.qty+' × ':''}${esc(r.device||'Unclassified row')}${r.boardNorm?' on '+esc(boardLabel(r.boardNorm)):''}
           ${confChip(r.conf)}</h4>
         <div class="rsrc">${esc(f?f.name:'?')} · page ${r.page} — ${esc(r.srcText)}</div>
-        <div class="hint">${r.kind==='mention'?'Found as a mention on a plan/text page (not a structured schedule row) — please confirm.':!r.boardNorm?'No board reference could be attached to this row.':'Low-confidence extraction — please check against the document.'}</div></div>
+        <div class="hint">${r.xcheck?'⚠ '+esc(r.xcheck)+' — please check against the document.':r.kind==='mention'?'Found as a mention on a plan/text page (not a structured schedule row) — please confirm.':!r.boardNorm?'No board reference could be attached to this row.':'Low-confidence extraction — please check against the document.'}</div></div>
         <div class="racts">
           <button class="btn sm" data-a="jump">View</button>
           <button class="btn sm" data-a="edit">Correct</button>

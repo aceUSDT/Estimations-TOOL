@@ -1,27 +1,24 @@
 /* AI extraction endpoint — the "AI extracts" half of the architecture.
  *
  * The browser posts one page (rendered image and/or text lines); this function
- * calls Claude with the domain pack + a structured-output schema and returns
- * the canonical extraction JSON. The API key lives ONLY in the Netlify
- * environment variable ANTHROPIC_API_KEY (Site configuration → Environment
- * variables) — never in the repo, never in the browser bundle (CLAUDE.md §8).
+ * runs the primary extractor (Claude when ANTHROPIC_API_KEY is set, else the
+ * Gemini free tier when GEMINI_API_KEY is set) and, when BOTH providers are
+ * configured, a second-opinion pass whose disagreements are computed by
+ * deterministic code and surfaced for human review — never auto-resolved.
+ * Keys live ONLY in Netlify env vars — never in the repo or browser (CLAUDE.md §8).
  *
  * Env vars:
- *   ANTHROPIC_API_KEY   required for extraction (GET /health reports state)
- *   EXTRACTION_MODEL    optional override, default claude-sonnet-5
+ *   ANTHROPIC_API_KEY   Claude — primary extractor
+ *   GEMINI_API_KEY      Gemini free tier (https://aistudio.google.com/apikey) —
+ *                       second opinion, or primary fallback if no Anthropic key
+ *   EXTRACTION_MODEL    optional Claude model override (default claude-sonnet-5)
+ *   GEMINI_MODEL        optional Gemini model override (default gemini-2.5-flash)
  *
- * Note on timeouts: Netlify synchronous functions cap at ~26s. A full Opus
- * extraction of a dense page image exceeds that (measured ~30s → 502), so the
- * default is claude-sonnet-5 — near-Opus quality on this structured-extraction
- * task at roughly half the latency, which fits the sync budget. For maximum
- * recall on the hardest sheets without a latency ceiling, move this to a
- * background function + polling and set EXTRACTION_MODEL=claude-opus-4-8.
- * One page per request keeps latency bounded.
+ * Note on timeouts: Netlify synchronous functions cap at ~26s; the second
+ * opinion runs in PARALLEL with the primary so verification adds no latency
+ * beyond max(primary, second). The background function has no such ceiling.
  */
-import Anthropic from '@anthropic-ai/sdk';
-import { EXTRACTION_SYSTEM_PROMPT, EXTRACTION_SCHEMA, coerceResult } from './lib/domain-pack.mjs';
-
-const MODEL = process.env.EXTRACTION_MODEL || 'claude-sonnet-5';
+import { buildInstruction, extractWithVerification, providerStatus, CLAUDE_MODEL, GEMINI_MODEL } from './lib/providers.mjs';
 
 const json = (status, body) => new Response(JSON.stringify(body), {
   status,
@@ -31,11 +28,19 @@ const json = (status, body) => new Response(JSON.stringify(body), {
 export default async function handler(req) {
   if (req.method === 'GET') {
     // health probe used by the front-end to decide whether AI extraction is on
-    return json(200, { status: 'ok', configured: Boolean(process.env.ANTHROPIC_API_KEY), model: MODEL });
+    const status = providerStatus();
+    return json(200, {
+      status: 'ok',
+      configured: status.configured,
+      providers: { anthropic: status.anthropic, gemini: status.gemini },
+      primary: status.primary,
+      verify: status.verify,
+      model: status.primary === 'gemini' ? GEMINI_MODEL : CLAUDE_MODEL,
+    });
   }
   if (req.method !== 'POST') return json(405, { error: 'POST only' });
-  if (!process.env.ANTHROPIC_API_KEY) {
-    return json(503, { error: 'AI extraction is not configured: set ANTHROPIC_API_KEY in the Netlify environment.' });
+  if (!providerStatus().configured) {
+    return json(503, { error: 'AI extraction is not configured: set ANTHROPIC_API_KEY (or GEMINI_API_KEY) in the Netlify environment.' });
   }
 
   let body;
@@ -49,57 +54,15 @@ export default async function handler(req) {
     return json(400, { error: 'Provide image_base64 and/or text_lines' });
   }
 
-  const content = [];
-  if (imageBase64) {
-    content.push({
-      type: 'image',
-      source: { type: 'base64', media_type: mediaType || 'image/jpeg', data: imageBase64 },
-    });
-  }
-  let instruction = `Extract this page into the schema. Document: ${filename || 'unknown'}, page ${pageNumber || '?'}.`;
-  if (hints && hints.type) instruction += ` Classifier hint (may be wrong): ${hints.type}${hints.sub_format ? ' / ' + hints.sub_format : ''}.`;
-  if (Array.isArray(textLines) && textLines.length) {
-    instruction += `\n\nOCR/native text lines from the same page (may contain OCR errors — the image is authoritative where they disagree):\n`
-      + textLines.slice(0, 400).map((l) => String(l)).join('\n');
-  }
-  content.push({ type: 'text', text: instruction });
-
-  const client = new Anthropic();
+  const instruction = buildInstruction({ filename, pageNumber, hints, textLines });
   try {
-    const response = await client.messages.create({
-      model: MODEL,
-      max_tokens: 12000,
-      // Structured extraction, not reasoning — disable thinking. Sonnet 5 runs
-      // adaptive thinking by DEFAULT when this is omitted, which pushed the call
-      // past Netlify's ~30s sync limit (measured 30s → 502). Disabling it drops
-      // latency to well within budget with no loss on this transcription task.
-      thinking: { type: 'disabled' },
-      system: [{ type: 'text', text: EXTRACTION_SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
-      output_config: { format: { type: 'json_schema', schema: EXTRACTION_SCHEMA } },
-      messages: [{ role: 'user', content }],
-    });
-    if (response.stop_reason === 'refusal') {
-      return json(502, { error: 'Model declined the request', stop_reason: 'refusal' });
-    }
-    if (response.stop_reason === 'max_tokens') {
-      return json(502, { error: 'Extraction output truncated (max_tokens) — page too dense for one call', stop_reason: 'max_tokens' });
-    }
-    const text = response.content.find((b) => b.type === 'text');
-    if (!text) return json(502, { error: 'No text block in model response' });
-    const result = coerceResult(JSON.parse(text.text));
-    return json(200, {
-      result,
-      model: response.model,
-      usage: {
-        input_tokens: response.usage.input_tokens,
-        output_tokens: response.usage.output_tokens,
-        cache_read_input_tokens: response.usage.cache_read_input_tokens,
-      },
-    });
+    const out = await extractWithVerification({ imageBase64, mediaType, instruction, maxTokens: 12000 });
+    return json(200, out);
   } catch (err) {
-    if (err instanceof Anthropic.RateLimitError) return json(429, { error: 'Rate limited — retry shortly' });
-    if (err instanceof Anthropic.AuthenticationError) return json(503, { error: 'ANTHROPIC_API_KEY is invalid — rotate it in the Netlify environment' });
-    if (err instanceof Anthropic.APIError) return json(502, { error: `Claude API error ${err.status}: ${err.message}` });
-    return json(502, { error: `Extraction failed: ${err && err.message ? err.message : String(err)}` });
+    if (err && err.http) return json(err.http, { error: err.message });
+    const msg = err && err.message ? err.message : String(err);
+    if (err && err.status === 429) return json(429, { error: 'Rate limited — retry shortly' });
+    if (err && err.status === 401) return json(503, { error: 'API key is invalid — rotate it in the Netlify environment' });
+    return json(502, { error: `Extraction failed: ${msg}` });
   }
 }
