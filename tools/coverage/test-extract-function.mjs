@@ -1,7 +1,7 @@
 /* Regression test: WS0.4 serverless extraction function (no network, no key).
  * Exercises the handler's request validation and health probe, and sanity-
- * checks the structured-output schema. The live Claude call needs
- * ANTHROPIC_API_KEY in the Netlify environment and is not tested here.
+ * checks the structured-output schema. The live Gemini call needs
+ * GEMINI_API_KEY in the Netlify environment and is not tested here.
  */
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -27,8 +27,8 @@ let res = await handler(new Request('http://x/extract', { method: 'GET' }));
 let body = await res.json();
 check('GET health 200', res.status === 200);
 check('GET reports unconfigured without key', body.configured === false);
-check('GET health reports providers', body.providers && body.providers.anthropic === false && body.providers.gemini === false);
-check('GET health verify off without both keys', body.verify === false);
+check('GET health reports providers', body.providers && body.providers.gemini === false);
+check('GET health has no anthropic provider', !('anthropic' in (body.providers || {})));
 
 /* method guard */
 res = await handler(new Request('http://x/extract', { method: 'DELETE' }));
@@ -39,12 +39,12 @@ res = await handler(new Request('http://x/extract', { method: 'POST', body: '{}'
 check('POST without key → 503', res.status === 503);
 
 /* with a (fake) key, validation runs before any network call */
-process.env.ANTHROPIC_API_KEY = 'sk-ant-test-not-a-real-key';
+process.env.GEMINI_API_KEY = 'test-not-a-real-key';
 res = await handler(new Request('http://x/extract', { method: 'POST', body: 'not json' }));
 check('bad JSON → 400', res.status === 400);
 res = await handler(new Request('http://x/extract', { method: 'POST', body: JSON.stringify({ filename: 'x.pdf' }) }));
 check('no image/text → 400', res.status === 400);
-delete process.env.ANTHROPIC_API_KEY;
+delete process.env.GEMINI_API_KEY;
 
 /* schema sanity: structured outputs demands additionalProperties:false and
  * required listing every property, recursively */

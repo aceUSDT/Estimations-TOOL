@@ -4,7 +4,6 @@
   "description": "Local-first electrical document review and device take-off",
   "type": "module",
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.39.0",
     "@aws-sdk/client-s3": "^3.750.0",
     "@aws-sdk/s3-request-presigner": "^3.750.0",
     "@netlify/blobs": "^8.1.0",
@@ -16,7 +15,7 @@
   },
   "scripts": {
     "dev": "python3 -m http.server 8765 --bind 127.0.0.1",
-    "test": "node tools/coverage/test-boardrefs.mjs && node tools/coverage/test-reconciliation.mjs && node tools/coverage/test-tba-schedule.mjs && node tools/coverage/test-ocr-pipeline.mjs && node tools/coverage/test-report-core.mjs && node tools/coverage/test-device-consolidation.mjs && node tools/coverage/test-verify.mjs && node tools/coverage/test-extract-function.mjs && node tools/coverage/probe-dialects.mjs && node tools/coverage/test-release-manifest.mjs && node tools/coverage/test-commerce.mjs && node tools/coverage/test-store-static.mjs && node tools/coverage/test-analysis-health.mjs && node desktop/verify-assets.cjs",
+    "test": "node tools/coverage/test-boardrefs.mjs && node tools/coverage/test-reconciliation.mjs && node tools/coverage/test-tba-schedule.mjs && node tools/coverage/test-ocr-pipeline.mjs && node tools/coverage/test-report-core.mjs && node tools/coverage/test-device-consolidation.mjs && node tools/coverage/test-verify.mjs && node tools/coverage/test-extract-function.mjs && node tools/coverage/probe-dialects.mjs && node tools/coverage/test-release-manifest.mjs && node tools/coverage/test-commerce.mjs && node tools/coverage/test-store-static.mjs && node tools/coverage/test-analysis-health.mjs && node tools/coverage/test-download-gateway.mjs && node desktop/verify-assets.cjs",
     "test:store": "node tools/coverage/test-store-static.mjs && node tools/coverage/test-store-page.mjs"
   }
 }

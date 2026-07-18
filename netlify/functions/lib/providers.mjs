@@ -1,31 +1,22 @@
-/* AI extraction providers — Claude (primary when configured) and Gemini
- * (free-tier second opinion, or primary fallback when ANTHROPIC_API_KEY is
- * absent). Both keys live ONLY in Netlify env vars — never in the browser.
+/* AI extraction provider — Google Gemini is the ONLY runtime AI provider.
+ * The key lives ONLY in a Netlify env var — never in the browser, never in
+ * this repo.
  *
- *   ANTHROPIC_API_KEY   Claude — primary extractor
- *   GEMINI_API_KEY      Gemini — free tier from https://aistudio.google.com/apikey
- *   EXTRACTION_MODEL    optional Claude model override (default claude-sonnet-5)
- *   GEMINI_MODEL        optional Gemini model override (default gemini-2.5-flash)
+ *   GEMINI_API_KEY      required — https://aistudio.google.com/apikey
+ *   GEMINI_MODEL        optional exact-model override (default pinned below)
  *
- * The cross-check itself is DETERMINISTIC CODE (crossCheckExtractions): the
- * models never judge each other — code compares their outputs field by field
- * and every disagreement is surfaced for human review, never auto-resolved.
+ * The model only reads and structures pages ("AI extracts, code computes"):
+ * counting, aggregation and pricing stay deterministic in the app.
  */
-import Anthropic from '@anthropic-ai/sdk';
 import { EXTRACTION_SYSTEM_PROMPT, EXTRACTION_SCHEMA, coerceResult } from './domain-pack.mjs';
 
-export const CLAUDE_MODEL = process.env.EXTRACTION_MODEL || 'claude-sonnet-5';
+/* Pinned to an exact stable model id — never a "latest" alias, so extraction
+ * behaviour only changes when the owner deliberately changes this value. */
 export const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
 
 export function providerStatus() {
-  const anthropic = Boolean(process.env.ANTHROPIC_API_KEY);
   const gemini = Boolean(process.env.GEMINI_API_KEY);
-  return {
-    anthropic, gemini,
-    configured: anthropic || gemini,
-    primary: anthropic ? 'anthropic' : gemini ? 'gemini' : null,
-    verify: anthropic && gemini,
-  };
+  return { gemini, configured: gemini, primary: gemini ? 'gemini' : null };
 }
 
 export function buildInstruction({ filename, pageNumber, hints, textLines }) {
@@ -38,37 +29,9 @@ export function buildInstruction({ filename, pageNumber, hints, textLines }) {
   return instruction;
 }
 
-export async function callClaude({ imageBase64, mediaType, instruction, maxTokens = 16000 }) {
-  const content = [];
-  if (imageBase64) content.push({ type: 'image', source: { type: 'base64', media_type: mediaType || 'image/jpeg', data: imageBase64 } });
-  content.push({ type: 'text', text: instruction });
-  const client = new Anthropic();
-  const response = await client.messages.create({
-    model: CLAUDE_MODEL,
-    max_tokens: maxTokens,
-    thinking: { type: 'disabled' },   // pure transcription — thinking only adds latency
-    system: [{ type: 'text', text: EXTRACTION_SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
-    output_config: { format: { type: 'json_schema', schema: EXTRACTION_SCHEMA } },
-    messages: [{ role: 'user', content }],
-  });
-  if (response.stop_reason === 'refusal') throw Object.assign(new Error('Model declined the request'), { stop_reason: 'refusal' });
-  if (response.stop_reason === 'max_tokens') throw Object.assign(new Error('Extraction output truncated (max_tokens)'), { stop_reason: 'max_tokens' });
-  const text = response.content.find((b) => b.type === 'text');
-  if (!text) throw new Error('No text block in model response');
-  return {
-    result: coerceResult(JSON.parse(text.text)),
-    model: response.model,
-    usage: {
-      input_tokens: response.usage.input_tokens,
-      output_tokens: response.usage.output_tokens,
-      cache_read_input_tokens: response.usage.cache_read_input_tokens,
-    },
-  };
-}
-
 /* Gemini's responseJsonSchema accepts a JSON-Schema subset; strip the keywords
  * it rejects. Structure (properties/required/enum/items/type) is preserved so
- * both models fill the SAME shape and the comparator can diff them 1:1. */
+ * the model fills the exact shape the deterministic pipeline expects. */
 export function geminiSchema(node) {
   if (Array.isArray(node)) return node.map(geminiSchema);
   if (!node || typeof node !== 'object') return node;
@@ -122,88 +85,12 @@ export async function callGemini({ imageBase64, mediaType, instruction, maxToken
   };
 }
 
-/* ---------- deterministic cross-check (code compares, never the model) ---- */
-
-const norm = (v) => String(v == null ? '' : v).trim().toUpperCase().replace(/[\s\-_/]+/g, '');
-const devKey = (d) => [norm(d.board_ref), norm(d.way), norm(d.phase)].join('|');
-
-/* Compare two extractions of the SAME page. Returns row-level disagreements:
- *   missing_in_primary  — second model saw a device the primary missed (worst case: recall)
- *   missing_in_second   — primary saw a device the second model did not (possible over-capture)
- *   field_mismatch      — both saw the row but disagree on rating/class/poles
- * Never resolves anything — the caller routes these to the human Review queue. */
-export function crossCheckExtractions(primary, second) {
-  const p = (primary && primary.devices) || [];
-  const s = (second && second.devices) || [];
-  const skip = (d) => d.device_class === 'space';   // blank ways carry no take-off risk
-  const pMap = new Map(p.filter((d) => !skip(d)).map((d) => [devKey(d), d]));
-  const sMap = new Map(s.filter((d) => !skip(d)).map((d) => [devKey(d), d]));
-  const mismatches = [];
-
-  for (const [key, sd] of sMap) {
-    if (!pMap.has(key)) {
-      mismatches.push({
-        kind: 'missing_in_primary', board: sd.board_ref || '', way: sd.way ?? '', phase: sd.phase || '',
-        detail: `Second model found ${sd.device_class || 'a device'}${sd.rating_a ? ' ' + sd.rating_a + 'A' : ''} (“${(sd.description || '').slice(0, 60)}”) that the primary extraction missed`,
-        second: { device_class: sd.device_class, rating_a: sd.rating_a, description: sd.description },
-      });
-    }
+/* Full-page extraction. Fails with 503 semantics when unconfigured so the
+ * front-end can fall back to local-only extraction cleanly. */
+export async function extractPage({ imageBase64, mediaType, instruction, maxTokens }) {
+  if (!providerStatus().configured) {
+    throw Object.assign(new Error('AI extraction is not configured: set GEMINI_API_KEY in the Netlify environment.'), { http: 503 });
   }
-  for (const [key, pd] of pMap) {
-    const sd = sMap.get(key);
-    if (!sd) {
-      mismatches.push({
-        kind: 'missing_in_second', board: pd.board_ref || '', way: pd.way ?? '', phase: pd.phase || '',
-        detail: `Second model did not see ${pd.device_class || 'this device'}${pd.rating_a ? ' ' + pd.rating_a + 'A' : ''} (“${(pd.description || '').slice(0, 60)}”)`,
-        primary: { device_class: pd.device_class, rating_a: pd.rating_a, description: pd.description },
-      });
-      continue;
-    }
-    const fields = [];
-    if (pd.rating_a != null && sd.rating_a != null && Number(pd.rating_a) !== Number(sd.rating_a)) fields.push(['rating_a', pd.rating_a, sd.rating_a]);
-    if (pd.device_class && sd.device_class && pd.device_class !== sd.device_class
-        && !(new Set(['spare', 'other']).has(pd.device_class) || new Set(['spare', 'other']).has(sd.device_class))) {
-      fields.push(['device_class', pd.device_class, sd.device_class]);
-    }
-    if (pd.poles != null && sd.poles != null && Number(pd.poles) !== Number(sd.poles)) fields.push(['poles', pd.poles, sd.poles]);
-    for (const [field, a, b] of fields) {
-      mismatches.push({
-        kind: 'field_mismatch', board: pd.board_ref || '', way: pd.way ?? '', phase: pd.phase || '',
-        field, primary: a, second: b,
-        detail: `Models disagree on ${field}: ${a} vs ${b}`,
-      });
-    }
-  }
-  return {
-    agree: mismatches.length === 0,
-    counts: { primary: pMap.size, second: sMap.size },
-    mismatches,
-  };
-}
-
-/* Full page extraction with optional second-opinion verification.
- * Primary = Claude when configured, else Gemini. When BOTH are configured the
- * second provider runs in parallel and the deterministic comparator produces
- * `verification`. A second-opinion failure NEVER fails the page. */
-export async function extractWithVerification({ imageBase64, mediaType, instruction, maxTokens }) {
-  const status = providerStatus();
-  if (!status.configured) {
-    throw Object.assign(new Error('AI extraction is not configured: set ANTHROPIC_API_KEY (or GEMINI_API_KEY) in the Netlify environment.'), { http: 503 });
-  }
-  const args = { imageBase64, mediaType, instruction, maxTokens };
-  const primaryCall = status.primary === 'anthropic' ? callClaude(args) : callGemini(args);
-  const secondCall = status.verify ? callGemini(args) : null;
-
-  const primary = await primaryCall;   // primary failure propagates to caller
-  let verification = null;
-  if (secondCall) {
-    try {
-      const second = await secondCall;
-      const check = crossCheckExtractions(primary.result, second.result);
-      verification = { status: 'done', provider: 'gemini', model: second.model, ...check };
-    } catch (err) {
-      verification = { status: 'error', provider: 'gemini', error: err && err.message ? err.message : String(err) };
-    }
-  }
-  return { ...primary, provider: status.primary, verification };
+  const primary = await callGemini({ imageBase64, mediaType, instruction, maxTokens });
+  return { ...primary, provider: 'gemini' };
 }
