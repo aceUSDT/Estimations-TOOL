@@ -480,6 +480,7 @@
     <div class="crumb" id="crumb"><b>Projects</b></div>
     <div class="right">
       <span class="storage-state" id="storageState" title="Projects and original files are stored in this device profile">Stored locally</span>
+      <a class="link-btn" href="./download/" title="Buy the Windows/macOS desktop app">Get desktop app</a>
       <button class="link-btn" id="lockBtn">Lock</button>
     </div>
   </div>
@@ -672,6 +673,7 @@
         </div>
 
         <div>
+          <div id="anHealth"></div>
           <div class="panel" style="margin-bottom:14px">
             <div class="sumchips" id="anSummary"></div>
             <div style="display:flex;gap:8px;align-items:center;padding:11px 18px;flex-wrap:wrap">
@@ -1495,7 +1497,9 @@ function renderProjects(){
   const g=$('#projGrid'); g.innerHTML='';
   state.projects.forEach(p=>{
     const s=projStats(p);
-    const statusCl = p.status==='Analysed'?'green': p.status==='Needs review'?'amber':'grey';
+    const statusCl = p.status==='Analysed'?'green'
+      : p.status==='Needs review'||p.status==='Incomplete'?'amber'
+      : p.status==='Analysis failed'?'red':'grey';
     const card=document.createElement('div'); card.className='proj-card';
     card.innerHTML = `
       <div class="pc-menu">
@@ -1854,10 +1858,12 @@ async function autoOcrScannedFiles(){
   return total;
 }
 /* ==================== AI EXTRACTION (serverless — key stays server-side) ==================== */
-/* The front-end NEVER holds the Anthropic key: it posts one page at a time to
+/* The front-end NEVER holds the Gemini key: it posts one page at a time to
    a Netlify function (netlify/functions/extract.mjs) and merges the returned
    structured rows as review-pending evidence. If the function is absent or
-   unconfigured, the app silently falls back to regex-only extraction. */
+   unconfigured, the app silently falls back to regex-only extraction.
+   Nothing is ever sent without the user's explicit consent (see the
+   online-extraction toggle below). */
 const AI_EXTRACT_ENDPOINT='./.netlify/functions/extract';
 const AI_BG_ENDPOINT='./.netlify/functions/extract-background';
 const AI_STATUS_ENDPOINT='./.netlify/functions/extract-status';
@@ -1869,8 +1875,8 @@ function aiExtractReady(){
     aiProbePromise=fetch(AI_EXTRACT_ENDPOINT,{method:'GET'}).then(async r=>{
       if(!r.ok){ window.__aiStatus='off — extraction endpoint not reachable'; return false; }
       const j=await r.json();
-      if(!j.configured){ window.__aiStatus='not configured — set ANTHROPIC_API_KEY (or free GEMINI_API_KEY) in Netlify'; return false; }
-      window.__aiStatus='active'+(j.verify?' + cross-check':j.primary==='gemini'?' (Gemini free tier)':'');
+      if(!j.configured){ window.__aiStatus='not configured — set GEMINI_API_KEY in Netlify'; return false; }
+      window.__aiStatus='active ('+(j.model||'Gemini')+')';
       return true;
     }).catch(()=>{ window.__aiStatus='off — extraction endpoint not reachable'; return false; });
   }
@@ -1910,35 +1916,6 @@ async function aiExtractPage(f,pageNo,pg){
     if(s.status==='error') throw new Error(s.error||'extraction failed');
   }
   throw new Error('Document extraction timed out (>3 min)');
-}
-/* Second-opinion disagreements (computed server-side by deterministic code)
- * are never auto-resolved: devices only the second model saw enter the
- * take-off as pending review rows (over-capture beats omission), and disputed
- * rows get their confidence lowered so the Review queue surfaces them. */
-function applyCrossCheck(A,v,fileId,pageNo){
-  if(!v) return;
-  A.xcheck=A.xcheck||{pages:0,errors:0,mismatches:0,provider:null};
-  if(v.status!=='done'){ A.xcheck.errors++; return; }
-  A.xcheck.pages++; A.xcheck.provider=v.provider||'gemini';
-  (v.mismatches||[]).forEach(m=>{
-    A.xcheck.mismatches++;
-    const bn=m.board?canonicalBoardRef(m.board).normalised:null;
-    if (m.kind==='missing_in_primary'){
-      const sec=m.second||{};
-      A.rows.push({id:uid(), boardNorm:bn, fileId, page:pageNo, line:null, status:'pending', kind:'ai',
-        way:m.way!==''?m.way:null, phase:m.phase&&m.phase!=='L1L2L3'?m.phase:(m.phase==='L1L2L3'?'3PH':null),
-        desc:(sec.description||'Device')+' — found only by the cross-check model',
-        device:AI_DEVICE_MAP[sec.device_class]||null, rating:sec.rating_a??null,
-        poles:null, curve:null, sens:null, afdd:false, ka:null, cable:null,
-        spare:sec.device_class==='spare', space:false, incomer:false, isSpd:false, qty:1,
-        srcText:'AI cross-check: '+(m.detail||'second model found an extra device'),
-        conf:0.45, extractionMethod:'AI cross-check (second opinion)'});
-    } else {
-      const row=A.rows.find(r=>r.fileId===fileId&&r.page===pageNo&&r.boardNorm===bn
-        &&String(r.way??'')===String(m.way??''));
-      if(row && row.status==='pending'){ row.conf=Math.min(row.conf??1,0.55); row.xcheck=m.detail||'AI cross-check disagreement'; }
-    }
-  });
 }
 function mergeAiResult(A,out,fileId,pageNo){
   if(!out) return;
@@ -2014,8 +1991,7 @@ async function runAiExtraction(A,f,p,pageSet){
   for (let i=0;i<jobs.length;i+=CONC){
     await Promise.all(jobs.slice(i,i+CONC).map(async j=>{
       try{ const resp=await aiExtractPage(j.fl,j.pageNo,j.pg);
-        mergeAiResult(A, resp&&resp.result?resp.result:resp, j.id, j.pageNo);
-        applyCrossCheck(A, resp&&resp.verification, j.id, j.pageNo); A.aiPages++; }
+        mergeAiResult(A, resp&&resp.result?resp.result:resp, j.id, j.pageNo); A.aiPages++; }
       catch(e){ console.warn('AI extraction failed on '+j.fl.name+' p'+j.pageNo+':', e.message); A.aiErrors++; }
     }));
   }
@@ -2295,9 +2271,7 @@ function renderCoverage(){
   const ai=appSettings.onlineExtraction?(window.__aiStatus||'checking'):'local only';
   const aiCls = ai.startsWith('active')?'green': ai.startsWith('not configured')?'amber':'grey';
   const aiStats = appSettings.onlineExtraction&&p.analysis&&p.analysis.aiPages!=null ? ` · ${p.analysis.aiPages} page(s) read${p.analysis.aiErrors?', '+p.analysis.aiErrors+' failed':''}` : '';
-  const xc=p.analysis&&p.analysis.xcheck;
-  const xcChip = xc&&xc.pages ? `<span class="chip ${xc.mismatches?'amber':'green'}" title="A second AI model re-read every page; disagreements are in the Review queue">Cross-check (${esc(xc.provider||'gemini')}): ${xc.pages} page(s)${xc.mismatches?', '+xc.mismatches+' disagreement(s) → Review':' — models agree'}</span> ` : '';
-  pagesEl.innerHTML = `<div style="margin-bottom:7px"><span class="chip ${aiCls}">Extraction service: ${esc(ai)}${esc(aiStats)}</span> ${xcChip}</div>`
+  pagesEl.innerHTML = `<div style="margin-bottom:7px"><span class="chip ${aiCls}">Extraction service: ${esc(ai)}${esc(aiStats)}</span></div>`
     + (cov.zeroRowSchedulePages.length
     ? '<span class="chip amber">Check '+cov.zeroRowSchedulePages.length+' schedule page(s) with no rows:</span> '
       + cov.zeroRowSchedulePages.slice(0,30).map(z=>{
@@ -2354,6 +2328,13 @@ function renderBoardPick(q){
 $('#anBoardSearch').addEventListener('input', e=>renderBoardPick(e.target.value));
 $('#anOnlineExtraction').addEventListener('change',event=>{
   if(LOCAL_DESKTOP){event.target.checked=false;appSettings.onlineExtraction=false;return;}
+  // Explicit consent gate: no page image or text ever leaves this machine
+  // until the user has read and accepted exactly what will be sent.
+  if (event.target.checked && !appSettings.onlineConsent){
+    const agreed=confirm('Online extraction sends each analysed page (an image of the page plus its detected text) to Google Gemini via this site\'s server to improve reading accuracy.\n\nYour documents are NOT stored by this site\'s server; they are processed per page and discarded. Pages are only sent while this option is on.\n\nSend pages to the online extraction service?');
+    if (!agreed){ event.target.checked=false; appSettings.onlineExtraction=false; saveAppSettings(); renderCoverage(); return; }
+    appSettings.onlineConsent=true;
+  }
   appSettings.onlineExtraction=event.target.checked;aiProbePromise=null;
   window.__aiStatus=appSettings.onlineExtraction?'checking':'local only';saveAppSettings();renderCoverage();
 });
@@ -2497,6 +2478,7 @@ async function runAnalysis(opts){
   };
 
   await showAnalysisStage(3,`Reading ${pageTotal} page${pageTotal===1?'':'s'}`);
+  const pageDiag=[];   // per-page stage counters for the health model + diagnostics export
   for (const id of f.fileIds){
     const fl=p.files.find(x=>x.id===id); if(!fl||fl.status!=='ready') continue;
     let prevBoard=null;
@@ -2507,7 +2489,16 @@ async function runAnalysis(opts){
       const pageBoards=[];
       lines.forEach(t=>detectBoards(t).forEach(b=>{ if(!pageBoards.some(x=>x.norm===b.norm)) pageBoards.push(b); }));
       pageBoards.forEach(b=>regBoard(b,id,pageNo));
-      const isSched=SCHEDULE_TYPES.has(pg.type) && pg.type!=='cable-schedule';
+      // Multi-signal schedule candidacy: a page qualifies by what is ON it,
+      // never by a single classifier label (SmartScreen addendum).
+      const schedCandidate=window.EstimationExtractorCore&&window.EstimationExtractorCore.scoreScheduleCandidate
+        ? window.EstimationExtractorCore.scoreScheduleCandidate(lines) : {score:0,signals:[]};
+      const isSched=pg.type!=='cable-schedule'
+        && (SCHEDULE_TYPES.has(pg.type) || (schedCandidate.score>=0.45&&schedCandidate.signals.length>=2));
+      pageDiag.push({fileId:id, page:pageNo, type:pg.type, textLines:lines.filter(t=>t.trim()).length,
+        needsOcr:Boolean(pg.needsOcr), source:pg.source||null,
+        textQualityUnreliable:Boolean(pg.textQuality&&pg.textQuality.reliable===false&&!pg.ocr),
+        scheduleScore:schedCandidate.score, scheduleSignals:schedCandidate.signals, rowsParsed:0});
       let ctxBoard=null;
       if (isSched){
         ctxBoard=scheduleBoardFromLines(lines);
@@ -2614,6 +2605,17 @@ async function runAnalysis(opts){
   // §5.3 — schematic ↔ DB-schedule cross-referencing (deterministic code, not the model).
   try{ A.discrepancies = buildCrossReference(A, p, prev&&prev.discrepancies); }
   catch(e){ console.warn('cross-reference skipped:', e.message); A.discrepancies=[]; }
+  // SmartScreen addendum — honest health state with stable reason codes.
+  const rowsByPage={};
+  A.rows.forEach(r=>{ if(r.kind==='manual')return; const k=r.fileId+'#'+r.page; rowsByPage[k]=(rowsByPage[k]||0)+1; });
+  pageDiag.forEach(d=>{ d.rowsParsed=rowsByPage[d.fileId+'#'+d.page]||0; });
+  if (window.EstimationExtractorCore&&window.EstimationExtractorCore.buildAnalysisHealth){
+    const scopeFiles=f.fileIds.map(fid=>p.files.find(x=>x.id===fid)).filter(Boolean)
+      .map(fl=>({id:fl.id,ext:fl.ext,status:fl.status,pages:fl.pages}));
+    A.health=window.EstimationExtractorCore.buildAnalysisHealth({
+      coverage:A.coverage||null, boards:A.boards, rows:A.rows, pages:pageDiag, files:scopeFiles});
+    A.pageDiagnostics=pageDiag;
+  }
   p.analysis=A;
   if(window.EstimationExtractorCore&&(p.assistedMarkups||[]).length){
     p.assistedMarkups.forEach(m=>{
@@ -2624,13 +2626,22 @@ async function runAnalysis(opts){
     });
   }
   const rev=A.rows.filter(r=>r.status==='pending'&&r.conf<0.8).length;
-  p.status = rev? 'Needs review':'Analysed';
+  const health=A.health||{state:'complete',reasons:[]};
+  // "Analysed" is EARNED: a run that misses evidence must say so (never a
+  // green badge over 7 boards / 0 devices again).
+  p.status = health.state==='failed' ? 'Analysis failed'
+    : health.state==='incomplete' ? 'Incomplete'
+    : rev? 'Needs review':'Analysed';
   const deviceCount=A.rows.filter(r=>r.status!=='rejected'&&!r.space&&r.device&&(r.kind!=='mention'||r.status==='confirmed')).reduce((sum,row)=>sum+(Number(row.qty)||1),0);
   const completeDetail=`${deviceCount} devices | ${Object.keys(A.boards).length} boards | ${rev} review items`;
   renderStages(7,true,completeDetail);
   renderTakeoff(); renderProjHeader(); renderAnalysisControls(); renderPgclass(); saveProject(p);
-  if (!auto) toast('Analysis complete — '+A.rows.length+' evidence rows extracted');
-  finishProcessing(completeDetail,'complete',1800);
+  if (!auto) toast(health.state==='complete'
+    ? 'Analysis complete — '+A.rows.length+' evidence rows extracted'
+    : 'Analysis finished with gaps — see the health panel in Boards & Devices');
+  if (health.state==='failed') finishProcessing('No usable take-off — '+health.reasons.length+' blocking issue'+(health.reasons.length===1?'':'s')+' (see Boards & Devices)','failed',5000);
+  else if (health.state==='incomplete') finishProcessing(completeDetail+' — INCOMPLETE, see health panel','complete',4000);
+  else finishProcessing(completeDetail,'complete',1800);
   return A;
   }catch(error){
     console.error('Analysis failed:',error);
@@ -2840,9 +2851,58 @@ function renderBoardDetail(){
   else detail.insertAdjacentHTML('beforeend','<div class="empty">No devices captured on this board yet.</div>');
 }
 function renderTakeoff(){
+  renderHealthBanner();
   renderBoards();
   renderResults();
   renderBoardDetail();
+}
+/* SmartScreen addendum — state-aware health panel. Silent when the analysis
+   is complete; loud (with reasons + recovery actions) when it is not. */
+function renderHealthBanner(){
+  const host=$('#anHealth'); if(!host) return;
+  const p=state.cur, A=p&&p.analysis, h=A&&A.health;
+  if (!h || h.state==='complete'){ host.innerHTML=''; return; }
+  const tone=h.state==='failed'?'red':'amber';
+  const title=h.state==='failed'
+    ? 'Analysis failed — this is not a usable take-off'
+    : 'Analysis incomplete — some evidence was not captured';
+  const items=(h.reasons||[]).map(r=>{
+    const where=(r.refs||[]).slice(0,4).map(ref=>{
+      if (ref&&ref.board) return esc(boardLabel(ref.board));
+      const fl=ref&&ref.fileId?p.files.find(x=>x.id===ref.fileId):null;
+      return fl?esc(fl.name)+(ref.page?' p'+ref.page:''):'';
+    }).filter(Boolean).join(', ');
+    const more=(r.refs||[]).length>4?' …':'';
+    return `<li><b>${esc(r.message)}</b> ×${r.count}${where?' — '+where+more:''}</li>`;
+  }).join('');
+  host.innerHTML=`<div class="panel" style="margin-bottom:14px;border-left:4px solid var(--${tone})">
+    <div class="p-body">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <span class="chip ${tone}">${h.state==='failed'?'Failed':'Incomplete'}</span>
+        <b>${title}</b>
+        <span class="sub">Exports stay disabled until this is resolved.</span>
+        <button class="btn sm" id="healthOcrBtn" style="margin-left:auto">Run OCR + re-analyse</button>
+        <button class="btn sm" id="healthDiagBtn" title="Counts and reason codes only — no document content">Export diagnostics</button>
+      </div>
+      <ul style="margin:9px 0 0 20px;font-size:12.5px;color:var(--txt2);line-height:1.7">${items}</ul>
+    </div></div>`;
+  const ocrBtn=$('#healthOcrBtn');
+  if(ocrBtn)ocrBtn.addEventListener('click', async()=>{
+    ocrBtn.disabled=true;
+    try{ await autoOcrScannedFiles(); await runAnalysis({auto:true}); }
+    finally{ ocrBtn.disabled=false; }
+  });
+  const diagBtn=$('#healthDiagBtn');
+  if(diagBtn)diagBtn.addEventListener('click', exportDiagnostics);
+}
+function exportDiagnostics(){
+  const p=state.cur, A=p&&p.analysis;
+  if (!A||!(window.EstimationExtractorCore&&window.EstimationExtractorCore.buildDiagnosticExport)){ toast('Run an analysis first'); return; }
+  const diag=window.EstimationExtractorCore.buildDiagnosticExport({
+    health:A.health||null, coverage:A.coverage||null, files:p.files,
+    pages:A.pageDiagnostics||[], appVersion:'analysis-v'+ANALYSIS_VERSION});
+  download('estimation-diagnostics.json','application/json',JSON.stringify(diag,null,2));
+  toast('Diagnostics exported — reason codes and counts only, no document content');
 }
 function evRowHtml(r){
   const p=state.cur;
@@ -3051,13 +3111,26 @@ function reportFileName(ext){
   return window.EstimationReport.safeFileName(state.cur?state.cur.name:'Electrical project')+' - DB Devices Take Off - '+stamp+'.'+ext;
 }
 $('#openReportBtn').addEventListener('click',()=>setTab('reports'));
+/* Exports are a claim of completeness — a take-off with known gaps must not
+   leave the app as a clean-looking spreadsheet (SmartScreen addendum). */
+function exportBlockedByHealth(){
+  const h=state.cur&&state.cur.analysis&&state.cur.analysis.health;
+  if (h && h.state!=='complete'){
+    toast('Export disabled — the analysis is '+(h.state==='failed'?'failed':'incomplete')+'. Resolve the gaps flagged in Boards & Devices first.');
+    setTab('analysis');
+    return true;
+  }
+  return false;
+}
 $('#reportCsvBtn').addEventListener('click',()=>{
+  if (exportBlockedByHealth()) return;
   const model=currentReportModel();
   if (!model || !model.groups.length){ toast('Nothing to export yet'); return; }
   try{download(reportFileName('csv'),'text/csv;charset=utf-8',window.EstimationReport.csv(model));toast('Take-off CSV exported');}
   catch(error){console.error(error);toast(error.message||'CSV export could not be created');}
 });
 $('#reportXlsxBtn').addEventListener('click',async()=>{
+  if (exportBlockedByHealth()) return;
   const model=currentReportModel();
   if (!model || !model.groups.length){ toast('Nothing to export yet'); return; }
   const button=$('#reportXlsxBtn'), label=button.textContent;
@@ -3306,7 +3379,7 @@ function renderReview(){
         <div style="flex:1"><h4>${r.qty>1?r.qty+' × ':''}${esc(r.device||'Unclassified row')}${r.boardNorm?' on '+esc(boardLabel(r.boardNorm)):''}
           ${confChip(r.conf)}</h4>
         <div class="rsrc">${esc(f?f.name:'?')} · page ${r.page} — ${esc(r.srcText)}</div>
-        <div class="hint">${r.xcheck?'⚠ '+esc(r.xcheck)+' — please check against the document.':r.kind==='mention'?'Found as a mention on a plan/text page (not a structured schedule row) — please confirm.':!r.boardNorm?'No board reference could be attached to this row.':'Low-confidence extraction — please check against the document.'}</div></div>
+        <div class="hint">${r.kind==='mention'?'Found as a mention on a plan/text page (not a structured schedule row) — please confirm.':!r.boardNorm?'No board reference could be attached to this row.':'Low-confidence extraction — please check against the document.'}</div></div>
         <div class="racts">
           <button class="btn sm" data-a="jump">View</button>
           <button class="btn sm" data-a="edit">Correct</button>

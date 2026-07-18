@@ -1,0 +1,18 @@
+# files.{ROOT_DOMAIN} download gateway.
+# Replace {ROOT_DOMAIN} with the real domain when deploying — the full
+# procedure lives in docs/CUSTOM_DOMAIN_RUNBOOK.md.
+#
+# Secrets (set with `wrangler secret put`, NEVER in this file):
+#   DOWNLOAD_TOKEN_SECRET   — must equal the Netlify value of the same name
+
+name = "estimation-tools-download-gateway"
+main = "worker.mjs"
+compatibility_date = "2026-06-01"
+
+routes = [
+  { pattern = "files.{ROOT_DOMAIN}/*", zone_name = "{ROOT_DOMAIN}" },
+]
+
+[[r2_buckets]]
+binding = "RELEASES"
+bucket_name = "estimation-tools-releases"
