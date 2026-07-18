@@ -673,6 +673,7 @@
         </div>
 
         <div>
+          <div id="anHealth"></div>
           <div class="panel" style="margin-bottom:14px">
             <div class="sumchips" id="anSummary"></div>
             <div style="display:flex;gap:8px;align-items:center;padding:11px 18px;flex-wrap:wrap">
@@ -1496,7 +1497,9 @@ function renderProjects(){
   const g=$('#projGrid'); g.innerHTML='';
   state.projects.forEach(p=>{
     const s=projStats(p);
-    const statusCl = p.status==='Analysed'?'green': p.status==='Needs review'?'amber':'grey';
+    const statusCl = p.status==='Analysed'?'green'
+      : p.status==='Needs review'||p.status==='Incomplete'?'amber'
+      : p.status==='Analysis failed'?'red':'grey';
     const card=document.createElement('div'); card.className='proj-card';
     card.innerHTML = `
       <div class="pc-menu">
@@ -2498,6 +2501,7 @@ async function runAnalysis(opts){
   };
 
   await showAnalysisStage(3,`Reading ${pageTotal} page${pageTotal===1?'':'s'}`);
+  const pageDiag=[];   // per-page stage counters for the health model + diagnostics export
   for (const id of f.fileIds){
     const fl=p.files.find(x=>x.id===id); if(!fl||fl.status!=='ready') continue;
     let prevBoard=null;
@@ -2508,7 +2512,16 @@ async function runAnalysis(opts){
       const pageBoards=[];
       lines.forEach(t=>detectBoards(t).forEach(b=>{ if(!pageBoards.some(x=>x.norm===b.norm)) pageBoards.push(b); }));
       pageBoards.forEach(b=>regBoard(b,id,pageNo));
-      const isSched=SCHEDULE_TYPES.has(pg.type) && pg.type!=='cable-schedule';
+      // Multi-signal schedule candidacy: a page qualifies by what is ON it,
+      // never by a single classifier label (SmartScreen addendum).
+      const schedCandidate=window.EstimationExtractorCore&&window.EstimationExtractorCore.scoreScheduleCandidate
+        ? window.EstimationExtractorCore.scoreScheduleCandidate(lines) : {score:0,signals:[]};
+      const isSched=pg.type!=='cable-schedule'
+        && (SCHEDULE_TYPES.has(pg.type) || (schedCandidate.score>=0.45&&schedCandidate.signals.length>=2));
+      pageDiag.push({fileId:id, page:pageNo, type:pg.type, textLines:lines.filter(t=>t.trim()).length,
+        needsOcr:Boolean(pg.needsOcr), source:pg.source||null,
+        textQualityUnreliable:Boolean(pg.textQuality&&pg.textQuality.reliable===false&&!pg.ocr),
+        scheduleScore:schedCandidate.score, scheduleSignals:schedCandidate.signals, rowsParsed:0});
       let ctxBoard=null;
       if (isSched){
         ctxBoard=scheduleBoardFromLines(lines);
@@ -2615,6 +2628,17 @@ async function runAnalysis(opts){
   // §5.3 — schematic ↔ DB-schedule cross-referencing (deterministic code, not the model).
   try{ A.discrepancies = buildCrossReference(A, p, prev&&prev.discrepancies); }
   catch(e){ console.warn('cross-reference skipped:', e.message); A.discrepancies=[]; }
+  // SmartScreen addendum — honest health state with stable reason codes.
+  const rowsByPage={};
+  A.rows.forEach(r=>{ if(r.kind==='manual')return; const k=r.fileId+'#'+r.page; rowsByPage[k]=(rowsByPage[k]||0)+1; });
+  pageDiag.forEach(d=>{ d.rowsParsed=rowsByPage[d.fileId+'#'+d.page]||0; });
+  if (window.EstimationExtractorCore&&window.EstimationExtractorCore.buildAnalysisHealth){
+    const scopeFiles=f.fileIds.map(fid=>p.files.find(x=>x.id===fid)).filter(Boolean)
+      .map(fl=>({id:fl.id,ext:fl.ext,status:fl.status,pages:fl.pages}));
+    A.health=window.EstimationExtractorCore.buildAnalysisHealth({
+      coverage:A.coverage||null, boards:A.boards, rows:A.rows, pages:pageDiag, files:scopeFiles});
+    A.pageDiagnostics=pageDiag;
+  }
   p.analysis=A;
   if(window.EstimationExtractorCore&&(p.assistedMarkups||[]).length){
     p.assistedMarkups.forEach(m=>{
@@ -2625,13 +2649,22 @@ async function runAnalysis(opts){
     });
   }
   const rev=A.rows.filter(r=>r.status==='pending'&&r.conf<0.8).length;
-  p.status = rev? 'Needs review':'Analysed';
+  const health=A.health||{state:'complete',reasons:[]};
+  // "Analysed" is EARNED: a run that misses evidence must say so (never a
+  // green badge over 7 boards / 0 devices again).
+  p.status = health.state==='failed' ? 'Analysis failed'
+    : health.state==='incomplete' ? 'Incomplete'
+    : rev? 'Needs review':'Analysed';
   const deviceCount=A.rows.filter(r=>r.status!=='rejected'&&!r.space&&r.device&&(r.kind!=='mention'||r.status==='confirmed')).reduce((sum,row)=>sum+(Number(row.qty)||1),0);
   const completeDetail=`${deviceCount} devices | ${Object.keys(A.boards).length} boards | ${rev} review items`;
   renderStages(7,true,completeDetail);
   renderTakeoff(); renderProjHeader(); renderAnalysisControls(); renderPgclass(); saveProject(p);
-  if (!auto) toast('Analysis complete — '+A.rows.length+' evidence rows extracted');
-  finishProcessing(completeDetail,'complete',1800);
+  if (!auto) toast(health.state==='complete'
+    ? 'Analysis complete — '+A.rows.length+' evidence rows extracted'
+    : 'Analysis finished with gaps — see the health panel in Boards & Devices');
+  if (health.state==='failed') finishProcessing('No usable take-off — '+health.reasons.length+' blocking issue'+(health.reasons.length===1?'':'s')+' (see Boards & Devices)','failed',5000);
+  else if (health.state==='incomplete') finishProcessing(completeDetail+' — INCOMPLETE, see health panel','complete',4000);
+  else finishProcessing(completeDetail,'complete',1800);
   return A;
   }catch(error){
     console.error('Analysis failed:',error);
@@ -2841,9 +2874,58 @@ function renderBoardDetail(){
   else detail.insertAdjacentHTML('beforeend','<div class="empty">No devices captured on this board yet.</div>');
 }
 function renderTakeoff(){
+  renderHealthBanner();
   renderBoards();
   renderResults();
   renderBoardDetail();
+}
+/* SmartScreen addendum — state-aware health panel. Silent when the analysis
+   is complete; loud (with reasons + recovery actions) when it is not. */
+function renderHealthBanner(){
+  const host=$('#anHealth'); if(!host) return;
+  const p=state.cur, A=p&&p.analysis, h=A&&A.health;
+  if (!h || h.state==='complete'){ host.innerHTML=''; return; }
+  const tone=h.state==='failed'?'red':'amber';
+  const title=h.state==='failed'
+    ? 'Analysis failed — this is not a usable take-off'
+    : 'Analysis incomplete — some evidence was not captured';
+  const items=(h.reasons||[]).map(r=>{
+    const where=(r.refs||[]).slice(0,4).map(ref=>{
+      if (ref&&ref.board) return esc(boardLabel(ref.board));
+      const fl=ref&&ref.fileId?p.files.find(x=>x.id===ref.fileId):null;
+      return fl?esc(fl.name)+(ref.page?' p'+ref.page:''):'';
+    }).filter(Boolean).join(', ');
+    const more=(r.refs||[]).length>4?' …':'';
+    return `<li><b>${esc(r.message)}</b> ×${r.count}${where?' — '+where+more:''}</li>`;
+  }).join('');
+  host.innerHTML=`<div class="panel" style="margin-bottom:14px;border-left:4px solid var(--${tone})">
+    <div class="p-body">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <span class="chip ${tone}">${h.state==='failed'?'Failed':'Incomplete'}</span>
+        <b>${title}</b>
+        <span class="sub">Exports stay disabled until this is resolved.</span>
+        <button class="btn sm" id="healthOcrBtn" style="margin-left:auto">Run OCR + re-analyse</button>
+        <button class="btn sm" id="healthDiagBtn" title="Counts and reason codes only — no document content">Export diagnostics</button>
+      </div>
+      <ul style="margin:9px 0 0 20px;font-size:12.5px;color:var(--txt2);line-height:1.7">${items}</ul>
+    </div></div>`;
+  const ocrBtn=$('#healthOcrBtn');
+  if(ocrBtn)ocrBtn.addEventListener('click', async()=>{
+    ocrBtn.disabled=true;
+    try{ await autoOcrScannedFiles(); await runAnalysis({auto:true}); }
+    finally{ ocrBtn.disabled=false; }
+  });
+  const diagBtn=$('#healthDiagBtn');
+  if(diagBtn)diagBtn.addEventListener('click', exportDiagnostics);
+}
+function exportDiagnostics(){
+  const p=state.cur, A=p&&p.analysis;
+  if (!A||!(window.EstimationExtractorCore&&window.EstimationExtractorCore.buildDiagnosticExport)){ toast('Run an analysis first'); return; }
+  const diag=window.EstimationExtractorCore.buildDiagnosticExport({
+    health:A.health||null, coverage:A.coverage||null, files:p.files,
+    pages:A.pageDiagnostics||[], appVersion:'analysis-v'+ANALYSIS_VERSION});
+  download('estimation-diagnostics.json','application/json',JSON.stringify(diag,null,2));
+  toast('Diagnostics exported — reason codes and counts only, no document content');
 }
 function evRowHtml(r){
   const p=state.cur;
@@ -3052,13 +3134,26 @@ function reportFileName(ext){
   return window.EstimationReport.safeFileName(state.cur?state.cur.name:'Electrical project')+' - DB Devices Take Off - '+stamp+'.'+ext;
 }
 $('#openReportBtn').addEventListener('click',()=>setTab('reports'));
+/* Exports are a claim of completeness — a take-off with known gaps must not
+   leave the app as a clean-looking spreadsheet (SmartScreen addendum). */
+function exportBlockedByHealth(){
+  const h=state.cur&&state.cur.analysis&&state.cur.analysis.health;
+  if (h && h.state!=='complete'){
+    toast('Export disabled — the analysis is '+(h.state==='failed'?'failed':'incomplete')+'. Resolve the gaps flagged in Boards & Devices first.');
+    setTab('analysis');
+    return true;
+  }
+  return false;
+}
 $('#reportCsvBtn').addEventListener('click',()=>{
+  if (exportBlockedByHealth()) return;
   const model=currentReportModel();
   if (!model || !model.groups.length){ toast('Nothing to export yet'); return; }
   try{download(reportFileName('csv'),'text/csv;charset=utf-8',window.EstimationReport.csv(model));toast('Take-off CSV exported');}
   catch(error){console.error(error);toast(error.message||'CSV export could not be created');}
 });
 $('#reportXlsxBtn').addEventListener('click',async()=>{
+  if (exportBlockedByHealth()) return;
   const model=currentReportModel();
   if (!model || !model.groups.length){ toast('Nothing to export yet'); return; }
   const button=$('#reportXlsxBtn'), label=button.textContent;

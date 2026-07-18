@@ -1217,10 +1217,180 @@
     return LEGACY_TO_THREE[key] || 'other';
   }
 
+  /* ===== Analysis health — honest completeness states =====
+   * An analysis may only present itself as "Analysed" when these invariants
+   * hold. Anything else is 'incomplete' (some evidence was not captured) or
+   * 'failed' (the result is unusable), each with STABLE reason codes the UI,
+   * diagnostics export, and tests all share. This exists because a real
+   * project once showed "7 boards / 0 devices" as a successful analysis. */
+  const HEALTH_REASONS = {
+    ZERO_DEVICES_WITH_BOARDS: 'Boards were identified but no device rows were captured anywhere',
+    BOARD_ROWS_MISSING: 'Board has schedule evidence but zero captured device rows',
+    WAYS_UNACCOUNTED: 'Board header promises more ways than were captured',
+    SCHEDULE_PAGE_UNPARSED: 'Page looks like a schedule but produced no rows',
+    SCHEDULE_DOC_NO_BOARDS: 'Schedule-type pages exist but no board reference was identified',
+    PAGE_TEXT_UNRELIABLE: 'Page text is unreliable and OCR has not replaced it',
+    OCR_PENDING: 'Page is still waiting for OCR',
+    DOCUMENT_UNREADABLE: 'Document could not be read',
+    NO_CONTENT: 'No readable pages were available to analyse',
+  };
+
+  /* Multi-signal schedule-candidate score. A page is a candidate because of
+   * what is ON it, never because a single classifier label said so. Returns
+   * {score 0..1, signals[]} — callers treat score ≥ 0.45 with ≥ 2 signal
+   * families as a candidate. */
+  function scoreScheduleCandidate(lines) {
+    const texts = (lines || []).map((l) => (typeof l === 'string' ? l : (l && l.text) || ''));
+    const all = texts.join('\n');
+    const signals = [];
+    let wayLines = 0;
+    for (const t of texts) {
+      if (/^\s*\d{1,3}\s*[\/ ]\s*L[123]\b/i.test(t) || /^\s*(?:way|cct|ckt|circuit)\s*\d{1,3}\b/i.test(t)
+        || /^\s*\d{1,3}\s{2,}\S/.test(t)) wayLines += 1;
+    }
+    if (wayLines >= 4) signals.push('way-sequence');
+    const deviceHits = (all.match(/\b(?:MCB|MCCB|RCBO|RCC?B|ACB|SPD|AFDD|RCD|isolator|contactor|switch\s*fuse|fuse\s*switch|time\s*clock|photocell|relay|meter)\b/gi) || []).length;
+    if (deviceHits >= 3) signals.push('device-tokens');
+    const ratingHits = (all.match(/\b\d{1,4}\s*A(?:mps?)?\b/gi) || []).length;
+    if (ratingHits >= 4) signals.push('rating-tokens');
+    if (/\b(?:type\s*[BCD]\b|[BCD]\d{2,3}\b)/i.test(all) && /\bL[123]\b|\bTP&?N\b|\bSP&?N\b|\b[13]PH?\b/i.test(all)) signals.push('curve-phase');
+    if (texts.some((t) => (t.match(/\b(?:way|cct|circuit|description|device|rating|poles?|curve|phase|protective|breaking)\b/gi) || []).length >= 3)) {
+      signals.push('column-header');
+    }
+    if (/\bDB\s*REFERENCE\b|\b(?:DISTRIBUTION\s+)?BOARD\s*(?:REFERENCE|REF|IDENTITY)\b/i.test(all)) signals.push('board-header');
+    if (expectedWaysFromText(all)) signals.push('way-count-header');
+    const score = Math.min(1, signals.length * 0.2 + (wayLines >= 8 ? 0.15 : 0) + (deviceHits >= 8 ? 0.1 : 0));
+    return { score: Number(score.toFixed(2)), signals };
+  }
+
+  /**
+   * Compute the honest health of one analysis run.
+   * @param coverage output of buildCoverage (may be null)
+   * @param boards   analysis boards map
+   * @param rows     analysis rows
+   * @param pages    [{fileId, page, type, textLines, needsOcr, source, scheduleScore, rowsParsed}]
+   * @param files    [{id, name, status}] all files that were in scope
+   * @returns {state:'complete'|'incomplete'|'failed', reasons:[{code,message,count,refs}], counters}
+   */
+  function buildAnalysisHealth({ coverage, boards, rows, pages, files }) {
+    const reasons = new Map();
+    const addReason = (code, ref) => {
+      if (!reasons.has(code)) reasons.set(code, { code, message: HEALTH_REASONS[code] || code, count: 0, refs: [] });
+      const entry = reasons.get(code);
+      entry.count += 1;
+      if (ref && entry.refs.length < 25) entry.refs.push(ref);
+    };
+
+    const allRows = (rows || []).filter((r) => r && r.status !== 'rejected');
+    const deviceRows = allRows.filter((r) => r.device && !r.space);
+    const deviceCount = deviceRows.reduce((sum, r) => sum + (Number(r.qty) || 1), 0);
+    const boardCount = Object.keys(boards || {}).length;
+    const pageList = pages || [];
+    const schedulePages = pageList.filter((pg) => (pg.scheduleScore || 0) >= 0.45 || COVERAGE_SCHEDULE_TYPES.has(pg.type));
+
+    for (const file of files || []) {
+      if (file.status === 'error') addReason('DOCUMENT_UNREADABLE', { fileId: file.id });
+    }
+    for (const pg of pageList) {
+      if (pg.source === 'ocr_pending' || (pg.needsOcr && pg.source !== 'ocr')) {
+        addReason('OCR_PENDING', { fileId: pg.fileId, page: pg.page });
+      } else if (pg.textQualityUnreliable) {
+        addReason('PAGE_TEXT_UNRELIABLE', { fileId: pg.fileId, page: pg.page });
+      }
+    }
+    for (const pg of schedulePages) {
+      if ((pg.rowsParsed || 0) === 0 && (pg.textLines || 0) > 0) {
+        addReason('SCHEDULE_PAGE_UNPARSED', { fileId: pg.fileId, page: pg.page, score: pg.scheduleScore || null });
+      }
+    }
+    if (coverage) {
+      for (const board of coverage.perBoard || []) {
+        if (!board.inScope) continue;
+        if (board.rowsCaptured === 0) addReason('BOARD_ROWS_MISSING', { board: board.norm });
+        else if ((board.unaccountedWays || 0) > 0) {
+          addReason('WAYS_UNACCOUNTED', { board: board.norm, expected: board.expectedWays, captured: board.capturedWays });
+        }
+      }
+    }
+    if (boardCount === 0 && schedulePages.length > 0) addReason('SCHEDULE_DOC_NO_BOARDS', null);
+    if (pageList.length === 0) addReason('NO_CONTENT', null);
+    if (boardCount > 0 && deviceCount === 0) addReason('ZERO_DEVICES_WITH_BOARDS', null);
+
+    let state = 'complete';
+    if (reasons.size > 0) state = 'incomplete';
+    if (reasons.has('ZERO_DEVICES_WITH_BOARDS') || reasons.has('NO_CONTENT')
+      || (deviceCount === 0 && schedulePages.length > 0)) state = 'failed';
+
+    return {
+      state,
+      reasons: Array.from(reasons.values()),
+      counters: {
+        pagesAnalysed: pageList.length,
+        schedulePages: schedulePages.length,
+        schedulePagesParsed: schedulePages.filter((pg) => (pg.rowsParsed || 0) > 0).length,
+        boards: boardCount,
+        boardsWithRows: coverage ? (coverage.perBoard || []).filter((b) => b.rowsCaptured > 0).length : null,
+        deviceCount,
+        expectedWays: coverage ? coverage.summary.expectedWays : null,
+        capturedWays: coverage ? coverage.summary.capturedWays : null,
+      },
+    };
+  }
+
+  /* Private-safe diagnostic export: counters, reason codes and page shapes
+   * only — NEVER document text, board names, file names, or any customer
+   * content. Safe to email to support. */
+  function buildDiagnosticExport({ health, coverage, files, pages, appVersion }) {
+    const anon = new Map();
+    const fileTag = (id) => {
+      if (!anon.has(id)) anon.set(id, `doc-${anon.size + 1}`);
+      return anon.get(id);
+    };
+    return {
+      diagnosticVersion: 1,
+      appVersion: appVersion || null,
+      generatedAt: new Date().toISOString(),
+      health: health ? {
+        state: health.state,
+        counters: health.counters,
+        reasons: (health.reasons || []).map((r) => ({
+          code: r.code,
+          count: r.count,
+          refs: (r.refs || []).map((ref) => ({
+            ...(ref && ref.fileId ? { file: fileTag(ref.fileId) } : {}),
+            ...(ref && ref.page ? { page: ref.page } : {}),
+            ...(ref && ref.expected != null ? { expected: ref.expected, captured: ref.captured } : {}),
+          })),
+        })),
+      } : null,
+      coverageSummary: coverage ? coverage.summary : null,
+      files: (files || []).map((f) => ({
+        file: fileTag(f.id),
+        ext: f.ext || null,
+        status: f.status || null,
+        pages: (f.pages || []).length,
+      })),
+      pages: (pages || []).map((pg) => ({
+        file: fileTag(pg.fileId),
+        page: pg.page,
+        type: pg.type || null,
+        textLines: pg.textLines || 0,
+        source: pg.source || null,
+        scheduleScore: pg.scheduleScore ?? null,
+        scheduleSignals: pg.scheduleSignals || [],
+        rowsParsed: pg.rowsParsed || 0,
+      })),
+    };
+  }
+
   global.EstimationExtractorCore = {
     expectedWaysFromText,
     pageLooksTabular,
     buildCoverage,
+    HEALTH_REASONS,
+    scoreScheduleCandidate,
+    buildAnalysisHealth,
+    buildDiagnosticExport,
     THREE_TYPES,
     toThreeType,
     DEFAULT_PROTECTION_LEGEND,

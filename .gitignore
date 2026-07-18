@@ -13,6 +13,9 @@ tools/coverage/*.log
 tools/coverage/test_*.png
 tools/coverage/*.traineddata
 
+# Private customer documents used to reproduce extraction bugs — NEVER commit
+.private-fixtures/
+
 # OS noise
 .DS_Store
 Thumbs.db
