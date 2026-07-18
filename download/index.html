@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Estimation Tools — Desktop app for electrical take-off</title>
+<meta name="description" content="Read LV schematics and distribution-board schedules, produce a verifiable device take-off per board, and price the job — all on your own computer.">
+<link rel="stylesheet" href="./store.css">
+</head>
+<body data-page="store">
+
+<div class="topbar">
+  <div class="in">
+    <a class="brand" href="./">Estimation Tools</a>
+    <nav>
+      <a href="#features">Features</a>
+      <a href="#downloads">Downloads</a>
+      <a href="./restore/">Restore purchase</a>
+      <a href="./legal/">Legal</a>
+      <a href="../">Open web app</a>
+    </nav>
+  </div>
+</div>
+
+<div class="wrap">
+  <div id="cancelledNote" class="note amber hidden">Checkout was cancelled — nothing was charged. You can buy whenever you're ready.</div>
+
+  <section class="hero">
+    <div>
+      <h1>Electrical document take-off, on your desktop</h1>
+      <p class="sub">Read LV schematics, distribution-board schedules and specifications; get a
+        verifiable device take-off per board with provenance for every row — stored entirely on
+        your own computer.</p>
+      <div class="pricebox">
+        <span class="price"><span data-price>…</span><small>one-off, incl. updates for v1.x</small></span>
+        <button class="btn" data-buy disabled>Buy now</button>
+      </div>
+      <p class="trust">Secure payment by Stripe · Signed installers · Documents never leave your machine</p>
+      <p id="storeState" class="trust"></p>
+    </div>
+    <div class="shot"><img src="../assets/marketing/app-boards.png" alt="Estimation Tools showing a distribution board's device table with supply hierarchy" width="1280" height="800"></div>
+  </section>
+
+  <section id="features" class="section">
+    <h2>Built for estimators, not for the cloud</h2>
+    <div class="grid3">
+      <div class="feature"><h3>Everything stays local</h3>
+        <p>Projects, drawings and take-offs are stored in your device profile. No accounts, no
+        uploads of your work — the desktop app runs fully offline.</p></div>
+      <div class="feature"><h3>Take-off you can defend</h3>
+        <p>Every extracted device carries its source document, page and confidence. Boards keep
+        their supplied-from hierarchy: which board feeds which, via which device and cable.</p></div>
+      <div class="feature"><h3>Honest about gaps</h3>
+        <p>If a schedule can't be fully read, the analysis says so — with per-page reasons — instead
+        of quietly showing a shorter list. Exports are blocked until the take-off is complete.</p></div>
+      <div class="feature"><h3>Schematic ↔ schedule cross-check</h3>
+        <p>Schematics and board schedules are compared automatically; disagreements are flagged for
+        you to resolve — never silently merged.</p></div>
+      <div class="feature"><h3>Deterministic pricing</h3>
+        <p>Counting, aggregation and pricing are plain auditable code. AI only reads documents — it
+        never invents quantities.</p></div>
+      <div class="feature"><h3>Signed &amp; verifiable</h3>
+        <p>Installers are code-signed and every download page shows the file's SHA-256 so you can
+        verify what you run.</p></div>
+    </div>
+  </section>
+
+  <section id="downloads" class="section">
+    <h2>Available for Windows and macOS</h2>
+    <div class="dl-grid">
+      <div class="dl-card" data-platform="windows" data-arch="x64">
+        <h3>Windows</h3><div class="os">Windows 10/11, 64-bit (x64)</div>
+        <button class="btn ghost" data-buy disabled>Buy to download</button>
+      </div>
+      <div class="dl-card" data-platform="windows" data-arch="arm64">
+        <h3>Windows on ARM</h3><div class="os">Windows 11 ARM64</div>
+        <button class="btn ghost" data-buy disabled>Buy to download</button>
+      </div>
+      <div class="dl-card" data-platform="macos" data-arch="arm64">
+        <h3>macOS</h3><div class="os">Apple Silicon (M-series), macOS 11+</div>
+        <button class="btn ghost" data-buy disabled>Buy to download</button>
+      </div>
+      <div class="dl-card" data-platform="macos" data-arch="x64">
+        <h3>macOS (Intel)</h3><div class="os">Intel Macs, macOS 11+</div>
+        <button class="btn ghost" data-buy disabled>Buy to download</button>
+      </div>
+    </div>
+    <p class="trust" style="margin-top:14px">Already bought it? <a href="./restore/">Restore your purchase</a> to get fresh download links.</p>
+  </section>
+
+  <section class="section faq">
+    <h2>Questions</h2>
+    <dl>
+      <dt>Is this a subscription?</dt>
+      <dd>No — one payment, yours to keep, with updates for all 1.x releases.</dd>
+      <dt>Do my drawings get uploaded anywhere?</dt>
+      <dd>No. Analysis and storage happen on your computer. If you choose to enable the optional
+        AI assist, only the pages you approve are sent for reading — and you're asked first.</dd>
+      <dt>Can I use it on more than one machine?</dt>
+      <dd>Yes — restore your purchase by email on the new machine and download again.</dd>
+      <dt>What if it doesn't work for me?</dt>
+      <dd>Email <a data-support href="#">support</a> within 14 days for a full refund.</dd>
+    </dl>
+  </section>
+</div>
+
+<footer>
+  <div class="in">
+    <span>© <span data-seller>the seller</span></span>
+    <a href="./legal/">Terms, refunds &amp; privacy</a>
+    <a data-support href="#">Support</a>
+  </div>
+</footer>
+
+<script src="./store.js"></script>
+</body>
+</html>
