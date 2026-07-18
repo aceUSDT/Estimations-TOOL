@@ -1,6 +1,8 @@
 # Secrets — never commit keys (CLAUDE.md non-negotiable)
 .env
 .env.*
+# …but the variable-NAMES-only template is documentation, not a secret
+!.env.example
 
 # Dependencies
 node_modules/
