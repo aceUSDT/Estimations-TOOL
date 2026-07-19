@@ -63,3 +63,89 @@ branches only; merge accepted work into `main` and remove stale integration bran
 - macOS package: `cd desktop && npm run dist:mac`
 
 The full original requirements and domain model remain in `docs/BUILD_BRIEF.md`.
+
+---
+
+# Obsidian Project Knowledge System
+
+The connected Obsidian project folder is the persistent knowledge system for this project.
+On this cloud container it is the in-repo stand-in vault at
+`obsidian/Projects/Estimation Tools/`; on a local machine point
+`.claude/settings.local.json` → `permissions.additionalDirectories` at the same project
+folder inside your real Obsidian vault (`<VAULT>/Projects/Estimation Tools`). The detailed
+operating procedure lives in the `obsidian-project-manager` skill
+(`.claude/skills/obsidian-project-manager/SKILL.md`); note-writing conventions live in
+`.claude/rules/obsidian-markdown.md`. This section is the always-loaded contract.
+
+Use the project folder to preserve durable project knowledge across Claude Code sessions:
+requirements, architectural understanding, important implementation decisions, unresolved
+questions, research findings, bugs and root causes, tasks and progress, testing discoveries,
+deployment information, meaningful user corrections, and concise session summaries. Record
+useful project knowledge — **not** complete conversations or command-by-command transcripts.
+
+## Source-of-truth hierarchy
+
+When information conflicts, apply this priority (highest first):
+
+1. The user's current explicit instruction.
+2. The current project source code, tests and configuration.
+3. Accepted decisions in `03 - Decisions.md`.
+4. Current requirements in `01 - Requirements.md`.
+5. Current architecture documentation (`02 - Architecture.md`).
+6. Other Obsidian project notes.
+7. Historical session logs (`07 - Session Log.md`).
+
+An old session log must never override current code, requirements or an accepted decision.
+When code and documentation conflict, investigate which represents intended current
+behaviour; do not silently assume either is correct when evidence is insufficient.
+
+## Behaviour before substantial work
+
+Before starting substantial planning, implementation, debugging, refactoring, research or
+architectural work:
+
+1. Read `00 - Project Hub.md`.
+2. Search the Obsidian project folder for task-relevant concepts.
+3. Read the relevant requirements, architecture, decisions, tasks, bugs and research notes.
+4. Inspect the relevant current source code, tests and configuration.
+5. Compare stored knowledge with the codebase.
+6. Identify stale, missing or contradictory information.
+7. Build the work plan from validated information across both sources.
+
+Retrieve by task relevance — do not read the entire vault indiscriminately.
+
+## Behaviour during work
+
+- Record only durable, useful knowledge; do not document every command or trivial edit.
+- Update existing canonical notes rather than creating duplicates.
+- Preserve user-authored content unless a change is necessary.
+- Clearly distinguish facts, assumptions, proposals and accepted decisions.
+- Link related notes; include source-file paths when documenting implementation.
+- Keep requirements, architecture and decisions aligned with implementation.
+- Never claim a test passed unless it was actually executed successfully.
+- Record unresolved limitations honestly; do not convert speculation into project fact.
+
+## Behaviour after substantial work
+
+1. Update completed and outstanding tasks (`04 - Tasks.md`).
+2. Record accepted architectural or product decisions (`03 - Decisions.md`).
+3. Document newly discovered bugs, risks or technical debt (`05 - Bugs.md`).
+4. Update affected requirements or architecture notes.
+5. Add a concise entry to `07 - Session Log.md`.
+6. Update `00 - Project Hub.md` when the current status materially changed.
+7. Confirm the notes agree with the resulting codebase.
+8. State which notes were changed.
+
+## Obsidian safety rules
+
+- Do not modify anything inside `.obsidian/` unless the task specifically concerns Obsidian
+  configuration, plugins, themes or workspaces.
+- Do not rename or move existing notes without considering inbound links and conventions.
+- Do not delete a note simply because it appears outdated; mark superseded information
+  explicitly or move it to `Archive/` when appropriate.
+- Do not store passwords, API keys, access tokens, credentials or other secrets in the vault.
+- Do not copy large source files into notes; summarise responsibilities and reference
+  source-file paths instead.
+- Do not create duplicate notes for concepts that already have a canonical note, and do not
+  rewrite an entire note when a focused edit is sufficient.
+- Preserve valuable historical rationale while making current truth clear.
