@@ -5,6 +5,7 @@
   "type": "module",
   "dependencies": {
     "@netlify/blobs": "^8.1.0",
+    "@supabase/supabase-js": "^2.110.7",
     "exceljs": "4.4.0"
   },
   "overrides": {
