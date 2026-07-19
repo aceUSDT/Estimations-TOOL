@@ -1854,7 +1854,7 @@ async function autoOcrScannedFiles(){
   return total;
 }
 /* ==================== AI EXTRACTION (serverless — key stays server-side) ==================== */
-/* The front-end NEVER holds the Anthropic key: it posts one page at a time to
+/* The front-end NEVER holds the Gemini key: it posts one page at a time to
    a Netlify function (netlify/functions/extract.mjs) and merges the returned
    structured rows as review-pending evidence. If the function is absent or
    unconfigured, the app silently falls back to regex-only extraction. */
