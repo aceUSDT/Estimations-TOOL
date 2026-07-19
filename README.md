@@ -68,18 +68,17 @@ The supplied 62-page `26CC07` distribution-board schedule is the primary end-to-
 regression: 40 boards and 632 countable devices, with source, board, group, and report
 totals reconciled.
 
-## AI extraction keys (server-side only)
+## AI extraction key (server-side only)
 
-Extraction quality comes from a vision model reading each page. Keys are set as **Netlify environment variables** (Site configuration → Environment variables) — never in the repo or the browser:
+Extraction quality comes from a vision model reading each page. **Google Gemini is the only hosted AI provider.** Keys are set as server-side environment variables — never in the repo or the browser:
 
 | Variable | Purpose |
 |---|---|
-| `ANTHROPIC_API_KEY` | Claude — primary extractor (best recall on dense schedules). |
-| `GEMINI_API_KEY` | **Free**: Google Gemini free tier — get a key at [aistudio.google.com/apikey](https://aistudio.google.com/apikey) (no card required). Acts as a second opinion when both keys are set, or as the primary extractor when the Anthropic key is absent. |
-| `EXTRACTION_MODEL` | Optional Claude model override (default `claude-sonnet-5`). |
-| `GEMINI_MODEL` | Optional Gemini model override (default `gemini-2.5-flash`). |
+| `GEMINI_API_KEY` | Google Gemini — get a key at [aistudio.google.com/apikey](https://aistudio.google.com/apikey). |
+| `GEMINI_MODEL` | Optional exact-model override (pinned default; models are never changed silently). |
+| `GEMINI_VERIFY_MODEL` | Optional second Gemini model for verification. |
 
-With **both** keys set, every page is read twice and the two extractions are compared by deterministic code: devices only the second model saw enter the take-off as pending Review rows (over-capture beats omission), and rating/class disagreements lower the row's confidence so the Review queue surfaces them. Nothing is auto-resolved — the estimator always decides. The Boards & Devices header shows a `Cross-check` chip with the per-analysis disagreement count.
+With `GEMINI_VERIFY_MODEL` set, every page is read twice and the two extractions are compared by deterministic code: devices only the second run saw enter the take-off as pending Review rows (over-capture beats omission), and rating/class disagreements lower the row's confidence so the Review queue surfaces them. Nothing is auto-resolved — the estimator always decides. The Boards & Devices header shows a `Cross-check` chip with the per-analysis disagreement count.
 
 Architecture details are in [`docs/OCR_AND_REPORTING.md`](docs/OCR_AND_REPORTING.md).
 Optional hosted extraction is documented in [`docs/AI_EXTRACTION.md`](docs/AI_EXTRACTION.md).

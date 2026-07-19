@@ -6,10 +6,8 @@
  * continues, and the result is written to a Netlify Blobs store keyed by
  * job_id. The client then polls `extract-status?id=<job_id>`.
  *
- * Providers: Claude primary (ANTHROPIC_API_KEY), Gemini free tier as second
- * opinion or primary fallback (GEMINI_API_KEY). Disagreements between the two
- * are computed by deterministic code and routed to the human Review queue.
- * Keys stay server-side only.
+ * Provider: Google Gemini only (GEMINI_API_KEY; optional GEMINI_VERIFY_MODEL
+ * for a deterministic second-opinion cross-check). Keys stay server-side only.
  */
 import { getStore } from '@netlify/blobs';
 import { buildInstruction, extractWithVerification } from './lib/providers.mjs';

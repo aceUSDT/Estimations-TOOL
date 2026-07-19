@@ -1869,8 +1869,8 @@ function aiExtractReady(){
     aiProbePromise=fetch(AI_EXTRACT_ENDPOINT,{method:'GET'}).then(async r=>{
       if(!r.ok){ window.__aiStatus='off — extraction endpoint not reachable'; return false; }
       const j=await r.json();
-      if(!j.configured){ window.__aiStatus='not configured — set ANTHROPIC_API_KEY (or free GEMINI_API_KEY) in Netlify'; return false; }
-      window.__aiStatus='active'+(j.verify?' + cross-check':j.primary==='gemini'?' (Gemini free tier)':'');
+      if(!j.configured){ window.__aiStatus='not configured — set GEMINI_API_KEY on the server'; return false; }
+      window.__aiStatus='active ('+(j.model||'Gemini')+')'+(j.verify?' + cross-check':'');
       return true;
     }).catch(()=>{ window.__aiStatus='off — extraction endpoint not reachable'; return false; });
   }
