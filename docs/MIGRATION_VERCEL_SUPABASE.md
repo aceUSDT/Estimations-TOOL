@@ -228,8 +228,9 @@ refactor + R2 gateway** (`ffacb5f`), docs (`8130ec1`).
 - **Phase 7 — auth + RLS + authorization tests:** Supabase Auth in the browser
   (publishable key), JWT verification in routes, ownership checks, negative tests.
 - **Phase 8 — regression + deploy readiness:** full suite; quality-gate checklist
-  walked item-by-item with evidence; Vercel preview deploy **only with owner
-  approval**; 26CC07 owner-run recorded.
+  walked item-by-item with evidence (**see `docs/MIGRATION_QUALITY_GATES.md`** — 10/13
+  ✅, gate 8 live-proof + gate 2 + gate 13 production owner-gated); Vercel preview deploy
+  **only with owner approval**; 26CC07 owner-run recorded.
 
 Each phase ends with: changed files, decisions, test results (honest), remaining risks.
 
