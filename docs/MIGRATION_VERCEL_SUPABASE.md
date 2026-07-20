@@ -136,10 +136,13 @@ Evidence: a dense page extraction runs ~30–45 s (documented in
 **Chosen: Vercel Node function with configured `maxDuration`, backed by a durable
 Supabase job row.** `POST /api/extractions/start` inserts the job (`queued`) and
 returns the id immediately, then processes within the same invocation
-(`running` + heartbeats → terminal state). Per Vercel's function-duration docs, Node
-functions support `maxDuration` well above the 30–45 s per-page workload on all current
-plans — verify the account's exact ceiling before first deploy and set `maxDuration`
-explicitly in the route config. Status/result routes read only Supabase, so they keep
+(`running` + heartbeats → terminal state). **Verified against Vercel's function-duration
+docs (2026-07-01):** with fluid compute (default on), Node `maxDuration` ceilings are
+**Hobby 300 s; Pro/Enterprise 800 s GA, up to 1800 s (beta)** — so the ~30–45 s per-page
+workload fits comfortably even on Hobby. The start route sets `maxDuration: 60` (headroom
+over 45 s) via `export const config` in the route file. Whole-document server-side batch
+extraction would exceed this and is the documented trigger to move to Supabase Queues (or
+Pro's extended duration). Status/result routes read only Supabase, so they keep
 working if the worker crashes: a watchdog rule (`running` + stale `heartbeat_at`) is
 reported as `failed:worker_lost`, and a retried start with the same idempotency key
 resumes cleanly instead of duplicating.
@@ -157,13 +160,13 @@ Inspected (6 commits): signed 4-target installer workflow + release manifest
 refactor + R2 gateway** (`ffacb5f`), docs (`8130ec1`).
 
 **Decision recorded:**
-- **Commerce/installer work is NOT cherry-picked now.** Paid desktop downloads are not
-  a confirmed launch-scope item for this migration; that is an owner decision. PR #10
-  stays open and independent; nothing here forecloses it. If paid downloads are
-  confirmed in scope, the release-manifest + installer commits are cleanly portable
-  (they touch `desktop/`, `.github/workflows/`, `tools/release/` — disjoint from this
-  branch's server work). R2/Stripe endpoints would need re-hosting on Vercel routes at
-  that point.
+- **Commerce/installer work: IN LAUNCH SCOPE (owner-confirmed 2026-07-19).** Paid desktop
+  downloads are part of launch. The release-manifest + installer commits from PR #10
+  (`16aa107`) are cleanly portable (they touch `desktop/`, `.github/workflows/`,
+  `tools/release/` — disjoint from this branch's server work) and will be ported after the
+  platform migration lands; the R2/Stripe endpoints will be re-hosted as Vercel routes at
+  that point (a follow-on phase, tracked here). They are **not** cherry-picked mid-migration
+  to avoid destabilising the platform change.
 - **Two pieces are selectively re-implemented here because they directly serve the
   quality gates:** the Gemini-only provider cleanup (gates 5–6, Phase 2) and the
   analysis-health/export-gating model (gates 3–4, Phase 6). They are ported as focused

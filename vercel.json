@@ -1,0 +1,9 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "functions": {
+    "api/extractions/start.mjs": { "maxDuration": 60 },
+    "api/extractions/status.mjs": { "maxDuration": 15 },
+    "api/extractions/result.mjs": { "maxDuration": 15 },
+    "api/extract/health.mjs": { "maxDuration": 10 }
+  }
+}
