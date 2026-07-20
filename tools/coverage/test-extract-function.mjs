@@ -1,20 +1,19 @@
-/* Regression test: WS0.4 serverless extraction function (no network, no key).
- * Exercises the handler's request validation and health probe, and sanity-
- * checks the structured-output schema. The live Gemini call needs
- * GEMINI_API_KEY in the server environment and is not tested here.
+/* Regression test: the extraction request contract + structured-output schema.
+ * No network, no key. Exercises the stateless inline-extract handler's
+ * validation and the health probe (pure handlers, Vercel-agnostic), plus the
+ * schema invariants and coerceResult. The live Gemini call needs GEMINI_API_KEY
+ * in the server environment and is not tested here.
  */
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
-import { fileURLToPath } from 'node:url';
+import { pathToFileURL, fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const FN = path.resolve(HERE, '../../netlify/functions/extract.mjs');
-const PACK = path.resolve(HERE, '../../netlify/functions/lib/domain-pack.mjs');
+const ROOT = path.resolve(HERE, '../..');
+const PACK = path.resolve(ROOT, 'api/_lib/extraction/domain-pack.mjs');
 
-delete process.env.ANTHROPIC_API_KEY;
-delete process.env.ANTHROPIC_AUTH_TOKEN;
 delete process.env.GEMINI_API_KEY;
-const { default: handler } = await import(pathToFileURL(FN));
+const { handleHealth, handleInlineExtract } = await import(pathToFileURL(path.resolve(ROOT, 'api/_lib/handlers.mjs')));
+const { providerStatus, buildInstruction, GEMINI_MODEL, GEMINI_VERIFY_MODEL } = await import(pathToFileURL(path.resolve(ROOT, 'api/_lib/extraction/providers.mjs')));
 const { EXTRACTION_SCHEMA, EXTRACTION_SYSTEM_PROMPT, coerceResult } = await import(pathToFileURL(PACK));
 
 let fail = 0;
@@ -22,29 +21,21 @@ const check = (name, cond, detail) => {
   if (!cond) { console.log(`FAIL ${name}${detail ? ' — ' + detail : ''}`); fail++; }
 };
 
-/* health probe */
-let res = await handler(new Request('http://x/extract', { method: 'GET' }));
-let body = await res.json();
-check('GET health 200', res.status === 200);
-check('GET reports unconfigured without key', body.configured === false);
-check('GET health reports providers', body.providers && body.providers.gemini === false);
-check('GET health has no anthropic provider', !('anthropic' in (body.providers || {})));
-check('GET health verify off without a verify model', body.verify === false);
+const healthDeps = () => ({ providerStatus, GEMINI_MODEL, GEMINI_VERIFY_MODEL });
+const runDeps = (extract) => ({ providerStatus, buildInstruction, extract: extract || (async () => ({ result: {} })) });
 
-/* method guard */
-res = await handler(new Request('http://x/extract', { method: 'DELETE' }));
-check('DELETE → 405', res.status === 405);
+/* health probe (pure handler) */
+let body = handleHealth(healthDeps()).body;
+check('health 200 shape', body.status === 'ok');
+check('health reports unconfigured without key', body.configured === false);
+check('health reports gemini provider only', body.providers && body.providers.gemini === false && !('anthropic' in body.providers));
 
-/* unconfigured POST */
-res = await handler(new Request('http://x/extract', { method: 'POST', body: '{}' }));
-check('POST without key → 503', res.status === 503);
-
-/* with a (fake) key, validation runs before any network call */
+/* inline-extract handler: method + config + shape validation before any call */
+check('method guard: GET → 405', (await handleInlineExtract({ method: 'GET', body: {} }, runDeps())).status === 405);
+check('unconfigured POST → 503', (await handleInlineExtract({ method: 'POST', body: { image_base64: 'aGk=' } }, runDeps())).status === 503);
 process.env.GEMINI_API_KEY = 'test-not-a-real-key';
-res = await handler(new Request('http://x/extract', { method: 'POST', body: 'not json' }));
-check('bad JSON → 400', res.status === 400);
-res = await handler(new Request('http://x/extract', { method: 'POST', body: JSON.stringify({ filename: 'x.pdf' }) }));
-check('no image/text → 400', res.status === 400);
+check('no image/text → 400', (await handleInlineExtract({ method: 'POST', body: { filename: 'x.pdf' } }, runDeps())).status === 400);
+check('oversized image → 413', (await handleInlineExtract({ method: 'POST', body: { image_base64: 'a'.repeat(9 * 1024 * 1024) } }, runDeps())).status === 413);
 delete process.env.GEMINI_API_KEY;
 
 /* schema sanity: structured outputs demands additionalProperties:false and
@@ -92,4 +83,4 @@ check('prompt persists the spare phase-slot rule', /Never mark a whole way spare
 check('prompt forbids counting', /NEVER count/.test(EXTRACTION_SYSTEM_PROMPT));
 
 if (fail) { console.log(`\n${fail} failure(s)`); process.exit(1); }
-console.log('PASS: extract function validation, health probe, and schema invariants.');
+console.log('PASS: inline-extract validation, health probe, and schema invariants.');

@@ -4,7 +4,7 @@
  * come from `realDeps()`; the pure handlers in handlers.mjs are what the
  * deterministic tests exercise directly with fakes.
  */
-import { providerStatus, GEMINI_MODEL, GEMINI_VERIFY_MODEL, extractWithVerification, buildInstruction } from '../../netlify/functions/lib/providers.mjs';
+import { providerStatus, GEMINI_MODEL, GEMINI_VERIFY_MODEL, extractWithVerification, buildInstruction } from './extraction/providers.mjs';
 import { serviceClient, userFromRequest } from './supabase.mjs';
 import * as db from './db.mjs';
 import { makeProcessJob } from './worker.mjs';
@@ -21,6 +21,8 @@ export function realDeps() {
     supabaseConfigured: Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY),
     authRequired,
     db,
+    buildInstruction,
+    extract: extractWithVerification,
     get sb() { return getSb(); },
     resolveUser: async (input) => {
       const user = await userFromRequest({ headers: { get: (k) => (input.headers || {})[k.toLowerCase()] || null } });

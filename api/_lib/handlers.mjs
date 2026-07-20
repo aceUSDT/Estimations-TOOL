@@ -46,6 +46,40 @@ export function handleHealth(deps) {
   });
 }
 
+/* POST /api/extract/run — STATELESS, account-free page extraction for the
+ * local-first browser. No Supabase, no auth, no durable job: it runs Gemini
+ * inline (Vercel maxDuration covers the ~30–45s) and returns the structured
+ * result + optional cross-check, exactly the shape the client already merges.
+ * This is the tested replacement for the Netlify function trio (no Blobs, no
+ * polling). Documents stay local; only the page the user opted to send leaves.
+ *
+ * Note: like the Netlify predecessor, this endpoint is unauthenticated. It is
+ * safe because it stores nothing and returns only what the caller sent us to
+ * read. Multi-tenant/audited extraction uses the durable job routes instead.
+ * Public multi-tenant deployments should still deploy-protect or quota it. */
+export async function handleInlineExtract(input, deps) {
+  const correlationId = input.correlationId || newCorrelationId();
+  if (input.method !== 'POST') return err(405, 'method_not_allowed', 'POST only.', correlationId);
+  if (!deps.providerStatus().configured) return err(503, 'not_configured', 'Cloud extraction is not configured.', correlationId);
+  if (jsonByteLength(input.body || {}) > MAX_BODY_BYTES) return err(413, 'payload_too_large', 'Request body exceeds the size limit.', correlationId);
+  const b = input.body || {};
+  const hasImage = typeof b.image_base64 === 'string' && b.image_base64.length > 0;
+  const hasText = Array.isArray(b.text_lines) && b.text_lines.length > 0;
+  if (!hasImage && !hasText) return err(400, 'invalid_request', 'Provide image_base64 and/or text_lines.', correlationId);
+  if (hasImage && b.image_base64.length > MAX_IMAGE_B64) return err(413, 'payload_too_large', 'Page image exceeds the size limit.', correlationId);
+
+  const instruction = deps.buildInstruction({ filename: b.filename, pageNumber: b.page_number, hints: b.hints, textLines: b.text_lines });
+  try {
+    const out = await deps.extract({ imageBase64: b.image_base64, mediaType: b.media_type || 'image/jpeg', instruction, maxTokens: 12000 });
+    return ok(200, { ...out, correlation_id: correlationId });
+  } catch (e) {
+    if (e && e.http) return err(e.http, 'not_configured', e.message, correlationId);
+    if (e && e.status === 429) return err(429, 'rate_limited', 'Rate limited — retry shortly.', correlationId);
+    if (e && e.stop_reason === 'max_tokens') return err(502, 'output_truncated', 'Extraction output was truncated.', correlationId);
+    return err(502, 'extraction_error', 'Extraction failed.', correlationId);
+  }
+}
+
 async function requireUser(input, deps) {
   const userId = await deps.resolveUser(input);
   if (!userId && deps.authRequired !== false) return { error: err(401, 'unauthenticated', 'Sign in to continue.', input.correlationId) };

@@ -12,8 +12,7 @@ import { pathToFileURL, fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '../..');
-const LIB = path.resolve(ROOT, 'netlify/functions/lib/providers.mjs');
-const FN = path.resolve(ROOT, 'netlify/functions/extract.mjs');
+const LIB = path.resolve(ROOT, 'api/_lib/extraction/providers.mjs');
 
 delete process.env.ANTHROPIC_API_KEY;
 delete process.env.ANTHROPIC_AUTH_TOKEN;
@@ -21,8 +20,9 @@ delete process.env.GEMINI_API_KEY;
 delete process.env.GEMINI_VERIFY_MODEL;
 
 const providers = await import(pathToFileURL(LIB));
-const { crossCheckExtractions, geminiSchema, providerStatus, buildInstruction, GEMINI_MODEL } = providers;
-const { default: handler } = await import(pathToFileURL(FN));
+const { crossCheckExtractions, geminiSchema, providerStatus, buildInstruction, GEMINI_MODEL, GEMINI_VERIFY_MODEL } = providers;
+const { handleHealth } = await import(pathToFileURL(path.resolve(ROOT, 'api/_lib/handlers.mjs')));
+const healthDeps = () => ({ providerStatus, GEMINI_MODEL, GEMINI_VERIFY_MODEL });
 
 let fail = 0;
 const check = (name, cond, detail) => {
@@ -31,10 +31,11 @@ const check = (name, cond, detail) => {
 
 /* ---------- Gemini is the ONLY hosted provider (migration gate 6) ---------- */
 check('no Claude call or model export remains', !('callClaude' in providers) && !('CLAUDE_MODEL' in providers));
-for (const file of ['netlify/functions/lib/providers.mjs', 'netlify/functions/extract.mjs', 'netlify/functions/extract-background.mjs', 'netlify/functions/extract-status.mjs']) {
+for (const file of ['api/_lib/extraction/providers.mjs', 'api/_lib/route.mjs', 'api/_lib/handlers.mjs', 'api/extract/run.mjs', 'api/extract/health.mjs']) {
   const src = fs.readFileSync(path.resolve(ROOT, file), 'utf8');
   check(`${file} has no Anthropic references`, !/anthropic|ANTHROPIC|claude-|CLAUDE_MODEL|EXTRACTION_MODEL/i.test(src));
 }
+check('no Netlify functions or @netlify/blobs remain', !fs.existsSync(path.resolve(ROOT, 'netlify')) && !JSON.parse(fs.readFileSync(path.resolve(ROOT, 'package.json'), 'utf8')).dependencies['@netlify/blobs']);
 const pkg = JSON.parse(fs.readFileSync(path.resolve(ROOT, 'package.json'), 'utf8'));
 check('@anthropic-ai/sdk removed from dependencies', !(pkg.dependencies || {})['@anthropic-ai/sdk']);
 check('GEMINI_MODEL pinned to an exact id, not "latest"', /^gemini-[\w.-]+$/.test(GEMINI_MODEL) && !/latest/i.test(GEMINI_MODEL));
@@ -94,8 +95,7 @@ check('verify model set → verify on, still gemini-only', st.primary === 'gemin
 delete process.env.GEMINI_VERIFY_MODEL;
 
 /* ---------- health probe: Gemini-only contract (nullable verification) ---------- */
-const res = await handler(new Request('http://x/extract', { method: 'GET' }));
-const body = await res.json();
+const body = handleHealth(healthDeps()).body;
 check('health: gemini configured', body.configured === true && body.primary === 'gemini');
 check('health: pinned model reported', typeof body.model === 'string' && body.model.includes('gemini'));
 check('health: no anthropic provider field', !('anthropic' in (body.providers || {})));

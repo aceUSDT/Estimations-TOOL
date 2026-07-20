@@ -15,7 +15,7 @@
  * Usage:
  *   node coverage-ai.mjs                 # ground-truth docs only (bounded spend)
  *   node coverage-ai.mjs --all           # every fixture in work/index.json
- *   AI_ENDPOINT=https://host/.netlify/functions/extract node coverage-ai.mjs
+ *   AI_ENDPOINT=https://host/api/extract/run node coverage-ai.mjs
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -30,7 +30,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const WORK = path.join(HERE, 'work');
 const ROOT = path.resolve(HERE, '..', '..');
 const REPORTS = path.join(ROOT, 'reports');
-const ENDPOINT = process.env.AI_ENDPOINT || 'https://estimationtoolz.netlify.app/.netlify/functions/extract';
+const ENDPOINT = process.env.AI_ENDPOINT || 'https://estimation-tools.vercel.app/api/extract/run';
 const groundTruth = JSON.parse(fs.readFileSync(path.join(HERE, 'ground-truth.json'), 'utf8'));
 const index = JSON.parse(fs.readFileSync(path.join(WORK, 'index.json'), 'utf8'));
 const norm = (s) => String(s).toUpperCase().replace(/[\s.\-_/]+/g, '');
