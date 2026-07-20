@@ -46,6 +46,28 @@ export function handleHealth(deps) {
   });
 }
 
+/* GET /api/public-config — browser-safe Supabase coordinates for the static
+ * SPA (no build step to substitute env vars). Returns ONLY the publishable
+ * (anon) key + URL, which are designed to be public and are guarded by RLS;
+ * it must NEVER return SUPABASE_SERVICE_ROLE_KEY or any server secret. When
+ * unset, the browser simply keeps the account layer disabled (local-first). */
+export function handlePublicConfig(deps) {
+  const c = deps.publicConfig || {};
+  const url = typeof c.url === 'string' ? c.url : '';
+  const key = typeof c.publishableKey === 'string' ? c.publishableKey : '';
+  // Defence in depth: never echo anything that looks like a service-role/JWT
+  // secret. Publishable keys start with `sb_publishable_` (new) or are the
+  // legacy anon JWT; a service_role JWT carries "service_role" in its payload.
+  const looksLikeSecret = /service_role/.test(key);
+  const configured = Boolean(url) && Boolean(key) && !looksLikeSecret;
+  return ok(200, {
+    configured,
+    supabase_url: configured ? url : null,
+    supabase_publishable_key: configured ? key : null,
+    auth_required: deps.authRequired !== false,
+  });
+}
+
 /* POST /api/extract/run — STATELESS, account-free page extraction for the
  * local-first browser. No Supabase, no auth, no durable job: it runs Gemini
  * inline (Vercel maxDuration covers the ~30–45s) and returns the structured

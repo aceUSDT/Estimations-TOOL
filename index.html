@@ -662,6 +662,19 @@
                 <label class="check-row" title="When enabled, page images and detected text are sent to the configured extraction service."><input type="checkbox" id="anOnlineExtraction"> Use online extraction</label>
                 <div class="hint" id="onlineExtractionHint">Off keeps document reading on this computer. On sends pages to the configured extraction service.</div>
               </div>
+              <div class="fgroup" id="accountRow" style="display:none">
+                <label class="lbl">Cloud account <span class="hint" style="margin:0">— optional, for saved multi-tenant extractions</span></label>
+                <div class="hint" id="accountStatus" style="margin:0 0 4px">Not signed in.</div>
+                <div id="accountForm">
+                  <input class="in" id="accountEmail" type="email" placeholder="you@example.com" autocomplete="username" style="margin-bottom:4px">
+                  <input class="in" id="accountPassword" type="password" placeholder="Password" autocomplete="current-password" style="margin-bottom:4px">
+                  <div style="display:flex;gap:6px">
+                    <button class="btn sm" id="accountSignIn" type="button">Sign in</button>
+                    <button class="btn sm ghost" id="accountSignUp" type="button">Create account</button>
+                  </div>
+                </div>
+                <button class="btn sm ghost" id="accountSignOut" type="button" style="display:none">Sign out</button>
+              </div>
               <button class="btn primary" id="anRunBtn" style="width:100%">Count devices</button>
             </div>
           </div>
@@ -790,6 +803,11 @@
 <script src="./vendor/exceljs.min.js"></script>
 <script src="./report-core.js"></script>
 <script src="./extractor-core.js"></script>
+<!-- Optional cloud-account layer (durable, multi-tenant extraction). The
+     default experience is local-first and needs none of this; the Supabase
+     client only loads a browser-safe publishable key fetched at runtime. -->
+<script src="./vendor/supabase.min.js"></script>
+<script src="./account-core.js"></script>
 <script>
 'use strict';
 /* Estimation Tools - specialist electrical document reading tool.
@@ -2366,6 +2384,50 @@ $('#anOnlineExtraction').addEventListener('change',event=>{
   appSettings.onlineExtraction=event.target.checked;aiProbePromise=null;
   window.__aiStatus=appSettings.onlineExtraction?'checking':'local only';saveAppSettings();renderCoverage();
 });
+
+/* ---- Optional cloud account (durable, multi-tenant extraction) ----
+   Local-first stays the default: this only activates if the server exposes a
+   browser-safe Supabase config (GET /api/public-config) AND we're not the
+   local-only desktop build. The account JWT is used solely to call the
+   ownership-checked durable routes; no document content is stored client-side. */
+window.__account=null;
+window.accountAuthedFetch=(url,init)=>fetch(url,init);   // anonymous fallback
+(function initAccount(){
+  if (LOCAL_DESKTOP) return;                              // desktop is local-only
+  if (!window.EstimationAccount || !window.supabase) return;
+  const acc=window.EstimationAccount.createAccount({
+    createClient: window.supabase.createClient,
+    fetchImpl: window.fetch.bind(window),
+    configUrl: '/api/public-config',
+  });
+  const $id=(s)=>document.getElementById(s);
+  function paint(user){
+    const row=$id('accountRow'); if(!row) return;
+    const form=$id('accountForm'), out=$id('accountSignOut'), status=$id('accountStatus');
+    if(user){ status.textContent='Signed in as '+(user.email||user.id)+'.'; form.style.display='none'; out.style.display=''; }
+    else { status.textContent='Not signed in.'; form.style.display=''; out.style.display='none'; }
+  }
+  acc.init().then(({configured})=>{
+    if(!configured) return;                               // server has no auth configured → stay hidden
+    window.__account=acc;
+    window.accountAuthedFetch=(url,init)=>acc.authedFetch(url,init);
+    const row=$id('accountRow'); if(row) row.style.display='';
+    acc.currentUser().then(paint);
+    acc.onChange(paint);
+    const busy=(btn,fn)=>async()=>{ btn.disabled=true; try{ await fn(); } finally{ btn.disabled=false; } };
+    const creds=()=>({email:($id('accountEmail').value||'').trim(),password:$id('accountPassword').value||''});
+    const report=(msg)=>{ $id('accountStatus').textContent=msg; };
+    $id('accountSignIn').addEventListener('click', busy($id('accountSignIn'), async()=>{
+      const {email,password}=creds(); if(!email||!password){ report('Enter email and password.'); return; }
+      const {error}=await acc.signIn(email,password); if(error) report('Sign-in failed: '+error); else { $id('accountPassword').value=''; paint(await acc.currentUser()); }
+    }));
+    $id('accountSignUp').addEventListener('click', busy($id('accountSignUp'), async()=>{
+      const {email,password}=creds(); if(!email||!password){ report('Enter email and password.'); return; }
+      const {error}=await acc.signUp(email,password); if(error) report('Sign-up failed: '+error); else report('Account created. Check your email if confirmation is required, then sign in.');
+    }));
+    $id('accountSignOut').addEventListener('click', busy($id('accountSignOut'), async()=>{ await acc.signOut(); paint(null); }));
+  }).catch(()=>{ /* config unreachable → stay local-first, row hidden */ });
+})();
 function gatherFilters(){
   const fileIds=$$('.an-file').filter(c=>c.checked).map(c=>c.value);
   const boardsSel=$$('.an-board').filter(c=>c.checked).map(c=>c.value);

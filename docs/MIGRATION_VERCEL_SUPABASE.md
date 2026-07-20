@@ -226,6 +226,38 @@ refactor + R2 gateway** (`ffacb5f`), docs (`8130ec1`).
 
 Each phase ends with: changed files, decisions, test results (honest), remaining risks.
 
+### Phase 7 progress log
+
+**Part 1 (`8d3d5e5`) — server-side RLS + bootstrap.**
+- `supabase/migrations/0001–0003` (core schema, RLS enable+force, `enrol_org_creator`
+  bootstrap trigger found by walking the live auth flow).
+- JWT verification (`userFromRequest`) and ownership checks (`getJobForUser` via org
+  membership) already in the durable routes and covered by the fake-backed
+  `test-vercel-routes.mjs` (22 tests).
+- `tools/coverage/test-rls-live.mjs` (`npm run test:rls`) — live negative test proving
+  anon reads nothing and no cross-tenant reads, using ONLY the publishable key + two
+  ephemeral signups (never the service-role key). Skips cleanly until the schema is
+  applied.
+
+**Part 2 — browser auth plumbing (this commit).**
+- `api/public-config.mjs` + `handlePublicConfig`: serves only the browser-safe Supabase
+  URL + publishable key to the static SPA (no build-time env substitution). Hard guard
+  refuses to echo anything containing `service_role`; returns `configured:false` when
+  unset so the app stays local-first.
+- `account-core.js` + vendored `vendor/supabase.min.js`: dependency-injected cloud-account
+  layer (client factory, sign-in/up/out, `authedFetch` that attaches the session JWT).
+  Pure token/header logic unit-tested in `tools/coverage/test-account-core.mjs` (now in
+  `npm test`). Disabled on the desktop build and whenever the server reports unconfigured.
+- `index.html`: hidden-by-default "Cloud account" control that appears only when
+  `/api/public-config` reports auth configured; local-first defaults unchanged.
+
+**Owner-blocked, not yet done (honest status):**
+- Live gate #8 (no cross-tenant reads) is written but UNVERIFIED against the real
+  database — it needs the owner to apply `0001–0003` in the Supabase SQL editor and turn
+  "Confirm email" OFF on the test project, then `npm run test:rls`. Until that runs, this
+  gate is claimed only at the code/fake-test level, not proven live.
+- End-to-end browser sign-in is likewise unverified until the schema is applied.
+
 ## 10. Environment variables (names only — values never committed)
 
 Server-side (Vercel project settings): `GEMINI_API_KEY`, `GEMINI_MODEL`,

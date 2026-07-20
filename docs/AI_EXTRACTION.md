@@ -18,9 +18,11 @@ in the platform migration — see `docs/MIGRATION_VERCEL_SUPABASE.md`).
 | `api/extract/health.mjs` | Health probe: reports Gemini-only configuration (no secrets). |
 | `api/extract/run.mjs` | Stateless per-page extraction for the local-first browser — runs Gemini inline (maxDuration 60s), returns the structured result; no auth, no database, no Netlify Blobs. |
 | `api/extractions/{start,status,result}.mjs` | Durable, authenticated, auditable job routes (Supabase-backed) for the multi-tenant account path. |
+| `api/public-config.mjs` | Serves only the **browser-safe** Supabase URL + publishable (anon) key to the static SPA — never the service-role key or any server secret. Returns `configured:false` when unset (app stays local-first). |
 | `api/_lib/extraction/domain-pack.mjs` | Electrical taxonomy, dialect guidance, and structured output schema. |
 | `api/_lib/extraction/providers.mjs` | Gemini-only provider + deterministic cross-check. |
-| `index.html` | Applies explicit opt-in consent, submits eligible pages to `/api/extract/run`, and merges results as review-pending rows. |
+| `account-core.js` + `vendor/supabase.min.js` | Optional browser cloud-account layer: fetches `/api/public-config`, creates a Supabase client with the publishable key, and attaches the session JWT (`Authorization: Bearer`) to the durable routes. Dependency-injected so the token/header logic is unit-tested (`tools/coverage/test-account-core.mjs`). Disabled on the desktop build and whenever the server is unconfigured. |
+| `index.html` | Applies explicit opt-in consent, submits eligible pages to `/api/extract/run`, and merges results as review-pending rows. A hidden-by-default "Cloud account" control appears only when `/api/public-config` reports auth is configured. |
 
 The model may classify and structure source information. Device counts, procurement groups,
 reconciliation, and workbook totals remain deterministic code. Existing deterministic rows

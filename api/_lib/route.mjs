@@ -20,6 +20,12 @@ export function realDeps() {
     providerStatus, GEMINI_MODEL, GEMINI_VERIFY_MODEL,
     supabaseConfigured: Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY),
     authRequired,
+    // Browser-safe config only — the publishable (anon) key + URL, never the
+    // service-role key. Consumed by handlePublicConfig for the static SPA.
+    publicConfig: {
+      url: process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+      publishableKey: process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || '',
+    },
     db,
     buildInstruction,
     extract: extractWithVerification,
