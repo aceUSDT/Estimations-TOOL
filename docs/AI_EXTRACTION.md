@@ -10,13 +10,19 @@ and remains local-only.
 
 ## Architecture
 
+Hosted extraction runs on **Vercel Node.js API routes** (the Netlify functions were removed
+in the platform migration — see `docs/MIGRATION_VERCEL_SUPABASE.md`).
+
 | File | Role |
 |---|---|
-| `netlify/functions/extract.mjs` | Synchronous health and extraction endpoint. |
-| `netlify/functions/extract-background.mjs` | Queues dense pages that need more processing time. |
-| `netlify/functions/extract-status.mjs` | Returns background job status and results. |
-| `netlify/functions/lib/domain-pack.mjs` | Electrical taxonomy, dialect guidance, and structured output schema. |
-| `index.html` | Applies explicit opt-in, submits eligible pages, and merges results as review-pending rows. |
+| `api/extract/health.mjs` | Health probe: reports Gemini-only configuration (no secrets). |
+| `api/extract/run.mjs` | Stateless per-page extraction for the local-first browser — runs Gemini inline (maxDuration 60s), returns the structured result; no auth, no database, no Netlify Blobs. |
+| `api/extractions/{start,status,result}.mjs` | Durable, authenticated, auditable job routes (Supabase-backed) for the multi-tenant account path. |
+| `api/public-config.mjs` | Serves only the **browser-safe** Supabase URL + publishable (anon) key to the static SPA — never the service-role key or any server secret. Returns `configured:false` when unset (app stays local-first). |
+| `api/_lib/extraction/domain-pack.mjs` | Electrical taxonomy, dialect guidance, and structured output schema. |
+| `api/_lib/extraction/providers.mjs` | Gemini-only provider + deterministic cross-check. |
+| `account-core.js` + `vendor/supabase.min.js` | Optional browser cloud-account layer: fetches `/api/public-config`, creates a Supabase client with the publishable key, and attaches the session JWT (`Authorization: Bearer`) to the durable routes. Dependency-injected so the token/header logic is unit-tested (`tools/coverage/test-account-core.mjs`). Disabled on the desktop build and whenever the server is unconfigured. |
+| `index.html` | Applies explicit opt-in consent, submits eligible pages to `/api/extract/run`, and merges results as review-pending rows. A hidden-by-default "Cloud account" control appears only when `/api/public-config` reports auth is configured. |
 
 The model may classify and structure source information. Device counts, procurement groups,
 reconciliation, and workbook totals remain deterministic code. Existing deterministic rows
@@ -24,13 +30,15 @@ win when an online result refers to the same circuit slot.
 
 ## Server configuration
 
-Set `ANTHROPIC_API_KEY` in the Netlify site's server-side environment. Optionally set
-`EXTRACTION_MODEL`. Never put a key in `index.html`, a committed `.env`, the desktop bundle,
+Set `GEMINI_API_KEY` in the Vercel server-side environment (Google Gemini is the only hosted
+AI provider). Optionally set `GEMINI_MODEL` (pinned default; never changed silently) and
+`GEMINI_VERIFY_MODEL` (second Gemini pass whose disagreements are computed by deterministic
+code). Never put a key in `index.html`, a committed `.env`, the desktop bundle,
 or any other browser-downloadable file.
 
-For local hosted-function development, use `netlify dev` with an untracked `.env`. Running
-the static app with `npm run dev` leaves online extraction unavailable and does not affect
-the local pipeline.
+For local development, use `vercel dev` with an untracked `.env.local`. Running the static
+app with `npm run dev` leaves hosted extraction unavailable and does not affect the local
+deterministic pipeline. The desktop app never enables hosted extraction.
 
 ## Security and operations
 

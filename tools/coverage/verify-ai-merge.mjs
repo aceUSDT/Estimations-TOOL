@@ -57,7 +57,7 @@ await page.route(/https:\/\/(cdnjs\.cloudflare\.com|cdn\.jsdelivr\.net|tessdata\
 // mock the serverless extraction endpoint
 let postCount = 0;
 let sawImage = false;
-await page.route('**/.netlify/functions/extract', async (route) => {
+await page.route('**/api/extract/run', async (route) => {
   if (route.request().method() === 'GET') {
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ status: 'ok', configured: true, model: 'mock-model' }) });
     return;
