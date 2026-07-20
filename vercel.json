@@ -4,6 +4,10 @@
     "api/extractions/start.mjs": { "maxDuration": 60 },
     "api/extractions/status.mjs": { "maxDuration": 15 },
     "api/extractions/result.mjs": { "maxDuration": 15 },
+    "api/extractions/watchdog.mjs": { "maxDuration": 30 },
     "api/extract/health.mjs": { "maxDuration": 10 }
-  }
+  },
+  "crons": [
+    { "path": "/api/extractions/watchdog", "schedule": "*/5 * * * *" }
+  ]
 }

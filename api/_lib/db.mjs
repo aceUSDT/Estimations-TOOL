@@ -75,3 +75,16 @@ export async function insertResult(sb, row) {
   if (error) throw Object.assign(new Error('db error'), { code: 'db_error', cause: error });
   return data;
 }
+
+/* Jobs stuck in `running` whose heartbeat is older than the cutoff — the
+ * signal that the worker crashed or timed out. */
+export async function findStaleRunningJobs(sb, cutoffIso, limit = 100) {
+  const { data, error } = await sb
+    .from('extraction_jobs')
+    .select('id, org_id, attempt')
+    .eq('state', 'running')
+    .lt('heartbeat_at', cutoffIso)
+    .limit(limit);
+  if (error) throw Object.assign(new Error('db error'), { code: 'db_error', cause: error });
+  return data || [];
+}

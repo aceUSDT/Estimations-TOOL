@@ -152,6 +152,16 @@ parts than the workload needs at single-page granularity. Trigger to revisit: ba
 jobs > `maxDuration` budget, sustained concurrency limits, or fan-out extraction of
 whole documents server-side.
 
+**Crash safety (Phase 5).** The worker writes a `heartbeat_at` every ~10 s while
+extracting. A watchdog (`api/extractions/watchdog.mjs`, cron-authenticated via
+`CRON_SECRET`) reclaims `running` jobs whose heartbeat is older than 120 s as
+`failed:worker_lost`, so a crashed/evicted/timed-out worker never leaves a job polling
+forever; a fresh start with a new idempotency key retries. Transient provider errors
+(429/5xx) get a bounded in-worker retry (default 2 attempts, small backoff). **Plan note:**
+the `vercel.json` cron is `*/5 * * * *`; Vercel Hobby limits crons to once per day, so
+sub-daily reclaim needs Pro — on Hobby the watchdog can also be triggered manually or the
+schedule relaxed to daily.
+
 ## 7. PR #10 (`fable/paid-downloads`) — cherry-pick decision
 
 Inspected (6 commits): signed 4-target installer workflow + release manifest

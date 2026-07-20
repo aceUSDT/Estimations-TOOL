@@ -12,6 +12,7 @@ import {
   handleHealth, handleStart, handleStatus, handleResult, deriveState, issueReady,
 } from '../../api/_lib/handlers.mjs';
 import { makeProcessJob } from '../../api/_lib/worker.mjs';
+import { makeReclaimStale, handleWatchdog } from '../../api/_lib/watchdog.mjs';
 
 let passed = 0, failed = 0;
 async function test(name, fn) {
@@ -55,9 +56,13 @@ function fakeDb() {
     },
     async updateJob(sb, jobId, patch) { const j = jobs.get(jobId); Object.assign(j, patch); return j; },
     async insertResult(sb, row) { results.set(row.job_id, row); return row; },
+    async findStaleRunningJobs(sb, cutoffIso) {
+      return [...jobs.values()].filter((j) => j.state === 'running' && j.heartbeat_at && j.heartbeat_at < cutoffIso);
+    },
   };
   return api;
 }
+const noTimers = { setInterval: () => null, clearInterval: () => {}, sleep: async () => {} };
 
 const geminiOk = () => ({ gemini: true, configured: true, primary: 'gemini', verify: false });
 function baseDeps(over = {}) {
@@ -217,7 +222,7 @@ await test('result: cross-tenant guess ⇒ 404', async () => {
 
 /* ── worker: honest terminal states ──────────────────────────────────────── */
 function workerDeps(db, extractImpl) {
-  return { sb: null, db, extract: extractImpl, buildInstruction: () => 'instr', now: () => '2026-07-19T00:00:00.000Z' };
+  return { sb: null, db, extract: extractImpl, buildInstruction: () => 'instr', now: () => '2026-07-19T00:00:00.000Z', timers: noTimers, heartbeatMs: 0 };
 }
 await test('worker: boards>0 & devices=0 ⇒ job incomplete (zero-device guard), result stored', async () => {
   const db = fakeDb();
@@ -243,6 +248,67 @@ await test('worker: normal page ⇒ complete; mismatch ⇒ needs_review; throw �
   assert.equal(job.state, 'failed');
   assert.equal(job.error_code, 'extraction_error');
   assert.ok(!/secret/.test(JSON.stringify({ code: job.error_code })), 'error_code is a stable machine code');
+});
+
+/* ── Phase 5: bounded retry on transient provider errors ─────────────────── */
+await test('worker: transient 503 then success ⇒ complete (bounded retry)', async () => {
+  const db = fakeDb();
+  const job = { id: randomUUID(), org_id: 'orgA', document_id: uuid(), page_number: 1, attempt: 0 };
+  db._seedJob(job);
+  let calls = 0;
+  const extract = async () => { calls++; if (calls === 1) throw Object.assign(new Error('rate limited'), { status: 503 }); return { result: { boards: [{}], devices: [{ device_class: 'MCB' }] }, verification: null }; };
+  await makeProcessJob({ ...workerDeps(db, extract), maxAttempts: 2 })(job, {});
+  assert.equal(calls, 2);
+  assert.equal(job.state, 'complete');
+});
+await test('worker: transient error exhausts retries ⇒ failed:provider_unavailable', async () => {
+  const db = fakeDb();
+  const job = { id: randomUUID(), org_id: 'orgA', document_id: uuid(), page_number: 1, attempt: 0 };
+  db._seedJob(job);
+  const extract = async () => { throw Object.assign(new Error('upstream down'), { status: 503 }); };
+  await makeProcessJob({ ...workerDeps(db, extract), maxAttempts: 2 })(job, {});
+  assert.equal(job.state, 'failed');
+  assert.equal(job.error_code, 'provider_unavailable');
+});
+await test('worker: non-transient error is NOT retried', async () => {
+  const db = fakeDb();
+  const job = { id: randomUUID(), org_id: 'orgA', document_id: uuid(), page_number: 1, attempt: 0 };
+  db._seedJob(job);
+  let calls = 0;
+  const extract = async () => { calls++; throw Object.assign(new Error('bad'), { status: 400 }); };
+  await makeProcessJob({ ...workerDeps(db, extract), maxAttempts: 3 })(job, {});
+  assert.equal(calls, 1);
+  assert.equal(job.state, 'failed');
+});
+
+/* ── Phase 5: stale-job watchdog ─────────────────────────────────────────── */
+await test('watchdog: reclaims stale running job as failed:worker_lost; leaves fresh + terminal jobs', async () => {
+  const db = fakeDb();
+  const stale = { id: randomUUID(), org_id: 'orgA', state: 'running', heartbeat_at: '2020-01-01T00:00:00.000Z', attempt: 1 };
+  const fresh = { id: randomUUID(), org_id: 'orgA', state: 'running', heartbeat_at: new Date().toISOString(), attempt: 1 };
+  const done = { id: randomUUID(), org_id: 'orgA', state: 'complete', heartbeat_at: '2020-01-01T00:00:00.000Z' };
+  db._seedJob(stale); db._seedJob(fresh); db._seedJob(done);
+  const reclaim = makeReclaimStale({ sb: null, db, now: () => Date.now(), staleSeconds: 120 });
+  const summary = await reclaim();
+  assert.equal(summary.reclaimed, 1);
+  assert.equal(stale.state, 'failed');
+  assert.equal(stale.error_code, 'worker_lost');
+  assert.equal(fresh.state, 'running');
+  assert.equal(done.state, 'complete');
+  // idempotent: second run reclaims nothing
+  assert.equal((await reclaim()).reclaimed, 0);
+});
+await test('watchdog route: rejects without cron secret; runs with it', async () => {
+  const db = fakeDb();
+  const reclaimStale = makeReclaimStale({ sb: null, db, now: () => Date.now() });
+  const deps = { cronSecret: 'top-secret', reclaimStale };
+  const noAuth = await handleWatchdog({ method: 'POST', headers: {} }, deps);
+  assert.equal(noAuth.status, 401);
+  const wrong = await handleWatchdog({ method: 'POST', headers: { authorization: 'Bearer nope' } }, deps);
+  assert.equal(wrong.status, 401);
+  const good = await handleWatchdog({ method: 'POST', headers: { authorization: 'Bearer top-secret' } }, deps);
+  assert.equal(good.status, 200);
+  assert.equal(good.body.ok, true);
 });
 
 console.log(`\nvercel-routes tests: ${passed} passed, ${failed} failed`);
