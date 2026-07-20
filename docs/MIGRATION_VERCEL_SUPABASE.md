@@ -157,10 +157,17 @@ extracting. A watchdog (`api/extractions/watchdog.mjs`, cron-authenticated via
 `CRON_SECRET`) reclaims `running` jobs whose heartbeat is older than 120 s as
 `failed:worker_lost`, so a crashed/evicted/timed-out worker never leaves a job polling
 forever; a fresh start with a new idempotency key retries. Transient provider errors
-(429/5xx) get a bounded in-worker retry (default 2 attempts, small backoff). **Plan note:**
-the `vercel.json` cron is `*/5 * * * *`; Vercel Hobby limits crons to once per day, so
-sub-daily reclaim needs Pro — on Hobby the watchdog can also be triggered manually or the
-schedule relaxed to daily.
+(429/5xx) get a bounded in-worker retry (default 2 attempts, small backoff).
+
+**Scheduling decision (owner-confirmed 2026-07-20).** Vercel Hobby permits only *daily*
+crons, so a `*/5 * * * *` schedule in `vercel.json` makes the whole deploy fail. Rather
+than ship a Pro-only cron (broken on Hobby) or a once-daily cron (near-useless against a
+120 s stale threshold), **no auto-cron ships in `vercel.json`.** The watchdog endpoint
+stays and is authenticated with `CRON_SECRET`; scheduling is an explicit ops choice per
+plan: Supabase `pg_cron` (`select net.http_post(...)` every few minutes), an external
+uptime pinger, or a Vercel Pro cron once on Pro. Until one is wired, a stale job is
+reclaimed on the next manual/scheduled hit — it is never silently treated as complete
+(the zero-device/`worker_lost` guards are independent of the schedule).
 
 ## 7. PR #10 (`fable/paid-downloads`) — cherry-pick decision
 

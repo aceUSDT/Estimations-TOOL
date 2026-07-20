@@ -5,8 +5,11 @@
  * (new idempotency key) can be issued. Idempotent: re-running it changes
  * nothing once jobs are terminal.
  *
- * Invoked by Vercel Cron (see vercel.json) or any scheduler, authenticated
- * with CRON_SECRET. Never exposes job contents.
+ * Invoked by any external scheduler (Supabase pg_cron, an uptime pinger, or a
+ * Vercel Pro cron), authenticated with CRON_SECRET. No auto-cron ships in
+ * vercel.json: Vercel Hobby permits only daily crons, so scheduling is left an
+ * explicit ops choice per plan (see docs/MIGRATION_VERCEL_SUPABASE.md §6).
+ * Never exposes job contents.
  */
 import { ok, err } from './http.mjs';
 

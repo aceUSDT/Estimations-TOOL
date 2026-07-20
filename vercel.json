@@ -7,8 +7,5 @@
     "api/extractions/watchdog.mjs": { "maxDuration": 30 },
     "api/extract/run.mjs": { "maxDuration": 60 },
     "api/extract/health.mjs": { "maxDuration": 10 }
-  },
-  "crons": [
-    { "path": "/api/extractions/watchdog", "schedule": "*/5 * * * *" }
-  ]
+  }
 }
