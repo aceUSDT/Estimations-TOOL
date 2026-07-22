@@ -13,7 +13,7 @@ www.{ROOT_DOMAIN}/download/            static store page
 Stripe-hosted Checkout                 card details never touch our origin
         │  webhook: checkout.session.completed  (+ success-page fallback poll)
         ▼
-Netlify Blobs entitlement record       keyed by checkout session id
+Supabase entitlement record (commerce_kv) keyed by checkout session id
         │  signed __Host- cookie
         ▼
 POST /api/download-link {platform,arch}
@@ -29,7 +29,7 @@ Cloudflare Worker → private R2 bucket  exact key only, resumable, attachment
 | Piece | Where | Job |
 |---|---|---|
 | `download/` | static pages | store, success, restore, legal — driven by `/api/store-config` |
-| `netlify/functions/store-config.mjs` | GET `/api/store-config` | commerce state + server-side price (the ONLY price source) |
+| `api/_lib/commerce/handlers/store-config.mjs` | GET `/api/store-config` | commerce state + server-side price (the ONLY price source) |
 | `create-checkout-session.mjs` | POST | starts Stripe Checkout; rejects any client-supplied price field |
 | `stripe-webhook.mjs` | POST | signature-verified fulfilment; idempotent; refunds revoke |
 | `checkout-status.mjs` | GET | success-page poll; fulfils if the webhook hasn't landed; sets cookie |
@@ -66,7 +66,7 @@ Cloudflare Worker → private R2 bucket  exact key only, resumable, attachment
   OWNER_LAUNCH_CHECKLIST.md; every endpoint 503s and the store shows a
   coming-soon state.
 
-## Data model (Netlify Blobs, store `commerce-entitlements`)
+## Data model (Supabase `commerce_kv` — service-role only, RLS forced)
 
 ```
 entitlement:<session_id>      {status, purchasedAt, emailHmac, priceId, …}
@@ -80,7 +80,7 @@ rl:<scope>:<hash>:<window>    rate-limit counters
 ## Environment
 
 Names only — see `.env.example`. Commerce requires every name in
-`REQUIRED_ENV` (`netlify/functions/lib/commerce.mjs`) plus the flag;
+`REQUIRED_ENV` (`api/_lib/commerce/commerce.mjs`) plus the flag;
 anything missing keeps the store disabled rather than half-working.
 
 ## Tests

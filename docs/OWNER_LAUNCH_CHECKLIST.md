@@ -34,7 +34,7 @@ between. Budget ~half a day plus waiting time for domain/identity approvals.
       `{ROOT_DOMAIN}`) → `wrangler secret put DOWNLOAD_TOKEN_SECRET` →
       `wrangler deploy`. DNS for `files.{ROOT_DOMAIN}` is created by the route.
 
-## 4. Netlify environment (Site configuration → Environment variables)
+## 4. Vercel environment (Project → Settings → Environment Variables)
 
 Set every name from `.env.example`:
 

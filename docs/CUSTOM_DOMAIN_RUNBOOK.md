@@ -1,34 +1,34 @@
 # Custom domain runbook — {ROOT_DOMAIN}
 
 Every customer-visible URL uses your own domain; provider hostnames
-(`*.netlify.app`, `*.workers.dev`, R2 endpoints) never appear in the product,
+(`*.vercel.app`, `*.workers.dev`, R2 endpoints) never appear in the product,
 emails, or docs. Replace `{ROOT_DOMAIN}` with your real domain everywhere.
 
 ## Target layout
 
 | Hostname | Serves | Hosted by |
 |---|---|---|
-| `www.{ROOT_DOMAIN}` | marketing + store (`/download/`) + `/api/*` + the web app | Netlify site |
-| `app.{ROOT_DOMAIN}` | (optional) the application on its own hostname | Netlify site (second target) |
+| `www.{ROOT_DOMAIN}` | marketing + store (`/download/`) + `/api/*` + the web app | Vercel site |
+| `app.{ROOT_DOMAIN}` | (optional) the application on its own hostname | Vercel site (second target) |
 | `files.{ROOT_DOMAIN}` | paid installer downloads | Cloudflare Worker → private R2 |
 
-A single Netlify site serving both marketing and app on `www` is the shipped
+A single Vercel site serving both marketing and app on `www` is the shipped
 default; split `app.` out later without changing any code — the store only
 uses relative `/api/…` paths.
 
 ## 1. DNS (at your registrar / Cloudflare)
 
-- `www.{ROOT_DOMAIN}` → CNAME → your Netlify site's default hostname
-  (Netlify → Domain management shows the exact target; use Netlify DNS or
+- `www.{ROOT_DOMAIN}` → CNAME → your Vercel site's default hostname
+  (Vercel → Domain management shows the exact target; use Vercel DNS or
   external DNS — either works).
-- Apex `{ROOT_DOMAIN}` → redirect to `www` (Netlify does this automatically
+- Apex `{ROOT_DOMAIN}` → redirect to `www` (Vercel does this automatically
   when both are added).
 - `files.{ROOT_DOMAIN}` → created automatically by the Worker route when the
   zone is on Cloudflare (see step 3). If your DNS is NOT on Cloudflare, move
   the zone or delegate just that subdomain — R2 custom access requires
   Cloudflare in front.
 
-## 2. Netlify
+## 2. Vercel
 
 1. Site → Domain management → Add `www.{ROOT_DOMAIN}` (and the apex).
 2. HTTPS is automatic (Let's Encrypt) once DNS resolves.
@@ -41,7 +41,7 @@ uses relative `/api/…` paths.
 ```bash
 cd workers/download-gateway
 # edit wrangler.toml: replace both {ROOT_DOMAIN} occurrences
-wrangler secret put DOWNLOAD_TOKEN_SECRET     # SAME value as Netlify's
+wrangler secret put DOWNLOAD_TOKEN_SECRET     # SAME value as Vercel's
 wrangler deploy
 ```
 
@@ -52,7 +52,7 @@ curl -sI https://files.{ROOT_DOMAIN}/releases/x
 # → 403/404 from the Worker (NOT a Cloudflare error page)
 ```
 
-Set `FILES_DOWNLOAD_HOST=files.{ROOT_DOMAIN}` in Netlify. Until this
+Set `FILES_DOWNLOAD_HOST=files.{ROOT_DOMAIN}` in Vercel. Until this
 variable exists, download links fall back to presigned R2 URLs — functional
 for staging, but customer-visible R2 hostnames, so set it before launch.
 
