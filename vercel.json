@@ -6,6 +6,16 @@
     "api/extractions/result.mjs": { "maxDuration": 15 },
     "api/extractions/watchdog.mjs": { "maxDuration": 30 },
     "api/extract/run.mjs": { "maxDuration": 60 },
-    "api/extract/health.mjs": { "maxDuration": 10 }
-  }
+    "api/extract/health.mjs": { "maxDuration": 10 },
+    "api/commerce/[action].mjs": { "maxDuration": 15 }
+  },
+  "rewrites": [
+    { "source": "/api/store-config", "destination": "/api/commerce/store-config" },
+    { "source": "/api/create-checkout-session", "destination": "/api/commerce/create-checkout-session" },
+    { "source": "/api/checkout-status", "destination": "/api/commerce/checkout-status" },
+    { "source": "/api/stripe-webhook", "destination": "/api/commerce/stripe-webhook" },
+    { "source": "/api/download-link", "destination": "/api/commerce/download-link" },
+    { "source": "/api/request-download-link", "destination": "/api/commerce/request-download-link" },
+    { "source": "/api/redeem-download-token", "destination": "/api/commerce/redeem-download-token" }
+  ]
 }
