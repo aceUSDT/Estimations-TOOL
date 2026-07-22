@@ -663,6 +663,11 @@
                 <label class="check-row" title="When enabled, page images and detected text are sent to the configured extraction service."><input type="checkbox" id="anOnlineExtraction"> Use online extraction</label>
                 <div class="hint" id="onlineExtractionHint">Off keeps document reading on this computer. On sends pages to the configured extraction service.</div>
               </div>
+              <div class="fgroup" id="cloudServiceRow" style="display:none">
+                <label class="lbl">Cloud service address <span class="hint" style="margin:0">— optional</span></label>
+                <input class="in" id="cloudBaseUrl" type="url" placeholder="https://your-product-domain.com" autocomplete="off">
+                <div class="hint">The desktop app stays fully local until you enter the product's web address here. Takes effect after restarting the app.</div>
+              </div>
               <div class="fgroup" id="accountRow" style="display:none">
                 <label class="lbl">Cloud account <span class="hint" style="margin:0">— optional, for saved multi-tenant extractions</span></label>
                 <div class="hint" id="accountStatus" style="margin:0 0 4px">Not signed in.</div>
@@ -891,9 +896,18 @@ $('#mOk').addEventListener('click', ()=>{ if(modalOk && modalOk()===false) retur
 /* ============================ STATE ============================ */
 const APP_SETTINGS_KEY='estimation-tools-settings-v1';
 const LOCAL_DESKTOP=location.protocol==='estimation:';
-let appSettings={onlineExtraction:false};
+let appSettings={onlineExtraction:false,cloudBaseUrl:''};
 try{appSettings={...appSettings,...JSON.parse(localStorage.getItem(APP_SETTINGS_KEY)||'{}')};}catch(error){}
-if(LOCAL_DESKTOP)appSettings.onlineExtraction=false;
+/* Desktop: fully local unless the user has configured the product's cloud
+   service address AND opted in — then the installed app may call the hosted
+   AI team exactly like the browser does. No address ⇒ nothing ever leaves. */
+function cloudBase(){
+  if(!LOCAL_DESKTOP) return '';                          // browser: same-origin
+  const b=(appSettings.cloudBaseUrl||'').trim().replace(/\/+$/,'');
+  return /^https:\/\//.test(b)?b:'';                     // https only, or off
+}
+function apiUrl(path){ return LOCAL_DESKTOP ? (cloudBase()?cloudBase()+path:null) : path; }
+if(LOCAL_DESKTOP && !cloudBase())appSettings.onlineExtraction=false;
 function saveAppSettings(){try{localStorage.setItem(APP_SETTINGS_KEY,JSON.stringify(appSettings));}catch(error){reportStorageError(error);}}
 const state = {
   projects: [],
@@ -1885,8 +1899,10 @@ let aiProbePromise=null;
 window.__aiStatus='unknown';
 function aiExtractReady(){
   if(!appSettings.onlineExtraction){window.__aiStatus='local only';return Promise.resolve(false);}
+  const healthUrl=apiUrl(AI_HEALTH_ENDPOINT);
+  if(!healthUrl){window.__aiStatus='local only';return Promise.resolve(false);}
   if (!aiProbePromise){
-    aiProbePromise=fetch(AI_HEALTH_ENDPOINT,{method:'GET'}).then(async r=>{
+    aiProbePromise=fetch(healthUrl,{method:'GET'}).then(async r=>{
       if(!r.ok){ window.__aiStatus='off — extraction endpoint not reachable'; return false; }
       const j=await r.json();
       if(!j.configured){ window.__aiStatus='not configured — set the AI keys on the server'; return false; }
@@ -1923,7 +1939,7 @@ async function aiExtractPage(f,pageNo,pg){
   // the client wait so a hung request can't stall the UI.
   const ctrl=new AbortController(); const timer=setTimeout(()=>ctrl.abort(),90000);
   try{
-    const r=await fetch(AI_RUN_ENDPOINT,{method:'POST',headers:{'content-type':'application/json'},signal:ctrl.signal,
+    const r=await fetch(apiUrl(AI_RUN_ENDPOINT),{method:'POST',headers:{'content-type':'application/json'},signal:ctrl.signal,
       body:JSON.stringify({filename:f.name, page_number:pageNo, image_base64, media_type:'image/jpeg',
         text_lines:(pg.lines||[]).map(l=>l.text).slice(0,400), hints:{type:pg.type}})});
     if(!r.ok){ const err=await r.json().catch(()=>({})); throw new Error((err.error&&err.error.message)||err.error||('HTTP '+r.status)); }
@@ -2359,8 +2375,11 @@ function renderAnalysisControls(){
   }
   renderBoardPick($('#anBoardSearch').value);
   $('#anOnlineExtraction').checked=!!appSettings.onlineExtraction;
-  $('#anOnlineExtraction').disabled=LOCAL_DESKTOP;
-  $('#onlineExtractionHint').textContent=LOCAL_DESKTOP?'Desktop document reading stays on this computer.':'Off keeps document reading on this computer. On sends pages to the configured extraction service.';
+  $('#anOnlineExtraction').disabled=LOCAL_DESKTOP&&!cloudBase();
+  $('#onlineExtractionHint').textContent=LOCAL_DESKTOP
+    ? (cloudBase()?'On sends pages to your cloud service ('+cloudBase()+') for AI-team extraction. Off keeps everything on this computer.':'Desktop document reading stays on this computer. Enter the cloud service address below to enable AI-team extraction.')
+    : 'Off keeps document reading on this computer. On sends pages to the configured extraction service.';
+  if($('#cloudServiceRow')){ $('#cloudServiceRow').style.display=LOCAL_DESKTOP?'':'none'; if(document.activeElement!==$('#cloudBaseUrl'))$('#cloudBaseUrl').value=appSettings.cloudBaseUrl||''; }
   if (!$('#stageList').innerHTML) renderStages(-1);
 }
 function renderBoardPick(q){
@@ -2374,8 +2393,15 @@ function renderBoardPick(q){
     : '<div class="hint">Boards appear here once documents are read. Leave unticked to include all.</div>';
 }
 $('#anBoardSearch').addEventListener('input', e=>renderBoardPick(e.target.value));
+$('#cloudBaseUrl').addEventListener('change',event=>{
+  const v=(event.target.value||'').trim();
+  if(v && !/^https:\/\/[^\s]+$/.test(v)){ $('#onlineExtractionHint').textContent='Cloud service address must start with https://'; return; }
+  appSettings.cloudBaseUrl=v;
+  if(!v){ appSettings.onlineExtraction=false; }
+  saveAppSettings(); aiProbePromise=null; renderCoverage();
+});
 $('#anOnlineExtraction').addEventListener('change',event=>{
-  if(LOCAL_DESKTOP){event.target.checked=false;appSettings.onlineExtraction=false;return;}
+  if(LOCAL_DESKTOP&&!cloudBase()){event.target.checked=false;appSettings.onlineExtraction=false;return;}
   // Explicit consent gate: sending a page to a third-party model is a
   // privacy-material action, so the first time it is enabled we state exactly
   // what leaves the device and require an opt-in.
@@ -2396,12 +2422,15 @@ $('#anOnlineExtraction').addEventListener('change',event=>{
 window.__account=null;
 window.accountAuthedFetch=(url,init)=>fetch(url,init);   // anonymous fallback
 (function initAccount(){
-  if (LOCAL_DESKTOP) return;                              // desktop is local-only
+  // Desktop joins the cloud account layer ONLY when the user has configured
+  // the product's service address; otherwise it stays fully local.
+  const cfgUrl=apiUrl('/api/public-config');
+  if (!cfgUrl) return;
   if (!window.EstimationAccount || !window.supabase) return;
   const acc=window.EstimationAccount.createAccount({
     createClient: window.supabase.createClient,
     fetchImpl: window.fetch.bind(window),
-    configUrl: '/api/public-config',
+    configUrl: cfgUrl,
   });
   const $id=(s)=>document.getElementById(s);
   function paint(user){
