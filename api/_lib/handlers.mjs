@@ -31,13 +31,16 @@ export function deriveState({ failed, boardCount = 0, deviceCount = 0, blockingR
 
 export function issueReady(state) { return state === 'complete'; }
 
-/* GET /api/extract/health — Gemini-only configuration, no secrets. */
+/* GET /api/extract/health — engine configuration, no secrets. `mode` reports
+ * which engine serves the next extraction: 'agent-team' (NVIDIA sub-agents +
+ * Gemini master), 'gemini' (direct), or 'unconfigured'. */
 export function handleHealth(deps) {
   const s = deps.providerStatus();
   return ok(200, {
     status: 'ok',
     configured: s.configured,
-    providers: { gemini: s.gemini },
+    mode: s.mode || (s.configured ? 'gemini' : 'unconfigured'),
+    providers: { gemini: s.gemini, nvidia: Boolean(s.nvidia) },
     primary: s.primary,
     verify: s.verify,
     model: deps.GEMINI_MODEL,
@@ -92,7 +95,12 @@ export async function handleInlineExtract(input, deps) {
 
   const instruction = deps.buildInstruction({ filename: b.filename, pageNumber: b.page_number, hints: b.hints, textLines: b.text_lines });
   try {
-    const out = await deps.extract({ imageBase64: b.image_base64, mediaType: b.media_type || 'image/jpeg', instruction, maxTokens: 12000 });
+    // Raw page fields ride along so the agent-team engine can prompt each
+    // sub-agent and the master itself; the Gemini engine ignores the extras.
+    const out = await deps.extract({
+      imageBase64: b.image_base64, mediaType: b.media_type || 'image/jpeg', instruction, maxTokens: 12000,
+      textLines: b.text_lines, filename: b.filename, pageNumber: b.page_number, hints: b.hints,
+    });
     return ok(200, { ...out, correlation_id: correlationId });
   } catch (e) {
     if (e && e.http) return err(e.http, 'not_configured', e.message, correlationId);

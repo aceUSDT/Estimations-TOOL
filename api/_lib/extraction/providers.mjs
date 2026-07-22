@@ -92,6 +92,38 @@ export async function callGemini({ imageBase64, mediaType, instruction, maxToken
   };
 }
 
+/* Generic Gemini JSON call with a caller-supplied response schema. Used by
+ * the agent-team MASTER auditor, whose verdict shape differs from the
+ * extraction schema that callGemini is locked to. Same key, same endpoint,
+ * no secrets in errors. */
+export async function callGeminiJson({ instruction, schema, maxTokens = 4000, model = GEMINI_MODEL, system }) {
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) throw new Error('GEMINI_API_KEY unset');
+  const body = {
+    ...(system ? { systemInstruction: { parts: [{ text: system }] } } : {}),
+    contents: [{ role: 'user', parts: [{ text: instruction }] }],
+    generationConfig: {
+      temperature: 0,
+      maxOutputTokens: maxTokens,
+      responseMimeType: 'application/json',
+      ...(schema ? { responseJsonSchema: geminiSchema(schema) } : {}),
+    },
+  };
+  const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-goog-api-key': key },
+    body: JSON.stringify(body),
+  });
+  if (!resp.ok) throw new Error(`Gemini API error ${resp.status}`);
+  const data = await resp.json();
+  const candidate = data.candidates && data.candidates[0];
+  if (!candidate || !candidate.content || !Array.isArray(candidate.content.parts)) {
+    throw new Error(`Gemini returned no candidate (${candidate && candidate.finishReason || 'no finishReason'})`);
+  }
+  const text = candidate.content.parts.map((p) => p.text || '').join('');
+  return { json: JSON.parse(text), model };
+}
+
 /* ---------- deterministic cross-check (code compares, never the model) ---- */
 
 const norm = (v) => String(v == null ? '' : v).trim().toUpperCase().replace(/[\s\-_/]+/g, '');

@@ -80,7 +80,10 @@ async function handleAppRequest(request) {
         "style-src 'self' 'unsafe-inline'",
         "img-src 'self' data: blob:",
         "worker-src 'self' blob:",
-        "connect-src 'self' blob:",
+        // https: allows the OPTIONAL cloud service (AI team + account) the
+        // user configures in Settings; with no address configured the app
+        // never makes an outbound request.
+        "connect-src 'self' blob: https:",
         "object-src 'none'",
         "base-uri 'self'",
         "frame-ancestors 'none'",
