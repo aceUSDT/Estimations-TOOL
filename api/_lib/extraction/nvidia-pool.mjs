@@ -27,13 +27,22 @@ export const MODEL_REGISTRY = {
   'openai/gpt-oss-120b':                      { key: 1, vision: false, verified: false },
   'qwen/qwen3-next-80b-a3b-instruct':         { key: 1, vision: false, verified: false },
   'minimaxai/minimax-m3':                     { key: 1, vision: false, verified: true  },
-  'nvidia/nemotron-parse':                    { key: 1, vision: true,  verified: false },
+  // Layout zoner, NOT a row reader: on dense UK DB schedules it returns the
+  // page's zones (header table, footer, and the circuit table as a Picture
+  // bbox) — useful for cropping, never for row extraction. Its API rejects
+  // ANY text content (image-only message), caps total context at 9k tokens,
+  // and answers via a markdown_bbox tool call (live-probed 2026-07-22).
+  'nvidia/nemotron-parse':                    { key: 1, vision: true,  verified: true, imageOnly: true, maxTokensCap: 8000, responseKind: 'nemotron_parse' },
   'meta/llama-3.3-70b-instruct':              { key: 2, vision: false, verified: false },
   'z-ai/glm-5.2':                             { key: 2, vision: false, verified: true  },
   'nvidia/llama-3.3-nemotron-super-49b-v1.5': { key: 2, vision: false, verified: true  },
-  'nvidia/nemotron-nano-12b-v2-vl':           { key: 2, vision: true,  verified: false },
+  'nvidia/nemotron-nano-12b-v2-vl':           { key: 2, vision: true,  verified: false, timeoutMs: 150000 },
   'deepseek-ai/deepseek-v4-pro':              { key: 3, vision: false, verified: true  },
-  'nvidia/llama-3.1-nemotron-nano-vl-8b-v1':  { key: 3, vision: true,  verified: false },
+  // Live-probed 2026-07-22 on EPO_Ashfield p2 @2400px long edge: board
+  // DB-00-08P correct, 18/18 row lines read (13 populated + blanks —
+  // conservative over-capture; deterministic code filters). ~107s latency →
+  // needs the long per-model timeout and an async budget when routed.
+  'nvidia/llama-3.1-nemotron-nano-vl-8b-v1':  { key: 3, vision: true,  verified: true, timeoutMs: 150000 },
 };
 
 /* Ordered fallback chains per sub-agent role. Verified-responsive models
@@ -60,9 +69,12 @@ export const ROLE_CHAINS = {
     'z-ai/glm-5.2',
   ],
   vision_parse: [
-    'nvidia/nemotron-parse',
+    'nvidia/llama-3.1-nemotron-nano-vl-8b-v1',   // the proven row reader
     'nvidia/nemotron-nano-12b-v2-vl',
-    'nvidia/llama-3.1-nemotron-nano-vl-8b-v1',
+  ],
+  // Page zoning (bboxes for cropping table regions before OCR/vision).
+  layout: [
+    'nvidia/nemotron-parse',
   ],
 };
 
@@ -147,21 +159,20 @@ export function createPool(opts = {}) {
     stamps[meta.key].push(now());
 
     const messages = [];
-    if (req.system) messages.push({ role: 'system', content: req.system });
+    if (req.system && !meta.imageOnly) messages.push({ role: 'system', content: req.system });
     if (req.imageBase64 && meta.vision) {
-      messages.push({
-        role: 'user',
-        content: [
-          { type: 'text', text: req.prompt || '' },
-          { type: 'image_url', image_url: { url: `data:${req.mediaType || 'image/jpeg'};base64,${req.imageBase64}` } },
-        ],
-      });
+      const imagePart = { type: 'image_url', image_url: { url: `data:${req.mediaType || 'image/jpeg'};base64,${req.imageBase64}` } };
+      // Some dedicated parsers (nemotron-parse) reject ANY text content.
+      messages.push({ role: 'user', content: meta.imageOnly ? [imagePart] : [{ type: 'text', text: req.prompt || '' }, imagePart] });
     } else {
       messages.push({ role: 'user', content: req.prompt || '' });
     }
 
+    let maxTokens = req.maxTokens != null ? req.maxTokens : 4000;
+    if (meta.maxTokensCap && maxTokens > meta.maxTokensCap) maxTokens = meta.maxTokensCap;
+
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+    const timer = setTimeout(() => ctrl.abort(), meta.timeoutMs || timeoutMs);
     const t0 = now();
     let res;
     try {
@@ -172,7 +183,7 @@ export function createPool(opts = {}) {
         body: JSON.stringify({
           model,
           messages,
-          max_tokens: req.maxTokens != null ? req.maxTokens : 4000,
+          max_tokens: maxTokens,
           temperature: req.temperature != null ? req.temperature : 0,
         }),
       });
@@ -189,8 +200,14 @@ export function createPool(opts = {}) {
     }
     let data;
     try { data = await res.json(); } catch { markResult(model, false); throw poolError('bad_json', model); }
-    const content = data && data.choices && data.choices[0] && data.choices[0].message
-      ? data.choices[0].message.content : null;
+    const msg = data && data.choices && data.choices[0] && data.choices[0].message || null;
+    let content = msg ? msg.content : null;
+    // Dedicated parsers answer via a tool call (markdown_bbox) instead of
+    // content: synthesize the elements JSON so every caller sees `content`.
+    if (meta.responseKind === 'nemotron_parse' && (!content || !content.length)) {
+      const call = msg && Array.isArray(msg.tool_calls) ? msg.tool_calls[0] : null;
+      content = call && call.function ? call.function.arguments : null;
+    }
     if (typeof content !== 'string' || !content) { markResult(model, false); throw poolError('empty_reply', model); }
     markResult(model, true);
     return { content, model, keyId: meta.key, ms: now() - t0 };

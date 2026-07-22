@@ -34,8 +34,10 @@ check('parseModelJson: garbage → null', parseModelJson('no json here') === nul
 /* ---- production chain sanity ---- */
 for (const [role, chain] of Object.entries(ROLE_CHAINS)) {
   check(`chain ${role}: every model registered`, chain.every((m) => MODEL_REGISTRY[m]));
-  check(`chain ${role}: has a live-verified leader`, MODEL_REGISTRY[chain[0]] && (role === 'vision_parse' || MODEL_REGISTRY[chain[0]].verified === true));
+  check(`chain ${role}: has a live-verified leader`, MODEL_REGISTRY[chain[0]] && MODEL_REGISTRY[chain[0]].verified === true);
 }
+check('vision_parse is led by the proven row reader', ROLE_CHAINS.vision_parse[0] === 'nvidia/llama-3.1-nemotron-nano-vl-8b-v1');
+check('layout role exists for page zoning', Array.isArray(ROLE_CHAINS.layout) && ROLE_CHAINS.layout[0] === 'nvidia/nemotron-parse');
 check('extract + second_opinion lead with different models', ROLE_CHAINS.extract[0] !== ROLE_CHAINS.second_opinion[0]);
 
 /* ---- pool harness ---- */
@@ -115,6 +117,27 @@ function harness({ behaviours, rpmPerKey = 30, startAt = 1000000 } = {}) {
   h.tick(11000);                                                 // past cooldownMs
   const fourth = await h.pool.callRole('work', { prompt: 'x' });
   check('health: model retried after cooldown', fourth.attempts.some((a) => a.model === 'a/model-a' && a.error === 'http_500'));
+}
+
+/* image-only parser models: request shape, token cap, tool-call synthesis */
+{
+  const bodies = [];
+  const parserReply = {
+    ok: true, status: 200,
+    json: async () => ({ choices: [{ message: { content: null, tool_calls: [{ function: { name: 'markdown_bbox', arguments: '[[{"type":"Table","text":"rows"}]]' } }] } }] }),
+  };
+  const REG2 = { 'p/parser': { key: 1, vision: true, verified: true, imageOnly: true, maxTokensCap: 8000, responseKind: 'nemotron_parse' } };
+  const pool = createPool({
+    keys: KEYS, registry: REG2, chains: { layout: ['p/parser'] },
+    fetchImpl: async (url, init) => { bodies.push(JSON.parse(init.body)); return parserReply; },
+    now: () => 0, sleep: async () => {}, timeoutMs: 5000,
+  });
+  const out = await pool.callRole('layout', { system: 'SYS', prompt: 'read this', imageBase64: 'aGk=', maxTokens: 12000 });
+  const body = bodies[0];
+  check('imageOnly: no system message sent', !body.messages.some((m) => m.role === 'system'));
+  check('imageOnly: user content is image-only array', Array.isArray(body.messages[0].content) && body.messages[0].content.length === 1 && body.messages[0].content[0].type === 'image_url');
+  check('imageOnly: maxTokens capped to model limit', body.max_tokens === 8000);
+  check('parse response: tool-call arguments synthesized as content', out.content.includes('"Table"'));
 }
 
 /* exhaustion: stable error, attempts preserved, and NO key material */
