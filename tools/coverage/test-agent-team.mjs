@@ -160,7 +160,7 @@ function fakeTeamPool({ secondFails } = {}) {
     },
   });
   check('team: primary result kept as the result', out.result.devices.length === 1);
-  check('team: cross-check ran deterministically', out.verification.performed === true);
+  check('team: cross-check ran deterministically', out.verification.status === 'done');
   check('team: missing_in_primary surfaced', (out.verification.mismatches || []).some((m) => m.kind === 'missing_in_primary'));
   check('team: master verdict recorded', out.master.status === 'reviewed' && out.master.complete === false && out.master.missed.length === 1);
   check('team: master got the computed mismatches', masterSaw && masterSaw.instruction.includes('missing_in_primary'));
@@ -176,7 +176,7 @@ function fakeTeamPool({ secondFails } = {}) {
     geminiConfigured: true,
     callMaster: async () => ({ json: { complete: true, missed: [], notes: '' } }),
   });
-  check('degraded: verification honestly not performed', out.verification.performed === false && out.verification.reason === 'second_opinion_unavailable');
+  check('degraded: verification honestly not performed', out.verification.status === 'unavailable' && out.verification.reason === 'second_opinion_unavailable');
   check('degraded: second agent recorded as null', out.agents.second === null);
 }
 
@@ -202,5 +202,93 @@ function fakeTeamPool({ secondFails } = {}) {
   check('master crash: pipeline survives with master error', out.master.status === 'error' && out.result.devices.length === 1);
 }
 
+/* ---- engine selector: mode decisions + honest fallback ---- */
+const { engineStatus, makeExtractSmart } = await load('api/_lib/extraction/engine.mjs');
+
+{
+  delete process.env.GEMINI_API_KEY;
+  check('engine: nothing configured → unconfigured', engineStatus({}).mode === 'unconfigured');
+  check('engine: NVIDIA keys → agent-team', engineStatus({ NVIDIA_API_KEY_1: 'x'.repeat(20) }).mode === 'agent-team');
+  check('engine: AGENT_TEAM=off forces gemini path', engineStatus({ NVIDIA_API_KEY_1: 'x'.repeat(20), AGENT_TEAM: 'off' }).mode === 'unconfigured');
+  process.env.GEMINI_API_KEY = 'test-not-a-real-key';
+  check('engine: gemini only → gemini mode', engineStatus({}).mode === 'gemini');
+  check('engine: team off + gemini → gemini mode', engineStatus({ NVIDIA_API_KEY_1: 'x'.repeat(20), AGENT_TEAM: 'off' }).mode === 'gemini');
+  delete process.env.GEMINI_API_KEY;
+}
+
+{ // team mode routes to the team; gemini mode routes to gemini
+  const seen = [];
+  const smart = makeExtractSmart({
+    status: () => ({ mode: 'agent-team', gemini: true }),
+    getPool: () => ({}),
+    team: async (page) => { seen.push('team'); return { result: { devices: [] }, provider: 'nvidia+gemini' }; },
+    gemini: async () => { seen.push('gemini'); return { result: {} }; },
+  });
+  await smart({ instruction: 'x', textLines: ['a'] });
+  check('engine: agent-team mode calls the team', seen.join(',') === 'team');
+}
+
+{ // chain exhaustion → honest gemini fallback, labelled as such
+  const smart = makeExtractSmart({
+    status: () => ({ mode: 'agent-team', gemini: true }),
+    getPool: () => ({}),
+    team: async () => { const e = new Error('nvidia-pool: role_exhausted'); e.code = 'role_exhausted'; throw e; },
+    gemini: async () => ({ result: { devices: [] }, provider: 'gemini', verification: null }),
+  });
+  const out = await smart({ instruction: 'x' });
+  check('engine: exhausted chain falls back to gemini', out.provider === 'gemini');
+  check('engine: fallback is labelled, never silent', out.fallback === 'gemini_direct' && out.fallback_reason === 'nvidia_chain_exhausted');
+}
+
+{ // exhaustion WITHOUT gemini available → the error propagates (no fake success)
+  const smart = makeExtractSmart({
+    status: () => ({ mode: 'agent-team', gemini: false }),
+    getPool: () => ({}),
+    team: async () => { const e = new Error('nvidia-pool: role_exhausted'); e.code = 'role_exhausted'; throw e; },
+    gemini: async () => { throw new Error('must not be called'); },
+  });
+  let err = null;
+  try { await smart({ instruction: 'x' }); } catch (e) { err = e; }
+  check('engine: no fallback available → error propagates honestly', err && err.code === 'role_exhausted');
+}
+
+/* ---- worker integration: the master's findings force review ---- */
+const { makeProcessJob } = await load('api/_lib/worker.mjs');
+
+function fakeJobDb() {
+  const jobs = new Map(); const results = [];
+  return {
+    updateJob: async (_sb, id, patch) => { jobs.set(id, { ...(jobs.get(id) || {}), ...patch }); },
+    insertResult: async (_sb, row) => { results.push(row); },
+    job: (id) => jobs.get(id), results,
+  };
+}
+const JOB = { id: 'j1', org_id: 'o1', document_id: 'd1', page_number: 2, attempt: 0 };
+const teamOut = (master) => ({
+  result: { boards: [{ ref: 'DB-1' }], devices: [{ device_class: 'MCB' }] },
+  verification: { status: 'done', provider: 'nvidia', mismatches: [] },
+  master,
+});
+
+{ // master finds a gap both agents missed → needs_review, master persisted
+  const db = fakeJobDb();
+  await makeProcessJob({ sb: {}, db, buildInstruction, extract: async () => teamOut({ status: 'reviewed', complete: false, missed: [{ board_ref: 'DB-1', way: '15', evidence: 'SPD visible' }], notes: '' }), heartbeatMs: 0 })(JOB, {});
+  check('worker: master-found gap forces needs_review', db.job('j1').state === 'needs_review');
+  check('worker: master verdict persisted with the result', db.results[0].verification.master.missed.length === 1);
+}
+
+{ // master satisfied + agents agree → complete
+  const db = fakeJobDb();
+  await makeProcessJob({ sb: {}, db, buildInstruction, extract: async () => teamOut({ status: 'reviewed', complete: true, missed: [], notes: '' }), heartbeatMs: 0 })(JOB, {});
+  check('worker: clean master pass stays complete', db.job('j1').state === 'complete');
+}
+
+{ // master skipped (no Gemini) → no false review, still complete when agents agree
+  const db = fakeJobDb();
+  await makeProcessJob({ sb: {}, db, buildInstruction, extract: async () => teamOut({ status: 'skipped', reason: 'gemini_unconfigured' }), heartbeatMs: 0 })(JOB, {});
+  check('worker: skipped master never blocks', db.job('j1').state === 'complete');
+  check('worker: skipped master is recorded honestly', db.results[db.results.length - 1].verification.master.status === 'skipped');
+}
+
 if (fail) { console.log(`\n${fail} failure(s)`); process.exit(1); }
-console.log('PASS: nvidia pool (pacing, fallback, cooldown, sanitized errors) + Gemini-master agent team.');
+console.log('PASS: nvidia pool + agent team + engine selector + worker master-audit integration.');

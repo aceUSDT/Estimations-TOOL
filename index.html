@@ -1888,8 +1888,10 @@ function aiExtractReady(){
     aiProbePromise=fetch(AI_HEALTH_ENDPOINT,{method:'GET'}).then(async r=>{
       if(!r.ok){ window.__aiStatus='off — extraction endpoint not reachable'; return false; }
       const j=await r.json();
-      if(!j.configured){ window.__aiStatus='not configured — set GEMINI_API_KEY on the server'; return false; }
-      window.__aiStatus='active ('+(j.model||'Gemini')+')'+(j.verify?' + cross-check':'');
+      if(!j.configured){ window.__aiStatus='not configured — set the AI keys on the server'; return false; }
+      window.__aiStatus = j.mode==='agent-team'
+        ? 'active (AI agent team + master audit)'
+        : 'active ('+(j.model||'Gemini')+')'+(j.verify?' + cross-check':'');
       return true;
     }).catch(()=>{ window.__aiStatus='off — extraction endpoint not reachable'; return false; });
   }

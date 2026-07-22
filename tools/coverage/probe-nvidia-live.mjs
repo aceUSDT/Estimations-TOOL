@@ -42,13 +42,28 @@ for (const [slot, model] of Object.entries(perKey)) {
   }
 }
 
-// THE GATE: one chained role call — the path production actually uses.
+// THE GATE: the full agent team on a realistic schedule fragment — the exact
+// path production routes use (engine → team → pool). Master (Gemini) audits
+// when GEMINI_API_KEY is present; otherwise it is honestly reported skipped.
+const { extractSmart, engineStatus } = await import(pathToFileURL(path.resolve(ROOT, 'api/_lib/extraction/engine.mjs')));
+const LINES = [
+  'DB-2A DISTRIBUTION BOARD SCHEDULE  MAIN SWITCH 100A',
+  '1   32A  B   RCBO  30mA  Kitchen ring final     2.5mm',
+  '2   6A   B   MCB          Lighting ground floor  1.5mm',
+  '3   40A  C   MCB          Cooker                 6.0mm',
+  '4   SPARE',
+];
+console.log('engine mode:', engineStatus().mode);
 try {
-  const out = await pool.callRole('extract', PROBE);
-  console.log(`  ok  role extract → ${out.model} (${out.ms}ms, ${out.attempts.length} prior attempts)`);
-  console.log('\nLIVE NVIDIA pool probe: PASS (role chain answered).');
+  const out = await extractSmart({ textLines: LINES, filename: 'probe.pdf', pageNumber: 1, hints: {}, maxTokens: 12000 });
+  const n = (out.result && out.result.devices || []).length;
+  console.log(`  ok  TEAM extract → ${out.agents ? out.agents.extractor.model : out.model}: ${n} device rows`);
+  if (out.agents && out.agents.second) console.log(`  ok  second opinion → ${out.agents.second.model}; cross-check ${out.verification.status}, ${(out.verification.mismatches || []).length} disagreement(s)`);
+  else console.log(`  ..  second opinion: ${out.verification && out.verification.reason || 'n/a'}`);
+  console.log(`  ..  master: ${out.master ? out.master.status + (out.master.status === 'reviewed' ? ` (complete=${out.master.complete}, missed=${out.master.missed.length})` : '') : 'n/a'}${out.fallback ? '  [FALLBACK: ' + out.fallback + ']' : ''}`);
+  console.log('\nLIVE agent-team probe: PASS (production path answered).');
 } catch (e) {
-  console.log(`  !!  role extract exhausted: ${JSON.stringify(e.attempts || [])}`);
-  console.log('\nLIVE NVIDIA pool probe: FAIL — every model in the extract chain is unresponsive.');
+  console.log(`  !!  team exhausted: ${e.code || e.message}${e.attempts ? ' ' + JSON.stringify(e.attempts) : ''}`);
+  console.log('\nLIVE agent-team probe: FAIL — every model in the extract chain is unresponsive right now.');
   process.exit(1);
 }

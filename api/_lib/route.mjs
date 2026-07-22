@@ -4,7 +4,8 @@
  * come from `realDeps()`; the pure handlers in handlers.mjs are what the
  * deterministic tests exercise directly with fakes.
  */
-import { providerStatus, GEMINI_MODEL, GEMINI_VERIFY_MODEL, extractWithVerification, buildInstruction } from './extraction/providers.mjs';
+import { GEMINI_MODEL, GEMINI_VERIFY_MODEL, buildInstruction } from './extraction/providers.mjs';
+import { engineStatus, extractSmart } from './extraction/engine.mjs';
 import { serviceClient, userFromRequest } from './supabase.mjs';
 import * as db from './db.mjs';
 import { makeProcessJob } from './worker.mjs';
@@ -17,7 +18,10 @@ export function realDeps() {
   const getSb = () => (sb = sb || serviceClient());
   const authRequired = process.env.AUTH_REQUIRED !== 'false';   // safe-by-default: auth on
   const deps = {
-    providerStatus, GEMINI_MODEL, GEMINI_VERIFY_MODEL,
+    // Engine-aware status: `configured` is true when EITHER the NVIDIA
+    // sub-agent pool or Gemini can serve extractions; `mode` says which
+    // engine the next extraction will use.
+    providerStatus: engineStatus, GEMINI_MODEL, GEMINI_VERIFY_MODEL,
     supabaseConfigured: Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY),
     authRequired,
     // Browser-safe config only — the publishable (anon) key + URL, never the
@@ -28,7 +32,7 @@ export function realDeps() {
     },
     db,
     buildInstruction,
-    extract: extractWithVerification,
+    extract: extractSmart,
     get sb() { return getSb(); },
     resolveUser: async (input) => {
       const user = await userFromRequest({ headers: { get: (k) => (input.headers || {})[k.toLowerCase()] || null } });
@@ -36,7 +40,7 @@ export function realDeps() {
     },
   };
   // Bind a concrete Supabase client at call time (not the lazy getter).
-  deps.processJob = (job, payload) => makeProcessJob({ sb: getSb(), db, extract: extractWithVerification, buildInstruction })(job, payload);
+  deps.processJob = (job, payload) => makeProcessJob({ sb: getSb(), db, extract: extractSmart, buildInstruction })(job, payload);
   return deps;
 }
 

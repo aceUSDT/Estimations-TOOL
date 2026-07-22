@@ -86,7 +86,7 @@ function masterPrompt({ textLines, primary, second, mismatches }) {
  *         geminiConfigured— boolean }                                        */
 export async function runAgentTeam(page, deps) {
   const { imageBase64, mediaType, textLines, filename, pageNumber, hints } = page;
-  const instruction = deps.buildInstruction({ filename, pageNumber, hints, textLines });
+  const instruction = page.instruction || deps.buildInstruction({ filename, pageNumber, hints, textLines });
   const req = {
     system: EXTRACTION_SYSTEM_PROMPT,
     prompt: instruction + SCHEMA_DEMAND,
@@ -107,10 +107,12 @@ export async function runAgentTeam(page, deps) {
     // A missing second opinion degrades honestly: verification reports it.
   }
 
-  // 3) deterministic disagreement computation (never model-resolved)
+  // 3) deterministic disagreement computation (never model-resolved) — same
+  //    {status:'done', ...} contract the Gemini-only verifier emits, so the
+  //    worker and UI need no engine-specific branching.
   const verification = second
-    ? { performed: true, ...deps.crossCheck(primary, second) }
-    : { performed: false, reason: 'second_opinion_unavailable' };
+    ? { status: 'done', provider: 'nvidia', model: b.model, ...deps.crossCheck(primary, second) }
+    : { status: 'unavailable', provider: 'nvidia', reason: 'second_opinion_unavailable' };
 
   // 4) master audit — Gemini oversees; skipped is reported, never faked
   let master = { status: 'skipped', reason: 'gemini_unconfigured' };
