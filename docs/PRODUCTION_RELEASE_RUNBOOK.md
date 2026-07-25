@@ -9,10 +9,13 @@ real domain throughout.
 - GitHub Actions secrets (Settings → Secrets → Actions):
   - Windows (Azure Trusted Signing / Microsoft Artifact Signing):
     `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`,
-    `AZURE_SIGNING_ENDPOINT`, `AZURE_SIGNING_ACCOUNT`, `AZURE_CERT_PROFILE`
-  - macOS (Developer ID + notarisation):
-    `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`,
-    `CSC_LINK` (base64 .p12), `CSC_KEY_PASSWORD`
+    `AZURE_SIGNING_ENDPOINT`, `AZURE_CODE_SIGNING_ACCOUNT`, `AZURE_CERTIFICATE_PROFILE`,
+    `AZURE_PUBLISHER_NAME`
+  - macOS (Developer ID + App Store Connect API notarisation):
+    `MAC_CSC_LINK` (base64 .p12), `MAC_CSC_KEY_PASSWORD`, `APPLE_API_KEY`
+    (.p8 contents), `APPLE_API_KEY_ID`, `APPLE_API_ISSUER`, `APPLE_TEAM_ID`.
+    Secrets live in the GitHub `production` **environment**
+    (Settings → Environments), matching `.github/workflows/desktop.yml`.
   - Publishing: `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`,
     `R2_BUCKET` (= `estimation-tools-releases`)
 - The desktop appId in `desktop/electron-builder.config.cjs` must be an
