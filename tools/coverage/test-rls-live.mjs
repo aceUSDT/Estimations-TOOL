@@ -35,7 +35,7 @@ const anon = () => createClient(URL_, KEY, { auth: { persistSession: false, auto
 {
   const { error } = await anon().from('projects').select('id').limit(1);
   if (error && /PGRST205|does not exist|schema cache/i.test(error.message + (error.code || ''))) {
-    skip('schema not applied yet — apply supabase/migrations/0001,0002,0003 in the Supabase SQL editor, then re-run.');
+    skip('schema not applied yet — apply supabase/migrations/0001-0005 in the Supabase SQL editor, then re-run.');
   }
   if (error && !/permission|rls|row-level/i.test(error.message)) {
     // an unexpected error other than "denied" — surface it but don't hard-fail the gate
@@ -64,9 +64,17 @@ const A = await signUp(); if (A.skip) skip(A.skip);
 const B = await signUp(); if (B.skip) skip(B.skip);
 
 // A creates an org + project; the 0003 trigger enrols A as owner.
-const orgA = await A.sb.from('organizations').insert({ name: `rls-test-A-${randomUUID()}`, created_by: A.user.id }).select('id').single();
-if (orgA.error) fail(`A could not create org (RLS insert): ${orgA.error.message}`);
-const projA = await A.sb.from('projects').insert({ org_id: orgA.data.id, name: 'A secret project', created_by: A.user.id }).select('id').single();
+// NOTE: the org's own visibility (org_select -> is_org_member) depends on the
+// enrol_org_creator AFTER INSERT trigger, which fires WITHIN this same insert
+// statement. Postgres does not guarantee a RETURNING clause observes a same-
+// statement AFTER-trigger's side effects (STABLE-function snapshot timing),
+// so we generate the id client-side and insert WITHOUT asking for the row
+// back — a real Postgres/RLS limitation, not a bug. (Investigating this also
+// found and fixed a genuine infinite-recursion bug — see migration 0005.)
+const orgAId = randomUUID();
+const orgAInsert = await A.sb.from('organizations').insert({ id: orgAId, name: `rls-test-A-${randomUUID()}`, created_by: A.user.id });
+if (orgAInsert.error) fail(`A could not create org (RLS insert): ${orgAInsert.error.message}`);
+const projA = await A.sb.from('projects').insert({ org_id: orgAId, name: 'A secret project', created_by: A.user.id }).select('id').single();
 if (projA.error) fail(`A could not create project (bootstrap/RLS issue?): ${projA.error.message}`);
 
 // A can read own project; B must NOT see it.
@@ -82,5 +90,21 @@ const bGuess = await B.sb.from('projects').select('*').eq('id', projA.data.id).m
 if (bGuess.data) fail('CROSS-TENANT LEAK: user B read user A’s project by id guess');
 console.log('  ok  id-guess by another tenant returns nothing');
 
+// Regression checks for the two bugs migration 0005 fixed (found live while
+// building this very test): member_write's recursion, and org_update's
+// column-collision. Both go through the new is_org_admin() helper.
+const aMembers = await A.sb.from('organization_members').select('user_id,role').eq('org_id', orgAId);
+if (aMembers.error) fail(`org member read recursed/failed (is_org_admin regression?): ${aMembers.error.message}`);
+if (!aMembers.data.some((m) => m.user_id === A.user.id && m.role === 'owner')) fail('bootstrap trigger did not enrol A as owner');
+console.log('  ok  A reads own organization_members with no recursion');
+
+const aUpdatesOwnOrg = await A.sb.from('organizations').update({ name: 'A renamed org' }).eq('id', orgAId).select('name');
+if (aUpdatesOwnOrg.error || !aUpdatesOwnOrg.data.length) fail(`owner could not update own org (org_update regression?): ${aUpdatesOwnOrg.error && aUpdatesOwnOrg.error.message}`);
+console.log('  ok  org owner can update their own org (org_update policy correct)');
+
+const bUpdatesAOrg = await B.sb.from('organizations').update({ name: 'hijacked' }).eq('id', orgAId).select('id');
+if (bUpdatesAOrg.data && bUpdatesAOrg.data.length > 0) fail('CROSS-TENANT WRITE: user B updated user A’s organization');
+console.log('  ok  a non-member cannot update another tenant’s organization');
+
 console.log('\nLIVE RLS negative test: PASS (no cross-tenant reads).');
-console.log(`(test rows left under org ${orgA.data.id}; delete via SQL editor if desired.)`);
+console.log(`(test rows left under org ${orgAId}; delete via SQL editor if desired.)`);
