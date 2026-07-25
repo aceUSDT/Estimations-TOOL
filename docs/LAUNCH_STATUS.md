@@ -1,6 +1,6 @@
 # Launch status — the unified product (single source of truth)
 
-Updated 2026-07-22 on `product/ai-agent-team` (PR #13). Honest status only:
+Updated 2026-07-25 on `product/ai-agent-team` (PR #13). Honest status only:
 nothing below is claimed that a test, a live probe, or a deploy did not show.
 
 ## The product
@@ -25,13 +25,12 @@ deterministic code computing every count. Server keys never leave the server.
 | Download gateway (R2 worker) + release manifest | ✅ tests green | signed-claim verification, allow-listed builds |
 | Desktop: local-first + optional cloud service | ✅ tests green | https-only opt-in address; no address ⇒ zero outbound requests |
 | Desktop packaging + signed-installer workflow | ✅ scaffolding | electron-builder 4 targets + CI workflow ported; **signing needs owner certs** |
-| Accounts (Supabase auth, RLS, browser + desktop) | ✅ code+tests; 🟡 live | RLS written/forced/logic-tested; LIVE proof awaits SQL apply |
+| Accounts (Supabase auth, RLS, browser + desktop) | ✅ **live-proven** | `npm run test:rls` passes 6/6 against the real database (2026-07-25); live-testing also found and fixed a real infinite-recursion bug and a real always-false policy bug (migration 0005) — both now covered by regression checks in the same live test |
 
 ## What the owner must do to go live (in order)
 
-1. **Supabase**: run `supabase/migrations/0001–0004` in the SQL editor; turn
-   OFF "Confirm email" on the test project; then `npm run test:rls` proves the
-   tenant-isolation gate live.
+1. ~~**Supabase**: apply migrations, disable "Confirm email", prove RLS live.~~
+   **Done 2026-07-25** — `supabase/migrations/0001–0005` applied; live RLS gate closed.
 2. **Vercel env** (Project → Settings → Environment Variables): everything in
    `.env.example` — `GEMINI_API_KEY` (master), `NVIDIA_API_KEY_1..3`
    (sub-agents), Supabase server + publishable values, and — when selling —
