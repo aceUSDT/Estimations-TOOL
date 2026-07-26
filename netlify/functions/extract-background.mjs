@@ -13,13 +13,15 @@
  */
 import { getStore } from '@netlify/blobs';
 import { buildInstruction, extractWithVerification } from './lib/providers.mjs';
+import { MAX_BODY_BYTES, isOversized, isSameOrigin, isValidJobId, limitTextLines, safeMediaType } from './lib/request-guard.mjs';
 
 export default async function handler(req) {
+  if (!isSameOrigin(req) || isOversized(req)) return new Response(null, { status: 403 });
   let body = {};
   try { body = await req.json(); } catch { /* ignore */ }
   const jobId = body.job_id;
   const store = getStore('extractions');
-  if (!jobId) return new Response(null, { status: 202 });
+  if (!isValidJobId(jobId)) return new Response(null, { status: 202 });
 
   try {
     const { filename, page_number: pageNumber, image_base64: imageBase64, media_type: mediaType, text_lines: textLines, hints } = body;
@@ -27,8 +29,12 @@ export default async function handler(req) {
       await store.setJSON(jobId, { status: 'error', error: 'Provide image_base64 and/or text_lines' });
       return new Response(null, { status: 202 });
     }
-    const instruction = buildInstruction({ filename, pageNumber, hints, textLines });
-    const out = await extractWithVerification({ imageBase64, mediaType, instruction, maxTokens: 16000 });
+    if (typeof imageBase64 === 'string' && imageBase64.length > MAX_BODY_BYTES) {
+      await store.setJSON(jobId, { status: 'error', error: 'Page payload is too large' });
+      return new Response(null, { status: 202 });
+    }
+    const instruction = buildInstruction({ filename, pageNumber, hints, textLines: limitTextLines(textLines) });
+    const out = await extractWithVerification({ imageBase64, mediaType: safeMediaType(mediaType), instruction, maxTokens: 16000 });
     await store.setJSON(jobId, { status: 'done', ...out });
   } catch (err) {
     const msg = err && err.message ? err.message : String(err);

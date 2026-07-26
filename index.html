@@ -797,7 +797,10 @@
 /* ============================ CORE ============================ */
 const $ = s => document.querySelector(s);
 const $$ = s => Array.from(document.querySelectorAll(s));
-const esc = s => String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;');
+/* Escapes for both text and quoted-attribute contexts: document text, file
+   names, and board references reach templates that interpolate into attributes. */
+const ESC_MAP={'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;','`':'&#96;'};
+const esc = s => String(s??'').replace(/[&<>"'`]/g, ch=>ESC_MAP[ch]);
 let toastTimer;
 const toast = m => { const t=$('#toast'); t.textContent=m; t.classList.add('show');
   clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.remove('show'),2600); };
@@ -1898,7 +1901,9 @@ async function aiExtractPage(f,pageNo,pg){
   // A full extraction of a dense page runs 30–45s — past Netlify's sync limit —
   // so we go through the BACKGROUND function (202 immediately) and poll for the
   // result written to the blob store. No 30s ceiling; the key stays server-side.
-  const jobId=uid()+'_'+Date.now();
+  /* Unguessable: results sit in a shared server-side store until polled, so a
+     predictable id would let another visitor read this document's extraction. */
+  const jobId=(crypto.randomUUID?crypto.randomUUID():Array.from(crypto.getRandomValues(new Uint32Array(4)),v=>v.toString(16).padStart(8,'0')).join('')).replace(/-/g,'');
   const r=await fetch(AI_BG_ENDPOINT,{method:'POST',headers:{'content-type':'application/json'},
     body:JSON.stringify({job_id:jobId, filename:f.name, page_number:pageNo, image_base64, media_type:'image/jpeg',
       text_lines:(pg.lines||[]).map(l=>l.text).slice(0,400), hints:{type:pg.type}})});

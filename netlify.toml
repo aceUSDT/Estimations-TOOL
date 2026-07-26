@@ -11,3 +11,18 @@
 [functions]
   directory = "netlify/functions"
   node_bundler = "esbuild"
+
+# Browser hardening for the hosted build. The policy mirrors the desktop
+# Electron CSP (desktop/main.cjs): the app is a single inline-script page and
+# PDF.js/Tesseract need blob workers and WebAssembly, so 'unsafe-inline' and
+# 'unsafe-eval' stay. Everything else is same-origin only.
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Content-Security-Policy = "default-src 'self' data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; worker-src 'self' blob:; connect-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+    X-Content-Type-Options = "nosniff"
+    X-Frame-Options = "DENY"
+    Referrer-Policy = "no-referrer"
+    Permissions-Policy = "camera=(), microphone=(), geolocation=(), interest-cohort=()"
+    Cross-Origin-Opener-Policy = "same-origin"
+    Strict-Transport-Security = "max-age=31536000; includeSubDomains"
