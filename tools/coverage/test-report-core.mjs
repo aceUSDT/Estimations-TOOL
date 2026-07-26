@@ -1,12 +1,8 @@
 import assert from "node:assert/strict";
-import fs from "node:fs/promises";
-import vm from "node:vm";
 import ExcelJS from "exceljs";
+import { loadReportCore } from "./lib/cores.mjs";
 
-const source = await fs.readFile(new URL("../../report-core.js", import.meta.url), "utf8");
-const context = vm.createContext({ console });
-vm.runInContext(source, context, { filename: "report-core.js" });
-const Report = context.EstimationReport;
+const Report = loadReportCore();
 
 const model = Report.buildModel({
   projectName: "Llangatwg Test",

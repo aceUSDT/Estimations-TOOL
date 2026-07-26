@@ -5,11 +5,12 @@
  * code computes) — these tests pin that behaviour.
  */
 import path from 'node:path';
-import { pathToFileURL, fileURLToPath } from 'node:url';
+import { pathToFileURL } from 'node:url';
+import { ROOT } from './lib/paths.mjs';
+import { createChecker } from './lib/checks.mjs';
 
-const HERE = path.dirname(fileURLToPath(import.meta.url));
-const LIB = path.resolve(HERE, '../../netlify/functions/lib/providers.mjs');
-const FN = path.resolve(HERE, '../../netlify/functions/extract.mjs');
+const LIB = path.join(ROOT, 'netlify/functions/lib/providers.mjs');
+const FN = path.join(ROOT, 'netlify/functions/extract.mjs');
 
 delete process.env.ANTHROPIC_API_KEY;
 delete process.env.ANTHROPIC_AUTH_TOKEN;
@@ -18,10 +19,7 @@ delete process.env.GEMINI_API_KEY;
 const { crossCheckExtractions, geminiSchema, providerStatus, buildInstruction } = await import(pathToFileURL(LIB));
 const { default: handler } = await import(pathToFileURL(FN));
 
-let fail = 0;
-const check = (name, cond, detail) => {
-  if (!cond) { console.log(`FAIL ${name}${detail ? ' — ' + detail : ''}`); fail++; }
-};
+const { check, finish } = createChecker();
 
 /* ---------- crossCheckExtractions ---------- */
 const dev = (over = {}) => ({
@@ -92,5 +90,4 @@ delete process.env.GEMINI_API_KEY;
 const instr = buildInstruction({ filename: 'a.pdf', pageNumber: 3, hints: { type: 'db_schedule', sub_format: 'bam_epo' }, textLines: ['ROW 1'] });
 check('instruction carries filename/page/hint/lines', instr.includes('a.pdf') && instr.includes('page 3') && instr.includes('bam_epo') && instr.includes('ROW 1'));
 
-if (fail) { console.log(`\n${fail} failure(s)`); process.exit(1); }
-console.log('PASS: cross-check comparator, Gemini schema translation, provider selection.');
+finish('cross-check comparator, Gemini schema translation, provider selection.');

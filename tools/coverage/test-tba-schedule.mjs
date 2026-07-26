@@ -1,10 +1,8 @@
 import assert from 'node:assert/strict';
-import { createRequire } from 'node:module';
+import { loadExtractorCore, loadPipeline } from './lib/cores.mjs';
 
-await import('../../extractor-core.js');
-const Core = globalThis.EstimationExtractorCore;
-const require = createRequire(import.meta.url);
-const Pipeline = require('./app-pipeline.cjs');
+const Core = await loadExtractorCore();
+const Pipeline = loadPipeline();
 
 const canonical = Core.canonicalBoardReference('DB/F/01/LP');
 assert.equal(canonical.display, 'DB-F-01');

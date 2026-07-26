@@ -19,21 +19,16 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { createRequire } from 'node:module';
+import { WORK, REPORTS, loadGroundTruth, loadWorkIndex, loadWorkMeta, pagePath, readJson } from './lib/paths.mjs';
+import { loadPipeline } from './lib/cores.mjs';
+import { normRef as norm, waySlots, boardWays } from './lib/metrics.mjs';
 
-const require = createRequire(import.meta.url);
-const P = require('./app-pipeline.cjs');
+const P = loadPipeline();
 const core = P.EstimationExtractorCore;
 
-const HERE = path.dirname(fileURLToPath(import.meta.url));
-const WORK = path.join(HERE, 'work');
-const ROOT = path.resolve(HERE, '..', '..');
-const REPORTS = path.join(ROOT, 'reports');
 const ENDPOINT = process.env.AI_ENDPOINT || 'https://estimationtoolz.netlify.app/.netlify/functions/extract';
-const groundTruth = JSON.parse(fs.readFileSync(path.join(HERE, 'ground-truth.json'), 'utf8'));
-const index = JSON.parse(fs.readFileSync(path.join(WORK, 'index.json'), 'utf8'));
-const norm = (s) => String(s).toUpperCase().replace(/[\s.\-_/]+/g, '');
+const groundTruth = loadGroundTruth();
+const index = loadWorkIndex();
 
 const runAll = process.argv.includes('--all');
 // Optional substring filters (argv after flags) limit which docs run, e.g.
@@ -45,18 +40,18 @@ const CONCURRENCY = Number(process.env.AI_CONCURRENCY || 1);
 
 /* ---- load a document's pages from the work cache (native text or OCR) ---- */
 function loadPages(slug) {
-  const meta = JSON.parse(fs.readFileSync(path.join(WORK, slug, 'meta.json'), 'utf8'));
+  const meta = loadWorkMeta(slug);
   const pages = meta.pages.map((pg) => {
     let lines = pg.native ? pg.lines.map((l) => l.text) : [];
     // Prefer the downscaled AI JPEG (render_ai_images.py) — ~4x smaller, fits
     // Netlify's 30s sync limit better; fall back to the full-res PNG.
-    const jpg = path.join(WORK, slug, `ai-${String(pg.page).padStart(3, '0')}.jpg`);
+    const jpg = pagePath(slug, 'ai', pg.page, 'jpg');
     let img = null, mediaType = 'image/png';
     if (fs.existsSync(jpg)) { img = jpg; mediaType = 'image/jpeg'; }
     else if (pg.png) img = path.join(WORK, slug, pg.png);
     if (!pg.native) {
-      const f = path.join(WORK, slug, `ocr-${String(pg.page).padStart(3, '0')}.json`);
-      if (fs.existsSync(f)) lines = (JSON.parse(fs.readFileSync(f, 'utf8')).lines || []).map((l) => l.text);
+      const f = pagePath(slug, 'ocr', pg.page, 'json');
+      if (fs.existsSync(f)) lines = (readJson(f).lines || []).map((l) => l.text);
     }
     return { page: pg.page, lines, png: img, mediaType, width: pg.width, height: pg.height };
   });
@@ -130,18 +125,6 @@ function mergeAi(A, out, fileId, pageNo) {
       device, rating: d.rating_a ?? null, spare, space, incomer: !!d.is_incomer, isSpd: !!d.is_spd,
       qty: space ? 0 : 1, srcText: '[AI] ' + (d.description || d.device_class || '') });
   }
-}
-
-/* ---- way-slot set (board#way among schedule/ai rows with a way number) ---- */
-function waySlots(rows) {
-  const s = new Set();
-  for (const r of rows) { if (r.kind === 'mention' || r.way == null) continue; s.add((r.boardNorm || '?') + '#' + r.way); }
-  return s;
-}
-function boardWays(rows, boardNorm) {
-  const s = new Set();
-  for (const r of rows) { if (r.kind === 'mention' || r.way == null) continue; if (r.boardNorm === boardNorm) s.add(r.way); }
-  return s;
 }
 
 function scoreGt(file, boards, rows) {

@@ -5,11 +5,11 @@
  */
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { fileURLToPath } from 'node:url';
+import { ROOT } from './lib/paths.mjs';
+import { createChecker } from './lib/checks.mjs';
 
-const HERE = path.dirname(fileURLToPath(import.meta.url));
-const FN = path.resolve(HERE, '../../netlify/functions/extract.mjs');
-const PACK = path.resolve(HERE, '../../netlify/functions/lib/domain-pack.mjs');
+const FN = path.join(ROOT, 'netlify/functions/extract.mjs');
+const PACK = path.join(ROOT, 'netlify/functions/lib/domain-pack.mjs');
 
 delete process.env.ANTHROPIC_API_KEY;
 delete process.env.ANTHROPIC_AUTH_TOKEN;
@@ -17,10 +17,7 @@ delete process.env.GEMINI_API_KEY;
 const { default: handler } = await import(pathToFileURL(FN));
 const { EXTRACTION_SCHEMA, EXTRACTION_SYSTEM_PROMPT, coerceResult } = await import(pathToFileURL(PACK));
 
-let fail = 0;
-const check = (name, cond, detail) => {
-  if (!cond) { console.log(`FAIL ${name}${detail ? ' — ' + detail : ''}`); fail++; }
-};
+const { check, finish } = createChecker();
 
 /* health probe */
 let res = await handler(new Request('http://x/extract', { method: 'GET' }));
@@ -90,5 +87,4 @@ check('prompt persists the P-code legend', EXTRACTION_SYSTEM_PROMPT.includes('P1
 check('prompt persists the spare phase-slot rule', /Never mark a whole way spare/.test(EXTRACTION_SYSTEM_PROMPT));
 check('prompt forbids counting', /NEVER count/.test(EXTRACTION_SYSTEM_PROMPT));
 
-if (fail) { console.log(`\n${fail} failure(s)`); process.exit(1); }
-console.log('PASS: extract function validation, health probe, and schema invariants.');
+finish('extract function validation, health probe, and schema invariants.');

@@ -4,9 +4,9 @@
  * the app's own parseScheduleLine with a schedule context, exactly as runAnalysis
  * would. If a dialect yields 0 rows HERE, the miss is the parser, not the OCR.
  */
-import { createRequire } from 'node:module';
-const require = createRequire(import.meta.url);
-const P = require('./app-pipeline.cjs');
+import { loadPipeline } from './lib/cores.mjs';
+
+const P = loadPipeline();
 
 const FIXTURES = {
   'BAM/EPO (EPO_Ashfield p2 — board DB-00-08P, the dialect the regex targets)': [
