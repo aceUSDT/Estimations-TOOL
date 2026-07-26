@@ -94,8 +94,11 @@ export async function runAgentTeam(page, deps) {
     maxTokens: 12000,
   };
 
-  // 1) primary extraction — first healthy model in the extract chain
-  const a = await deps.pool.callRole('extract', req);
+  // 1) primary extraction — route to vision_parse if image is present but text is absent
+  // (image-only pages silently fail on non-vision models). Extract chain handles pages
+  // with text + optional image; vision_parse handles image-only pages.
+  const role = imageBase64 && (!textLines || textLines.length === 0) ? 'vision_parse' : 'extract';
+  const a = await deps.pool.callRole(role, req);
   const primary = coerceResult(parseModelJson(a.content) || {});
 
   // 2) independent second opinion — never the same model
@@ -151,5 +154,6 @@ export async function runAgentTeam(page, deps) {
     },
     provider: 'nvidia+gemini',
     model: a.model,
+    imageBase64: Boolean(imageBase64),  // track whether image was provided for deriveState
   };
 }

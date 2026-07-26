@@ -82,7 +82,7 @@ export function makeProcessJob(deps) {
       const crossCheckHit = Boolean(out.verification && out.verification.status === 'done' && out.verification.mismatches && out.verification.mismatches.length > 0);
       const masterHit = Boolean(out.master && out.master.status === 'reviewed' && out.master.complete === false && (out.master.missed || []).length > 0);
       const blockingReview = crossCheckHit || masterHit;
-      const state = deriveState({ failed: false, boardCount, deviceCount, blockingReview });
+      const state = deriveState({ failed: false, boardCount, deviceCount, blockingReview, imageBase64: out.imageBase64 });
 
       const verificationBlob = out.verification || out.master
         ? { ...(out.verification || {}), ...(out.master ? { master: out.master } : {}) }
@@ -92,9 +92,16 @@ export function makeProcessJob(deps) {
         structured: out.result, verification: verificationBlob, schema_valid: true,
         board_count: boardCount, device_count: deviceCount,
       });
+      const incompleteCodes = {
+        'zero_devices_with_boards': 'Boards detected but no devices captured on this page.',
+        'image_no_extraction': 'Image provided but no data extracted (page may be too faint, illegible, or in an unsupported format).',
+      };
+      const errorCode = state === 'incomplete'
+        ? (out.imageBase64 && boardCount === 0 && deviceCount === 0 ? 'image_no_extraction' : 'zero_devices_with_boards')
+        : null;
       await deps.db.updateJob(deps.sb, job.id, {
-        state, error_code: state === 'incomplete' ? 'zero_devices_with_boards' : null,
-        error_detail: state === 'incomplete' ? 'Boards detected but no devices captured on this page.' : null,
+        state, error_code: errorCode,
+        error_detail: errorCode ? incompleteCodes[errorCode] : null,
         heartbeat_at: now(), finished_at: now(),
       });
       return { state };

@@ -29,9 +29,10 @@ export const TERMINAL_STATES = ['complete', 'needs_review', 'incomplete', 'faile
 /* Derive the terminal state from evidence. This is the single place that
  * decides "success" — it can never silently upgrade a failure or a
  * zero-device board result. Used by the worker (Phase 5) and tested now. */
-export function deriveState({ failed, boardCount = 0, deviceCount = 0, blockingReview = false }) {
+export function deriveState({ failed, boardCount = 0, deviceCount = 0, blockingReview = false, imageBase64 = false }) {
   if (failed) return 'failed';
   if (boardCount > 0 && deviceCount === 0) return 'incomplete';   // zero-device guard
+  if (imageBase64 && boardCount === 0 && deviceCount === 0) return 'incomplete';  // image-only page with no extraction
   if (blockingReview) return 'needs_review';
   return 'complete';
 }
