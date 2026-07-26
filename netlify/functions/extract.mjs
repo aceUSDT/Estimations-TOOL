@@ -19,6 +19,7 @@
  * beyond max(primary, second). The background function has no such ceiling.
  */
 import { buildInstruction, extractWithVerification, providerStatus, CLAUDE_MODEL, GEMINI_MODEL } from './lib/providers.mjs';
+import { MAX_BODY_BYTES, isOversized, isSameOrigin, limitTextLines, safeMediaType } from './lib/request-guard.mjs';
 
 const json = (status, body) => new Response(JSON.stringify(body), {
   status,
@@ -39,6 +40,8 @@ export default async function handler(req) {
     });
   }
   if (req.method !== 'POST') return json(405, { error: 'POST only' });
+  if (!isSameOrigin(req)) return json(403, { error: 'Cross-origin requests are not accepted' });
+  if (isOversized(req)) return json(413, { error: `Payload exceeds ${MAX_BODY_BYTES} bytes` });
   if (!providerStatus().configured) {
     return json(503, { error: 'AI extraction is not configured: set ANTHROPIC_API_KEY (or GEMINI_API_KEY) in the Netlify environment.' });
   }
@@ -53,10 +56,13 @@ export default async function handler(req) {
   if (!imageBase64 && !(Array.isArray(textLines) && textLines.length)) {
     return json(400, { error: 'Provide image_base64 and/or text_lines' });
   }
+  if (typeof imageBase64 === 'string' && imageBase64.length > MAX_BODY_BYTES) {
+    return json(413, { error: `Payload exceeds ${MAX_BODY_BYTES} bytes` });
+  }
 
-  const instruction = buildInstruction({ filename, pageNumber, hints, textLines });
+  const instruction = buildInstruction({ filename, pageNumber, hints, textLines: limitTextLines(textLines) });
   try {
-    const out = await extractWithVerification({ imageBase64, mediaType, instruction, maxTokens: 12000 });
+    const out = await extractWithVerification({ imageBase64, mediaType: safeMediaType(mediaType), instruction, maxTokens: 12000 });
     return json(200, out);
   } catch (err) {
     if (err && err.http) return json(err.http, { error: err.message });

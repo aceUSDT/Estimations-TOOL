@@ -1195,8 +1195,14 @@
   function csv(model) {
     const reconciliation = validateModel(model);
     if (!reconciliation.valid) throw new Error(`Report reconciliation failed: ${reconciliation.issues.join("; ")}`);
+    /* Document text reaches the CSV verbatim; a leading =, +, @ or control
+       character would be executed as a formula by Excel and similar tools, so
+       non-numeric cells starting that way are prefixed with an apostrophe. */
+    const neutralise = (raw) => (
+      /^[=+@\t\r]/.test(raw) && !/^[+-]?\d+(\.\d+)?$/.test(raw) ? `'${raw}` : raw
+    );
     const escape = (value) => {
-      const raw = String(value == null ? "" : value);
+      const raw = neutralise(String(value == null ? "" : value));
       return /[",\r\n]/.test(raw) ? `"${raw.replace(/"/g, '""')}"` : raw;
     };
     return "\ufeff" + matrixRows(model).map((row) => row.map(escape).join(",")).join("\r\n");
