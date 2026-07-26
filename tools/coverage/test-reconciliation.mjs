@@ -1,8 +1,7 @@
 /* Regression test: WS0.3 reconciliation pass (extractor-core buildCoverage). */
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
-require('../../extractor-core.js');
-const core = globalThis.EstimationExtractorCore;
+const core = require('./load-extractor-core.cjs');
 
 let fail = 0;
 const check = (name, cond, detail) => {

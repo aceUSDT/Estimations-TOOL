@@ -10,8 +10,7 @@
  */
 'use strict';
 
-require('../../extractor-core.js'); // attaches globalThis.EstimationExtractorCore
-const EstimationExtractorCore = globalThis.EstimationExtractorCore;
+const EstimationExtractorCore = require('./load-extractor-core.cjs');
 
 /* ==================== ELECTRICAL KNOWLEDGE BASE (index.html:733) ==================== */
 const DEVICE_DEFS = [

@@ -89,3 +89,40 @@ assert.equal(wideRoundTrip.getWorksheet("Device Take-Off").getCell("G4").value, 
 assert.equal(wideRoundTrip.getWorksheet("Device Take-Off").getCell("H4").value, null);
 
 console.log("Report matrix and XLSX export: OK");
+
+/* ---------- CSV export (the "download CSV" action) ---------- */
+const csvModel = Report.buildModel({
+  projectName: "CSV project",
+  boards: { DB1: { norm: "DB1", orig: "DB-1", type: "DB" } },
+  files: [{ id: "f1", name: "schedule.pdf" }],
+  rows: [
+    { id: "c1", boardNorm: "DB1", fileId: "f1", page: 2, device: "MCB", rating: 32, poles: 1, curve: "B", ka: 6, desc: 'Sockets, "east" wing', qty: 2, status: "confirmed", conf: 1 },
+    { id: "c2", boardNorm: "DB1", fileId: "f1", page: 3, device: "MCB", rating: 32, poles: 1, curve: "B", ka: 6, desc: "Lighting", qty: 1, status: "confirmed", conf: 1 },
+  ],
+});
+const csvText = Report.csv(csvModel);
+assert.ok(csvText.startsWith("\ufeff"), "CSV starts with a BOM so Excel reads UTF-8");
+const csvLines = csvText.slice(1).split("\r\n");
+assert.equal(csvLines[0].split(",")[0], "Device Category");
+// fields containing a comma are quoted, and applications keep the report's discipline order
+assert.ok(csvLines[1].includes('"Lighting, Small Power"'), csvLines[1]);
+assert.ok(csvLines[1].includes('"schedule.pdf p2, p3"'), csvLines[1]);
+assert.ok(csvLines.at(-1).startsWith("Grand Total,"), csvLines.at(-1));
+assert.deepEqual(Report.csv(csvModel).split("\r\n").length, Report.matrixRows(csvModel).length);
+
+// reconciliation guards the export: a tampered total must not reach a file
+const broken = Report.buildModel({
+  projectName: "Broken",
+  boards: { DB1: { norm: "DB1", orig: "DB-1", type: "DB" } },
+  rows: [{ id: "b1", boardNorm: "DB1", device: "MCB", rating: 10, poles: 1, qty: 1, status: "confirmed", conf: 1 }],
+});
+broken.grandTotal = 99;
+assert.throws(() => Report.csv(broken), /reconciliation failed/i);
+
+/* ---------- safeFileName ---------- */
+assert.equal(Report.safeFileName('Site A/B: "north" wing?'), "Site A B north wing");
+assert.equal(Report.safeFileName("  spaced   out  "), "spaced out");
+assert.equal(Report.safeFileName(""), "Electrical project");
+assert.equal(Report.safeFileName(null), "Electrical project");
+
+console.log("CSV export and file-name sanitisation: OK");

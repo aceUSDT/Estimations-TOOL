@@ -175,3 +175,7 @@ app.whenReady().then(async () => {
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
+
+/* Exported for tools/coverage/test-desktop-main.mjs: the asset protocol and the
+ * navigation guard are security boundaries and are tested directly. */
+module.exports = { APP_SCHEME, MIME_TYPES, localDevelopmentUrl, webRoot, safeAssetPath, handleAppRequest, allowedNavigation };
