@@ -19,7 +19,7 @@ import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 
 const HERE = path.dirname(new URL(import.meta.url).pathname);
 const { validateManifest, MANIFEST_OBJECT_KEY } = await import(
-  pathToFileURL(path.resolve(HERE, '../../netlify/functions/lib/release-store.mjs')),
+  pathToFileURL(path.resolve(HERE, '../../api/_lib/commerce/release-store.mjs')),
 );
 
 function arg(flag, fallback = null) {

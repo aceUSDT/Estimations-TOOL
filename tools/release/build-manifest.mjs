@@ -16,7 +16,7 @@ import { pathToFileURL } from 'node:url';
 
 const HERE = path.dirname(new URL(import.meta.url).pathname);
 const { SUPPORTED_BUILDS, validateManifest } = await import(
-  pathToFileURL(path.resolve(HERE, '../../netlify/functions/lib/release-store.mjs')),
+  pathToFileURL(path.resolve(HERE, '../../api/_lib/commerce/release-store.mjs')),
 );
 
 function arg(flag, fallback = null) {
