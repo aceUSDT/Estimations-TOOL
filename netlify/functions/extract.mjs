@@ -59,6 +59,7 @@ export default async function handler(req) {
     const out = await extractWithVerification({ imageBase64, mediaType, instruction, maxTokens: 12000 });
     return json(200, out);
   } catch (err) {
+    console.error(`extract: ${filename || 'document'} p${pageNumber ?? '?'} failed:`, err);
     if (err && err.http) return json(err.http, { error: err.message });
     const msg = err && err.message ? err.message : String(err);
     if (err && err.status === 429) return json(429, { error: 'Rate limited — retry shortly' });
