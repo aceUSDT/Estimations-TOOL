@@ -17,7 +17,7 @@ Legend: ✅ met with evidence · 🟡 code-verified, live proof pending · ⏳ o
 | 5 | Gemini structured-output schema is valid & deterministic | ✅ | `test-extract-function.mjs` walks the schema: `additionalProperties:false` everywhere, `required` covers every property, **no union-typed params** (API compilation limit); `coerceResult` turns model strings back into numbers/null deterministically. |
 | 6 | No active Anthropic reference — **Gemini is the only hosted provider** | ✅ | `test-verify.mjs` (“Gemini is the ONLY hosted provider”), `providerStatus()` returns `{gemini,…}` with no `anthropic` key; repo grep for `@anthropic-ai` / `x-api-key` / `anthropic.com/v1` in `api/`, `index.html`, `package.json` returns nothing. |
 | 7 | No Netlify functions / `@netlify/blobs` on the prod endpoint | ✅ | `netlify/functions/*`, `netlify.toml`, and the `@netlify/blobs` dependency were removed (Phase 6, `368082d`). `test-extract-function.mjs` / `test-verify.mjs` assert the netlify dir and dependency are absent. The stateless `/api/extract/run` route stores nothing (no Blobs, no polling). |
-| 8 | **No cross-tenant reads** (RLS) | 🟡 | Policies written and forced: `supabase/migrations/0001–0003` (RLS enable + FORCE, membership policies, `enrol_org_creator` bootstrap). Ownership logic proven with fakes: `status: cross-tenant guess ⇒ 404`, `result: cross-tenant guess ⇒ 404`, `start: project not owned ⇒ 404 (does not confirm existence)`. **LIVE proof pending:** `npm run test:rls` (two ephemeral signups, anon key only) needs the owner to apply `0001–0003` and disable “Confirm email” on the test project. Until then this gate is **not** claimed live. |
+| 8 | **No cross-tenant reads** (RLS) | ✅ | Policies written and forced: `supabase/migrations/0001–0005` (RLS enable + FORCE, membership policies, `enrol_org_creator` bootstrap, `is_org_admin` helper). Ownership logic proven with fakes (`status`/`result`: cross-tenant guess ⇒ 404) **and live**: `npm run test:rls` (2026-07-25) — anonymous reads 0 customer rows, user B cannot read or update user A's project/org, id-guessing yields nothing, and the two real bugs live-testing surfaced (infinite-recursion in `member_write`, a column-name collision in `org_update` — see migration `0005_fix_admin_recursion.sql`) are fixed and covered by regression checks in the same test. Real Supabase project, ephemeral throwaway accounts only, no service-role key used. |
 | 9 | No secrets in code, logs, tests, or commits | ✅ | `.env.example` lists names only; `.env`/`.env.*` gitignored; repo secret sweep (`sb_secret_`, service-role literals, `AIza…`, PEM headers) is clean. `/api/public-config` returns only the publishable key and **refuses any `service_role`-looking value** (`test-account-core.mjs`). Error envelope `{code,message,correlation_id}` carries no provider internals or key material. |
 | 10 | Deterministic, testable route responses | ✅ | All route logic is in pure, dependency-injected handlers; `test-vercel-routes.mjs` exercises 22 cases (auth, ownership→404, idempotency, state machine, worker retry, watchdog) with in-memory fakes — no Vercel runtime, no network, no Supabase. |
 | 11 | Desktop stays offline / local-first preserved | ✅ | `LOCAL_DESKTOP` disables online extraction **and** the cloud-account layer in `index.html`; the account row only appears when the server reports auth configured. `/api/extract/run` is stateless and account-free so the local-first browser path needs no login. `desktop/verify-assets.cjs` green (13 required files). |
@@ -26,14 +26,12 @@ Legend: ✅ met with evidence · 🟡 code-verified, live proof pending · ⏳ o
 
 ## Summary
 
-- **10 of 13 gates ✅ met** with re-runnable evidence.
-- **Gate 8 🟡** — RLS is written, forced, and logic-tested; the *live* cross-tenant
-  proof is one owner action away (apply `0001–0003` + disable email confirmation →
-  `npm run test:rls`).
+- **11 of 13 gates ✅ met** with re-runnable evidence, including **gate 8 proven live**
+  against the real database (not just fakes) — the security-critical gate is closed.
 - **Gate 2 ⏳** — 26CC07 regression is owner-run (private PDF, never committed).
 - **Gate 13 🟡 ⏳** — Vercel preview is green; production deploy and the final
   Netlify disconnect are owner decisions.
 
-No gate is over-claimed. The system is not described as “bulletproof”; the two
-security-critical items that depend on live infrastructure (gate 8 live proof,
-gate 13 production) are explicitly left to owner verification.
+No gate is over-claimed. The system is not described as “bulletproof”; the remaining
+items depend on infrastructure/documents only the owner holds (a production deploy
+approval and a private regression PDF), not on unverified code.

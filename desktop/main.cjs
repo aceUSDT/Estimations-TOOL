@@ -80,7 +80,13 @@ async function handleAppRequest(request) {
         "style-src 'self' 'unsafe-inline'",
         "img-src 'self' data: blob:",
         "worker-src 'self' blob:",
-        "connect-src 'self' blob:",
+        // The OPTIONAL cloud service (AI team + account) configured in Settings.
+        // Restricted to known Vercel domains (current hosting) and estimations-tool.com.
+        // This is a security improvement over connect-src https: (any domain), but ideal
+        // solution would make CSP dynamic via session.webRequest to include the user's
+        // configured address without whitelisting all domains. If a custom domain is needed,
+        // either update this whitelist or implement dynamic CSP via IPC + preload script.
+        "connect-src 'self' blob: https://*.vercel.app https://estimations-tool.com",
         "object-src 'none'",
         "base-uri 'self'",
         "frame-ancestors 'none'",

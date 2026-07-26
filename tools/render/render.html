@@ -1,0 +1,31 @@
+<!doctype html>
+<!-- Dev tool: render one PDF page to a JPEG data-URL using the app's own
+     vendored pdf.js (same engine, same fidelity as the product). Driven by
+     tools/render/page-to-jpeg.mjs; not part of the shipped app. -->
+<meta charset="utf-8">
+<title>page render</title>
+<script src="/vendor/pdf.min.js"></script>
+<script>
+(async () => {
+  try {
+    const q = new URLSearchParams(location.hash.slice(1));
+    const file = q.get('file');
+    const pageNo = Number(q.get('page') || 1);
+    const longEdge = Number(q.get('edge') || 1600);
+    pdfjsLib.GlobalWorkerOptions.workerSrc = '/vendor/pdf.worker.min.js';
+    const doc = await pdfjsLib.getDocument(file).promise;
+    const page = await doc.getPage(pageNo);
+    const base = page.getViewport({ scale: 1 });
+    const scale = Math.min(3, longEdge / Math.max(base.width, base.height));
+    const vp = page.getViewport({ scale });
+    const cv = document.createElement('canvas');
+    cv.width = Math.ceil(vp.width); cv.height = Math.ceil(vp.height);
+    await page.render({ canvasContext: cv.getContext('2d', { alpha: false }), viewport: vp }).promise;
+    window.__dataurl = cv.toDataURL('image/jpeg', 0.85);
+    document.title = 'render-done';
+  } catch (e) {
+    window.__error = String(e && e.message || e);
+    document.title = 'render-error';
+  }
+})();
+</script>

@@ -13,7 +13,7 @@ const PACK = path.resolve(ROOT, 'api/_lib/extraction/domain-pack.mjs');
 
 delete process.env.GEMINI_API_KEY;
 const { handleHealth, handleInlineExtract } = await import(pathToFileURL(path.resolve(ROOT, 'api/_lib/handlers.mjs')));
-const { providerStatus, buildInstruction, GEMINI_MODEL, GEMINI_VERIFY_MODEL } = await import(pathToFileURL(path.resolve(ROOT, 'api/_lib/extraction/providers.mjs')));
+const { providerStatus, buildInstruction, callGemini, GEMINI_MODEL, GEMINI_VERIFY_MODEL } = await import(pathToFileURL(path.resolve(ROOT, 'api/_lib/extraction/providers.mjs')));
 const { EXTRACTION_SCHEMA, EXTRACTION_SYSTEM_PROMPT, coerceResult } = await import(pathToFileURL(PACK));
 
 let fail = 0;
@@ -78,6 +78,62 @@ function walk(schema, where) {
   if (schema.type === 'array') walk(schema.items, `${where}[]`);
 }
 walk(EXTRACTION_SCHEMA, '$');
+/* Spend guard on the unauthenticated inline-extract route. */
+{
+  process.env.GEMINI_API_KEY = 'test-not-a-real-key';
+  const body = { image_base64: 'aGk=', filename: 'x.pdf', page_number: 1 };
+  const call = (deps) => handleInlineExtract({ method: 'POST', body, headers: { 'x-forwarded-for': '203.0.113.9' } }, deps);
+  const guardDeps = (over = {}) => ({
+    ...runDeps(),
+    env: {},
+    store: {},
+    clientIp: (input) => (input.headers || {})['x-forwarded-for'],
+    ...over,
+  });
+
+  let seen = null;
+  const allow = guardDeps({ rateLimit: async (store, scope, key, opts) => { seen = { scope, key, opts }; return { ok: true }; } });
+  check('spend guard: under the limit extraction proceeds', (await call(allow)).status === 200);
+  check('spend guard: keyed per client IP', seen && seen.key === '203.0.113.9');
+  check('spend guard: uses its own scope + 1h window', seen && seen.scope === 'extract-run' && seen.opts.windowSec === 3600);
+  check('spend guard: generous default ceiling', seen && seen.opts.limit === 240);
+
+  const blocked = guardDeps({ rateLimit: async () => ({ ok: false }) });
+  const res429 = await call(blocked);
+  check('spend guard: over the limit ⇒ 429, no provider call', res429.status === 429 && res429.body.error.code === 'rate_limited');
+
+  const overridden = guardDeps({ env: { EXTRACT_RATE_LIMIT_PER_HOUR: '10' }, rateLimit: async (s, sc, k, o) => { seen = { opts: o }; return { ok: true }; } });
+  await call(overridden);
+  check('spend guard: env override respected', seen && seen.opts.limit === 10);
+
+  // Fail OPEN: extraction is the product, so a missing store or a throwing
+  // limiter must never block legitimate work.
+  check('spend guard: no store configured ⇒ extraction still runs', (await call(guardDeps({ store: null, rateLimit: async () => ({ ok: false }) }))).status === 200);
+  delete process.env.GEMINI_API_KEY;
+}
+
+/* Provider error CONTRACT. The worker retries transient failures by testing
+ * `e.status` against {429,500,502,503,504}. That check is worthless unless the
+ * provider actually attaches a numeric status — a bare Error means a
+ * rate-limited page fails permanently on the first 429. The worker tests use
+ * fakes that already shape the error correctly, so only a test against the
+ * real provider closes this gap. */
+{
+  const realFetch = globalThis.fetch;
+  process.env.GEMINI_API_KEY = 'test-not-a-real-key';
+  for (const status of [429, 503]) {
+    globalThis.fetch = async () => ({ ok: false, status, text: async () => 'upstream detail' });
+    let caught = null;
+    try {
+      await callGemini({ instruction: 'x', imageBase64: 'aGk=' });
+    } catch (e) { caught = e; }
+    check(`callGemini: HTTP ${status} error carries numeric status`, caught && caught.status === status,
+      caught ? `status=${JSON.stringify(caught.status)}` : 'no error thrown');
+  }
+  globalThis.fetch = realFetch;
+  delete process.env.GEMINI_API_KEY;
+}
+
 check('prompt persists the P-code legend', EXTRACTION_SYSTEM_PROMPT.includes('P1=MCB'));
 check('prompt persists the spare phase-slot rule', /Never mark a whole way spare/.test(EXTRACTION_SYSTEM_PROMPT));
 check('prompt forbids counting', /NEVER count/.test(EXTRACTION_SYSTEM_PROMPT));

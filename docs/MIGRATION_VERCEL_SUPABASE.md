@@ -259,12 +259,30 @@ Each phase ends with: changed files, decisions, test results (honest), remaining
 - `index.html`: hidden-by-default "Cloud account" control that appears only when
   `/api/public-config` reports auth configured; local-first defaults unchanged.
 
-**Owner-blocked, not yet done (honest status):**
-- Live gate #8 (no cross-tenant reads) is written but UNVERIFIED against the real
-  database — it needs the owner to apply `0001–0003` in the Supabase SQL editor and turn
-  "Confirm email" OFF on the test project, then `npm run test:rls`. Until that runs, this
-  gate is claimed only at the code/fake-test level, not proven live.
-- End-to-end browser sign-in is likewise unverified until the schema is applied.
+**Part 3 — live gate #8 proof (2026-07-25), closed.**
+Owner applied `0001–0004` and disabled "Confirm email"; `npm run test:rls` then ran
+against the real database and surfaced two genuine live bugs the fake-backed tests
+could not catch:
+- **Infinite recursion (`42P17`)** in `member_write`'s policy on `organization_members`:
+  its `using`/`with_check` ran a raw subquery against the SAME table instead of routing
+  through a `security definer` helper (as `is_org_member` correctly does for
+  `member_select`), so evaluating the policy required re-evaluating itself, forever.
+- **Column-name collision**: `org_update`'s condition wrote `m.org_id = id` intending
+  `organizations.id`, but `organization_members` also has its own `id` column, so
+  Postgres silently resolved the unqualified reference to `m.id` instead — the policy
+  could never match, so no owner/admin could ever update their org.
+- **Fix**: `0005_fix_admin_recursion.sql` adds `is_org_admin()` (mirroring
+  `is_org_member`'s already-correct pattern) and routes both broken policies through it.
+- Also documented, not a bug: a newly inserted `organizations` row's RLS visibility for a
+  `RETURNING` clause can't depend on an `AFTER INSERT` trigger's side effect from the
+  *same* statement — `test-rls-live.mjs` now generates the org id client-side and
+  inserts without asking for the row back (the correct pattern for any future
+  app-level org-creation code too).
+- `npm run test:rls` now passes clean, live, against the real Supabase project — 6/6
+  checks including two regression checks that would have caught these exact bugs
+  (member read with no recursion; owner can update, non-member cannot). **Gate #8 is
+  closed.** End-to-end browser sign-in is exercised implicitly by this same live proof
+  (ephemeral signups, real JWTs, real RLS-gated reads/writes).
 
 ## 10. Environment variables (names only — values never committed)
 

@@ -1,14 +1,28 @@
 # Build the local-first Windows and macOS desktop installers on native runners.
 #
-# Linux can build neither an NSIS .exe (needs wine) nor a .dmg (needs macOS),
-# so CI is the canonical build path: run this workflow and download the
-# installers from the run's artifacts, or push a tag like `desktop-v1.0.0`
-# and they are attached to a GitHub Release automatically.
+# Four isolated jobs — one per supported platform+architecture — because:
+#   - Linux can build neither an NSIS .exe (needs wine) nor a .dmg (needs macOS)
+#   - building both Mac architectures in one electron-builder command mounts two
+#     DMGs at /Volumes/Estimation Tools simultaneously and hdiutil detach fails
 #
-# The installers are UNSIGNED — Windows SmartScreen and macOS Gatekeeper will
-# warn on first open (right-click -> Open on macOS). Code-signing and store
-# submission need the owner's Apple Developer ID / Windows certificate; see
-# desktop/README.md.
+# Tag flows:
+#   desktop-v*-rc.*  → release candidate. May be UNSIGNED; artifacts + a
+#                      prerelease GitHub Release clearly marked as a test build.
+#   desktop-v*       → production. The preflight job FAILS unless signing
+#                      credentials are present; artifacts are signed, verified
+#                      (signtool / codesign / spctl / stapler), hashed into a
+#                      release manifest, and uploaded as Actions artifacts for
+#                      the private R2 publish step (tools/release/publish-r2.mjs).
+#                      Production binaries are NOT attached to a public Release.
+#
+# Secrets (GitHub → Settings → Environments → production):
+#   Windows (Azure Trusted Signing / Microsoft Artifact Signing):
+#     AZURE_TENANT_ID, AZURE_CLIENT_ID, AZURE_CLIENT_SECRET,
+#     AZURE_CODE_SIGNING_ACCOUNT, AZURE_CERTIFICATE_PROFILE,
+#     AZURE_SIGNING_ENDPOINT, AZURE_PUBLISHER_NAME
+#   macOS: MAC_CSC_LINK, MAC_CSC_KEY_PASSWORD, APPLE_API_KEY, APPLE_API_KEY_ID,
+#     APPLE_API_ISSUER, APPLE_TEAM_ID
+# Never echo these; never commit them.
 name: Desktop installers
 
 on:
@@ -17,33 +31,63 @@ on:
     tags: ['desktop-v*']
 
 permissions:
-  contents: write   # attach installers to the Release on tag builds
+  contents: write   # prerelease attachment for -rc.* tags only
+
+env:
+  IS_PRODUCTION_TAG: ${{ startsWith(github.ref, 'refs/tags/desktop-v') && !contains(github.ref, '-rc.') }}
 
 jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Production tags require signing credentials
+        if: env.IS_PRODUCTION_TAG == 'true'
+        env:
+          AZ_TENANT: ${{ secrets.AZURE_TENANT_ID }}
+          AZ_ACCOUNT: ${{ secrets.AZURE_CODE_SIGNING_ACCOUNT }}
+          MAC_CERT: ${{ secrets.MAC_CSC_LINK }}
+          APPLE_KEY: ${{ secrets.APPLE_API_KEY }}
+        run: |
+          missing=""
+          [ -z "$AZ_TENANT" ] && missing="$missing AZURE_TENANT_ID"
+          [ -z "$AZ_ACCOUNT" ] && missing="$missing AZURE_CODE_SIGNING_ACCOUNT"
+          [ -z "$MAC_CERT" ] && missing="$missing MAC_CSC_LINK"
+          [ -z "$APPLE_KEY" ] && missing="$missing APPLE_API_KEY"
+          if [ -n "$missing" ]; then
+            echo "::error::Production tag but signing credentials are missing:$missing"
+            echo "Use a desktop-vX.Y.Z-rc.N tag for unsigned test builds."
+            exit 1
+          fi
+
   build:
+    needs: preflight
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: windows-latest
-            artifact: estimation-tools-Windows-x64
-            args: --win nsis
-            out: |
-              desktop/release/*.exe
-          - os: macos-latest
-            artifact: estimation-tools-macOS-x64
+          - id: windows-x64
+            os: windows-latest
+            args: --win nsis --x64
+            out: desktop/release/*.exe
+          - id: windows-arm64
+            os: windows-latest
+            args: --win nsis --arm64
+            out: desktop/release/*.exe
+          - id: macos-x64
+            os: macos-latest
             args: --mac dmg zip --x64
             out: |
               desktop/release/*.dmg
-              desktop/release/*-mac-*.zip
-          - os: macos-latest
-            artifact: estimation-tools-macOS-arm64
+              desktop/release/*.zip
+          - id: macos-arm64
+            os: macos-latest
             args: --mac dmg zip --arm64
             out: |
               desktop/release/*.dmg
-              desktop/release/*-mac-*.zip
+              desktop/release/*.zip
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
+    timeout-minutes: 60
     defaults:
       run: { working-directory: desktop }
     steps:
@@ -52,37 +96,101 @@ jobs:
         with: { node-version: 20 }
       - run: npm ci
       - run: npm run verify
-      - run: npx electron-builder ${{ matrix.args }} --publish never
+
+      - name: Build (unsigned — dispatch and -rc.* tags)
+        if: env.IS_PRODUCTION_TAG != 'true'
+        run: npx electron-builder ${{ matrix.args }} --publish never
         env:
-          # unsigned build: don't look for signing identities on the runner
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+      - name: Build (signed — production tags)
+        if: env.IS_PRODUCTION_TAG == 'true'
+        run: npx electron-builder ${{ matrix.args }} --publish never
+        env:
+          # Production builds refuse to package unsigned (forceCodeSigning).
+          ESTIMATION_FORCE_CODESIGN: 'true'
+          # Windows — Azure Trusted Signing (electron-builder win.azureSignOptions)
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_CODE_SIGNING_ACCOUNT: ${{ secrets.AZURE_CODE_SIGNING_ACCOUNT }}
+          AZURE_CERTIFICATE_PROFILE: ${{ secrets.AZURE_CERTIFICATE_PROFILE }}
+          AZURE_SIGNING_ENDPOINT: ${{ secrets.AZURE_SIGNING_ENDPOINT }}
+          AZURE_PUBLISHER_NAME: ${{ secrets.AZURE_PUBLISHER_NAME }}
+          # macOS — Developer ID + hardened runtime + notarisation
+          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+      - name: Verify Windows signature (production)
+        if: env.IS_PRODUCTION_TAG == 'true' && runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem release/*.exe | Select-Object -First 1
+          & "$(Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe' | Select-Object -Last 1)" verify /pa /all $exe.FullName
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          $sig = Get-AuthenticodeSignature $exe.FullName
+          if ($sig.Status -ne 'Valid') { throw "Invalid Authenticode signature: $($sig.Status)" }
+          Get-FileHash $exe.FullName -Algorithm SHA256
+
+      - name: Verify macOS signature + notarisation (production)
+        if: env.IS_PRODUCTION_TAG == 'true' && runner.os == 'macOS'
+        run: |
+          APP=$(find release -maxdepth 3 -name '*.app' | head -1)
+          if [ -z "$APP" ]; then
+            hdiutil attach release/*.dmg -mountpoint /tmp/etools -nobrowse
+            APP=$(find /tmp/etools -maxdepth 1 -name '*.app' | head -1)
+          fi
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          spctl --assess --verbose --type exec "$APP"
+          xcrun stapler validate "$APP"
+
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact }}
+          name: estimation-tools-${{ matrix.id }}
           path: ${{ matrix.out }}
           if-no-files-found: error
+          retention-days: 14   # internal QA only — customers download from private storage
 
-  release:
-    if: startsWith(github.ref, 'refs/tags/desktop-v')
+  manifest:
     needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - uses: actions/download-artifact@v4
+        with: { path: dist, merge-multiple: true }
+      - name: Build and validate release manifest
+        run: node tools/release/build-manifest.mjs --dir dist --out dist/manifest.json ${{ env.IS_PRODUCTION_TAG == 'true' && '--production' || '' }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-manifest
+          path: dist/manifest.json
+          if-no-files-found: error
+
+  # Release candidates only: attach clearly-labelled unsigned test builds.
+  # Production binaries are published to private R2 (see docs/PRODUCTION_RELEASE_RUNBOOK.md),
+  # never to a public GitHub Release.
+  prerelease:
+    if: startsWith(github.ref, 'refs/tags/desktop-v') && contains(github.ref, '-rc.')
+    needs: [build, manifest]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
         with: { path: installers, merge-multiple: true }
       - uses: softprops/action-gh-release@v2
         with:
+          prerelease: true
           files: installers/*
-          name: Estimation Tools ${{ github.ref_name }}
+          name: 'UNSIGNED TEST BUILD — Estimation Tools ${{ github.ref_name }}'
           body: |
-            Desktop installers for **Estimation Tools**.
+            **UNSIGNED TEST BUILD — not for sale or customer distribution.**
 
-            | Platform | File |
-            |---|---|
-            | Windows | `.exe` (NSIS installer) |
-            | macOS | `.dmg` (drag to Applications) / `.zip` |
-
-            The complete app is included in every installer. Projects and original
-            documents stay in the current computer user's local application profile.
-
-            Unsigned builds: Windows SmartScreen / macOS Gatekeeper will warn on
-            first launch (macOS: right-click the app → Open).
+            Internal release candidate for QA. Windows SmartScreen and macOS
+            Gatekeeper will warn because these binaries are not signed.
+            Production releases are signed, notarised, and delivered through
+            the paid download page, not from GitHub.

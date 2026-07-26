@@ -71,20 +71,37 @@ export function makeProcessJob(deps) {
       });
       const out = await extractWithRetry({
         imageBase64: payload.image_base64, mediaType: 'image/jpeg', instruction, maxTokens: 12000,
+        // Raw page fields for the agent-team engine (Gemini engine ignores them).
+        textLines: payload.text_lines, filename: payload.filename, pageNumber: job.page_number, hints: payload.hints,
       }, job);
 
       const { boardCount, deviceCount } = countPage(out.result);
-      const blockingReview = Boolean(out.verification && out.verification.status === 'done' && out.verification.mismatches && out.verification.mismatches.length > 0);
-      const state = deriveState({ failed: false, boardCount, deviceCount, blockingReview });
+      // Review is forced by EITHER disagreeing sub-agents OR the master
+      // auditor finding something both of them missed — that's the teeth
+      // behind "nothing is complete until it clears the master's pass".
+      const crossCheckHit = Boolean(out.verification && out.verification.status === 'done' && out.verification.mismatches && out.verification.mismatches.length > 0);
+      const masterHit = Boolean(out.master && out.master.status === 'reviewed' && out.master.complete === false && (out.master.missed || []).length > 0);
+      const blockingReview = crossCheckHit || masterHit;
+      const state = deriveState({ failed: false, boardCount, deviceCount, blockingReview, imageBase64: out.imageBase64 });
 
+      const verificationBlob = out.verification || out.master
+        ? { ...(out.verification || {}), ...(out.master ? { master: out.master } : {}) }
+        : null;
       await deps.db.insertResult(deps.sb, {
         org_id: job.org_id, job_id: job.id, document_id: job.document_id, page_number: job.page_number,
-        structured: out.result, verification: out.verification || null, schema_valid: true,
+        structured: out.result, verification: verificationBlob, schema_valid: true,
         board_count: boardCount, device_count: deviceCount,
       });
+      const incompleteCodes = {
+        'zero_devices_with_boards': 'Boards detected but no devices captured on this page.',
+        'image_no_extraction': 'Image provided but no data extracted (page may be too faint, illegible, or in an unsupported format).',
+      };
+      const errorCode = state === 'incomplete'
+        ? (out.imageBase64 && boardCount === 0 && deviceCount === 0 ? 'image_no_extraction' : 'zero_devices_with_boards')
+        : null;
       await deps.db.updateJob(deps.sb, job.id, {
-        state, error_code: state === 'incomplete' ? 'zero_devices_with_boards' : null,
-        error_detail: state === 'incomplete' ? 'Boards detected but no devices captured on this page.' : null,
+        state, error_code: errorCode,
+        error_detail: errorCode ? incompleteCodes[errorCode] : null,
         heartbeat_at: now(), finished_at: now(),
       });
       return { state };

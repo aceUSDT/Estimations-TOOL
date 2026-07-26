@@ -4,11 +4,16 @@
  * come from `realDeps()`; the pure handlers in handlers.mjs are what the
  * deterministic tests exercise directly with fakes.
  */
-import { providerStatus, GEMINI_MODEL, GEMINI_VERIFY_MODEL, extractWithVerification, buildInstruction } from './extraction/providers.mjs';
+import { GEMINI_MODEL, GEMINI_VERIFY_MODEL, buildInstruction } from './extraction/providers.mjs';
+import { engineStatus, extractSmart } from './extraction/engine.mjs';
 import { serviceClient, userFromRequest } from './supabase.mjs';
 import * as db from './db.mjs';
 import { makeProcessJob } from './worker.mjs';
 import { newCorrelationId } from './http.mjs';
+// One implementation of the rate-limit rule, shared with commerce, rather than
+// a second copy that can drift. commerce.mjs imports only node:crypto.
+import { rateLimit, clientIp } from './commerce/commerce.mjs';
+import { supabaseKvStore } from './commerce/kv.mjs';
 
 /* Build the shared server deps once per invocation. Supabase is created lazily
  * so the health route works even before Supabase env vars are set. */
@@ -17,7 +22,10 @@ export function realDeps() {
   const getSb = () => (sb = sb || serviceClient());
   const authRequired = process.env.AUTH_REQUIRED !== 'false';   // safe-by-default: auth on
   const deps = {
-    providerStatus, GEMINI_MODEL, GEMINI_VERIFY_MODEL,
+    // Engine-aware status: `configured` is true when EITHER the NVIDIA
+    // sub-agent pool or Gemini can serve extractions; `mode` says which
+    // engine the next extraction will use.
+    providerStatus: engineStatus, GEMINI_MODEL, GEMINI_VERIFY_MODEL,
     supabaseConfigured: Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY),
     authRequired,
     // Browser-safe config only — the publishable (anon) key + URL, never the
@@ -28,15 +36,27 @@ export function realDeps() {
     },
     db,
     buildInstruction,
-    extract: extractWithVerification,
+    extract: extractSmart,
+    env: process.env,
+    rateLimit,
+    // clientIp() reads a web-Request; adapt the normalized input's plain
+    // lowercase header bag to the same interface.
+    clientIp: (input) => clientIp({ headers: { get: (k) => (input.headers || {})[k.toLowerCase()] || null } }),
     get sb() { return getSb(); },
+    /* Rate-limit counters live in the same Supabase KV as entitlements. Absent
+     * Supabase config this stays null and the guard is skipped, so the health
+     * route and local dev keep working without a database. */
+    get store() {
+      if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) return null;
+      try { return supabaseKvStore(getSb()); } catch { return null; }
+    },
     resolveUser: async (input) => {
       const user = await userFromRequest({ headers: { get: (k) => (input.headers || {})[k.toLowerCase()] || null } });
       return user ? user.id : null;
     },
   };
   // Bind a concrete Supabase client at call time (not the lazy getter).
-  deps.processJob = (job, payload) => makeProcessJob({ sb: getSb(), db, extract: extractWithVerification, buildInstruction })(job, payload);
+  deps.processJob = (job, payload) => makeProcessJob({ sb: getSb(), db, extract: extractSmart, buildInstruction })(job, payload);
   return deps;
 }
 
@@ -59,6 +79,11 @@ export async function runRoute(handler, req, res, deps) {
   try {
     out = await handler(toInput(req), deps || realDeps());
   } catch (e) {
+    // The response body stays deliberately opaque, but an unlogged 500 is an
+    // undiagnosable one: without this, a production failure leaves no trace in
+    // the Vercel logs at all. Message + stack only — never the request body,
+    // which carries customer document content.
+    console.error('[route] unhandled error:', e && e.message, e && e.stack);
     out = { status: 500, body: { error: { code: 'internal_error', message: 'Unexpected error.', correlation_id: null } } };
   }
   res.status(out.status);

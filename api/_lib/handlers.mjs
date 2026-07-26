@@ -16,28 +16,39 @@
  */
 import { ok, err, isUuid, newCorrelationId, jsonByteLength, MAX_BODY_BYTES, MAX_IMAGE_B64 } from './http.mjs';
 
+/* Per-IP hourly ceiling for the stateless inline-extract route. Deliberately
+ * generous: a dense page takes 30–45s, so one estimator working flat out
+ * cannot pass ~120/hour, and an office behind one NAT address needs headroom.
+ * The point is stopping a scripted drain of the day's provider budget, not
+ * rationing real work. Override with EXTRACT_RATE_LIMIT_PER_HOUR. */
+export const EXTRACT_RUN_HOURLY_LIMIT = 240;
+
 export const JOB_STATES = ['queued', 'running', 'complete', 'needs_review', 'incomplete', 'failed'];
 export const TERMINAL_STATES = ['complete', 'needs_review', 'incomplete', 'failed'];
 
 /* Derive the terminal state from evidence. This is the single place that
  * decides "success" — it can never silently upgrade a failure or a
  * zero-device board result. Used by the worker (Phase 5) and tested now. */
-export function deriveState({ failed, boardCount = 0, deviceCount = 0, blockingReview = false }) {
+export function deriveState({ failed, boardCount = 0, deviceCount = 0, blockingReview = false, imageBase64 = false }) {
   if (failed) return 'failed';
   if (boardCount > 0 && deviceCount === 0) return 'incomplete';   // zero-device guard
+  if (imageBase64 && boardCount === 0 && deviceCount === 0) return 'incomplete';  // image-only page with no extraction
   if (blockingReview) return 'needs_review';
   return 'complete';
 }
 
 export function issueReady(state) { return state === 'complete'; }
 
-/* GET /api/extract/health — Gemini-only configuration, no secrets. */
+/* GET /api/extract/health — engine configuration, no secrets. `mode` reports
+ * which engine serves the next extraction: 'agent-team' (NVIDIA sub-agents +
+ * Gemini master), 'gemini' (direct), or 'unconfigured'. */
 export function handleHealth(deps) {
   const s = deps.providerStatus();
   return ok(200, {
     status: 'ok',
     configured: s.configured,
-    providers: { gemini: s.gemini },
+    mode: s.mode || (s.configured ? 'gemini' : 'unconfigured'),
+    providers: { gemini: s.gemini, nvidia: Boolean(s.nvidia) },
     primary: s.primary,
     verify: s.verify,
     model: deps.GEMINI_MODEL,
@@ -90,9 +101,29 @@ export async function handleInlineExtract(input, deps) {
   if (!hasImage && !hasText) return err(400, 'invalid_request', 'Provide image_base64 and/or text_lines.', correlationId);
   if (hasImage && b.image_base64.length > MAX_IMAGE_B64) return err(413, 'payload_too_large', 'Page image exceeds the size limit.', correlationId);
 
+  /* Spend guard. This route has no sign-in (the local-first browser app calls
+   * it anonymously by design) yet every call spends real Gemini/NVIDIA budget,
+   * so anyone who finds the URL can drain it. A coarse per-IP window is the
+   * proportionate control until per-plan metering exists.
+   *
+   * Honest about what this is NOT: it is not authentication, not metering, and
+   * an attacker with many source addresses is not stopped by it. It fails OPEN
+   * — extraction is the product, and a storage blip must never block real
+   * work — and it is skipped entirely when no store is configured. */
+  if (deps.rateLimit && deps.store && deps.clientIp) {
+    const limit = Number(deps.env && deps.env.EXTRACT_RATE_LIMIT_PER_HOUR) || EXTRACT_RUN_HOURLY_LIMIT;
+    const gate = await deps.rateLimit(deps.store, 'extract-run', deps.clientIp(input), { limit, windowSec: 3600 });
+    if (!gate.ok) return err(429, 'rate_limited', 'Too many extraction requests from this network — try again shortly.', correlationId);
+  }
+
   const instruction = deps.buildInstruction({ filename: b.filename, pageNumber: b.page_number, hints: b.hints, textLines: b.text_lines });
   try {
-    const out = await deps.extract({ imageBase64: b.image_base64, mediaType: b.media_type || 'image/jpeg', instruction, maxTokens: 12000 });
+    // Raw page fields ride along so the agent-team engine can prompt each
+    // sub-agent and the master itself; the Gemini engine ignores the extras.
+    const out = await deps.extract({
+      imageBase64: b.image_base64, mediaType: b.media_type || 'image/jpeg', instruction, maxTokens: 12000,
+      textLines: b.text_lines, filename: b.filename, pageNumber: b.page_number, hints: b.hints,
+    });
     return ok(200, { ...out, correlation_id: correlationId });
   } catch (e) {
     if (e && e.http) return err(e.http, 'not_configured', e.message, correlationId);
