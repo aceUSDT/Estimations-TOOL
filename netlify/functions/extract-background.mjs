@@ -14,12 +14,21 @@
 import { getStore } from '@netlify/blobs';
 import { buildInstruction, extractWithVerification } from './lib/providers.mjs';
 
+const json = (status, body) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+
 export default async function handler(req) {
   let body = {};
-  try { body = await req.json(); } catch { /* ignore */ }
+  try {
+    body = await req.json();
+  } catch (err) {
+    console.error('extract-background: invalid JSON body:', err);
+    return json(400, { error: 'Invalid JSON body' });
+  }
   const jobId = body.job_id;
   const store = getStore('extractions');
-  if (!jobId) return new Response(null, { status: 202 });
+  // Without a job id nothing can be polled, so fail the enqueue instead of
+  // leaving the client polling a result that will never be written.
+  if (!jobId) return json(400, { error: 'Missing job_id' });
 
   try {
     const { filename, page_number: pageNumber, image_base64: imageBase64, media_type: mediaType, text_lines: textLines, hints } = body;
@@ -32,7 +41,13 @@ export default async function handler(req) {
     await store.setJSON(jobId, { status: 'done', ...out });
   } catch (err) {
     const msg = err && err.message ? err.message : String(err);
-    try { await store.setJSON(jobId, { status: 'error', error: msg }); } catch { /* store unavailable */ }
+    console.error(`extract-background: job ${jobId} failed:`, err);
+    try {
+      await store.setJSON(jobId, { status: 'error', error: msg });
+    } catch (storeErr) {
+      // The client can only time out now; log both so the cause is recoverable.
+      console.error(`extract-background: could not record failure for job ${jobId}:`, storeErr);
+    }
   }
   return new Response(null, { status: 202 });
 }

@@ -4,7 +4,7 @@
  * stable private protocol. IndexedDB therefore stays inside this OS user's
  * Electron profile and remains available without a network connection.
  */
-const { app, BrowserWindow, Menu, protocol, shell, session } = require('electron');
+const { app, BrowserWindow, Menu, dialog, protocol, shell, session } = require('electron');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 
@@ -14,8 +14,11 @@ function localDevelopmentUrl(value) {
   if (!value) return '';
   try {
     const url = new URL(value);
-    return ['http:', 'https:'].includes(url.protocol) && ['127.0.0.1', 'localhost', '::1'].includes(url.hostname) ? url.href : '';
-  } catch {
+    if (['http:', 'https:'].includes(url.protocol) && ['127.0.0.1', 'localhost', '::1'].includes(url.hostname)) return url.href;
+    console.warn(`ESTIMATION_DEV_URL is not a local http(s) URL and was ignored: ${value}`);
+    return '';
+  } catch (error) {
+    console.warn(`ESTIMATION_DEV_URL could not be parsed and was ignored: ${value}`, error);
     return '';
   }
 }
@@ -54,7 +57,13 @@ function webRoot() {
 }
 
 function safeAssetPath(requestUrl) {
-  const url = new URL(requestUrl);
+  let url;
+  try {
+    url = new URL(requestUrl);
+  } catch (error) {
+    console.error(`Rejected malformed asset request ${requestUrl}:`, error);
+    return null;
+  }
   if (url.protocol !== `${APP_SCHEME}:` || url.hostname !== 'app') return null;
   const requested = decodeURIComponent(url.pathname === '/' ? '/index.html' : url.pathname);
   const root = webRoot();
@@ -88,6 +97,7 @@ async function handleAppRequest(request) {
     }
     return new Response(body, { status: 200, headers });
   } catch (error) {
+    if (!error || error.code !== 'ENOENT') console.error(`Could not read application asset ${assetPath}:`, error);
     return new Response(error && error.code === 'ENOENT' ? 'Not found' : 'Could not read application asset', {
       status: error && error.code === 'ENOENT' ? 404 : 500,
     });
@@ -111,6 +121,10 @@ function allowedNavigation(url) {
   }
 }
 
+function openExternal(url) {
+  shell.openExternal(url).catch((error) => console.error(`Could not open ${url} in the browser:`, error));
+}
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1440,
@@ -129,18 +143,26 @@ function createWindow() {
   });
 
   win.once('ready-to-show', () => win.show());
-  win.loadURL(DEV_URL || `${APP_ORIGIN}/index.html`);
+  const startUrl = DEV_URL || `${APP_ORIGIN}/index.html`;
+  win.loadURL(startUrl).catch((error) => {
+    console.error(`Could not load ${startUrl}:`, error);
+    dialog.showErrorBox('Estimation Tools', `The application could not be loaded from ${startUrl}.\n\n${error && error.message ? error.message : error}`);
+  });
+  win.webContents.on('render-process-gone', (_event, details) => {
+    console.error('Renderer process gone:', details);
+    dialog.showErrorBox('Estimation Tools', `The application window stopped unexpectedly (${details.reason}). Reopen the app to continue.`);
+  });
 
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (url === 'about:blank') return { action: 'allow' };
     if (allowedNavigation(url)) return { action: 'allow' };
-    if (/^https?:\/\//i.test(url)) shell.openExternal(url);
+    if (/^https?:\/\//i.test(url)) openExternal(url);
     return { action: 'deny' };
   });
   win.webContents.on('will-navigate', (event, url) => {
     if (allowedNavigation(url)) return;
     event.preventDefault();
-    if (/^https?:\/\//i.test(url)) shell.openExternal(url);
+    if (/^https?:\/\//i.test(url)) openExternal(url);
   });
 
   const isMac = process.platform === 'darwin';
@@ -170,6 +192,11 @@ app.whenReady().then(async () => {
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
+}).catch((error) => {
+  // Without this the app would sit with no window and no explanation.
+  console.error('Startup failed:', error);
+  dialog.showErrorBox('Estimation Tools', `The application could not start.\n\n${error && error.message ? error.message : error}`);
+  app.exit(1);
 });
 
 app.on('window-all-closed', () => {

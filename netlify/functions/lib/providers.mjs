@@ -192,16 +192,20 @@ export async function extractWithVerification({ imageBase64, mediaType, instruct
   }
   const args = { imageBase64, mediaType, instruction, maxTokens };
   const primaryCall = status.primary === 'anthropic' ? callClaude(args) : callGemini(args);
-  const secondCall = status.verify ? callGemini(args) : null;
+  // Settle the second opinion as a value: a primary failure returns before the
+  // second call resolves, and a bare rejection would then be unhandled.
+  const secondCall = status.verify ? callGemini(args).then(value => ({ value }), error => ({ error })) : null;
 
   const primary = await primaryCall;   // primary failure propagates to caller
   let verification = null;
   if (secondCall) {
+    const second = await secondCall;
     try {
-      const second = await secondCall;
-      const check = crossCheckExtractions(primary.result, second.result);
-      verification = { status: 'done', provider: 'gemini', model: second.model, ...check };
+      if (second.error) throw second.error;
+      const check = crossCheckExtractions(primary.result, second.value.result);
+      verification = { status: 'done', provider: 'gemini', model: second.value.model, ...check };
     } catch (err) {
+      console.error('Second-opinion extraction failed:', err);
       verification = { status: 'error', provider: 'gemini', error: err && err.message ? err.message : String(err) };
     }
   }

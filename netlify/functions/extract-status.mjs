@@ -13,11 +13,19 @@ export default async function handler(req) {
   if (!id) return json(400, { error: 'missing id' });
   const store = getStore('extractions');
   let rec = null;
-  try { rec = await store.get(id, { type: 'json' }); } catch (e) { return json(200, { status: 'pending' }); }
+  // A store read failure may be transient, so the client keeps polling — but it
+  // is reported so a permanent outage surfaces instead of an endless 'pending'.
+  try {
+    rec = await store.get(id, { type: 'json' });
+  } catch (err) {
+    const message = err && err.message ? err.message : String(err);
+    console.error(`extract-status: could not read job ${id}:`, err);
+    return json(200, { status: 'pending', error: `result store unavailable: ${message}` });
+  }
   if (!rec) return json(200, { status: 'pending' });
   if (rec.status === 'done' || rec.status === 'error') {
     // terminal — clean up the record (best effort)
-    try { await store.delete(id); } catch { /* ignore */ }
+    try { await store.delete(id); } catch (err) { console.warn(`extract-status: could not delete job ${id}:`, err); }
   }
   return json(200, rec);
 }
