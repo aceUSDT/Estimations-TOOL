@@ -13,6 +13,7 @@ import {
 } from '../../api/_lib/commerce/entitlements.mjs';
 import { cookieHeader, verifyCookie, COOKIE_NAME } from '../../api/_lib/commerce/session-cookie.mjs';
 import { signClaim, verifyClaim } from '../../api/_lib/commerce/download-claim.mjs';
+import { supabaseKvStore } from '../../api/_lib/commerce/kv.mjs';
 import { handleStoreConfig } from '../../api/_lib/commerce/handlers/store-config.mjs';
 import { handleCreateCheckout } from '../../api/_lib/commerce/handlers/create-checkout-session.mjs';
 import { handleStripeWebhook } from '../../api/_lib/commerce/handlers/stripe-webhook.mjs';
@@ -280,6 +281,35 @@ await test('webhook: paid session fulfils once; replay is a no-op', async () => 
   assert.equal((await r2.json()).duplicate, true);
 });
 
+/* A failed fulfilment must NOT look like a completed one. The event marker is
+ * written before the work (so concurrent deliveries can't double fulfil), so a
+ * failure has to release it — otherwise Stripe's retry is answered "duplicate,
+ * 200" and a paying customer is never entitled, permanently. */
+await test('webhook: failed fulfilment releases the claim so Stripe\'s retry fulfils', async () => {
+  const store = new FakeStore();
+  const realSetJSON = store.setJSON.bind(store);
+  let blowUp = true;
+  store.setJSON = async (key, value) => {
+    if (blowUp) { blowUp = false; throw new Error('transient db failure'); }
+    return realSetJSON(key, value);
+  };
+  const event = { id: 'evt_retry', type: 'checkout.session.completed', data: { object: { id: PAID_SESSION.id } } };
+  const deps = { env: ENV, store, getStripe: getFakeStripe(fakeStripe({ eventFromSig: event })) };
+  const request = () => handleStripeWebhook(
+    req('/api/stripe-webhook', { method: 'POST', body: event, headers: { 'stripe-signature': 'good-sig' } }),
+    deps,
+  );
+
+  const r1 = await request();
+  assert.equal(r1.status, 500, 'a failed fulfilment must answer non-2xx so Stripe retries');
+  assert.equal(await getBySessionId(store, PAID_SESSION.id), null, 'nothing may be granted on failure');
+
+  const r2 = await request();
+  assert.equal(r2.status, 200);
+  assert.notEqual((await r2.json()).duplicate, true, 'the retry must not be swallowed as a duplicate');
+  assert.equal(isActive(await getBySessionId(store, PAID_SESSION.id)), true, 'the retry must fulfil');
+});
+
 await test('webhook: session for someone else\'s price is NOT fulfilled', async () => {
   const store = new FakeStore();
   const other = { ...PAID_SESSION, line_items: { data: [{ price: { id: 'price_theirs' } }] } };
@@ -431,6 +461,38 @@ await test('safeEqual: constant-time compare handles length mismatch', () => {
   assert.equal(safeEqual('abc', 'abc'), true);
   assert.equal(safeEqual('abc', 'abd'), false);
   assert.equal(safeEqual('abc', 'abcd'), false);
+});
+
+/* ── store contract ───────────────────────────────────────────────────────
+ * Every test above runs against FakeStore. That only proves anything if the
+ * REAL Supabase-backed store implements the same surface: a method present on
+ * the fake and missing on the real store is a green suite and a 500 in
+ * production (exactly how the missing `delete` — single-shot download tokens —
+ * got shipped). Keep these two in lockstep. */
+function stubSupabase() {
+  const seen = [];
+  return {
+    seen,
+    from: (table) => ({
+      select: () => ({ eq: (col, key) => ({ maybeSingle: async () => { seen.push({ table, op: 'select', key }); return { data: null, error: null }; } }) }),
+      upsert: async (row) => { seen.push({ table, op: 'upsert', key: row.key }); return { error: null }; },
+      delete: () => ({ eq: async (col, key) => { seen.push({ table, op: 'delete', key }); return { error: null }; } }),
+    }),
+  };
+}
+
+await test('kv contract: the Supabase store implements every method the fake does', () => {
+  const real = supabaseKvStore(stubSupabase());
+  const fakeSurface = Object.getOwnPropertyNames(FakeStore.prototype).filter((n) => n !== 'constructor');
+  for (const method of fakeSurface) {
+    assert.equal(typeof real[method], 'function', `supabaseKvStore is missing ${method}() that FakeStore provides`);
+  }
+});
+
+await test('kv contract: delete removes the row from commerce_kv', async () => {
+  const sb = stubSupabase();
+  await supabaseKvStore(sb).delete('dl:token:abc');
+  assert.deepEqual(sb.seen, [{ table: 'commerce_kv', op: 'delete', key: 'dl:token:abc' }]);
 });
 
 console.log(`\ncommerce tests: ${passed} passed, ${failed} failed`);

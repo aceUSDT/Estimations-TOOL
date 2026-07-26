@@ -91,12 +91,27 @@ export async function markRefunded(store, paymentIntentId) {
   return true;
 }
 
-/* Webhook replay protection. Returns true when this event id is new. */
+/* Webhook replay protection. Returns true when this event id is new.
+ *
+ * This is a CLAIM, not a completion record: it is written before the work so
+ * concurrent Stripe deliveries cannot both fulfil. If the work then fails, the
+ * caller MUST release the claim (see releaseEventClaim) — otherwise Stripe's
+ * retry sees a duplicate, gets a 200, and a paying customer is never
+ * entitled. */
 export async function markEventProcessed(store, eventId) {
   const key = eventKey(eventId);
   const seen = await store.get(key).catch(() => null);
   if (seen) return false;
   await store.set(key, new Date().toISOString());
+  return true;
+}
+
+/* Undo the claim above so Stripe's next delivery of this event is treated as
+ * new. Best-effort: if the release itself fails we still want the caller to
+ * return a non-2xx, because a retry is the only path back to fulfilment. */
+export async function releaseEventClaim(store, eventId) {
+  if (typeof store.delete !== 'function') return false;
+  await store.delete(eventKey(eventId));
   return true;
 }
 

@@ -73,7 +73,10 @@ export async function callGemini({ imageBase64, mediaType, instruction, maxToken
   });
   if (!resp.ok) {
     const detail = await resp.text().catch(() => '');
-    throw new Error(`Gemini API error ${resp.status}: ${detail.slice(0, 300)}`);
+    // `status` is load-bearing: the worker's transient-retry set and the
+    // inline route's 429 mapping both test e.status. A bare Error here means
+    // a rate-limited page fails permanently instead of being retried.
+    throw Object.assign(new Error(`Gemini API error ${resp.status}: ${detail.slice(0, 300)}`), { status: resp.status });
   }
   const data = await resp.json();
   const candidate = data.candidates && data.candidates[0];
@@ -114,7 +117,7 @@ export async function callGeminiJson({ instruction, schema, maxTokens = 4000, mo
     headers: { 'content-type': 'application/json', 'x-goog-api-key': key },
     body: JSON.stringify(body),
   });
-  if (!resp.ok) throw new Error(`Gemini API error ${resp.status}`);
+  if (!resp.ok) throw Object.assign(new Error(`Gemini API error ${resp.status}`), { status: resp.status });
   const data = await resp.json();
   const candidate = data.candidates && data.candidates[0];
   if (!candidate || !candidate.content || !Array.isArray(candidate.content.parts)) {

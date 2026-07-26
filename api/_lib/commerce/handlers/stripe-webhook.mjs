@@ -3,13 +3,14 @@
  * The ONLY authority for "this customer paid" is a signature-verified Stripe
  * event (constructEventAsync over the RAW body — never parsed JSON). Events
  * are idempotent via the event-id marker, so Stripe replays cannot double
- * fulfil. Refunds revoke the entitlement immediately.
+ * fulfil; a failed attempt releases the marker and answers 5xx so Stripe's
+ * retry can still fulfil. Refunds revoke the entitlement immediately.
  *
  * This endpoint is exempt from the same-origin guard by design: Stripe calls
  * it server-to-server, and the signature is the authentication.
  */
 import { commerceState, json, getStripe } from '../commerce.mjs';
-import { realStore, fulfil, markRefunded, markEventProcessed } from '../entitlements.mjs';
+import { realStore, fulfil, markRefunded, markEventProcessed, releaseEventClaim } from '../entitlements.mjs';
 
 async function sessionIsPaidForOurPrice(stripe, sessionId, env) {
   const session = await stripe.checkout.sessions.retrieve(sessionId, { expand: ['line_items'] });
@@ -39,23 +40,32 @@ export async function handleStripeWebhook(req, deps) {
   const fresh = await markEventProcessed(deps.store, event.id);
   if (!fresh) return json(200, { received: true, duplicate: true });
 
-  if (event.type === 'checkout.session.completed') {
-    // Re-retrieve rather than trusting the event payload's snapshot, and
-    // confirm the paid line item is OUR price before granting anything.
-    const session = await sessionIsPaidForOurPrice(stripe, event.data.object.id, env);
-    if (session) await fulfil(deps.store, session, env);
-    return json(200, { received: true });
-  }
+  // From here the claim is held. Every failure path must release it and return
+  // a non-2xx so Stripe redelivers — a swallowed failure means a customer has
+  // paid and holds nothing.
+  try {
+    if (event.type === 'checkout.session.completed') {
+      // Re-retrieve rather than trusting the event payload's snapshot, and
+      // confirm the paid line item is OUR price before granting anything.
+      const session = await sessionIsPaidForOurPrice(stripe, event.data.object.id, env);
+      if (session) await fulfil(deps.store, session, env);
+      return json(200, { received: true });
+    }
 
-  if (event.type === 'charge.refunded' || event.type === 'charge.dispute.created') {
-    const charge = event.data.object;
-    const paymentIntent = typeof charge.payment_intent === 'string'
-      ? charge.payment_intent
-      : (charge.payment_intent && charge.payment_intent.id);
-    if (paymentIntent) await markRefunded(deps.store, paymentIntent);
-    return json(200, { received: true });
-  }
+    if (event.type === 'charge.refunded' || event.type === 'charge.dispute.created') {
+      const charge = event.data.object;
+      const paymentIntent = typeof charge.payment_intent === 'string'
+        ? charge.payment_intent
+        : (charge.payment_intent && charge.payment_intent.id);
+      if (paymentIntent) await markRefunded(deps.store, paymentIntent);
+      return json(200, { received: true });
+    }
 
-  return json(200, { received: true, ignored: event.type });
+    return json(200, { received: true, ignored: event.type });
+  } catch (e) {
+    await releaseEventClaim(deps.store, event.id).catch(() => {});
+    // No provider detail in the body; Stripe only needs the retry signal.
+    return json(500, { error: 'processing_failed' });
+  }
 }
 

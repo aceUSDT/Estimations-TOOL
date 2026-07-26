@@ -108,10 +108,13 @@ export function parseModelJson(content) {
   try { return JSON.parse(t.slice(start, end + 1)); } catch { return null; }
 }
 
-/* Error factory: stable codes, no key material, no raw provider body. */
-function poolError(code, detail) {
+/* Error factory: stable codes, no key material, no raw provider body.
+ * `httpStatus` is carried through as `status` when the failure came from an
+ * HTTP response, because the worker's transient-retry set tests e.status. */
+function poolError(code, detail, httpStatus) {
   const e = new Error(`nvidia-pool: ${code}${detail ? ` (${detail})` : ''}`);
   e.code = code;
+  if (Number.isInteger(httpStatus)) e.status = httpStatus;
   return e;
 }
 
@@ -196,7 +199,7 @@ export function createPool(opts = {}) {
 
     if (!res.ok) {
       markResult(model, false);
-      throw poolError(res.status === 429 ? 'rate_limited' : `http_${res.status}`, model);
+      throw poolError(res.status === 429 ? 'rate_limited' : `http_${res.status}`, model, res.status);
     }
     let data;
     try { data = await res.json(); } catch { markResult(model, false); throw poolError('bad_json', model); }

@@ -1,7 +1,7 @@
 /* Commerce KV — the entitlement store, on Supabase (the system's single
  * database) instead of Netlify Blobs. Exposes the exact interface the
  * commerce code was written against (get / get{type:'json'} / set /
- * setJSON), so entitlements.mjs logic is unchanged.
+ * setJSON / delete), so entitlements.mjs logic is unchanged.
  *
  * Table: public.commerce_kv (supabase/migrations/0004_commerce_kv.sql).
  * RLS is enabled + FORCED with NO policies: only the service-role client
@@ -29,6 +29,13 @@ export function supabaseKvStore(sb) {
     },
     async setJSON(key, value) {
       return this.set(key, value);
+    },
+    /* Blobs semantics: deleting a missing key is a no-op, not an error.
+     * Single-shot download tokens are burned through here, so a silently
+     * missing implementation makes redemption fail closed at runtime. */
+    async delete(key) {
+      const { error } = await client.from(TABLE).delete().eq('key', key);
+      if (error) throw new Error(`kv delete failed: ${error.code || 'db_error'}`);
     },
   };
 }

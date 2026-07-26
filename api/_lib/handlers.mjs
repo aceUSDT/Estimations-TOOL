@@ -16,6 +16,13 @@
  */
 import { ok, err, isUuid, newCorrelationId, jsonByteLength, MAX_BODY_BYTES, MAX_IMAGE_B64 } from './http.mjs';
 
+/* Per-IP hourly ceiling for the stateless inline-extract route. Deliberately
+ * generous: a dense page takes 30–45s, so one estimator working flat out
+ * cannot pass ~120/hour, and an office behind one NAT address needs headroom.
+ * The point is stopping a scripted drain of the day's provider budget, not
+ * rationing real work. Override with EXTRACT_RATE_LIMIT_PER_HOUR. */
+export const EXTRACT_RUN_HOURLY_LIMIT = 240;
+
 export const JOB_STATES = ['queued', 'running', 'complete', 'needs_review', 'incomplete', 'failed'];
 export const TERMINAL_STATES = ['complete', 'needs_review', 'incomplete', 'failed'];
 
@@ -92,6 +99,21 @@ export async function handleInlineExtract(input, deps) {
   const hasText = Array.isArray(b.text_lines) && b.text_lines.length > 0;
   if (!hasImage && !hasText) return err(400, 'invalid_request', 'Provide image_base64 and/or text_lines.', correlationId);
   if (hasImage && b.image_base64.length > MAX_IMAGE_B64) return err(413, 'payload_too_large', 'Page image exceeds the size limit.', correlationId);
+
+  /* Spend guard. This route has no sign-in (the local-first browser app calls
+   * it anonymously by design) yet every call spends real Gemini/NVIDIA budget,
+   * so anyone who finds the URL can drain it. A coarse per-IP window is the
+   * proportionate control until per-plan metering exists.
+   *
+   * Honest about what this is NOT: it is not authentication, not metering, and
+   * an attacker with many source addresses is not stopped by it. It fails OPEN
+   * — extraction is the product, and a storage blip must never block real
+   * work — and it is skipped entirely when no store is configured. */
+  if (deps.rateLimit && deps.store && deps.clientIp) {
+    const limit = Number(deps.env && deps.env.EXTRACT_RATE_LIMIT_PER_HOUR) || EXTRACT_RUN_HOURLY_LIMIT;
+    const gate = await deps.rateLimit(deps.store, 'extract-run', deps.clientIp(input), { limit, windowSec: 3600 });
+    if (!gate.ok) return err(429, 'rate_limited', 'Too many extraction requests from this network — try again shortly.', correlationId);
+  }
 
   const instruction = deps.buildInstruction({ filename: b.filename, pageNumber: b.page_number, hints: b.hints, textLines: b.text_lines });
   try {
