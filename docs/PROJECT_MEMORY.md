@@ -214,7 +214,10 @@ the circuit table entirely.
 
 - Supabase project ref: `ldhhuscifjxdgptneelb` (dashboard links use this).
   Migrations `0001–0005` **applied**. "Confirm email" is **OFF** (test project).
-- Vercel project: `yacine8/estimations-tool`. Previews deploy green on every push.
+- Vercel project: **`estimations/estimations-tool`** (moved to the `estimations`
+  team on 2026-07-26; it was `yacine8/…` before — older links 404). Env vars:
+  `https://vercel.com/estimations/estimations-tool/settings/environment-variables`.
+  Previews deploy green on every push.
 - Netlify is still connected and builds a green preview of the static SPA — harmless
   legacy; the repo has no Netlify code. Owner to disconnect eventually.
 - NVIDIA free tier **fluctuates minute to minute** — models that answer in 1s can
