@@ -32,5 +32,13 @@ node coverage-report.mjs        # 3. → ../../reports/coverage-baseline.{md,jso
 - Schedule-looking pages with zero extracted rows (a failure to raise, not an empty result).
 - Ground-truth anchors in `ground-truth.json` (BUILD_BRIEF §0.5 numbers).
 
+## Shared utilities (`lib/`)
+
+- `lib/paths.mjs` — repo/work/report locations, JSON + work-cache readers.
+- `lib/cores.mjs` — loaders for `extractor-core.js`, `report-core.js` (vm sandbox) and `app-pipeline.cjs`.
+- `lib/checks.mjs` — `createChecker()`, the pass/fail harness the deterministic tests share.
+- `lib/metrics.mjs` — board-reference normalisation and way-slot counting used by both coverage reports.
+- `lib/browser.mjs` — Chromium launch with the vendored-CDN routes and the "new project" flow the `verify-*` checks share.
+
 `work/` (rendered PNGs + OCR cache) is gitignored; `reports/coverage-baseline.*` is committed
 so the baseline is diffable as extraction improves.

@@ -20,17 +20,12 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { createRequire } from 'node:module';
+import { REPORTS, loadGroundTruth, loadWorkIndex, loadWorkMeta, pagePath, readJson } from './lib/paths.mjs';
+import { loadPipeline } from './lib/cores.mjs';
+import { normRef, waySlots } from './lib/metrics.mjs';
 
-const require = createRequire(import.meta.url);
-const P = require('./app-pipeline.cjs');
-
-const HERE = path.dirname(fileURLToPath(import.meta.url));
-const WORK = path.join(HERE, 'work');
-const ROOT = path.resolve(HERE, '..', '..');
-const REPORTS = path.join(ROOT, 'reports');
-const groundTruth = JSON.parse(fs.readFileSync(path.join(HERE, 'ground-truth.json'), 'utf8'));
+const P = loadPipeline();
+const groundTruth = loadGroundTruth();
 
 /* ---- expected-way detection (coverage signal, NOT part of the app pipeline) ---- */
 const WAY_HEADER_PATTERNS = [
@@ -106,13 +101,10 @@ function analyseMode(meta, ocrCache, mode) {
 
   const expWays = expected.reduce((s, e) => s + e.ways, 0);
   // captured ways: distinct way numbers per (board,page-run); approximate with distinct (board, way)
-  const seenWays = new Set();
-  for (const r of A.rows) {
-    if (r.kind === 'mention' || r.way == null) continue;
-    seenWays.add((r.boardNorm || '?') + '#' + r.way);
-  }
+  const seenWays = waySlots(A.rows);
 
   return {
+    waySlotKeys: seenWays,
     pages: pages.map((pg) => ({
       page: pg.page, type: pg.type, lines: pg.lines.length,
       rows: A.rows.filter((r) => r.page === pg.page).length,
@@ -134,7 +126,7 @@ function analyseMode(meta, ocrCache, mode) {
 function gtCheck(file, res) {
   const gt = groundTruth[file];
   if (!gt) return null;
-  const norm = (s) => String(s).toUpperCase().replace(/[\s.\-_\/]+/g, '');
+  const norm = normRef;
   const out = { pass: true, checks: [] };
   if (gt.boards_expected) {
     const have = new Set(res.boardsNamed.map(norm));
@@ -157,7 +149,7 @@ function gtCheck(file, res) {
       const bn = norm(board);
       const captured = new Set();
       // way slots captured for this board
-      for (const k of res._waySlots || []) {
+      for (const k of res.waySlotKeys || []) {
         const [b, w] = k.split('#');
         if (b === bn) captured.add(w);
       }
@@ -169,39 +161,20 @@ function gtCheck(file, res) {
 }
 
 /* ---- run ---- */
-const index = JSON.parse(fs.readFileSync(path.join(WORK, 'index.json'), 'utf8'));
+const index = loadWorkIndex();
 const results = [];
 for (const doc of index) {
-  const meta = JSON.parse(fs.readFileSync(path.join(WORK, doc.slug, 'meta.json'), 'utf8'));
+  const meta = loadWorkMeta(doc.slug);
   const ocrCache = {};
   for (const pg of meta.pages) {
-    const f = path.join(WORK, doc.slug, `ocr-${String(pg.page).padStart(3, '0')}.json`);
-    if (fs.existsSync(f)) {
-      const j = JSON.parse(fs.readFileSync(f, 'utf8'));
-      ocrCache[pg.page] = (j.lines || []).map((l) => l.text);
-    }
+    const f = pagePath(doc.slug, 'ocr', pg.page, 'json');
+    if (fs.existsSync(f)) ocrCache[pg.page] = (readJson(f).lines || []).map((l) => l.text);
   }
   const auto = analyseMode(meta, ocrCache, 'auto');
   const ocr = analyseMode(meta, ocrCache, 'ocr');
-  // stash way slots for gt check
-  ocr._waySlots = [];
-  {
-    // recompute way slots (board#way) for gt
-    const pages = meta.pages.map((pg) => ({
-      page: pg.page,
-      lines: pg.native ? pg.lines.map((l) => l.text) : (ocrCache[pg.page] || []),
-    }));
-    const total = pages.length;
-    pages.forEach((pg, i) => { pg.type = P.classifyPage(pg.lines.join('\n'), i, total).type; });
-    const A = P.analyseDocument(pages);
-    const seen = new Set();
-    for (const r of A.rows) {
-      if (r.kind === 'mention' || r.way == null) continue;
-      seen.add((r.boardNorm || '?') + '#' + r.way);
-    }
-    ocr._waySlots = [...seen];
-  }
   const gt = gtCheck(doc.file, ocr);
+  delete auto.waySlotKeys;
+  delete ocr.waySlotKeys;
   results.push({ file: doc.file, pages: doc.pages, nativePages: doc.native_pages, auto, ocr, groundTruth: gt });
   console.log(`${doc.file}: auto rows=${auto.scheduleRows} | ocr rows=${ocr.scheduleRows} boards=${ocr.boardsNamed.length} gt=${gt ? (gt.pass ? 'PASS' : 'FAIL') : '—'}`);
 }

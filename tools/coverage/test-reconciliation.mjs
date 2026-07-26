@@ -1,13 +1,9 @@
 /* Regression test: WS0.3 reconciliation pass (extractor-core buildCoverage). */
-import { createRequire } from 'node:module';
-const require = createRequire(import.meta.url);
-require('../../extractor-core.js');
-const core = globalThis.EstimationExtractorCore;
+import { loadExtractorCore } from './lib/cores.mjs';
+import { createChecker } from './lib/checks.mjs';
 
-let fail = 0;
-const check = (name, cond, detail) => {
-  if (!cond) { console.log(`FAIL ${name}${detail ? ' — ' + detail : ''}`); fail++; }
-};
+const core = await loadExtractorCore();
+const { check, finish } = createChecker();
 
 /* expectedWaysFromText */
 check('18 WAY TP&N', core.expectedWaysFromText('18 WAY TP&N 250A RATED METERED BOARD')?.ways === 18);
@@ -92,5 +88,4 @@ const upstreamCoverage = core.buildCoverage({
 check('upstream switchboard excluded from DB take-off coverage', upstreamCoverage.summary.boards === 0);
 check('upstream switchboard does not create a zero-row warning', upstreamCoverage.zeroRowSchedulePages.length === 0);
 
-if (fail) { console.log(`\n${fail} failure(s)`); process.exit(1); }
-console.log('PASS: expectedWaysFromText, pageLooksTabular, buildCoverage (header-vs-rows, zero-row pages, no-header case)');
+finish('expectedWaysFromText, pageLooksTabular, buildCoverage (header-vs-rows, zero-row pages, no-header case)');

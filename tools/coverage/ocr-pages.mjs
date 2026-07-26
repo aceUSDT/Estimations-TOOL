@@ -9,25 +9,21 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { createRequire } from 'node:module';
 import { createWorker } from 'tesseract.js';
+import { WORK, loadWorkIndex, loadWorkMeta, pagePath } from './lib/paths.mjs';
+import { loadExtractorCore } from './lib/cores.mjs';
 
-const require = createRequire(import.meta.url);
-require('../../extractor-core.js');
-const core = globalThis.EstimationExtractorCore;
+const core = await loadExtractorCore();
 
-const HERE = path.dirname(fileURLToPath(import.meta.url));
-const WORK = path.join(HERE, 'work');
 const CONCURRENCY = Number(process.argv.find((a, i) => process.argv[i - 1] === '--concurrency') || 3);
 
-const docs = JSON.parse(fs.readFileSync(path.join(WORK, 'index.json'), 'utf8'));
+const docs = loadWorkIndex();
 const jobs = [];
 for (const doc of docs) {
-  const meta = JSON.parse(fs.readFileSync(path.join(WORK, doc.slug, 'meta.json'), 'utf8'));
+  const meta = loadWorkMeta(doc.slug);
   for (const pg of meta.pages) {
     if (!pg.png) continue;
-    const out = path.join(WORK, doc.slug, `ocr-${String(pg.page).padStart(3, '0')}.json`);
+    const out = pagePath(doc.slug, 'ocr', pg.page, 'json');
     if (fs.existsSync(out)) continue;
     jobs.push({ slug: doc.slug, page: pg.page, png: path.join(WORK, doc.slug, pg.png), out, pg });
   }

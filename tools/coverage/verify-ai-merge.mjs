@@ -4,15 +4,10 @@
  * merge into the analysis as review-pending rows. No API key involved; this
  * tests everything except Claude itself.
  */
-import { chromium } from 'playwright-core';
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { DEFAULT_FIXTURE } from './lib/paths.mjs';
+import { launchAppPage, openNewProject } from './lib/browser.mjs';
 
-const HERE = path.dirname(fileURLToPath(import.meta.url));
-const ROOT = path.resolve(HERE, '..', '..');
-const FIXTURE = path.join(ROOT, 'examples/db-schedules/simple/BC250847-E13_Distribution.pdf');
-const URL = 'http://127.0.0.1:8765/?test=1';
+const FIXTURE = DEFAULT_FIXTURE;
 
 const MOCK_RESULT = {
   classification: { type: 'db_schedule', sub_format: 'simple', confidence: 0.9 },
@@ -34,25 +29,7 @@ const MOCK_RESULT = {
   flags: [{ kind: 'uncertain', message: 'Handwritten note near way 4 partially legible' }],
 };
 
-const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
-const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
-const page = await ctx.newPage();
-page.on('pageerror', (e) => console.log('[pageerror]', String(e).slice(0, 300)));
-
-// serve vendored CDN assets locally (same as verify-auto-ocr.mjs)
-const NM = path.join(HERE, 'node_modules');
-const VENDOR = path.join(HERE, 'vendor');
-await page.route(/https:\/\/(cdnjs\.cloudflare\.com|cdn\.jsdelivr\.net|tessdata\.projectnaptha\.com)\/.*/, async (route) => {
-  const base = route.request().url().split('?')[0].split('/').pop();
-  let file = null;
-  if (base === 'pdf.min.js' || base === 'pdf.worker.min.js') file = path.join(VENDOR, base);
-  else if (base === 'tesseract.min.js') file = path.join(NM, 'tesseract.js/dist/tesseract.min.js');
-  else if (base === 'worker.min.js') file = path.join(NM, 'tesseract.js/dist/worker.min.js');
-  else if (base.startsWith('tesseract-core')) file = path.join(NM, 'tesseract.js-core', base);
-  else if (base.endsWith('.traineddata.gz')) file = path.join(VENDOR, 'eng.traineddata.gz');
-  if (file && fs.existsSync(file)) await route.fulfill({ status: 200, body: fs.readFileSync(file) });
-  else await route.abort();
-});
+const { browser, page } = await launchAppPage();
 
 // mock the serverless extraction endpoint
 let postCount = 0;
@@ -69,12 +46,7 @@ await page.route('**/.netlify/functions/extract', async (route) => {
 });
 
 try {
-  await page.goto(URL, { waitUntil: 'domcontentloaded' });
-  await page.waitForSelector('.proj-card.new', { timeout: 30000 });
-  await page.click('.proj-card.new');
-  await page.fill('#mName', 'AI merge check');
-  await page.click('#mOk');
-  await page.waitForFunction('state.cur && state.cur.name === "AI merge check"');
+  await openNewProject(page, 'AI merge check');
   await page.setInputFiles('#fileInput', FIXTURE);
   console.log('file dropped; waiting for OCR + analysis + mocked AI pass…');
   await page.waitForFunction('state.cur.analysis && state.cur.analysis.aiPages != null', null, { timeout: 300000 });

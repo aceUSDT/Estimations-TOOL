@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
+import { loadExtractorCore } from "./lib/cores.mjs";
 
-await import("../../extractor-core.js");
-const Core = globalThis.EstimationExtractorCore;
+const Core = await loadExtractorCore();
 
 const digitalLines = [
   { text: "DISTRIBUTION BOARD SCHEDULE DB-01", bbox: [20, 20, 300, 14] },
