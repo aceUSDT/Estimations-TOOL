@@ -115,6 +115,56 @@ functions; we're at 8.)
 
 **11 of 13 launch quality gates met** — see `docs/MIGRATION_QUALITY_GATES.md`.
 
+### Real bugs found by CODE REVIEW of PRs #10/#12/#13 (fixed 2026-07-26, `2ba1ea6`)
+
+Four review findings were verified against the code and fixed; each has a
+regression test that fails without its fix. Don't reintroduce.
+
+1. **commerce KV had no `delete()`** — `redeem-download-token.mjs` burns
+   single-shot tokens via `store.delete()`, so every restore-by-email
+   redemption threw a TypeError in production. The suite was green because
+   `FakeStore` in `test-commerce.mjs` implements `delete` and the real
+   `supabaseKvStore` did not. **Lesson: a fake more capable than the real
+   thing is a green suite and a production 500.** There is now a contract test
+   asserting the real store implements every method the fake exposes — keep the
+   two in lockstep.
+2. **Stripe webhook swallowed failed fulfilment** — `markEventProcessed` ran
+   *before* the work, so a throwing `fulfil()` meant Stripe's retry hit the
+   duplicate short-circuit and got a `200`: customer paid, never entitled,
+   permanently. The marker is still written first (concurrent deliveries must
+   not double fulfil) but is now released on failure via `releaseEventClaim`,
+   and the handler answers `500` so Stripe redelivers.
+3. **Provider retries never fired** — `worker.mjs` tests `TRANSIENT.has(e.status)`
+   but Gemini threw bare `Error`s and the NVIDIA pool set `.code` only. No
+   provider ever matched, so a 429 failed the page permanently. Both now attach
+   the numeric `status`. The worker tests had always passed because their fakes
+   shaped the error correctly — the new test asserts the contract against the
+   real provider.
+4. **`/api/extract/run` had no spend guard** — unauthenticated by design (the
+   local-first browser calls it anonymously) but it spends real provider
+   budget. Added a coarse per-IP hourly window (`EXTRACT_RUN_HOURLY_LIMIT`,
+   default 240, override `EXTRACT_RATE_LIMIT_PER_HOUR`) reusing the commerce
+   limiter rather than a second copy of the rule. **It only engages when
+   `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` are set** — without a store it
+   is skipped, because it fails open on purpose (extraction is the product).
+   It is a spend guard, NOT authentication and NOT metering.
+
+Also fixed: unhandled 500s in `runRoute` were logged nowhere, so production
+failures left no trace. Now logs message + stack only — never the request body,
+which carries customer document content.
+
+**Review findings NOT yet addressed** (verified real, deliberately deferred):
+the durable worker is fire-and-forget (`handlers.mjs` calls `processJob`
+un-awaited, no `waitUntil` anywhere) and the job payload is memory-only —
+`extraction_jobs` has no payload column — so a killed job cannot be
+reconstructed. The code says as much ("Phase 5 owns retries"). Also latent:
+`isUuid` rejects UUIDv7 (`[1-5]` version nibble; everything currently generates
+v4), `deriveState` returns `complete` for a page with zero boards AND zero
+devices, and `rateLimit` passes an `expiresAt` in `set()`'s third argument that
+the Supabase store ignores, so `rl:` rows accumulate in `commerce_kv` forever.
+One review claim was a FALSE POSITIVE: Stripe raw-body handling is correct
+(`req.text()` + `constructEventAsync`, bodyParser off).
+
 ### Real bugs found by live testing (all fixed — don't reintroduce)
 1. **Infinite RLS recursion (`42P17`)** — `member_write` on `organization_members`
    ran a raw subquery against its own table instead of a SECURITY DEFINER helper,
@@ -217,7 +267,16 @@ the circuit table entirely.
 - Vercel project: **`estimations/estimations-tool`** (moved to the `estimations`
   team on 2026-07-26; it was `yacine8/…` before — older links 404). Env vars:
   `https://vercel.com/estimations/estimations-tool/settings/environment-variables`.
-  Previews deploy green on every push.
+  Previews deploy green on every push. Project id
+  `prj_nXOmQX28AyggMOHo3WeeBVXY8QHA`, team id `team_e7MAH1BFvwza5RgSVN4j7tWC`.
+  - **Stable branch alias** (survives every push, use it for health checks):
+    `https://estimations-tool-git-product-ai-agent-team-estimations.vercel.app`
+  - Production domain `estimations-tool.vercel.app` still serves **`main`**
+    (the pre-migration app), so it has no `/api/extract/*` routes yet.
+  - **Preview deployments are behind Vercel Authentication (SSO)** — verified
+    2026-07-26: an anonymous fetch of a preview URL 302s to `vercel.com/sso-api`.
+    So preview URLs are not publicly reachable, and checking a preview endpoint
+    must be done in a browser logged into the Vercel account.
 - Netlify is still connected and builds a green preview of the static SPA — harmless
   legacy; the repo has no Netlify code. Owner to disconnect eventually.
 - NVIDIA free tier **fluctuates minute to minute** — models that answer in 1s can
