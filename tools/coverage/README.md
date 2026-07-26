@@ -34,3 +34,23 @@ node coverage-report.mjs        # 3. → ../../reports/coverage-baseline.{md,jso
 
 `work/` (rendered PNGs + OCR cache) is gitignored; `reports/coverage-baseline.*` is committed
 so the baseline is diffable as extraction improves.
+
+## Deterministic tests (`npm test` from the repo root)
+
+Every `test-*.mjs` here runs offline with no API key and no corpus. `stubs/` holds the
+in-memory `@netlify/blobs` store and the scripted provider used by the hosted-function
+tests; `load-extractor-core.cjs` evaluates `extractor-core.js` (a globals-attaching
+script, not an ES module) for both CommonJS and ESM callers.
+
+| Test | Covers |
+| --- | --- |
+| `test-boardrefs.mjs`, `probe-dialects.mjs` | board-reference detection, schedule dialects |
+| `test-reconciliation.mjs` | expected-vs-captured ways, `buildCoverage` |
+| `test-tba-schedule.mjs`, `test-ocr-pipeline.mjs` | coded schedules, OCR routing and layout |
+| `test-assisted-count.mjs` | assisted counting, device aggregation, three-type classification |
+| `test-report-core.mjs`, `test-device-consolidation.mjs` | grouping, reconciliation, CSV and XLSX export |
+| `test-extract-function.mjs`, `test-verify.mjs` | request validation, schema, cross-check comparator |
+| `test-providers.mjs` | Claude/Gemini request shape, response decoding, second-opinion fallback |
+| `test-netlify-jobs.mjs` | background job writer, poll endpoint, provider-error mapping |
+| `test-desktop-main.mjs` | desktop asset protocol, CSP, navigation guard |
+| `../../desktop/verify-assets.cjs` | packaged desktop assets |

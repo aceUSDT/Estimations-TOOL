@@ -14,8 +14,7 @@ import { createRequire } from 'node:module';
 import { createWorker } from 'tesseract.js';
 
 const require = createRequire(import.meta.url);
-require('../../extractor-core.js');
-const core = globalThis.EstimationExtractorCore;
+const core = require('./load-extractor-core.cjs');
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const WORK = path.join(HERE, 'work');
