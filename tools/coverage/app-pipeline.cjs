@@ -384,7 +384,16 @@ function analyseDocument(pages){
       ctxBoard=scheduleBoardFromLines(lines);
       const hasBoardHeader=hasScheduleBoardHeader(lines);
       if (!ctxBoard && !hasBoardHeader && prevBoard) ctxBoard=prevBoard;
-      if (ctxBoard){ regBoard(ctxBoard,pageNo); prevBoard=ctxBoard; }
+      if (ctxBoard){
+        regBoard(ctxBoard,pageNo); prevBoard=ctxBoard;
+        const e=A.boards[ctxBoard.norm];
+        if (e){
+          e.isHeader=true;
+          const facts=EstimationExtractorCore.parseBoardHeaderFacts(lines);
+          if (facts.waysTotal) e.waysTotal=facts.waysTotal;
+          if (facts.servedBy) e.servedBy=facts.servedBy;
+        }
+      }
       else if(hasBoardHeader) prevBoard=null;
     } else prevBoard=null;
     const parsedLegend=EstimationExtractorCore.parseProtectionLegend(lines.join('\n'));
@@ -436,6 +445,29 @@ function analyseDocument(pages){
       }
     });
   }
+  /* Mirrors the app's post-analysis pass. Without it this harness reported
+     board counts the shipped app would never produce, and a fix could look
+     verified here while doing nothing in the product — which happened. */
+  const applyBoardMerge=({drop,keep})=>{
+    const from=A.boards[drop], to=A.boards[keep];
+    if(!from||!to||drop===keep) return;
+    A.rows.forEach(r=>{ if(r.boardNorm===drop) r.boardNorm=keep; });
+    A.cables.forEach(c=>{ if(c.boardNorm===drop) c.boardNorm=keep; });
+    A.feeders.forEach(fd=>{ if(fd.from===drop) fd.from=keep; if(fd.to===drop) fd.to=keep; });
+    Object.values(A.boards).forEach(b=>{ if(b.parent===drop) b.parent=keep; });
+    (from.pages||[]).forEach(pn=>{ if(!to.pages.includes(pn)) to.pages.push(pn); });
+    delete A.boards[drop];
+  };
+  EstimationExtractorCore.planWayBoardMerges(
+    Object.values(A.boards).map(b=>({norm:b.norm, isHeader:Boolean(b.isHeader)}))
+  ).forEach(applyBoardMerge);
+  EstimationExtractorCore.planPrefixMerges(
+    Object.values(A.boards).map(b=>({norm:b.norm,
+      rowCount:A.rows.filter(r=>r.boardNorm===b.norm&&r.status!=='rejected').length}))
+  ).forEach(applyBoardMerge);
+  A.capacityWarnings=EstimationExtractorCore.boardCapacityWarnings(
+    Object.values(A.boards).map(b=>({norm:b.norm, waysTotal:b.waysTotal||null, phases:3,
+      deviceCount:A.rows.filter(r=>r.boardNorm===b.norm&&r.device&&!r.space&&!r.spare).length})));
   return A;
 }
 
