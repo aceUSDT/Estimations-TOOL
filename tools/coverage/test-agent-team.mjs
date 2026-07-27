@@ -315,3 +315,31 @@ const teamOut = (master) => ({
 
 if (fail) { console.log(`\n${fail} failure(s)`); process.exit(1); }
 console.log('PASS: nvidia pool + agent team + engine selector + worker master-audit integration.');
+
+/* Per-role board contract + deterministic way coverage.
+ *
+ * The failures these encode were all seen in production output: the board ref
+ * returned per ROW ("DB-1-GF-5"), the phase folded into the board name, and
+ * three-phase ways collapsed to a single row. */
+{
+  const { declaredHeaderFacts, wayCoverage } = await import('../../api/_lib/extraction/agent-team.mjs');
+  const header = ['REFERENCE DB-1-GF SERVED BY MEP MAIN DB NUMBER OF WAYS 18 WAYS INCOMER GENERIC ISOLATOR'];
+  const facts = declaredHeaderFacts(header);
+  if (facts.boardRef !== 'DB-1-GF') { console.log(`FAIL [facts] boardRef ${facts.boardRef}`); process.exitCode = 1; }
+  if (facts.waysTotal !== 18) { console.log(`FAIL [facts] waysTotal ${facts.waysTotal}`); process.exitCode = 1; }
+
+  // the master is TOLD which ways are unaccounted for; it never counts them itself
+  const cov = wayCoverage(facts, { devices: [{ way: '1' }, { way: '2' }] }, { devices: [{ way: '3' }] });
+  if (!cov.checkable || cov.missing.length !== 15 || cov.missing[0] !== '4') {
+    console.log(`FAIL [coverage] missing ${JSON.stringify(cov.missing)}`); process.exitCode = 1;
+  }
+  // a page that declares no way count is NOT checkable — silence must never read as verified
+  const none = wayCoverage({ boardRef: 'DB-X', waysTotal: null }, { devices: [{ way: '1' }] });
+  if (none.checkable || none.missing.length) { console.log('FAIL [coverage] guessed without a declared way count'); process.exitCode = 1; }
+
+  // full coverage reports nothing missing
+  const all = wayCoverage({ waysTotal: 3 }, { devices: [{ way: '1' }, { way: '2' }, { way: '3' }] });
+  if (all.missing.length) { console.log(`FAIL [coverage] false miss ${JSON.stringify(all.missing)}`); process.exitCode = 1; }
+
+  if (!process.exitCode) console.log('ok  agent contract: declared facts + computed way coverage');
+}
