@@ -174,7 +174,6 @@
      * behaviour on normal pages unchanged. */
     const heights = list.map((it) => Number(it.h) || 0).filter((h) => h > 0).sort((a, b) => a - b);
     const medianHeight = heights.length ? heights[Math.floor(heights.length / 2)] : 10;
-    const lineTolerance = options.lineTolerance || Math.max(5, medianHeight * 0.6);
     const gapForDoubleSpace = options.gapForDoubleSpace || Math.max(8, medianHeight * 0.8);
 
     /* Dominant rotation, quantised to a quarter turn. A page is only treated as
@@ -199,6 +198,41 @@
     };
 
     const projected = list.map((it) => ({ it, ...project(it) }));
+
+    /* The band that separates "same line" from "next line" is MEASURED from the
+     * page, not assumed. A fixed value is wrong in both directions: too tight
+     * on a large-format drawing sheet, where one table row's cells sit tens of
+     * units apart and every cell becomes its own line, and too loose on dense
+     * text. Guessing a constant from font size is no better — it depends on
+     * how the sheet was authored.
+     *
+     * On a table the gaps between text bands are strongly BIMODAL: small gaps
+     * within a row, one large gap between rows. Measured on a real schedule,
+     * cells within a row sat ~2 and ~21 units apart while rows were ~636
+     * apart — a 30x separation. When that separation is clear, the boundary
+     * goes between the two clusters. When it is not — ordinary body text, where
+     * every gap is about a line height — nothing is inferred and the default
+     * stands. */
+    const measureTolerance = () => {
+      const bands = [...new Set(projected.map((p) => Math.round(p.v)))].sort((a, b) => a - b);
+      if (bands.length < 6) return null;
+      const gaps = [];
+      for (let i = 1; i < bands.length; i++) { const g = bands[i] - bands[i - 1]; if (g > 0) gaps.push(g); }
+      if (gaps.length < 5) return null;
+      const sorted = gaps.slice().sort((a, b) => a - b);
+      let bestRatio = 0, splitAt = -1;
+      for (let i = 0; i < sorted.length - 1; i++) {
+        const ratio = sorted[i + 1] / sorted[i];
+        if (ratio > bestRatio) { bestRatio = ratio; splitAt = i; }
+      }
+      // both clusters must be substantial, and the separation unmistakable
+      if (bestRatio < 5 || splitAt < 0) return null;
+      const smallSide = splitAt + 1;
+      if (smallSide < gaps.length * 0.25 || smallSide > gaps.length * 0.9) return null;
+      // sit between the clusters, nearer the small one
+      return sorted[splitAt] * 1.5;
+    };
+    const lineTolerance = options.lineTolerance || measureTolerance() || Math.max(5, medianHeight * 0.6);
     projected.sort((a, b) => (Math.abs(a.v - b.v) > lineTolerance ? a.v - b.v : a.u - b.u));
 
     const lines = [];

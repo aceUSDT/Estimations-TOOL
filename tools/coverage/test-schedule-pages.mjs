@@ -247,3 +247,41 @@ console.log(`PASS: ${pages.length} schedule pages → ${boards.length} boards, s
 
   if (!fail) console.log('PASS: line tolerance scales with the text.');
 }
+
+/* The line band is MEASURED from the page, not assumed.
+ *
+ * On a table the gaps between text bands are bimodal — small within a row, one
+ * large between rows. Measured on a real schedule: ~2 and ~21 units within a
+ * row against ~636 between rows. Reading that separation is what took the
+ * deterministic pass from 41 device rows to 161 on that document, with every
+ * board's count matching its declared way count. */
+{
+  const { groupTextItemsIntoLines } = P.EstimationExtractorCore;
+
+  // a table: 6 rows, cells scattered within each row, rows far apart
+  const table = [];
+  for (let r = 0; r < 6; r++) {
+    const base = 1000 - r * 600;
+    table.push({ str: `${r + 1}-L1`, x: 0, y: base, w: 40, h: 10, angle: 0 });
+    table.push({ str: '16', x: 100, y: base + 20, w: 20, h: 10, angle: 0 });
+    table.push({ str: 'Acti9 iC60H, MCB, Type B', x: 160, y: base + 2, w: 180, h: 10, angle: 0 });
+    table.push({ str: `CIRCUIT ${r + 1}`, x: 400, y: base + 21, w: 90, h: 10, angle: 0 });
+  }
+  const rows = groupTextItemsIntoLines(table).map((l) => l.text);
+  if (rows.length !== 6) { console.log(`FAIL [measured] ${rows.length} rows, want 6: ${JSON.stringify(rows.slice(0, 3))}`); fail++; }
+  const first = rows.find((t) => /1-L1/.test(t)) || '';
+  if (!/16/.test(first) || !/Type B/.test(first) || !/CIRCUIT 1/.test(first)) {
+    console.log(`FAIL [measured] row not assembled: ${JSON.stringify(first)}`); fail++;
+  }
+
+  /* Ordinary body text is NOT bimodal — every gap is about a line height — so
+     nothing may be inferred and evenly spaced lines must stay separate. */
+  const prose = [];
+  for (let i = 0; i < 10; i++) prose.push({ str: `line ${i}`, x: 10, y: 500 - i * 12, w: 50, h: 10, angle: 0 });
+  const proseLines = groupTextItemsIntoLines(prose).map((l) => l.text);
+  if (proseLines.length !== 10) {
+    console.log(`FAIL [measured] evenly spaced text collapsed to ${proseLines.length} lines`); fail++;
+  }
+
+  if (!fail) console.log('PASS: line band measured from page geometry.');
+}
