@@ -198,6 +198,9 @@
   /* Board drill-down: device-type counts, then the way-by-way circuit map. */
   .cov-ok{padding:9px 18px;background:#eaf7ee;border-bottom:1px solid #cfe8d6;color:#1d6b34;font-size:12.5px;}
   .cov-gap{padding:11px 18px;background:#fdecec;border-bottom:1px solid #f2c4c4;color:#8a2020;font-size:12.5px;line-height:1.45;}
+  .cov-bar{padding:0 18px 10px;font-size:12.5px;line-height:1.5;}
+  .cov-bar .cov-bad{color:#8a2020;} .cov-bar .cov-good{color:#1d6b34;} .cov-bar .cov-dim{color:var(--txt3);margin-left:8px;}
+  @media(prefers-color-scheme:dark){.cov-bar .cov-bad{color:#f3b4b4;} .cov-bar .cov-good{color:#9fdcb0;}}
   .cov-note{padding:9px 18px;border-bottom:1px solid var(--line);color:var(--txt3);font-size:12px;}
   @media(prefers-color-scheme:dark){
     .cov-ok{background:#14301c;border-bottom-color:#1f4a2b;color:#9fdcb0;}
@@ -719,6 +722,7 @@
         <div>
           <div class="panel" style="margin-bottom:14px">
             <div class="sumchips" id="anSummary"></div>
+            <div id="anCoverage" class="cov-bar" style="display:none"></div>
             <div style="display:flex;gap:8px;align-items:center;padding:11px 18px;flex-wrap:wrap">
               <span style="font-weight:800;font-size:13px">Take-off</span>
               <span class="sub" style="margin-left:2px">roll-up across all boards — select a board to drill in</span>
@@ -3018,6 +3022,35 @@ function renderResults(){
     ['Confirmed', confd],['Needs review', rev],
     ['Cables', A.cables.length],
   ].map(([k,v])=>`<div class="sumchip"><div class="v">${v}</div><div class="k">${k}</div></div>`).join('');
+  /* Project-wide completeness. An estimator should not have to open every
+     board to learn that one of them is short: boards that cannot be shown
+     complete are named here, and boards that cannot be CHECKED are counted
+     separately so "no gaps" is never confused with "not verified". */
+  const covBar=$('#anCoverage');
+  if (covBar && window.EstimationExtractorCore?.boardWayCoverage){
+    const gaps=[], unchecked=[];
+    let okCount=0;
+    Object.values(A.boards).forEach(b=>{
+      const cov=window.EstimationExtractorCore.boardWayCoverage(
+        {norm:b.norm, waysTotal:b.waysTotal||(b.header||{}).ways_total||null},
+        rows.filter(r=>r.boardNorm===b.norm));
+      if(!cov.checkable){ unchecked.push(b.norm); return; }
+      if(cov.complete){ okCount++; return; }
+      gaps.push({norm:b.norm, missing:cov.missing.length, declared:cov.declared});
+    });
+    const parts=[];
+    if(gaps.length){
+      gaps.sort((a,b)=>b.missing-a.missing);
+      parts.push(`<span class="cov-bad"><b>${gaps.length} board${gaps.length===1?'':'s'} with unaccounted ways:</b> `
+        +gaps.slice(0,6).map(g=>`${esc(boardLabel(g.norm))} (${g.missing} of ${g.declared})`).join(', ')
+        +(gaps.length>6?` and ${gaps.length-6} more`:'')+'</span>');
+    } else if(okCount){
+      parts.push(`<span class="cov-good">All ${okCount} checkable board${okCount===1?'':'s'} have every declared way accounted for.</span>`);
+    }
+    if(unchecked.length) parts.push(`<span class="cov-dim">${unchecked.length} board${unchecked.length===1?'':'s'} state no way count, so completeness is not checkable.</span>`);
+    covBar.innerHTML=parts.join(' ');
+    covBar.style.display=parts.length?'':'none';
+  }
 
   host.innerHTML='';
   const boardsSorted=Object.keys(by).sort((a,b)=> a==='__none__'?1: b==='__none__'?-1: a<b?-1:1);
