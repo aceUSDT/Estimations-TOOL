@@ -164,7 +164,23 @@ function scheduleBoardFromLines(lines){
 }
 
 function hasScheduleBoardHeader(lines){
-  return (lines||[]).some(line=>/\bDB\s+REFERENCE\b|\b(?:DISTRIBUTION\s+)?BOARD\s*(?:REFERENCE|REF|IDENTITY)?\s*[:=\-]|\bDISTRIBUTION\s+BOARD\s+SCHEDULE\b\s*[—–:\-]\s*(?=[A-Z0-9])/i.test(String(line||'')));
+  /* Answers "does this page declare its own board?". Getting it wrong is
+     expensive: a false NO makes the page a continuation and dumps its devices
+     onto the PREVIOUS board, which is how one board ended up holding 86
+     devices — more than its 18 ways can physically carry — while every board
+     after it held none.
+     The old test demanded the literal "DB REFERENCE" or "BOARD REFERENCE:".
+     Real schedules label the field plain "REFERENCE" and put the board beside
+     it, so every page of such a document answered NO. Accept that form too:
+     a REFERENCE label followed by something board-shaped, or the header block
+     the page classifier keys on. */
+  return (lines||[]).some(line=>{
+    const t=String(line||'');
+    if (/\bDB\s+REFERENCE\b|\b(?:DISTRIBUTION\s+)?BOARD\s*(?:REFERENCE|REF|IDENTITY)?\s*[:=\-]|\bDISTRIBUTION\s+BOARD\s+SCHEDULE\b\s*[—–:\-]\s*(?=[A-Z0-9])/i.test(t)) return true;
+    if (/\bREFERENCE\b\s*[:=\-]?\s*[A-Z0-9][A-Z0-9/._-]{1,20}/i.test(t)
+        && /(number of ways|circuit ref|\bways\b|served by|incomer)/i.test(t)) return true;
+    return false;
+  });
 }
 
 /* ==================== CABLE DETECTION (index.html:828) ==================== */
