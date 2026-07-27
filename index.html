@@ -2196,6 +2196,19 @@ async function runAiExtraction(A,f,p,pageSet){
     await Promise.all(jobs.slice(i,i+CONC).map(async j=>{
       try{ const resp=await aiExtractPage(j.fl,j.pageNo,j.pg);
         mergeAiResult(A, resp&&resp.result?resp.result:resp, j.id, j.pageNo, resp&&resp.master);
+        /* Which sub-agent actually did the work, and on which key. The server
+           reports it per page and nothing consumed it, so an owner running a
+           pool of keys had no way to tell whether the pool was being used —
+           or whether one model was quietly serving every page. */
+        if(resp&&resp.agents){
+          A.agentUse=A.agentUse||{};
+          ['extractor','second'].forEach(role=>{
+            const a=resp.agents[role];
+            if(!a||!a.model) return;
+            const k=role+'\u0000'+a.model+'\u0000'+(a.key??'?');
+            A.agentUse[k]=(A.agentUse[k]||0)+1;
+          });
+        }
         applyCrossCheck(A, resp&&resp.verification, j.id, j.pageNo); A.aiPages++; }
       catch(e){ console.warn('AI extraction failed on '+j.fl.name+' p'+j.pageNo+':', e.message); A.aiErrors++; }
     }));
@@ -3094,6 +3107,17 @@ function renderResults(){
     if(unchecked.length) parts.push(`<span class="cov-dim">${unchecked.length} board${unchecked.length===1?'':'s'} state no way count, so completeness is not checkable.</span>`);
     /* Whether the master actually audited is itself a fact worth stating: an
        audit that was skipped must never be mistaken for one that passed. */
+    if(A.agentUse&&Object.keys(A.agentUse).length){
+      const byRole={extractor:[],second:[]};
+      Object.entries(A.agentUse).forEach(([k,n])=>{
+        const [role,model,key]=k.split('\u0000');
+        (byRole[role]||[]).push(`${model.split('/').pop()} (key ${key}, ${n})`);
+      });
+      const bits=[];
+      if(byRole.extractor.length) bits.push('extract: '+byRole.extractor.join(', '));
+      if(byRole.second.length) bits.push('second opinion: '+byRole.second.join(', '));
+      if(bits.length) parts.push(`<span class="cov-dim">Sub-agents used \u2014 ${esc(bits.join(' \u00b7 '))}.</span>`);
+    }
     if(A.master&&A.master.pages){
       parts.push(`<span class="cov-dim">Master audit: ${A.master.pages} page${A.master.pages===1?'':'s'} reviewed`
         +(A.master.missed?`, ${A.master.missed} item${A.master.missed===1?'':'s'} it found are in Review`:', nothing further found')+'.</span>');
