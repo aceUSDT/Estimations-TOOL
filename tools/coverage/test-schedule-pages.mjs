@@ -89,5 +89,60 @@ check('DB1GF served-by captured', A.boards.DB1GF && /MEP MAIN DB/i.test(String(A
 check('no board exceeds ways × phases', (A.capacityWarnings || []).length === 0,
   JSON.stringify(A.capacityWarnings || []));
 
+/* A board whose schedule genuinely SPANS two pages must still work.
+ *
+ * The continuation rule exists for this: page 2 carries more ways of the same
+ * board and no header of its own, so it inherits. Tightening header detection
+ * must not break it — the failure being guarded against is the opposite one,
+ * a page that DOES declare a board being treated as a continuation. */
+{
+  const first = boardPage('DB-9-EX', 36, 'MEP MAIN DB', 'EXTERNAL LIGHTING', 12);
+  const contCells = [];
+  for (let w = 13; w <= 20; w++) {
+    for (const phase of ['L1', 'L2', 'L3']) {
+      contCells.push(`${w}-${phase}`, '16', 'Acti9 iC60H, MCB, Type B', 'No', 'Fixed Power', `CIRCUIT ${w} ${phase}`);
+    }
+  }
+  const rawSpan = [{ page: 1, lines: first }, { page: 2, lines: contCells }];
+  const spanPages = rawSpan.map((pg, i) => ({ ...pg, type: P.classifyPage(pg.lines.join('\n'), i, rawSpan.length).type }));
+  const S = P.analyseDocument(spanPages);
+  const spanBoards = Object.keys(S.boards);
+
+  check('a board spanning two pages stays ONE board', spanBoards.length === 1, `got ${spanBoards.join(', ')}`);
+  check('the spanning board is the declared one', spanBoards[0] === 'DB9EX', `got ${spanBoards[0]}`);
+  const b = S.boards.DB9EX;
+  check('continuation page is attributed to the same board', Boolean(b && b.pages.length === 2),
+    b ? `pages ${b.pages.join(',')}` : 'missing');
+  check('declared ways survive the continuation', Boolean(b && b.waysTotal === 36), b ? String(b.waysTotal) : 'missing');
+}
+
+/* Completeness per board, accumulated across every page it occupies. */
+{
+  const { boardWayCoverage } = P.EstimationExtractorCore;
+  const rows = [];
+  for (let w = 1; w <= 11; w++) for (const ph of ['L1', 'L2', 'L3']) rows.push({ way: String(w), phase: ph, device: 'MCB' });
+  const gap = boardWayCoverage({ waysTotal: 18 }, rows);
+  check('gap: 7 of 18 ways unaccounted', gap.checkable && gap.missing.length === 7 && gap.missing[0] === '12',
+    JSON.stringify(gap.missing));
+  check('gap: not reported complete', gap.complete === false);
+
+  const full = [];
+  for (let w = 1; w <= 18; w++) full.push({ way: String(w), device: 'MCB', spare: w > 11 });
+  const done = boardWayCoverage({ waysTotal: 18 }, full);
+  check('complete when every declared way has a row', done.complete === true, JSON.stringify(done.missing));
+  check('spare ways are counted as accounted for', done.spare.length === 7, JSON.stringify(done.spare));
+
+  // a board that never declares a way count is NOT checkable, and must never
+  // read as "complete" — silence is not proof.
+  const unknown = boardWayCoverage({ waysTotal: null }, rows);
+  check('undeclared way count ⇒ not checkable', unknown.checkable === false);
+  check('undeclared way count ⇒ never claims complete', unknown.complete === false);
+
+  // ways captured across TWO pages of the same board both count
+  const split = [{ way: '1', device: 'MCB' }, { way: '2', device: 'MCB' }, { way: '3', device: 'MCB' }];
+  const spanCov = boardWayCoverage({ waysTotal: 3 }, split);
+  check('ways from separate pages accumulate', spanCov.complete === true, JSON.stringify(spanCov.missing));
+}
+
 if (fail) { console.log(`\n${fail} failure(s)`); process.exit(1); }
-console.log(`PASS: ${pages.length} schedule pages → ${boards.length} boards, headers resolved from split cells, capacity intact.`);
+console.log(`PASS: ${pages.length} schedule pages → ${boards.length} boards, split-cell headers, real continuations, capacity intact.`);

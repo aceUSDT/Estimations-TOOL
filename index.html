@@ -196,6 +196,13 @@
   .bd-hdr .k{font-size:10.5px;letter-spacing:0;text-transform:uppercase;color:var(--txt3);font-weight:700;}
   .bd-hdr .v{font-size:13px;font-weight:600;margin-top:2px;}
   /* Board drill-down: device-type counts, then the way-by-way circuit map. */
+  .cov-ok{padding:9px 18px;background:#eaf7ee;border-bottom:1px solid #cfe8d6;color:#1d6b34;font-size:12.5px;}
+  .cov-gap{padding:11px 18px;background:#fdecec;border-bottom:1px solid #f2c4c4;color:#8a2020;font-size:12.5px;line-height:1.45;}
+  .cov-note{padding:9px 18px;border-bottom:1px solid var(--line);color:var(--txt3);font-size:12px;}
+  @media(prefers-color-scheme:dark){
+    .cov-ok{background:#14301c;border-bottom-color:#1f4a2b;color:#9fdcb0;}
+    .cov-gap{background:#3a1717;border-bottom-color:#5c2424;color:#f3b4b4;}
+  }
   .cap-warn{margin:0;padding:11px 18px;background:#fff6e5;border-bottom:1px solid #f0d9a8;
     color:#7a4b00;font-size:12.5px;line-height:1.45;}
   @media(prefers-color-scheme:dark){.cap-warn{background:#3a2c10;border-bottom-color:#5c4517;color:#f0d9a8;}}
@@ -3146,7 +3153,19 @@ function renderBoardDetail(){
   const devs=deviceTotals(rows)[norm]||{};
   const total=Object.entries(devs).filter(([k])=>countable(k)).reduce((s,[,v])=>s+v.qty,0);
   const capWarn=(A.capacityWarnings||[]).find(w=>w.norm===norm);
+  /* Completeness against the board's OWN declared way count, accumulated over
+     every page it occupies — the "nothing was missed" statement. */
+  const cov=(b&&window.EstimationExtractorCore?.boardWayCoverage)
+    ? window.EstimationExtractorCore.boardWayCoverage(
+        {norm, waysTotal:b.waysTotal||(b.header||{}).ways_total||null}, rows)
+    : null;
+  const covHtml=(!cov||!cov.checkable)
+    ? (b?'<div class="cov-note">This board does not state a way count, so completeness cannot be checked.</div>':'')
+    : cov.complete
+      ? `<div class="cov-ok">All ${cov.declared} declared ways accounted for${cov.spare.length?` (${cov.spare.length} spare)`:''}.</div>`
+      : `<div class="cov-gap"><b>${cov.missing.length} of ${cov.declared} ways not accounted for.</b> Ways ${esc(cov.missing.slice(0,24).join(', '))}${cov.missing.length>24?'…':''} produced no row — either spare, or missed by extraction.</div>`;
   detail.innerHTML = (capWarn?`<div class="cap-warn"><b>Check this board.</b> ${esc(capWarn.detail)}</div>`:'')
+    + covHtml
     + (b? boardHeaderCard(b) : '<div class="p-body"><span class="hint">Rows with no detected board reference.</span></div>')
     + `<div style="padding:11px 18px;font-weight:800;font-size:13px;border-top:1px solid var(--line)">Devices on this board <span class="chip grey" style="margin-left:8px">${total} device${total===1?'':'s'}</span></div>`;
   if (Object.keys(devs).length){
