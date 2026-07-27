@@ -145,6 +145,63 @@
     return RATING_REF.test(String(normalised || ''));
   }
 
+  /* Facts a board schedule states about ITSELF, in its header block. These are
+   * the document's own words, so they are worth more than anything inferred
+   * from rows: the way count bounds how many devices the board can physically
+   * hold, and "served by" is the upstream link the feed hierarchy needs.
+   *
+   * Deliberately conservative — a field is returned only when clearly labelled;
+   * a missing field stays null rather than being guessed at. */
+  function parseBoardHeaderFacts(lines) {
+    const text = (Array.isArray(lines) ? lines.join(' \n ') : String(lines || '')).replace(/\s+/g, ' ');
+    const grab = (re) => { const m = text.match(re); return m ? m[1].trim() : null; };
+    const waysRaw = grab(/NUMBER\s+OF\s+WAYS\s*[:=-]?\s*(\d{1,3})/i);
+    const waysTotal = waysRaw ? Number(waysRaw) : null;
+    /* Stop at the next header LABEL, not at a fixed length: "SERVED BY MEP MAIN
+     * DB DESCRIPTION GROUND FLOOR…" must yield "MEP MAIN DB", not run on. */
+    const NEXT = '(?=\\s+(?:DESCRIPTION|LOCATION|NUMBER\\s+OF\\s+WAYS|INCOMER|BOARD\\s+DEVICE|REFERENCE|CIRCUIT\\s+REF|PHASE)\\b|$)';
+    return {
+      waysTotal: Number.isFinite(waysTotal) && waysTotal > 0 && waysTotal <= 200 ? waysTotal : null,
+      servedBy: grab(new RegExp('\\b(?:SERVED\\s+BY|FED\\s+FROM|SUPPLIED\\s+(?:FROM|BY))\\s*[:=-]?\\s*(.{2,40}?)' + NEXT, 'i')),
+      location: grab(new RegExp('\\bLOCATION\\s*[:=-]?\\s*(.{2,40}?)' + NEXT, 'i')),
+      description: grab(new RegExp('\\bDESCRIPTION\\s*[:=-]?\\s*(.{2,60}?)' + NEXT, 'i')),
+      incomer: grab(new RegExp('\\bINCOMER\\s*[:=-]?\\s*(.{2,40}?)' + NEXT, 'i')),
+      incomerRatingA: (() => { const v = grab(/INCOMER\s+SIZE\s*[:=-]?\s*(\d{1,4})\s*A\b/i); return v ? Number(v) : null; })(),
+    };
+  }
+
+  /* Deterministic sanity check — "the result must make sense".
+   *
+   * A board cannot hold more protective devices than it has ways, times its
+   * phase count. An 18-way TPN board tops out at 54; anything above that means
+   * devices from somewhere else have been recorded against it. This is exactly
+   * the failure that reached a user's screen as one board holding 86 devices
+   * while every other board held none, and it is arithmetic — it should never
+   * have needed a human to notice it.
+   *
+   * Only reports when the board DECLARED its way count. Silence here means
+   * "not checkable", never "verified".
+   *
+   * `boards`: [{ norm, waysTotal, phases, deviceCount }] → [{ norm, ... }] */
+  function boardCapacityWarnings(boards) {
+    const out = [];
+    for (const b of (Array.isArray(boards) ? boards : [])) {
+      if (!b || !b.norm) continue;
+      const ways = Number(b.waysTotal);
+      if (!Number.isFinite(ways) || ways <= 0) continue;
+      const phases = Number(b.phases) === 1 ? 1 : 3;
+      const capacity = ways * phases;
+      const count = Number(b.deviceCount) || 0;
+      if (count > capacity) {
+        out.push({
+          norm: b.norm, deviceCount: count, capacity, waysTotal: ways, phases,
+          detail: `${count} devices recorded against a ${ways}-way ${phases === 1 ? 'single-phase' : 'three-phase'} board, which can hold at most ${capacity}. Devices from another board are likely recorded here.`,
+        });
+      }
+    }
+    return out;
+  }
+
   /* A reference that is a header board plus a trailing WAY number — DB-1-GF-5,
    * DB-1-GF-11, DB-1-GF-5-L2 — names a way of that board, not a board. The
    * schedule proves it: DB-1-GF is one board of 18 ways, and its Circuit Ref
@@ -1343,6 +1400,8 @@
     canonicalBoardReference,
     reconcilePageBoards,
     isRatingLikeRef,
+    parseBoardHeaderFacts,
+    boardCapacityWarnings,
     planPrefixMerges,
     planWayBoardMerges,
     extractBoardReferences,

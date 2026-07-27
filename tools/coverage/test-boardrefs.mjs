@@ -196,3 +196,37 @@ if (P.EstimationExtractorCore.canonicalBoardReference('DB-01-21-L').splitSection
 
 if (fail) { console.log(`\n${fail} failure(s)`); process.exit(1); }
 console.log(`PASS: ${POSITIVE.length} positives, ${NEGATIVE.length} negatives, containment — both engines.`);
+
+/* The board's own header block, and the arithmetic that must hold. */
+{
+  const { parseBoardHeaderFacts, boardCapacityWarnings } = P.EstimationExtractorCore;
+  const header = ['REFERENCE DB-1-GF SERVED BY MEP MAIN DB DESCRIPTION GROUND FLOOR LIGHTING & POWER '
+    + 'LOCATION LVAC ROOM NUMBER OF WAYS 18 WAYS INCOMER GENERIC ISOLATOR INCOMER SIZE 125A'];
+  const f = parseBoardHeaderFacts(header);
+  const expect = { waysTotal: 18, servedBy: 'MEP MAIN DB', location: 'LVAC ROOM', incomerRatingA: 125 };
+  for (const [k, v] of Object.entries(expect)) {
+    if (f[k] !== v) { console.log(`FAIL [header] ${k} = ${JSON.stringify(f[k])}, want ${JSON.stringify(v)}`); fail++; }
+  }
+  // "SERVED BY" must stop at the next label, not swallow the rest of the header
+  if (/DESCRIPTION/i.test(String(f.servedBy))) { console.log('FAIL [header] servedBy ran into the next field'); fail++; }
+
+  /* An 18-way three-phase board holds at most 54. This is the check that
+     should have caught 86 devices on one board without a human noticing. */
+  const warn = boardCapacityWarnings([
+    { norm: 'DB1GF', waysTotal: 18, phases: 3, deviceCount: 86 },
+    { norm: 'DB2GF', waysTotal: 24, phases: 3, deviceCount: 37 },
+    { norm: 'DBSP', waysTotal: 12, phases: 1, deviceCount: 13 },
+    { norm: 'DBUNKNOWN', waysTotal: null, phases: 3, deviceCount: 999 },
+  ]);
+  const flagged = warn.map((w) => w.norm).sort();
+  if (JSON.stringify(flagged) !== JSON.stringify(['DB1GF', 'DBSP'])) {
+    console.log(`FAIL [capacity] flagged ${JSON.stringify(flagged)}, want ["DB1GF","DBSP"]`); fail++;
+  }
+  const one = warn.find((w) => w.norm === 'DB1GF');
+  if (!one || one.capacity !== 54) { console.log('FAIL [capacity] wrong capacity for 18-way TPN'); fail++; }
+  // silence must mean "not checkable", never "verified"
+  if (warn.some((w) => w.norm === 'DBUNKNOWN')) { console.log('FAIL [capacity] guessed at a board with no declared ways'); fail++; }
+}
+
+if (fail) { console.log(`\n${fail} failure(s)`); process.exit(1); }
+console.log('PASS: board header facts + capacity arithmetic.');
