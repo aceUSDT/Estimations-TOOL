@@ -143,5 +143,38 @@ check('no board exceeds ways × phases', (A.capacityWarnings || []).length === 0
     nb ? String(nb.expectedWays) : 'no board');
 }
 
+/* THE WHOLE CHAIN, on the real line shape: analyse the pages, then run the
+ * project's coverage model over the result exactly as the app does.
+ *
+ * This is the check that would have caught the live failure. buildCoverage
+ * keys off board.pages[].primary, and no board was ever marked primary because
+ * the header never resolved from split cells — so the coverage panel, the
+ * report's coverage column and the gap review items were ALL silently inert.
+ * Nothing errored; they simply reported nothing, for months. */
+{
+  const { buildCoverage } = P.EstimationExtractorCore;
+  // the app feeds coverage the page text joined from its lines, with the type
+  const covPages = pages.map((pg) => ({ fileId: 'f', page: pg.page, text: pg.lines.join('\n'), type: pg.type }));
+  // analyseDocument keys board pages by number; coverage keys by fileId#page
+  const boards = {};
+  Object.values(A.boards).forEach((b) => {
+    boards[b.norm] = { ...b, pages: (b.pages || []).map((pn) => ({ fileId: 'f', page: pn, primary: Boolean(b.isHeader) })) };
+  });
+  const cov = buildCoverage({ boards, rows: A.rows, pages: covPages });
+
+  check('coverage produced a per-board result', Array.isArray(cov.perBoard) && cov.perBoard.length > 0,
+    JSON.stringify(cov.perBoard || []).slice(0, 120));
+
+  const gf = (cov.perBoard || []).find((b) => b.norm === 'DB1GF');
+  check('DB-1-GF declared ways read end to end', Boolean(gf && gf.expectedWays === 18),
+    gf ? `expectedWays=${gf.expectedWays}` : 'board missing from coverage');
+
+  // every board that declared a way count must be checkable — the failure mode
+  // being guarded is expectedWays coming back null across the board, which is
+  // what "silently inert" looked like.
+  const checkable = (cov.perBoard || []).filter((b) => b.expectedWays != null).length;
+  check('all three boards are checkable for completeness', checkable === 3, `${checkable} of 3`);
+}
+
 if (fail) { console.log(`\n${fail} failure(s)`); process.exit(1); }
 console.log(`PASS: ${pages.length} schedule pages → ${boards.length} boards, split-cell headers, real continuations, capacity intact.`);
