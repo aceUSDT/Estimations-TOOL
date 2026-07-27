@@ -195,6 +195,22 @@
   .bd-hdr{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;padding:14px 18px;border-bottom:1px solid var(--line);}
   .bd-hdr .k{font-size:10.5px;letter-spacing:0;text-transform:uppercase;color:var(--txt3);font-weight:700;}
   .bd-hdr .v{font-size:13px;font-weight:600;margin-top:2px;}
+  /* Board drill-down: device-type counts, then the way-by-way circuit map. */
+  .wm-chips{display:flex;flex-wrap:wrap;gap:6px;padding:11px 18px 0;}
+  .wm-head{padding:14px 18px 8px;font-weight:800;font-size:13px;border-top:1px solid var(--line);margin-top:10px;}
+  .wm-wrap{overflow-x:auto;padding:0 18px 16px;}
+  table.wm{border-collapse:collapse;width:100%;font-size:12.5px;}
+  table.wm th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:0;color:var(--txt3);
+    font-weight:700;padding:6px 8px;border-bottom:1px solid var(--line2);white-space:nowrap;}
+  table.wm td{padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top;}
+  table.wm tr:hover td{background:var(--bg);}
+  .wm-way{font-weight:700;white-space:nowrap;width:1%;}
+  .wm-empty{color:var(--txt3);}
+  .wm-dev{margin-bottom:3px;}
+  .wm-dev:last-child{margin-bottom:0;}
+  .wm-name{display:block;color:var(--txt3);font-size:11.5px;}
+  .wm-spare{color:var(--txt3);font-style:italic;}
+  .wm-flag{color:#c77700;font-weight:800;}
   .tree .trow.sel{outline:2px solid var(--blue);}
   #boardBody tr.sel td{background:var(--blue-soft,#eaf2ff);}
   .fgroup{margin-bottom:16px;}
@@ -2966,6 +2982,47 @@ function boardHeaderCard(b){
   ];
   return `<div class="bd-hdr">${fields.map(([k,v])=>`<div><div class="k">${esc(k)}</div><div class="v">${esc(String(v))}</div></div>`).join('')}</div>`;
 }
+/* Way-by-way circuit map: the board as the schedule itself lays it out — one
+   row per way, one column per phase. A three-phase way reads across; a single
+   phase way occupies its own line. Spares and spaces stay visible because a
+   board's spare capacity is part of the take-off, not noise to hide. */
+function buildWayMap(rows){
+  const ways=new Map();
+  let anyPhase=false;
+  rows.filter(r=>!r.incomer).forEach(r=>{
+    const key=(r.way===null||r.way===undefined||r.way==='')?'—':String(r.way);
+    if(!ways.has(key)) ways.set(key,{});
+    const ph=String(r.phase||'').toUpperCase();
+    const col=(ph==='L1'||ph==='L2'||ph==='L3')?ph:'ANY';
+    if(col!=='ANY') anyPhase=true;
+    (ways.get(key)[col]=ways.get(key)[col]||[]).push(r);
+  });
+  if(!ways.size) return null;
+  const cols=anyPhase?['L1','L2','L3']:['ANY'];
+  const order=[...ways.keys()].sort((a,b)=>{
+    const na=Number(a), nb=Number(b);
+    if(Number.isFinite(na)&&Number.isFinite(nb)) return na-nb;
+    if(Number.isFinite(na)) return -1;
+    if(Number.isFinite(nb)) return 1;
+    return String(a).localeCompare(String(b));
+  });
+  const cell=(list)=>{
+    if(!list||!list.length) return '<td class="wm-empty">·</td>';
+    return '<td>'+list.map(r=>{
+      if(r.space) return '<span class="wm-spare">space</span>';
+      if(r.spare) return '<span class="wm-spare">spare</span>';
+      const bits=[r.device||'device', r.rating!=null&&r.rating!==''?r.rating+'A':null].filter(Boolean).join(' ');
+      const name=String(r.desc||'').trim();
+      const flag=r.status==='pending'?' <span class="wm-flag" title="Pending review">•</span>':'';
+      return `<div class="wm-dev"><b>${esc(bits)}</b>${flag}${name?`<span class="wm-name">${esc(name)}</span>`:''}</div>`;
+    }).join('')+'</td>';
+  };
+  const wrap=document.createElement('div');
+  wrap.className='wm-wrap';
+  wrap.innerHTML=`<table class="wm"><thead><tr><th>Way</th>${cols.map(c=>`<th>${c==='ANY'?'Device':c}</th>`).join('')}</tr></thead>`
+    +`<tbody>${order.map(w=>`<tr><td class="wm-way">${esc(w)}</td>${cols.map(c=>cell(ways.get(w)[c])).join('')}</tr>`).join('')}</tbody></table>`;
+  return wrap;
+}
 function selectBoard(norm){
   state.selectedBoard = state.selectedBoard===norm ? null : norm;
   renderTakeoff();
@@ -2994,7 +3051,19 @@ function renderBoardDetail(){
   const total=Object.entries(devs).filter(([k])=>countable(k)).reduce((s,[,v])=>s+v.qty,0);
   detail.innerHTML = (b? boardHeaderCard(b) : '<div class="p-body"><span class="hint">Rows with no detected board reference.</span></div>')
     + `<div style="padding:11px 18px;font-weight:800;font-size:13px;border-top:1px solid var(--line)">Devices on this board <span class="chip grey" style="margin-left:8px">${total} device${total===1?'':'s'}</span></div>`;
-  if (Object.keys(devs).length) detail.appendChild(buildDeviceTable(devs, label));
+  if (Object.keys(devs).length){
+    // at-a-glance counts first — "how many RCBOs, how many MCBs" — then the
+    // full table, then the way-by-way map of what sits on each outgoing way.
+    const chips=Object.entries(devs).filter(([k])=>countable(k)).sort((a,b)=>b[1].qty-a[1].qty)
+      .map(([k,v])=>`<span class="chip">${esc(k)} <b>${v.qty}</b></span>`).join(' ');
+    if(chips) detail.insertAdjacentHTML('beforeend',`<div class="wm-chips">${chips}</div>`);
+    detail.appendChild(buildDeviceTable(devs, label));
+    const map=buildWayMap(rows);
+    if(map){
+      detail.insertAdjacentHTML('beforeend','<div class="wm-head">Circuit map <span class="sub">one row per way, one column per phase — as the schedule lays it out</span></div>');
+      detail.appendChild(map);
+    }
+  }
   else detail.insertAdjacentHTML('beforeend','<div class="empty">No devices captured on this board yet.</div>');
 }
 function renderTakeoff(){
