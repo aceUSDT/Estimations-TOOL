@@ -281,6 +281,70 @@ await test('worker: non-transient error is NOT retried', async () => {
   assert.equal(job.state, 'failed');
 });
 
+/* The NVIDIA pool is the PRIMARY engine whenever the key pool is configured,
+ * and it reports failures that never reached an HTTP response as a `code` with
+ * no `status`. Testing status alone meant an aborted or socket-failed page —
+ * the textbook retryable case — was failed permanently on the first blip. */
+await test('worker: pool timeout (code, no status) is retried', async () => {
+  const db = fakeDb();
+  const job = { id: randomUUID(), org_id: 'orgA', document_id: uuid(), page_number: 1, attempt: 0 };
+  db._seedJob(job);
+  let calls = 0;
+  const extract = async () => {
+    calls++;
+    if (calls === 1) throw Object.assign(new Error('nvidia-pool: timeout'), { code: 'timeout' });
+    return { result: { boards: [{}], devices: [{ device_class: 'MCB' }] }, verification: null };
+  };
+  await makeProcessJob({ ...workerDeps(db, extract), maxAttempts: 2 })(job, {});
+  assert.equal(calls, 2);
+  assert.equal(job.state, 'complete');
+});
+await test('worker: exhausted chain of transient attempts is retried', async () => {
+  const db = fakeDb();
+  const job = { id: randomUUID(), org_id: 'orgA', document_id: uuid(), page_number: 1, attempt: 0 };
+  db._seedJob(job);
+  let calls = 0;
+  const extract = async () => {
+    calls++;
+    if (calls === 1) {
+      throw Object.assign(new Error('nvidia-pool: role_exhausted (extract)'), {
+        code: 'role_exhausted',
+        attempts: [{ model: 'a', error: 'rate_limited' }, { model: 'b', error: 'http_503' }],
+      });
+    }
+    return { result: { boards: [{}], devices: [{ device_class: 'MCB' }] }, verification: null };
+  };
+  await makeProcessJob({ ...workerDeps(db, extract), maxAttempts: 2 })(job, {});
+  assert.equal(calls, 2);
+  assert.equal(job.state, 'complete');
+});
+await test('worker: exhausted chain of PERMANENT attempts is NOT retried', async () => {
+  const db = fakeDb();
+  const job = { id: randomUUID(), org_id: 'orgA', document_id: uuid(), page_number: 1, attempt: 0 };
+  db._seedJob(job);
+  let calls = 0;
+  const extract = async () => {
+    calls++;
+    throw Object.assign(new Error('nvidia-pool: role_exhausted (extract)'), {
+      code: 'role_exhausted',
+      attempts: [{ model: 'a', error: 'bad_json' }, { model: 'b', error: 'empty_reply' }],
+    });
+  };
+  await makeProcessJob({ ...workerDeps(db, extract), maxAttempts: 3 })(job, {});
+  assert.equal(calls, 1, 'a chain that failed on malformed replies fails identically on retry');
+  assert.equal(job.state, 'failed');
+  assert.equal(job.error_code, 'extraction_error');
+});
+await test('worker: pool rate_limited exhausting retries ⇒ failed:provider_unavailable', async () => {
+  const db = fakeDb();
+  const job = { id: randomUUID(), org_id: 'orgA', document_id: uuid(), page_number: 1, attempt: 0 };
+  db._seedJob(job);
+  const extract = async () => { throw Object.assign(new Error('nvidia-pool: rate_limited'), { code: 'rate_limited' }); };
+  await makeProcessJob({ ...workerDeps(db, extract), maxAttempts: 2 })(job, {});
+  assert.equal(job.state, 'failed');
+  assert.equal(job.error_code, 'provider_unavailable', 'classifier and retry loop agree on what transient means');
+});
+
 /* ── Phase 5: stale-job watchdog ─────────────────────────────────────────── */
 await test('watchdog: reclaims stale running job as failed:worker_lost; leaves fresh + terminal jobs', async () => {
   const db = fakeDb();

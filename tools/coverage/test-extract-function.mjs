@@ -22,7 +22,10 @@ const check = (name, cond, detail) => {
 };
 
 const healthDeps = () => ({ providerStatus, GEMINI_MODEL, GEMINI_VERIFY_MODEL });
-const runDeps = (extract) => ({ providerStatus, buildInstruction, extract: extract || (async () => ({ result: {} })) });
+/* authRequired:false keeps these cases about what they are actually asserting
+ * (validation, size limits, the spend guard). The auth gate itself is proved
+ * in its own block below, with the default — auth ON — left in place. */
+const runDeps = (extract) => ({ providerStatus, buildInstruction, extract: extract || (async () => ({ result: {} })), authRequired: false });
 
 /* health probe (pure handler) */
 let body = handleHealth(healthDeps()).body;
@@ -109,6 +112,39 @@ walk(EXTRACTION_SCHEMA, '$');
   // Fail OPEN: extraction is the product, so a missing store or a throwing
   // limiter must never block legitimate work.
   check('spend guard: no store configured ⇒ extraction still runs', (await call(guardDeps({ store: null, rateLimit: async () => ({ ok: false }) }))).status === 200);
+  delete process.env.GEMINI_API_KEY;
+}
+
+/* Auth gate on the inline-extract route. Every call spends real provider
+ * budget, so an anonymous caller who finds the URL drains the account. The
+ * gate is ON by default and opt-out via AUTH_REQUIRED, matching the durable
+ * job routes rather than inventing a second auth rule. */
+{
+  process.env.GEMINI_API_KEY = 'test-not-a-real-key';
+  const body = { image_base64: 'aGk=', filename: 'x.pdf', page_number: 1 };
+  let extracted = 0;
+  const base = (over = {}) => ({
+    providerStatus, buildInstruction,
+    extract: async () => { extracted++; return { result: {} }; },
+    ...over,
+  });
+  const call = (deps) => handleInlineExtract({ method: 'POST', body }, deps);
+
+  extracted = 0;
+  const anon = await call(base({ resolveUser: async () => null }));
+  check('auth: anonymous call is refused by default', anon.status === 401 && anon.body.error.code === 'unauthenticated');
+  check('auth: refusal spends no provider budget', extracted === 0);
+
+  const signedIn = await call(base({ resolveUser: async () => 'user-123' }));
+  check('auth: signed-in call proceeds', signedIn.status === 200);
+
+  // Fail CLOSED: a deployment that forgets to wire the resolver must not be
+  // silently open — absent plumbing means "nobody is signed in", not "auth off".
+  const unwired = await call(base());
+  check('auth: no resolver wired ⇒ still refused', unwired.status === 401);
+
+  const optedOut = await call(base({ authRequired: false, resolveUser: async () => null }));
+  check('auth: AUTH_REQUIRED=false restores the anonymous path', optedOut.status === 200);
   delete process.env.GEMINI_API_KEY;
 }
 

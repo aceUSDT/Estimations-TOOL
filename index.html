@@ -1895,6 +1895,12 @@ async function autoOcrScannedFiles(){
    to local-only (deterministic) extraction. */
 const AI_HEALTH_ENDPOINT='/api/extract/health';
 const AI_RUN_ENDPOINT='/api/extract/run';
+/* Set once the cloud-account layer initialises (see the account panel below).
+   The run route spends provider budget and is auth-gated by default, so the
+   request carries the Supabase session JWT when there is one. Stays null on a
+   fully local desktop install, where no request is ever made anyway. */
+let cloudAccount=null;
+function aiFetch(url,init){ return cloudAccount ? cloudAccount.authedFetch(url,init) : fetch(url,init); }
 let aiProbePromise=null;
 window.__aiStatus='unknown';
 function aiExtractReady(){
@@ -1939,7 +1945,7 @@ async function aiExtractPage(f,pageNo,pg){
   // the client wait so a hung request can't stall the UI.
   const ctrl=new AbortController(); const timer=setTimeout(()=>ctrl.abort(),90000);
   try{
-    const r=await fetch(apiUrl(AI_RUN_ENDPOINT),{method:'POST',headers:{'content-type':'application/json'},signal:ctrl.signal,
+    const r=await aiFetch(apiUrl(AI_RUN_ENDPOINT),{method:'POST',headers:{'content-type':'application/json'},signal:ctrl.signal,
       body:JSON.stringify({filename:f.name, page_number:pageNo, image_base64, media_type:'image/jpeg',
         text_lines:(pg.lines||[]).map(l=>l.text).slice(0,400), hints:{type:pg.type}})});
     if(!r.ok){ const err=await r.json().catch(()=>({})); throw new Error((err.error&&err.error.message)||err.error||('HTTP '+r.status)); }
@@ -2432,6 +2438,7 @@ window.accountAuthedFetch=(url,init)=>fetch(url,init);   // anonymous fallback
     fetchImpl: window.fetch.bind(window),
     configUrl: cfgUrl,
   });
+  cloudAccount=acc;   // lets aiFetch() sign the extraction request
   const $id=(s)=>document.getElementById(s);
   function paint(user){
     const row=$id('accountRow'); if(!row) return;
