@@ -164,8 +164,18 @@
   function groupTextItemsIntoLines(items, options = {}) {
     const list = (Array.isArray(items) ? items : []).filter((it) => it && String(it.str || '').trim());
     if (!list.length) return [];
-    const lineTolerance = options.lineTolerance || 5;
-    const gapForDoubleSpace = options.gapForDoubleSpace || 8;
+    /* Tolerances scale with the TEXT, not with A4. A fixed 5px band is right for
+     * a letter-sized page and far too tight for a large-format drawing sheet,
+     * where a single table row's cells sit tens of units apart and each cell
+     * therefore became its own "line" — which is why a circuit's way and its
+     * device type arrived separately and the row parser could match neither.
+     * Rows closer together than 0.6x their own text height would be illegible,
+     * so this cannot merge genuinely distinct rows. The floor keeps existing
+     * behaviour on normal pages unchanged. */
+    const heights = list.map((it) => Number(it.h) || 0).filter((h) => h > 0).sort((a, b) => a - b);
+    const medianHeight = heights.length ? heights[Math.floor(heights.length / 2)] : 10;
+    const lineTolerance = options.lineTolerance || Math.max(5, medianHeight * 0.6);
+    const gapForDoubleSpace = options.gapForDoubleSpace || Math.max(8, medianHeight * 0.8);
 
     /* Dominant rotation, quantised to a quarter turn. A page is only treated as
      * rotated when most of its text agrees — a handful of rotated labels on an

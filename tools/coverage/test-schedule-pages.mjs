@@ -213,3 +213,37 @@ console.log(`PASS: ${pages.length} schedule pages → ${boards.length} boards, s
   }
   if (!fail) console.log('PASS: rotated sheets read as upright ones.');
 }
+
+/* Line tolerance must scale with the text, not with A4.
+ *
+ * On a large-format drawing sheet one table row's cells sit tens of units
+ * apart, so a fixed 5-unit band made every CELL its own line: a circuit's way
+ * arrived on one line and its device type on another, and the row parser could
+ * match neither. */
+{
+  const { groupTextItemsIntoLines } = P.EstimationExtractorCore;
+
+  // large sheet: 40-unit text, one row whose cells span 20 units of drift
+  const bigRow = [
+    { str: '11-L3', x: 0, y: 1000, w: 60, h: 40, angle: 0 },
+    { str: '16', x: 100, y: 1012, w: 20, h: 40, angle: 0 },
+    { str: 'Acti9 iC60H, MCB, Type B', x: 160, y: 992, w: 200, h: 40, angle: 0 },
+    { str: 'MALE WC WATER HEATER', x: 400, y: 1005, w: 220, h: 40, angle: 0 },
+    { str: '10-L3', x: 0, y: 400, w: 60, h: 40, angle: 0 },   // a genuinely different row
+  ];
+  const big = groupTextItemsIntoLines(bigRow).map((l) => l.text);
+  const rowLine = big.find((t) => t.includes('11-L3'));
+  if (!rowLine || !/16/.test(rowLine) || !/Type B/.test(rowLine) || !/WATER HEATER/.test(rowLine)) {
+    console.log(`FAIL [tolerance] large-sheet row not assembled: ${JSON.stringify(big)}`); fail++;
+  }
+  if (big.length !== 2) { console.log(`FAIL [tolerance] expected 2 rows, got ${big.length}: ${JSON.stringify(big)}`); fail++; }
+
+  // normal page: 10-unit text, 12 units apart — must stay separate lines
+  const small = groupTextItemsIntoLines([
+    { str: 'REFERENCE', x: 10, y: 100, w: 60, h: 10, angle: 0 },
+    { str: 'SERVED BY', x: 10, y: 88, w: 60, h: 10, angle: 0 },
+  ]).map((l) => l.text);
+  if (small.length !== 2) { console.log(`FAIL [tolerance] normal page lines merged: ${JSON.stringify(small)}`); fail++; }
+
+  if (!fail) console.log('PASS: line tolerance scales with the text.');
+}
