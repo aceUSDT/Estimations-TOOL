@@ -2130,6 +2130,34 @@ function mergeAiResult(A,out,fileId,pageNo){
       {source:'ai',ocr:{confidence:aiRow.conf*100}},fl?.name||fileId);
     A.rows.push({...aiRow,...trace,extractionMethod:'AI-assisted extraction'});
   });
+  /* MASTER AUDIT (Gemini). The server runs it, returns it, and until now the
+     browser threw it away — the audit the whole agent hierarchy exists to
+     perform reached no one. Its findings are things present on the page that
+     BOTH extraction agents missed, so each becomes a review row: over-capture
+     into Review beats a silent omission, and the master never edits a count. */
+  const m=out.master;
+  if(m && m.status==='reviewed'){
+    A.master=A.master||{pages:0,incomplete:0,missed:0};
+    A.master.pages++;
+    if(m.complete===false) A.master.incomplete++;
+    (m.missed||[]).forEach(item=>{
+      if(!item) return;
+      const bn=bindDeviceBoard(item.board_ref,pageBoard);
+      const way=item.way!=null&&item.way!==''?String(item.way):null;
+      // never duplicate a slot the extraction agents already filled
+      const already=A.rows.some(r=>r.fileId===fileId&&r.page===pageNo&&r.boardNorm===bn
+        &&String(r.way??'')===String(way??''));
+      if(already) return;
+      A.master.missed++;
+      A.rows.push({id:uid(), boardNorm:bn, fileId, page:pageNo, line:null, status:'pending', kind:'ai',
+        way, phase:null, desc:String(item.evidence||'Present on the page but captured by neither agent').slice(0,300),
+        device:null, rating:null, poles:null, poleConfiguration:null, curve:null, sens:null,
+        afdd:false, ka:null, cable:null, spare:false, space:false, incomer:false, isSpd:false, qty:1,
+        srcText:'Master audit: '+String(item.evidence||'').slice(0,200),
+        conf:0.4, xcheck:'Master auditor found this on the page; neither extraction agent returned it.',
+        extractionMethod:'Gemini master audit'});
+    });
+  }
   (out.feeds||[]).forEach(fd=>{
     if(!fd.to_ref) return;
     A.feeders.push({id:uid(), fileId, page:pageNo, line:null,
@@ -3060,6 +3088,12 @@ function renderResults(){
       parts.push(`<span class="cov-good">All ${okCount} checkable board${okCount===1?'':'s'} have every declared way accounted for.</span>`);
     }
     if(unchecked.length) parts.push(`<span class="cov-dim">${unchecked.length} board${unchecked.length===1?'':'s'} state no way count, so completeness is not checkable.</span>`);
+    /* Whether the master actually audited is itself a fact worth stating: an
+       audit that was skipped must never be mistaken for one that passed. */
+    if(A.master&&A.master.pages){
+      parts.push(`<span class="cov-dim">Master audit: ${A.master.pages} page${A.master.pages===1?'':'s'} reviewed`
+        +(A.master.missed?`, ${A.master.missed} item${A.master.missed===1?'':'s'} it found are in Review`:', nothing further found')+'.</span>');
+    }
     covBar.innerHTML=parts.join(' ');
     covBar.style.display=parts.length?'':'none';
   }
