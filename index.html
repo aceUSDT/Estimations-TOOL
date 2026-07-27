@@ -2921,6 +2921,30 @@ async function runAnalysis(opts){
       })));
     if(A.capacityWarnings.length) console.warn('Board capacity exceeded:',A.capacityWarnings);
   }
+  /* One structured line describing what the deterministic pass actually did.
+     Every failure this project hit was silent — a page classified as unknown, a
+     board never marked primary, a merge that found nothing to merge — and none
+     of them raised anything. This makes the next diagnosis a screenshot of the
+     console rather than another round of inference. */
+  try{
+    const pageTypes={};
+    for (const id of f.fileIds){
+      const fl=p.files.find(x=>x.id===id); if(!fl) continue;
+      (fl.pages||[]).forEach(pg=>{ const t=pg.type||'unknown'; pageTypes[t]=(pageTypes[t]||0)+1; });
+    }
+    const declared=Object.values(A.boards).filter(b=>(b.pages||[]).some(x=>x.primary)).length;
+    const withWays=Object.values(A.boards).filter(b=>b.waysTotal||(b.header||{}).ways_total).length;
+    console.info('[extraction]',{
+      pageTypes,
+      boards:Object.keys(A.boards).length,
+      boardsDeclaredByHeader:declared,
+      boardsWithDeclaredWayCount:withWays,
+      rows:A.rows.length,
+      rowsWithoutBoard:A.rows.filter(r=>!r.boardNorm).length,
+      capacityWarnings:(A.capacityWarnings||[]).length,
+    });
+  }catch(_e){/* diagnostics must never break an analysis */
+  }
   await showAnalysisStage(5,`${A.feeders.length} feeder relationship${A.feeders.length===1?'':'s'}`);
   A.feeders.forEach(fd=>{
     if (!fd.to) return;
