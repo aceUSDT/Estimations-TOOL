@@ -178,3 +178,38 @@ check('no board exceeds ways × phases', (A.capacityWarnings || []).length === 0
 
 if (fail) { console.log(`\n${fail} failure(s)`); process.exit(1); }
 console.log(`PASS: ${pages.length} schedule pages → ${boards.length} boards, split-cell headers, real continuations, capacity intact.`);
+
+/* Rotated sheets must read exactly as upright ones.
+ *
+ * The owner's schedules are rotated, and pdf.js reports each run's own
+ * transform. Grouping by y regardless merged different table rows together:
+ * the header arrived as a line of LABELS and a line of VALUES tens of lines
+ * apart, so no page declared a board and every page's devices went to whichever
+ * board preceded it. */
+{
+  const { groupTextItemsIntoLines } = P.EstimationExtractorCore;
+  const table = [
+    { str: 'REFERENCE', x: 10, y: 100, w: 60, h: 10 }, { str: 'DB-1-GF', x: 80, y: 100, w: 50, h: 10 },
+    { str: 'SERVED BY', x: 10, y: 80, w: 60, h: 10 }, { str: 'MEP MAIN DB', x: 80, y: 80, w: 60, h: 10 },
+  ];
+  const rotate = (deg) => table.map((i) => {
+    const a = deg * Math.PI / 180, c = Math.cos(a), s = Math.sin(a);
+    return { str: i.str, x: i.x * c - i.y * s, y: i.x * s + i.y * c, w: i.w, h: i.h, angle: a };
+  });
+  const upright = JSON.stringify(groupTextItemsIntoLines(rotate(0)).map((l) => l.text));
+  for (const deg of [90, 180, 270]) {
+    const got = JSON.stringify(groupTextItemsIntoLines(rotate(deg)).map((l) => l.text));
+    if (got !== upright) { console.log(`FAIL [rotation] ${deg}° reads ${got}, upright reads ${upright}`); fail++; }
+  }
+  if (!/REFERENCE {2}DB-1-GF/.test(upright)) {
+    console.log(`FAIL [rotation] label and value not on one line: ${upright}`); fail++;
+  }
+  /* A few rotated stamps on an otherwise upright drawing must NOT transpose the
+     whole page — the majority decides. */
+  const mostlyUpright = [...rotate(0), { str: 'SCALE 1:50', x: 5, y: 5, w: 40, h: 8, angle: Math.PI / 2 }];
+  const stillUpright = groupTextItemsIntoLines(mostlyUpright).map((l) => l.text).join('|');
+  if (!/REFERENCE {2}DB-1-GF/.test(stillUpright)) {
+    console.log(`FAIL [rotation] minority rotation transposed the page: ${stillUpright}`); fail++;
+  }
+  if (!fail) console.log('PASS: rotated sheets read as upright ones.');
+}

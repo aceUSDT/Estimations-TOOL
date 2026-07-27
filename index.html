@@ -2253,21 +2253,33 @@ async function runAiExtraction(A,f,p,pageSet){
 
 /* reconstruct lines (text + bbox) from a pdf.js text content object */
 function linesFromTextContent(tc, vp){
+  /* Each run carries its own transform, so a ROTATED sheet is detectable rather
+     than something to be guessed at. Grouping by y regardless merges text from
+     different table rows on a rotated page — a schedule then arrives as
+     "11-L3 10-L3" and its header as one line of labels and another of values
+     far apart, which is how a real 18-way board came to declare no board at all
+     and hand its devices to the previous one. */
   const items = tc.items.map(it=>{
     const tx = window.pdfjsLib.Util.transform(vp.transform, it.transform);
-    return {str:it.str, x:tx[4], y:tx[5], w:it.width*vp.scale, h:Math.hypot(tx[2],tx[3])||10};
+    return {str:it.str, x:tx[4], y:tx[5], w:it.width*vp.scale, h:Math.hypot(tx[2],tx[3])||10,
+      angle:Math.atan2(tx[1],tx[0])};
   }).filter(i=>i.str.trim());
-  items.sort((a,b)=> Math.abs(a.y-b.y)>5 ? a.y-b.y : a.x-b.x);
-  const lines=[];
-  items.forEach(it=>{
-    const last=lines[lines.length-1];
-    if (last && Math.abs(last.y-it.y)<=5){
-      const gap = it.x-(last.x+last.w);
-      last.text += (gap>8?'  ':' ')+it.str;
-      last.w = (it.x+it.w)-last.x;
-    } else lines.push({text:it.str, x:it.x, y:it.y, w:it.w, h:it.h});
-  });
-  return lines.map(l=>({text:l.text, bbox:[l.x, l.y-l.h, l.w, l.h*1.4]}));
+  const grouped = window.EstimationExtractorCore?.groupTextItemsIntoLines
+    ? window.EstimationExtractorCore.groupTextItemsIntoLines(items)
+    : (()=>{ // identical fallback for a build without the core loaded
+        items.sort((a,b)=> Math.abs(a.y-b.y)>5 ? a.y-b.y : a.x-b.x);
+        const lines=[];
+        items.forEach(it=>{
+          const last=lines[lines.length-1];
+          if (last && Math.abs(last.y-it.y)<=5){
+            const gap = it.x-(last.x+last.w);
+            last.text += (gap>8?'  ':' ')+it.str;
+            last.w = (it.x+it.w)-last.x;
+          } else lines.push({text:it.str, x:it.x, y:it.y, w:it.w, h:it.h});
+        });
+        return lines;
+      })();
+  return grouped.map(l=>({text:l.text, bbox:[l.x, l.y-l.h, l.w, l.h*1.4]}));
 }
 function splitTextPages(txt){
   const parts = txt.includes('\f') ? txt.split('\f') : [txt];

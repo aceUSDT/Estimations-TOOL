@@ -145,6 +145,67 @@
     return RATING_REF.test(String(normalised || ''));
   }
 
+  /* Group positioned text runs into visual lines, honouring PAGE ROTATION.
+   *
+   * Rotated drawing sheets are common in this domain, and pdf.js reports each
+   * run's own transform. Grouping by y regardless — as a naive reader does —
+   * merges text from DIFFERENT table rows that happen to share a y on a
+   * rotated page, so a schedule arrives as "11-L3 10-L3" and a header arrives
+   * as one line of labels and another of values tens of lines apart. Every
+   * downstream rule then reads nonsense, which is exactly what happened to a
+   * real 18-way schedule: no board resolved, and its devices were attributed
+   * to whichever board came before it.
+   *
+   * Runs are projected onto the dominant text direction before grouping, so an
+   * upright page behaves EXACTLY as before (the projection is the identity at
+   * 0°) and a rotated page reads as the drawing does.
+   *
+   * items: [{ str, x, y, w, h, angle }] → [{ text, x, y, w, h }] */
+  function groupTextItemsIntoLines(items, options = {}) {
+    const list = (Array.isArray(items) ? items : []).filter((it) => it && String(it.str || '').trim());
+    if (!list.length) return [];
+    const lineTolerance = options.lineTolerance || 5;
+    const gapForDoubleSpace = options.gapForDoubleSpace || 8;
+
+    /* Dominant rotation, quantised to a quarter turn. A page is only treated as
+     * rotated when most of its text agrees — a handful of rotated labels on an
+     * otherwise upright drawing must not transpose the whole page. */
+    const quarters = [0, 0, 0, 0];
+    for (const it of list) {
+      const a = Number(it.angle) || 0;
+      quarters[((Math.round(a / (Math.PI / 2)) % 4) + 4) % 4]++;
+    }
+    let rot = 0;
+    for (let i = 1; i < 4; i++) if (quarters[i] > quarters[rot]) rot = i;
+    if (quarters[rot] < list.length * 0.6) rot = 0;
+
+    const project = (it) => {
+      switch (rot) {
+        case 1: return { u: it.y, v: -it.x };
+        case 2: return { u: -it.x, v: -it.y };
+        case 3: return { u: -it.y, v: it.x };
+        default: return { u: it.x, v: it.y };
+      }
+    };
+
+    const projected = list.map((it) => ({ it, ...project(it) }));
+    projected.sort((a, b) => (Math.abs(a.v - b.v) > lineTolerance ? a.v - b.v : a.u - b.u));
+
+    const lines = [];
+    for (const p of projected) {
+      const last = lines[lines.length - 1];
+      if (last && Math.abs(last.v - p.v) <= lineTolerance) {
+        const gap = p.u - (last.u + last.w);
+        last.text += (gap > gapForDoubleSpace ? '  ' : ' ') + p.it.str;
+        last.w = (p.u + (Number(p.it.w) || 0)) - last.u;
+      } else {
+        lines.push({ text: p.it.str, u: p.u, v: p.v, w: Number(p.it.w) || 0,
+          x: p.it.x, y: p.it.y, h: Number(p.it.h) || 10 });
+      }
+    }
+    return lines.map((l) => ({ text: l.text, x: l.x, y: l.y, w: l.w, h: l.h, rotated: rot !== 0 }));
+  }
+
   /* Facts a board schedule states about ITSELF, in its header block. These are
    * the document's own words, so they are worth more than anything inferred
    * from rows: the way count bounds how many devices the board can physically
@@ -1407,6 +1468,7 @@
     canonicalBoardReference,
     reconcilePageBoards,
     isRatingLikeRef,
+    groupTextItemsIntoLines,
     parseBoardHeaderFacts,
     boardCapacityWarnings,
     planPrefixMerges,
