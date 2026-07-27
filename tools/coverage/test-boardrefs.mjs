@@ -134,6 +134,42 @@ if (P.EstimationExtractorCore.canonicalBoardReference('DB-01-21-L').splitSection
   }
 }
 
+/* A declared board plus a trailing WAY number is a way, not a board.
+ *
+ * Observed live: after the header fix the job still showed 219 boards, because
+ * the AI returns one board_ref per ROW, so DB-1-GF's 18 ways arrived as
+ * DB-1-GF-1 … DB-1-GF-18 and each registered as its own board. */
+{
+  const { planWayBoardMerges } = P.EstimationExtractorCore;
+  const plan = planWayBoardMerges([
+    { norm: 'DB1GF', isHeader: true },
+    { norm: 'DB1GF1', isHeader: false },
+    { norm: 'DB1GF11', isHeader: false },
+    { norm: 'DB1GF5L2', isHeader: false },
+    { norm: 'DB1GFMECH', isHeader: false },   // a real, differently-named board
+    { norm: 'DB2GF', isHeader: true },
+  ]);
+  const got = plan.map((m) => `${m.drop}->${m.keep}`).sort();
+  const want = ['DB1GF11->DB1GF', 'DB1GF1->DB1GF', 'DB1GF5L2->DB1GF'];
+  if (JSON.stringify(got) !== JSON.stringify(want.sort())) {
+    console.log(`FAIL [way-merge] got ${JSON.stringify(got)}, want ${JSON.stringify(want)}`); fail++;
+  }
+  if (got.some((s) => s.startsWith('DB1GFMECH'))) {
+    console.log('FAIL [way-merge] absorbed a differently-named board'); fail++;
+  }
+  // only a board a header DECLARED may absorb others
+  if (planWayBoardMerges([{ norm: 'DB1GF', isHeader: false }, { norm: 'DB1GF5', isHeader: false }]).length) {
+    console.log('FAIL [way-merge] merged into a board no page header declared'); fail++;
+  }
+  // longest header wins: DB-1-GF-5 belongs to DB-1-GF, not DB-1
+  const nested = planWayBoardMerges([
+    { norm: 'DB1', isHeader: true }, { norm: 'DB1GF', isHeader: true }, { norm: 'DB1GF5', isHeader: false },
+  ]);
+  if (!(nested.length === 1 && nested[0].keep === 'DB1GF')) {
+    console.log(`FAIL [way-merge] nested headers: ${JSON.stringify(nested)}`); fail++;
+  }
+}
+
 /* Cover-page stubs fold into the real board — but only when unambiguous. */
 {
   const { planPrefixMerges } = P.EstimationExtractorCore;

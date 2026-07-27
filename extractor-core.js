@@ -145,6 +145,35 @@
     return RATING_REF.test(String(normalised || ''));
   }
 
+  /* A reference that is a header board plus a trailing WAY number — DB-1-GF-5,
+   * DB-1-GF-11, DB-1-GF-5-L2 — names a way of that board, not a board. The
+   * schedule proves it: DB-1-GF is one board of 18 ways, and its Circuit Ref
+   * column reads "5-L2", never "DB-1-GF-5-L2". The tail must be purely a way
+   * number (optionally a phase) — DB-1-GF-MECH is a different board and stays.
+   *
+   * Only a board that a page header actually declared can absorb others, so a
+   * merge always has the document's own statement behind it.
+   *
+   * `boards`: [{ norm, isHeader }] → [{ drop, keep }] */
+  const WAY_TAIL = /^\d{1,3}(?:L[123])?$/;
+  function planWayBoardMerges(boards) {
+    const list = (Array.isArray(boards) ? boards : []).filter((b) => b && b.norm);
+    // longest header first, so DB-1-GF wins over DB-1 for DB-1-GF-5
+    const headers = list.filter((b) => b.isHeader).map((b) => b.norm).sort((a, b) => b.length - a.length);
+    const merges = [];
+    for (const board of list) {
+      if (board.isHeader) continue;
+      for (const header of headers) {
+        if (board.norm === header) continue;
+        if (board.norm.startsWith(header) && WAY_TAIL.test(board.norm.slice(header.length))) {
+          merges.push({ drop: board.norm, keep: header });
+          break;
+        }
+      }
+    }
+    return merges;
+  }
+
   /* Contents and cover pages list boards in truncated form ("DB-1" for the
    * DB-1-GF whose schedule is four pages later), which lands as a second board
    * that owns no devices. Merge such a stub into the fuller reference, but only
@@ -1305,6 +1334,7 @@
     reconcilePageBoards,
     isRatingLikeRef,
     planPrefixMerges,
+    planWayBoardMerges,
     extractBoardReferences,
     classifyPageText,
     parseBamScheduleLine,

@@ -2027,7 +2027,11 @@ function mergeAiResult(A,out,fileId,pageNo){
   const pageBoard=primaryBoardForPage(A,fileId,pageNo);
   (out.boards||[]).forEach(b=>{
     if(!b.ref) return;
-    const canonical=canonicalBoardRef(b.ref), norm=canonical.normalised; if(!norm) return;
+    const canonical=canonicalBoardRef(b.ref);
+    /* The model returns a board_ref per row, so an 18-way board arrives as
+       DB-1-GF-1 … DB-1-GF-18. Bind to the page's declared board exactly as
+       device rows do, or each way registers as a board of its own. */
+    const norm=bindDeviceBoard(b.ref,pageBoard); if(!norm) return;
     if(!A.boards[norm]){
       const det=detectBoards(b.ref)[0];
       A.boards[norm]={norm, orig:canonical.display, type:det?det.type:'UNK', pages:[], parent:null, parentConf:0, manual:false};
@@ -2744,18 +2748,28 @@ async function runAnalysis(opts){
      board owning no devices. Only a stub with NO rows of its own, prefixing
      exactly one board that DOES have rows, is folded in — two boards that both
      hold devices are never merged. */
+  const applyBoardMerge=({drop,keep})=>{
+    const from=A.boards[drop], to=A.boards[keep];
+    if(!from||!to||drop===keep) return;
+    A.rows.forEach(r=>{ if(r.boardNorm===drop) r.boardNorm=keep; });
+    A.cables.forEach(c=>{ if(c.boardNorm===drop) c.boardNorm=keep; });
+    A.feeders.forEach(fd=>{ if(fd.from===drop) fd.from=keep; if(fd.to===drop) fd.to=keep; });
+    Object.values(A.boards).forEach(b=>{ if(b.parent===drop) b.parent=keep; });
+    (from.pages||[]).forEach(p=>{ if(!to.pages.some(x=>x.fileId===p.fileId&&x.page===p.page)) to.pages.push(p); });
+    delete A.boards[drop];
+  };
+  /* A ref that is a declared board plus a trailing way number (DB-1-GF-5,
+     DB-1-GF-11) is a WAY of that board. The AI returns one board_ref per row,
+     so an 18-way board otherwise registers as 18 boards. */
+  if(window.EstimationExtractorCore?.planWayBoardMerges){
+    const declared=Object.values(A.boards).map(b=>({norm:b.norm,
+      isHeader:(b.pages||[]).some(p=>p.primary)}));
+    window.EstimationExtractorCore.planWayBoardMerges(declared).forEach(applyBoardMerge);
+  }
   if(window.EstimationExtractorCore?.planPrefixMerges){
     const counts=Object.values(A.boards).map(b=>({norm:b.norm,
       rowCount:A.rows.filter(r=>r.boardNorm===b.norm&&r.status!=='rejected').length}));
-    window.EstimationExtractorCore.planPrefixMerges(counts).forEach(({drop,keep})=>{
-      const from=A.boards[drop], to=A.boards[keep];
-      if(!from||!to) return;
-      A.rows.forEach(r=>{ if(r.boardNorm===drop) r.boardNorm=keep; });
-      A.cables.forEach(c=>{ if(c.boardNorm===drop) c.boardNorm=keep; });
-      A.feeders.forEach(fd=>{ if(fd.from===drop) fd.from=keep; if(fd.to===drop) fd.to=keep; });
-      (from.pages||[]).forEach(p=>{ if(!to.pages.some(x=>x.fileId===p.fileId&&x.page===p.page)) to.pages.push(p); });
-      delete A.boards[drop];
-    });
+    window.EstimationExtractorCore.planPrefixMerges(counts).forEach(applyBoardMerge);
   }
   await showAnalysisStage(5,`${A.feeders.length} feeder relationship${A.feeders.length===1?'':'s'}`);
   A.feeders.forEach(fd=>{
