@@ -104,5 +104,59 @@ if (P.EstimationExtractorCore.canonicalBoardReference('DB-01-21-L').splitSection
   }
 }
 
+/* The header is the authority on a schedule page.
+ *
+ * Shape taken from a real 8-page LV distribution board schedule (the drawing
+ * itself stays out of the repo). That job reported 15 boards where the
+ * document defines 7: the extras were bare prefixes of a real ref, way/phase
+ * extensions of it, and one device RATING read as a board. */
+{
+  const { reconcilePageBoards } = P.EstimationExtractorCore;
+  const header = 'DB1GF';
+  const candidates = ['DB1GF', 'DB1', 'DB1GF5L2', 'DB1GF11L3', 'MEPMAINDB', 'DB630A'];
+  const kept = reconcilePageBoards(header, candidates);
+  const want = ['DB1GF', 'MEPMAINDB', 'DB630A'];   // rating is dropped separately, at detection
+  if (JSON.stringify(kept) !== JSON.stringify(want)) {
+    console.log(`FAIL [reconcile] kept ${JSON.stringify(kept)}, want ${JSON.stringify(want)}`); fail++;
+  }
+  // the upstream board named in "SERVED BY MEP MAIN DB" is a real board and must survive
+  if (!kept.includes('MEPMAINDB')) { console.log('FAIL [reconcile] dropped the upstream feeder board'); fail++; }
+  // with no header (a schematic, say) nothing is second-guessed
+  if (reconcilePageBoards(null, candidates).length !== candidates.length) {
+    console.log('FAIL [reconcile] filtered candidates with no header board'); fail++;
+  }
+  // a rating must never become a board
+  for (const line of ['INCOMER SIZE 630A', 'BOARD DEVICE TYPE 125A']) {
+    for (const [name, fn] of Object.entries(engines)) {
+      const got = fn(line).filter((n) => /^\w*\d{2,4}A$/.test(n));
+      if (got.length) { console.log(`FAIL [${name}] rating became a board ${JSON.stringify(got)} in ${JSON.stringify(line)}`); fail++; }
+    }
+  }
+}
+
+/* Cover-page stubs fold into the real board — but only when unambiguous. */
+{
+  const { planPrefixMerges } = P.EstimationExtractorCore;
+  const plan = planPrefixMerges([
+    { norm: 'DB1', rowCount: 0 }, { norm: 'DB1GF', rowCount: 33 },
+    { norm: 'DB2', rowCount: 0 }, { norm: 'DB2GF', rowCount: 37 },
+  ]);
+  const got = plan.map((m) => `${m.drop}->${m.keep}`).sort().join(',');
+  if (got !== 'DB1->DB1GF,DB2->DB2GF') { console.log(`FAIL [merge] got ${got}`); fail++; }
+
+  // a stub that prefixes TWO boards is ambiguous — leave it alone
+  if (planPrefixMerges([{ norm: 'DB1', rowCount: 0 }, { norm: 'DB1GF', rowCount: 5 }, { norm: 'DB1FF', rowCount: 5 }]).length) {
+    console.log('FAIL [merge] merged an ambiguous stub prefixing two boards'); fail++;
+  }
+  // a board that owns devices is never merged away, however short its ref
+  if (planPrefixMerges([{ norm: 'DB1', rowCount: 12 }, { norm: 'DB1GF', rowCount: 33 }]).length) {
+    console.log('FAIL [merge] merged a board that owns devices'); fail++;
+  }
+  // nothing to merge into (target has no rows either) ⇒ no merge
+  if (planPrefixMerges([{ norm: 'DB5', rowCount: 0 }, { norm: 'DB5EX', rowCount: 0 }]).length) {
+    console.log('FAIL [merge] merged into a board with no rows'); fail++;
+  }
+}
+
 if (fail) { console.log(`\n${fail} failure(s)`); process.exit(1); }
 console.log(`PASS: ${POSITIVE.length} positives, ${NEGATIVE.length} negatives, containment — both engines.`);

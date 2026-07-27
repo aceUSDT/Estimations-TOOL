@@ -69,6 +69,7 @@ const BOARD_PATTERNS = [
 ];
 const normBoard = s => String(s).toUpperCase().replace(/[\s.\-_\/]+/g,'');
 const canonicalBoardRef = EstimationExtractorCore.canonicalBoardReference;
+const RATING_LIKE = (n) => EstimationExtractorCore.isRatingLikeRef(n);
 
 const CABLE_PATTERNS = [
   {re:/(\d+)\s*[Cc]\s*(?:\+\s*E)?\s*[x×]?\s*(\d+(?:\.\d+)?)\s*mm[²2]?/g, cores:1, size:2},
@@ -123,6 +124,7 @@ function detectBoards(line){
       const canonical = canonicalBoardRef(orig);
       orig = canonical.display;
       const norm = canonical.normalised;
+      if (RATING_LIKE(norm)) continue;   // "630A" is a rating, never a board
       if (!norm || /^(DB|MDB|SMDB|LDB|PDB|MCC|MCP)$/.test(norm) && !bp.fixed && !/\d/.test(norm) && norm!=='MDB' && norm!=='SMDB') continue;
       if (found.some(f=>f.norm===norm)) continue;
       if (bp.type==='DB' && !bp.guard){

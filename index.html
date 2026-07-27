@@ -1162,6 +1162,7 @@ const BOARD_PATTERNS = [
 const normBoard = s => String(s).toUpperCase().replace(/[\s.\-_\/]+/g,'');
 const canonicalBoardRef = (window.EstimationExtractorCore && window.EstimationExtractorCore.canonicalBoardReference)
   || (value => ({display:String(value||'').trim(),normalised:normBoard(value),splitSection:null}));
+const RATING_LIKE = (n) => Boolean(window.EstimationExtractorCore && window.EstimationExtractorCore.isRatingLikeRef && window.EstimationExtractorCore.isRatingLikeRef(n));
 
 /* cable patterns */
 const CABLE_PATTERNS = [
@@ -1226,6 +1227,7 @@ function detectBoards(line){
       const canonical = canonicalBoardRef(orig);
       orig = canonical.display;
       const norm = canonical.normalised;
+      if (RATING_LIKE(norm)) continue;   // "630A" is a rating, never a board
       if (!norm || /^(DB|MDB|SMDB|LDB|PDB|MCC|MCP)$/.test(norm) && !bp.fixed && !/\d/.test(norm) && norm!=='MDB' && norm!=='SMDB') continue;
       if (found.some(f=>f.norm===norm)) continue;
       // avoid matching DB inside SMDB/LDB/PDB/MDB occurrences
@@ -1966,7 +1968,7 @@ function applyCrossCheck(A,v,fileId,pageNo){
   A.xcheck.pages++; A.xcheck.provider=v.provider||'gemini';
   (v.mismatches||[]).forEach(m=>{
     A.xcheck.mismatches++;
-    const bn=m.board?canonicalBoardRef(m.board).normalised:null;
+    const bn=bindDeviceBoard(m.board,primaryBoardForPage(A,fileId,pageNo));
     if (m.kind==='missing_in_primary'){
       const sec=m.second||{};
       A.rows.push({id:uid(), boardNorm:bn, fileId, page:pageNo, line:null, status:'pending', kind:'ai',
@@ -1984,8 +1986,29 @@ function applyCrossCheck(A,v,fileId,pageNo){
     }
   });
 }
+/* The board a page's schedule header names, registered as that page's primary
+   board by the regex pass. It is the document's own statement of which board
+   the page belongs to, so it is the right fallback for any extracted device
+   that did not carry a board reference of its own. */
+function primaryBoardForPage(A,fileId,pageNo){
+  for(const e of Object.values(A.boards||{})){
+    if((e.pages||[]).some(x=>x.fileId===fileId&&x.page===pageNo&&x.primary)) return e.norm;
+  }
+  return null;
+}
+/* A device's own board_ref is preferred, but a ref that merely extends the
+   page's board (way and phase glued on) or is a bare prefix of it names the
+   same board — collapse it rather than stranding the device under a phantom. */
+function bindDeviceBoard(ref,pageBoard){
+  const bn=ref?canonicalBoardRef(ref).normalised:null;
+  if(!bn) return pageBoard||null;
+  if(!pageBoard) return bn;
+  if(bn===pageBoard||bn.startsWith(pageBoard)||pageBoard.startsWith(bn)) return pageBoard;
+  return bn;
+}
 function mergeAiResult(A,out,fileId,pageNo){
   if(!out) return;
+  const pageBoard=primaryBoardForPage(A,fileId,pageNo);
   (out.boards||[]).forEach(b=>{
     if(!b.ref) return;
     const canonical=canonicalBoardRef(b.ref), norm=canonical.normalised; if(!norm) return;
@@ -2002,7 +2025,7 @@ function mergeAiResult(A,out,fileId,pageNo){
     }
   });
   (out.devices||[]).forEach(d=>{
-    const bn=d.board_ref?canonicalBoardRef(d.board_ref).normalised:null;
+    const bn=bindDeviceBoard(d.board_ref,pageBoard);
     // regex rows win: skip AI rows for slots the schedule parser already filled
     const dup=A.rows.some(r=>r.kind==='schedule'&&r.boardNorm===bn&&r.way===d.way
       &&(!r.phase||!d.phase||r.phase===d.phase||d.phase==='L1L2L3'));
@@ -2616,16 +2639,23 @@ async function runAnalysis(opts){
       const lines=(pg.lines||[]).map(l=>l.text);
       const pageBoards=[];
       lines.forEach(t=>detectBoards(t).forEach(b=>{ if(!pageBoards.some(x=>x.norm===b.norm)) pageBoards.push(b); }));
-      pageBoards.forEach(b=>regBoard(b,id,pageNo));
       const isSched=SCHEDULE_TYPES.has(pg.type) && pg.type!=='cable-schedule';
+      /* The header is resolved BEFORE any board is registered. Registering
+         every ref scanned out of row text first is what let one board's ways
+         and phases each mint a board of their own. */
       let ctxBoard=null;
       if (isSched){
         ctxBoard=scheduleBoardFromLines(lines);
         const hasBoardHeader=hasScheduleBoardHeader(lines);
         if (!ctxBoard && !hasBoardHeader && prevBoard) ctxBoard=prevBoard; // continuation page
-        if (ctxBoard){ regBoard(ctxBoard,id,pageNo,true); prevBoard=ctxBoard; }
+        if (ctxBoard) prevBoard=ctxBoard;
         else if(hasBoardHeader) prevBoard=null;
       } else prevBoard=null;
+      const keptBoards=(ctxBoard&&window.EstimationExtractorCore?.reconcilePageBoards)
+        ? window.EstimationExtractorCore.reconcilePageBoards(ctxBoard.norm,pageBoards)
+        : pageBoards;
+      keptBoards.forEach(b=>regBoard(b,id,pageNo));
+      if (ctxBoard) regBoard(ctxBoard,id,pageNo,true);
       const parsedLegend=window.EstimationExtractorCore
         ? window.EstimationExtractorCore.parseProtectionLegend(lines.join('\n'))
         : {legend:null};
@@ -2692,6 +2722,24 @@ async function runAnalysis(opts){
   if(window.EstimationExtractorCore?.deduplicateExtractionRows){
     const deduplicated=window.EstimationExtractorCore.deduplicateExtractionRows(A.rows);
     A.rows=deduplicated.rows;A.duplicates=deduplicated.duplicates;
+  }
+  /* Cover and contents pages name boards in truncated form ("DB-1" for the
+     DB-1-GF whose schedule appears later), which otherwise stands as an extra
+     board owning no devices. Only a stub with NO rows of its own, prefixing
+     exactly one board that DOES have rows, is folded in — two boards that both
+     hold devices are never merged. */
+  if(window.EstimationExtractorCore?.planPrefixMerges){
+    const counts=Object.values(A.boards).map(b=>({norm:b.norm,
+      rowCount:A.rows.filter(r=>r.boardNorm===b.norm&&r.status!=='rejected').length}));
+    window.EstimationExtractorCore.planPrefixMerges(counts).forEach(({drop,keep})=>{
+      const from=A.boards[drop], to=A.boards[keep];
+      if(!from||!to) return;
+      A.rows.forEach(r=>{ if(r.boardNorm===drop) r.boardNorm=keep; });
+      A.cables.forEach(c=>{ if(c.boardNorm===drop) c.boardNorm=keep; });
+      A.feeders.forEach(fd=>{ if(fd.from===drop) fd.from=keep; if(fd.to===drop) fd.to=keep; });
+      (from.pages||[]).forEach(p=>{ if(!to.pages.some(x=>x.fileId===p.fileId&&x.page===p.page)) to.pages.push(p); });
+      delete A.boards[drop];
+    });
   }
   await showAnalysisStage(5,`${A.feeders.length} feeder relationship${A.feeders.length===1?'':'s'}`);
   A.feeders.forEach(fd=>{

@@ -115,6 +115,57 @@
     };
   }
 
+  /* A schedule page states its board once, in the header ("REFERENCE DB-1-GF").
+   * That header is the authority: everything else on the page is a row of that
+   * board, so a candidate that merely EXTENDS the header ref (way and phase
+   * glued on) or is a bare PREFIX of it ("DB1" beside "DB-1-GF") is an artifact
+   * of scanning row text, not a second board. Real other boards named on the
+   * page — the upstream feeder in "SERVED BY MEP MAIN DB" — are kept, because
+   * they neither extend nor prefix the header ref.
+   *
+   * Measured on a real 8-page LV schedule: 15 detected boards → 7 actual. */
+  function reconcilePageBoards(headerNormalised, candidates) {
+    const header = String(headerNormalised || '');
+    const list = Array.isArray(candidates) ? candidates : [];
+    if (!header) return list.slice();
+    return list.filter((candidate) => {
+      const norm = typeof candidate === 'string' ? candidate : (candidate && candidate.norm) || '';
+      if (!norm || norm === header) return true;
+      if (header.startsWith(norm)) return false;   // bare prefix: DB1 under DB1GF
+      if (norm.startsWith(header)) return false;   // way/phase extension: DB1GF5L2
+      return true;
+    });
+  }
+
+  /* "630A" is a RATING. Absorbed as a board suffix it invents a board named
+   * after a current, which is how DB630A appeared beside the real boards. Two
+   * or more digits are required so a genuine "DB-2A" is untouched. */
+  const RATING_REF = /^(?:S?MDB|DB|LDB|PDB|MCC|MCP|SB|PB|MSB)\d{2,4}A$/;
+  function isRatingLikeRef(normalised) {
+    return RATING_REF.test(String(normalised || ''));
+  }
+
+  /* Contents and cover pages list boards in truncated form ("DB-1" for the
+   * DB-1-GF whose schedule is four pages later), which lands as a second board
+   * that owns no devices. Merge such a stub into the fuller reference, but only
+   * when it is unambiguous: the stub must carry NO device rows of its own and
+   * must prefix exactly ONE longer board. Two boards that both hold devices are
+   * never merged — that would destroy a real board to tidy a count.
+   *
+   * `boards`: [{ norm, rowCount }] → [{ drop, keep }] */
+  function planPrefixMerges(boards) {
+    const list = (Array.isArray(boards) ? boards : []).filter((b) => b && b.norm);
+    const merges = [];
+    for (const stub of list) {
+      if ((stub.rowCount || 0) > 0) continue;
+      const longer = list.filter((b) => b.norm !== stub.norm && b.norm.startsWith(stub.norm));
+      if (longer.length === 1 && (longer[0].rowCount || 0) > 0) {
+        merges.push({ drop: stub.norm, keep: longer[0].norm });
+      }
+    }
+    return merges;
+  }
+
   // Words that can follow "DB" in prose without naming a board ("DB Schedule",
   // "DB Fed From", …). A candidate whose first token is one of these is prose.
   const BOARD_REF_STOPWORDS = new Set([
@@ -177,7 +228,7 @@
        * phase rows of one board must collapse to one entry here rather than
        * being counted as three boards downstream. */
       const normalised = /main\s/i.test(s.original) ? 'MAINLVPANEL' : canonicalBoardReference(s.original).normalised;
-      if (!normalised || seen.has(normalised)) continue;
+      if (!normalised || seen.has(normalised) || RATING_REF.test(normalised)) continue;
       seen.add(normalised);
       found.push({ original: s.original, normalised });
     }
@@ -1251,6 +1302,9 @@
     parseTrailingCable,
     normaliseBoardReference,
     canonicalBoardReference,
+    reconcilePageBoards,
+    isRatingLikeRef,
+    planPrefixMerges,
     extractBoardReferences,
     classifyPageText,
     parseBamScheduleLine,
