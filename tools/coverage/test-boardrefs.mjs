@@ -228,5 +228,31 @@ console.log(`PASS: ${POSITIVE.length} positives, ${NEGATIVE.length} negatives, c
   if (warn.some((w) => w.norm === 'DBUNKNOWN')) { console.log('FAIL [capacity] guessed at a board with no declared ways'); fail++; }
 }
 
+/* pdf.js emits ONE LINE PER TABLE CELL, so a header label and its value land on
+ * separate lines. Scanning line by line found the label with an empty tail,
+ * resolved no board, and the page became a "continuation" that dumped its
+ * devices onto the previous board — one board ended up holding 83 devices it
+ * could not physically carry while later boards held none. */
+{
+  const cells = ['REFERENCE', 'DB-1-GF', 'SERVED BY', 'MEP MAIN DB', 'DESCRIPTION',
+    'GROUND FLOOR LIGHTING & POWER', 'LOCATION', 'LVAC ROOM', 'NUMBER OF WAYS', '18 WAYS',
+    'INCOMER', 'GENERIC ISOLATOR', 'Circuit Ref', '1-L1', '10', 'Acti9 iC60H, MCB, Type C'];
+  const got = P.scheduleBoardFromLines(cells);
+  if (!got || got.norm !== 'DB1GF') {
+    console.log(`FAIL [cell-lines] board from split cells → ${JSON.stringify(got)}, want DB1GF`); fail++;
+  }
+  // label and value on ONE line must still work
+  const oneLine = P.scheduleBoardFromLines(['REFERENCE DB-2-GF NUMBER OF WAYS 24 WAYS INCOMER GENERIC ISOLATOR']);
+  if (!oneLine || oneLine.norm !== 'DB2GF') {
+    console.log(`FAIL [cell-lines] single-line header regressed → ${JSON.stringify(oneLine)}`); fail++;
+  }
+  // a cable/drawing reference must never name a board
+  for (const page of [['Incoming Cable Reference', 'F28', 'Cable schedule'],
+                      ['Drawing Reference', '847-RME-XX', 'Revision B']]) {
+    const bad = P.scheduleBoardFromLines(page);
+    if (bad) { console.log(`FAIL [cell-lines] ${page[0]} became board ${bad.norm}`); fail++; }
+  }
+}
+
 if (fail) { console.log(`\n${fail} failure(s)`); process.exit(1); }
-console.log('PASS: board header facts + capacity arithmetic.');
+console.log('PASS: board header facts + capacity arithmetic + split-cell headers.');

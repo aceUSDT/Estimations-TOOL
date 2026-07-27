@@ -140,6 +140,26 @@ function detectBoards(line){
 }
 
 function scheduleBoardFromLines(lines){
+  /* pdf.js emits one line per table CELL, so a header label and its value
+     routinely land on SEPARATE lines: "REFERENCE" then "DB-1-GF". Scanning
+     line by line finds the label with an empty tail, resolves no board, and
+     the page is treated as a continuation of the previous one — which is how a
+     single board absorbed every later page's devices. Resolve against the
+     joined page text first, then fall back to the per-line scan. */
+  const joined=(lines||[]).map(l=>String(l||'').trim()).filter(Boolean).join(' ');
+  // Only trust a bare "REFERENCE" when the page also carries board-schedule
+  // header labels, so a cable or drawing reference cannot name a board.
+  if(/(number of ways|circuit ref|served by|incomer)/i.test(joined)){
+    const jm=joined.match(/(?<!(?:cable|drawing|document|project|job|schedule)\s)\b(?:DB\s+|BOARD\s+)?REFERENCE\b\s*[:=\-]?\s*([A-Z0-9][A-Z0-9._\/-]{1,30})/i);
+    if(jm){
+      const det=detectBoards(jm[1])[0];
+      if(det) return det;
+      if(/[\d._\/-]/.test(jm[1])){
+        const canonical=canonicalBoardRef(jm[1]);
+        if(canonical.normalised) return {orig:canonical.display,norm:canonical.normalised,type:'UNK',section:canonical.splitSection};
+      }
+    }
+  }
   let sawLabel=false;
   for(const line of lines){
     const source=String(line||'');
@@ -174,13 +194,14 @@ function hasScheduleBoardHeader(lines){
      it, so every page of such a document answered NO. Accept that form too:
      a REFERENCE label followed by something board-shaped, or the header block
      the page classifier keys on. */
-  return (lines||[]).some(line=>{
-    const t=String(line||'');
-    if (/\bDB\s+REFERENCE\b|\b(?:DISTRIBUTION\s+)?BOARD\s*(?:REFERENCE|REF|IDENTITY)?\s*[:=\-]|\bDISTRIBUTION\s+BOARD\s+SCHEDULE\b\s*[—–:\-]\s*(?=[A-Z0-9])/i.test(t)) return true;
-    if (/\bREFERENCE\b\s*[:=\-]?\s*[A-Z0-9][A-Z0-9/._-]{1,20}/i.test(t)
-        && /(number of ways|circuit ref|\bways\b|served by|incomer)/i.test(t)) return true;
-    return false;
-  });
+  /* Evaluated on the JOINED page text: with one line per table cell the label
+     and its value are on different lines, and a per-line test answers NO on
+     every page of such a document — making each page a continuation and
+     dumping its devices onto the previous board. */
+  const joined=(lines||[]).map(l=>String(l||'').trim()).filter(Boolean).join(' ');
+  if (/\bDB\s+REFERENCE\b|\b(?:DISTRIBUTION\s+)?BOARD\s*(?:REFERENCE|REF|IDENTITY)?\s*[:=\-]|\bDISTRIBUTION\s+BOARD\s+SCHEDULE\b\s*[—–:\-]\s*(?=[A-Z0-9])/i.test(joined)) return true;
+  return /\bREFERENCE\b\s*[:=\-]?\s*[A-Z0-9][A-Z0-9/._-]{1,20}/i.test(joined)
+    && /(number of ways|circuit ref|served by|incomer)/i.test(joined);
 }
 
 /* ==================== CABLE DETECTION (index.html:828) ==================== */

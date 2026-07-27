@@ -78,9 +78,14 @@ export const ROLE_CHAINS = {
   ],
 };
 
+/* Reads every NVIDIA_API_KEY_n the operator has configured, not a fixed three.
+ * Each key is a separate NVIDIA account with its own rate limit, so an owner
+ * who adds keys 4-7 is buying headroom — silently ignoring them wasted it. */
+export const MAX_KEY_SLOTS = 8;
+
 export function poolKeysFromEnv(env = process.env) {
   const keys = {};
-  for (const n of [1, 2, 3]) {
+  for (let n = 1; n <= MAX_KEY_SLOTS; n++) {
     const v = env[`NVIDIA_API_KEY_${n}`];
     if (typeof v === 'string' && v.length > 8) keys[n] = v;
   }
@@ -89,9 +94,12 @@ export function poolKeysFromEnv(env = process.env) {
 
 export function poolStatus(env = process.env) {
   const keys = poolKeysFromEnv(env);
+  const slots = {};
+  for (let n = 1; n <= MAX_KEY_SLOTS; n++) slots[n] = Boolean(keys[n]);
   return {
     configured: Object.keys(keys).length > 0,
-    keys: { 1: Boolean(keys[1]), 2: Boolean(keys[2]), 3: Boolean(keys[3]) },
+    count: Object.keys(keys).length,
+    keys: slots,
   };
 }
 
@@ -154,7 +162,16 @@ export function createPool(opts = {}) {
   async function callModel(model, req = {}) {
     const meta = registry[model];
     if (!meta) throw poolError('unknown_model', model);
-    const key = keys[meta.key];
+    let key = keys[meta.key];
+    /* A model is PINNED to a key slot to spread load across accounts, but a
+       pin is not a reason to go dark: if that slot is unconfigured, borrow any
+       key the operator did provide. Without this, models pinned to slot 2 or 3
+       simply never ran for an owner who had only key 1 — a silent loss of most
+       of the chain. */
+    if (!key) {
+      const spare = Object.keys(keys).map(Number).sort((a, b) => a - b)[0];
+      if (spare) key = keys[spare];
+    }
     if (!key) throw poolError('no_key', `slot ${meta.key} for ${model}`);
 
     const delay = paceDelay(meta.key);
