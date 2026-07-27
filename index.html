@@ -2852,6 +2852,18 @@ async function runAnalysis(opts){
       rowCount:A.rows.filter(r=>r.boardNorm===b.norm&&r.status!=='rejected').length}));
     window.EstimationExtractorCore.planPrefixMerges(counts).forEach(applyBoardMerge);
   }
+  /* Upstream link from the board's own header. "SERVED BY MEP MAIN DB" is the
+     document stating the feed outright, which beats inferring it from
+     schematic lines. Deliberately conservative: the name is only turned into a
+     PARENT when it resolves to a board that already exists — a header must not
+     be able to invent boards, which is the failure mode this whole session has
+     been about. When it resolves to nothing it still shows on the card as text. */
+  Object.values(A.boards).forEach(b=>{
+    const raw=(b.header||{}).fed_from_ref;
+    if(!raw||b.parent||b.manual) return;
+    const norm=canonicalBoardRef(raw).normalised;
+    if(norm && norm!==b.norm && A.boards[norm]){ b.parent=norm; b.parentConf=0.9; }
+  });
   /* Arithmetic the tool should never need a human to do: a board cannot hold
      more devices than ways × phases. This is the check that would have caught
      one board showing 86 devices while the rest showed none. */
