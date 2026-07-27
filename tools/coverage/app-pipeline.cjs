@@ -150,14 +150,19 @@ function scheduleBoardFromLines(lines){
   // Only trust a bare "REFERENCE" when the page also carries board-schedule
   // header labels, so a cable or drawing reference cannot name a board.
   if(/(number of ways|circuit ref|served by|incomer)/i.test(joined)){
-    const jm=joined.match(/(?<!(?:cable|drawing|document|project|job|schedule)\s)\b(?:DB\s+|BOARD\s+)?REFERENCE\b\s*[:=\-]?\s*([A-Z0-9][A-Z0-9._\/-]{1,30})/i);
-    if(jm){
-      const det=detectBoards(jm[1])[0];
+    /* Take the first BOARD-SHAPED reference in the window after the label, not
+       the token that happens to sit next to it. pdf.js orders cells by
+       position, so a header block frequently arrives as all labels then all
+       values — "REFERENCE SERVED BY LOCATION ... DB-1-GF MEP MAIN DB" — and
+       reading the adjacent token then yields either nothing or, on a page
+       headed "110V AC DISTRIBUTION BOARD", a board called "110V" that proceeds
+       to collect every following page's devices.
+       Requiring detectBoards to recognise it is what rejects "110V". */
+    const label=joined.match(/(?<!(?:cable|drawing|document|project|job|schedule)\s)\b(?:DB\s+|BOARD\s+)?REFERENCE\b\s*[:=\-]?\s*/i);
+    if(label){
+      const window=joined.slice(label.index, label.index+240);
+      const det=detectBoards(window)[0];
       if(det) return det;
-      if(/[\d._\/-]/.test(jm[1])){
-        const canonical=canonicalBoardRef(jm[1]);
-        if(canonical.normalised) return {orig:canonical.display,norm:canonical.normalised,type:'UNK',section:canonical.splitSection};
-      }
     }
   }
   let sawLabel=false;
