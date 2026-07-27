@@ -343,3 +343,31 @@ console.log('PASS: nvidia pool + agent team + engine selector + worker master-au
 
   if (!process.exitCode) console.log('ok  agent contract: declared facts + computed way coverage');
 }
+
+/* Key pool: every configured slot is usable, and the pool reports the key it
+ * ACTUALLY used. Both matter to an owner running several NVIDIA accounts —
+ * reporting a pinned slot that never ran tells them a dead key is healthy. */
+{
+  const pool = await import('../../api/_lib/extraction/nvidia-pool.mjs');
+  const fake = async () => ({ ok: true, json: async () => ({ choices: [{ message: { content: '{"devices":[]}' } }] }) });
+
+  // seven keys configured ⇒ seven recognised (the code read only three before)
+  const env = {}; for (let i = 1; i <= 7; i++) env[`NVIDIA_API_KEY_${i}`] = 'nvapi-' + 'x'.repeat(20);
+  const st = pool.poolStatus(env);
+  if (st.count !== 7) { console.log(`FAIL [pool] ${st.count} keys recognised, want 7`); process.exitCode = 1; }
+
+  // a model pinned to slot 1 borrows slot 5 when that is all there is, and says so
+  const only5 = pool.createPool({ keys: { 5: 'nvapi-' + 'x'.repeat(20) }, fetchImpl: fake });
+  const out = await only5.callModel('deepseek-ai/deepseek-v4-flash', { prompt: 'x' });
+  if (out.keyId !== 5) { console.log(`FAIL [pool] reported key ${out.keyId}, actually used 5`); process.exitCode = 1; }
+
+  // no keys at all ⇒ a stable error, never a crash
+  try {
+    await pool.createPool({ keys: {}, fetchImpl: fake }).callModel('deepseek-ai/deepseek-v4-flash', { prompt: 'x' });
+    console.log('FAIL [pool] no keys should raise no_key'); process.exitCode = 1;
+  } catch (e) {
+    if (e.code !== 'no_key') { console.log(`FAIL [pool] expected no_key, got ${e.code}`); process.exitCode = 1; }
+  }
+
+  if (!process.exitCode) console.log('ok  key pool: all slots usable, key actually used is reported');
+}

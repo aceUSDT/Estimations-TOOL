@@ -137,10 +137,15 @@ export function createPool(opts = {}) {
   const registry = opts.registry || MODEL_REGISTRY;
   const chains = opts.chains || ROLE_CHAINS;
 
-  const stamps = { 1: [], 2: [], 3: [] };          // per-key request timestamps (60s window)
+  /* Per-key request timestamps (60s window). Keyed lazily rather than to a
+     fixed 1-2-3, because the pool now accepts every configured slot: an owner
+     whose only key sits in slot 5 would otherwise hit `undefined.filter` here
+     the moment a model borrowed it. */
+  const stamps = {};
   const health = new Map();                        // model → { fails, lastFailAt }
 
   function paceDelay(keyId) {
+    if (!stamps[keyId]) stamps[keyId] = [];
     const t = now();
     stamps[keyId] = stamps[keyId].filter((s) => t - s < 60000);
     if (stamps[keyId].length < rpmPerKey) return 0;
@@ -168,15 +173,21 @@ export function createPool(opts = {}) {
        key the operator did provide. Without this, models pinned to slot 2 or 3
        simply never ran for an owner who had only key 1 — a silent loss of most
        of the chain. */
+    let usedKeyId = meta.key;
     if (!key) {
       const spare = Object.keys(keys).map(Number).sort((a, b) => a - b)[0];
-      if (spare) key = keys[spare];
+      if (spare) { key = keys[spare]; usedKeyId = spare; }
     }
     if (!key) throw poolError('no_key', `slot ${meta.key} for ${model}`);
 
-    const delay = paceDelay(meta.key);
+    /* Pace and report against the key ACTUALLY used, not the pinned slot.
+       Pacing the wrong slot would let a borrowed key exceed its own rate limit
+       while an unconfigured slot's budget was spent on paper, and reporting
+       the wrong slot would tell the operator a key was working when it was
+       never called. */
+    const delay = paceDelay(usedKeyId);
     if (delay > 0) await sleep(delay);
-    stamps[meta.key].push(now());
+    (stamps[usedKeyId] = stamps[usedKeyId] || []).push(now());
 
     const messages = [];
     if (req.system && !meta.imageOnly) messages.push({ role: 'system', content: req.system });
@@ -230,7 +241,7 @@ export function createPool(opts = {}) {
     }
     if (typeof content !== 'string' || !content) { markResult(model, false); throw poolError('empty_reply', model); }
     markResult(model, true);
-    return { content, model, keyId: meta.key, ms: now() - t0 };
+    return { content, model, keyId: usedKeyId, ms: now() - t0 };
   }
 
   /* Walk a role's chain: skip excluded + cooling-down models, try the rest in
