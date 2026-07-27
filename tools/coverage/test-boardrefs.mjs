@@ -188,9 +188,14 @@ if (P.EstimationExtractorCore.canonicalBoardReference('DB-01-21-L').splitSection
   if (planPrefixMerges([{ norm: 'DB1', rowCount: 12 }, { norm: 'DB1GF', rowCount: 33 }]).length) {
     console.log('FAIL [merge] merged a board that owns devices'); fail++;
   }
-  // nothing to merge into (target has no rows either) ⇒ no merge
-  if (planPrefixMerges([{ norm: 'DB5', rowCount: 0 }, { norm: 'DB5EX', rowCount: 0 }]).length) {
-    console.log('FAIL [merge] merged into a board with no rows'); fail++;
+  /* A stub still folds in when the target has no rows either. Requiring rows on
+     the target was over-cautious: a real index page lists DB-1 … DB-7 while the
+     schedule for DB-5-EX lives in a part of the set not being analysed, so both
+     had no rows and both survived as separate boards. Neither is a second
+     board. */
+  const rowless = planPrefixMerges([{ norm: 'DB5', rowCount: 0 }, { norm: 'DB5EX', rowCount: 0 }]);
+  if (!(rowless.length === 1 && rowless[0].drop === 'DB5' && rowless[0].keep === 'DB5EX')) {
+    console.log(`FAIL [merge] rowless stub not folded: ${JSON.stringify(rowless)}`); fail++;
   }
 }
 

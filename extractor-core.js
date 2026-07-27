@@ -245,7 +245,14 @@
     for (const stub of list) {
       if ((stub.rowCount || 0) > 0) continue;
       const longer = list.filter((b) => b.norm !== stub.norm && b.norm.startsWith(stub.norm));
-      if (longer.length === 1 && (longer[0].rowCount || 0) > 0) {
+      /* One unambiguous longer board is enough. Requiring that board to own
+         rows as well was over-cautious: on a real document the index page
+         lists DB-1 … DB-7 while the schedule for DB-5-EX sits in a part of the
+         set not being analysed, so DB5 and DB5EX both had no rows and both
+         survived as separate boards. Neither is a second board — the stub is
+         an index entry for the fuller reference either way, and keeping the
+         more specific name loses nothing. Ambiguity is still refused. */
+      if (longer.length === 1) {
         merges.push({ drop: stub.norm, keep: longer[0].norm });
       }
     }

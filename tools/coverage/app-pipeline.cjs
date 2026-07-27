@@ -164,6 +164,36 @@ function scheduleBoardFromLines(lines){
       const det=detectBoards(window)[0];
       if(det) return det;
     }
+    /* ROTATED SCHEDULE PAGES. These arrive as a line of LABELS and a separate
+       line of VALUES, in the same order, tens of lines apart:
+
+         "... NUMBER OF WAYS  LOCATION  DESCRIPTION  SERVED BY  REFERENCE"
+         "... 18 WAYS  LVAC ROOM  GROUND FLOOR LIGHTING & POWER  DB-1-GF"
+
+       REFERENCE is the last label and DB-1-GF the last value, so nothing that
+       reads forward from the label can ever reach it — which is why every page
+       of such a document resolved no board, became a continuation, and handed
+       its devices to whichever board came before it.
+
+       So find the VALUES line instead: it carries a board-shaped reference
+       alongside other header values (an incomer, a rating, a location), and it
+       is not a circuit row. Verified against all eight pages of a real rotated
+       schedule — the six that declare a board resolve correctly, and the page
+       headed "110V AC DISTRIBUTION BOARD" still resolves nothing rather than
+       inventing a board called 110V. */
+    if(/\bREFERENCE\b/i.test(joined)){
+      const CIRCUIT_ROW=/\b\d{1,2}-L[123]\b/;
+      const HEADER_VALUE=/(ISOLATOR|SWITCH(?:GEAR)?|SCHNEIDER|MERLIN|ACTI9|HAGER|\b\d{2,4}\s?A\b|FLOOR|ROOM|CORRIDOR|RISER)/i;
+      const candidates=[];
+      for(const line of (lines||[])){
+        const t=String(line||'').trim();
+        if(!t||CIRCUIT_ROW.test(t)) continue;
+        const det=detectBoards(t)[0];
+        if(det) candidates.push({t,det});
+      }
+      const best=candidates.find(c=>HEADER_VALUE.test(c.t))||candidates[0];
+      if(best) return best.det;
+    }
   }
   let sawLabel=false;
   for(const line of lines){
