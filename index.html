@@ -2084,7 +2084,11 @@ function bindDeviceBoard(ref,pageBoard){
   if(bn===pageBoard||bn.startsWith(pageBoard)||pageBoard.startsWith(bn)) return pageBoard;
   return bn;
 }
-function mergeAiResult(A,out,fileId,pageNo){
+/* `master` rides on the RESPONSE ENVELOPE, beside `result` — not inside it —
+   and the call site passes the inner result. Taking it as an explicit argument
+   makes that impossible to get wrong silently; the out.master fallback keeps
+   any caller that does hand over a whole envelope working. */
+function mergeAiResult(A,out,fileId,pageNo,masterVerdict){
   if(!out) return;
   const pageBoard=primaryBoardForPage(A,fileId,pageNo);
   (out.boards||[]).forEach(b=>{
@@ -2135,7 +2139,7 @@ function mergeAiResult(A,out,fileId,pageNo){
      perform reached no one. Its findings are things present on the page that
      BOTH extraction agents missed, so each becomes a review row: over-capture
      into Review beats a silent omission, and the master never edits a count. */
-  const m=out.master;
+  const m=masterVerdict||out.master;
   if(m && m.status==='reviewed'){
     A.master=A.master||{pages:0,incomplete:0,missed:0};
     A.master.pages++;
@@ -2191,7 +2195,7 @@ async function runAiExtraction(A,f,p,pageSet){
   for (let i=0;i<jobs.length;i+=CONC){
     await Promise.all(jobs.slice(i,i+CONC).map(async j=>{
       try{ const resp=await aiExtractPage(j.fl,j.pageNo,j.pg);
-        mergeAiResult(A, resp&&resp.result?resp.result:resp, j.id, j.pageNo);
+        mergeAiResult(A, resp&&resp.result?resp.result:resp, j.id, j.pageNo, resp&&resp.master);
         applyCrossCheck(A, resp&&resp.verification, j.id, j.pageNo); A.aiPages++; }
       catch(e){ console.warn('AI extraction failed on '+j.fl.name+' p'+j.pageNo+':', e.message); A.aiErrors++; }
     }));
