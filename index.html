@@ -3084,16 +3084,14 @@ function renderResults(){
      complete are named here, and boards that cannot be CHECKED are counted
      separately so "no gaps" is never confused with "not verified". */
   const covBar=$('#anCoverage');
-  if (covBar && window.EstimationExtractorCore?.boardWayCoverage){
+  if (covBar){
     const gaps=[], unchecked=[];
     let okCount=0;
-    Object.values(A.boards).forEach(b=>{
-      const cov=window.EstimationExtractorCore.boardWayCoverage(
-        {norm:b.norm, waysTotal:b.waysTotal||(b.header||{}).ways_total||null},
-        rows.filter(r=>r.boardNorm===b.norm));
-      if(!cov.checkable){ unchecked.push(b.norm); return; }
-      if(cov.complete){ okCount++; return; }
-      gaps.push({norm:b.norm, missing:cov.missing.length, declared:cov.declared});
+    ((A.coverage&&A.coverage.perBoard)||[]).forEach(cov=>{
+      if(cov.inScope===false) return;
+      if(cov.expectedWays==null){ unchecked.push(cov.norm); return; }
+      if((cov.unaccountedWays||0)===0){ okCount++; return; }
+      gaps.push({norm:cov.norm, missing:cov.unaccountedWays, declared:cov.expectedWays});
     });
     const parts=[];
     if(gaps.length){
@@ -3262,15 +3260,15 @@ function renderBoardDetail(){
   const capWarn=(A.capacityWarnings||[]).find(w=>w.norm===norm);
   /* Completeness against the board's OWN declared way count, accumulated over
      every page it occupies — the "nothing was missed" statement. */
-  const cov=(b&&window.EstimationExtractorCore?.boardWayCoverage)
-    ? window.EstimationExtractorCore.boardWayCoverage(
-        {norm, waysTotal:b.waysTotal||(b.header||{}).ways_total||null}, rows)
-    : null;
-  const covHtml=(!cov||!cov.checkable)
+  /* Reads A.coverage — the project's ONE coverage model, the same one the
+     report, the Review queue and the coverage panel consume. A second
+     implementation here would be a second answer to the same question. */
+  const cov=b?((A.coverage&&A.coverage.perBoard)||[]).find(x=>x.norm===norm):null;
+  const covHtml=(!cov||cov.expectedWays==null)
     ? (b?'<div class="cov-note">This board does not state a way count, so completeness cannot be checked.</div>':'')
-    : cov.complete
-      ? `<div class="cov-ok">All ${cov.declared} declared ways accounted for${cov.spare.length?` (${cov.spare.length} spare)`:''}.</div>`
-      : `<div class="cov-gap"><b>${cov.missing.length} of ${cov.declared} ways not accounted for.</b> Ways ${esc(cov.missing.slice(0,24).join(', '))}${cov.missing.length>24?'…':''} produced no row — either spare, or missed by extraction.</div>`;
+    : (cov.unaccountedWays||0)===0
+      ? `<div class="cov-ok">All ${cov.expectedWays} declared ways accounted for (${cov.capturedWays} captured).</div>`
+      : `<div class="cov-gap"><b>${cov.unaccountedWays} of ${cov.expectedWays} ways not accounted for.</b> ${cov.capturedWays} captured from this board's pages — the rest produced no row, so they are either spare or missed by extraction.</div>`;
   detail.innerHTML = (capWarn?`<div class="cap-warn"><b>Check this board.</b> ${esc(capWarn.detail)}</div>`:'')
     + covHtml
     + (b? boardHeaderCard(b) : '<div class="p-body"><span class="hint">Rows with no detected board reference.</span></div>')

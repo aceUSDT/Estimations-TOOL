@@ -202,46 +202,6 @@
     return out;
   }
 
-  /* Completeness, per board, across every page it occupies.
-   *
-   * A board states how many ways it has. Anything less than that captured is
-   * either a spare way or a MISS, and the difference matters: a miss is a
-   * device that will never be priced. Accumulating across pages is the point —
-   * a board whose schedule spans four pages is only complete when all four
-   * have given up their ways, so a per-page check can never answer this.
-   *
-   * Deterministic: the gap is arithmetic, not a model's opinion. What a model
-   * may do is explain a gap; it may not decide there isn't one.
-   *
-   * `board`: { norm, waysTotal }; `rows`: that board's extracted rows
-   *   → { declared, captured, missing, spare, complete, checkable } */
-  function boardWayCoverage(board, rows) {
-    const declared = Number(board && board.waysTotal);
-    const list = Array.isArray(rows) ? rows : [];
-    const captured = new Set();
-    const spare = new Set();
-    for (const r of list) {
-      if (!r || r.way == null || r.way === '') continue;
-      const way = String(r.way).trim().replace(/^0+(?=\d)/, '');
-      if (!way) continue;
-      captured.add(way);
-      if (r.spare || r.space) spare.add(way);
-    }
-    if (!Number.isFinite(declared) || declared <= 0) {
-      return { declared: null, captured: [...captured], missing: [], spare: [...spare], complete: false, checkable: false };
-    }
-    const missing = [];
-    for (let w = 1; w <= declared; w++) if (!captured.has(String(w))) missing.push(String(w));
-    return {
-      declared,
-      captured: [...captured],
-      missing,
-      spare: [...spare],
-      complete: missing.length === 0,
-      checkable: true,
-    };
-  }
-
   /* A reference that is a header board plus a trailing WAY number — DB-1-GF-5,
    * DB-1-GF-11, DB-1-GF-5-L2 — names a way of that board, not a board. The
    * schedule proves it: DB-1-GF is one board of 18 ways, and its Circuit Ref
@@ -1442,7 +1402,6 @@
     isRatingLikeRef,
     parseBoardHeaderFacts,
     boardCapacityWarnings,
-    boardWayCoverage,
     planPrefixMerges,
     planWayBoardMerges,
     extractBoardReferences,

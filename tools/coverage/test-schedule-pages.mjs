@@ -116,32 +116,31 @@ check('no board exceeds ways × phases', (A.capacityWarnings || []).length === 0
   check('declared ways survive the continuation', Boolean(b && b.waysTotal === 36), b ? String(b.waysTotal) : 'missing');
 }
 
-/* Completeness per board, accumulated across every page it occupies. */
+/* Completeness per board comes from buildCoverage — the project's ONE coverage
+ * model, shared by the report, the Review queue and the coverage panel. A
+ * second implementation of the same question was written during this work and
+ * removed: two answers to "is this board complete?" is worse than none. */
 {
-  const { boardWayCoverage } = P.EstimationExtractorCore;
+  const { buildCoverage } = P.EstimationExtractorCore;
+  const boards = { DB1GF: { norm: 'DB1GF', orig: 'DB-1-GF', type: 'DB', pages: [{ fileId: 'f', page: 1, primary: true }] } };
   const rows = [];
-  for (let w = 1; w <= 11; w++) for (const ph of ['L1', 'L2', 'L3']) rows.push({ way: String(w), phase: ph, device: 'MCB' });
-  const gap = boardWayCoverage({ waysTotal: 18 }, rows);
-  check('gap: 7 of 18 ways unaccounted', gap.checkable && gap.missing.length === 7 && gap.missing[0] === '12',
-    JSON.stringify(gap.missing));
-  check('gap: not reported complete', gap.complete === false);
+  for (let w = 1; w <= 11; w++) for (const ph of ['L1', 'L2', 'L3']) rows.push({ boardNorm: 'DB1GF', way: String(w), phase: ph, device: 'MCB', kind: 'schedule' });
+  const pageText = 'REFERENCE DB-1-GF NUMBER OF WAYS 18 WAYS Circuit Ref 1-L1 10 Acti9 iC60H, MCB, Type C';
+  const cov = buildCoverage({ boards, rows, pages: [{ fileId: 'f', page: 1, type: 'db-schedule', text: pageText }] });
+  const board = (cov.perBoard || []).find((b) => b.norm === 'DB1GF');
+  check('coverage reads the declared way count', Boolean(board && board.expectedWays === 18),
+    board ? String(board.expectedWays) : 'no board');
+  check('coverage counts what was captured', Boolean(board && board.capturedWays === 11),
+    board ? String(board.capturedWays) : 'no board');
+  check('coverage reports the shortfall', Boolean(board && board.unaccountedWays === 7),
+    board ? String(board.unaccountedWays) : 'no board');
 
-  const full = [];
-  for (let w = 1; w <= 18; w++) full.push({ way: String(w), device: 'MCB', spare: w > 11 });
-  const done = boardWayCoverage({ waysTotal: 18 }, full);
-  check('complete when every declared way has a row', done.complete === true, JSON.stringify(done.missing));
-  check('spare ways are counted as accounted for', done.spare.length === 7, JSON.stringify(done.spare));
-
-  // a board that never declares a way count is NOT checkable, and must never
-  // read as "complete" — silence is not proof.
-  const unknown = boardWayCoverage({ waysTotal: null }, rows);
-  check('undeclared way count ⇒ not checkable', unknown.checkable === false);
-  check('undeclared way count ⇒ never claims complete', unknown.complete === false);
-
-  // ways captured across TWO pages of the same board both count
-  const split = [{ way: '1', device: 'MCB' }, { way: '2', device: 'MCB' }, { way: '3', device: 'MCB' }];
-  const spanCov = boardWayCoverage({ waysTotal: 3 }, split);
-  check('ways from separate pages accumulate', spanCov.complete === true, JSON.stringify(spanCov.missing));
+  /* A page that never states a way count must report null, not zero: unknown
+     is not the same as complete. */
+  const noWays = buildCoverage({ boards, rows, pages: [{ fileId: 'f', page: 1, type: 'db-schedule', text: 'REFERENCE DB-1-GF Circuit Ref' }] });
+  const nb = (noWays.perBoard || []).find((b) => b.norm === 'DB1GF');
+  check('undeclared way count ⇒ expectedWays null', Boolean(nb && nb.expectedWays == null),
+    nb ? String(nb.expectedWays) : 'no board');
 }
 
 if (fail) { console.log(`\n${fail} failure(s)`); process.exit(1); }
