@@ -82,6 +82,23 @@
       .replace(/\s*[._/\\-]\s*/g, '-')
       .replace(/-+/g, '-')
       .replace(/^-|-$/g, '');
+    /* A schedule row carries its WAY NUMBER in front of the board reference
+     * ("154-DB-7-GCS-11"). Absorbing it invents one board per way, which is how
+     * a job ends up reporting more boards than devices. Only strip it when what
+     * remains still starts with a letter, so a board genuinely named "1-DB-A"
+     * is untouched — a leading number alone is not evidence of a way. */
+    let wayPrefix = null;
+    const way = display.match(/^(\d{1,3})-([A-Z].*)$/);
+    if (way) { wayPrefix = Number(way[1]); display = way[2]; }
+
+    /* The same board appears once per PHASE on a three-phase way (…-L1, …-L2,
+     * …-L3). Those are the same board; keeping the suffix triples it. Distinct
+     * from the -L/-LP/-P SPLIT SECTION below, which really does name a separate
+     * lighting/power section of a board. */
+    let phase = null;
+    const ph = display.match(/^(.+?)-(L[123])$/);
+    if (ph && /[A-Z]/.test(ph[1])) { display = ph[1]; phase = ph[2]; }
+
     let splitSection = null;
     const split = display.match(/^(DB(?:-[A-Z0-9]+)+)-(LP|L|P)$/i);
     if (split && /(?:^|-)\d{1,3}$/.test(split[1])) {
@@ -93,6 +110,8 @@
       display: display || original,
       normalised: normaliseBoardReference(display || original),
       splitSection,
+      wayPrefix,
+      phase,
     };
   }
 
@@ -153,7 +172,11 @@
     const found = [];
     const seen = new Set();
     for (const s of kept) {
-      const normalised = /main\s/i.test(s.original) ? 'MAINLVPANEL' : normaliseBoardReference(s.original);
+      /* Canonicalise before de-duplicating: the way number and phase suffix a
+       * schedule row carries are not part of the board's identity, so three
+       * phase rows of one board must collapse to one entry here rather than
+       * being counted as three boards downstream. */
+      const normalised = /main\s/i.test(s.original) ? 'MAINLVPANEL' : canonicalBoardReference(s.original).normalised;
       if (!normalised || seen.has(normalised)) continue;
       seen.add(normalised);
       found.push({ original: s.original, normalised });

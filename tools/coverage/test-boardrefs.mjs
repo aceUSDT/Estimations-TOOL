@@ -41,7 +41,9 @@ const CONTAINMENT = [['feeder to DB-00-SUBEXT external', 'DB00']];
 let fail = 0;
 const engines = {
   'app detectBoards': (line) => P.detectBoards(line).map((b) => b.norm),
-  'core extractBoardReferences': (line) => P.EstimationExtractorCore.extractBoardReferences(line).map((b) => norm(b.original)),
+  // `normalised` (not the raw matched text) is the identity the app groups
+  // boards by, so that is what these cases must hold to.
+  'core extractBoardReferences': (line) => P.EstimationExtractorCore.extractBoardReferences(line).map((b) => b.normalised),
 };
 for (const [name, fn] of Object.entries(engines)) {
   for (const [line, want] of POSITIVE) {
@@ -57,5 +59,50 @@ for (const [name, fn] of Object.entries(engines)) {
     if (got.includes(mustNot)) { console.log(`FAIL [${name}] kept sub-match ${mustNot} in ${JSON.stringify(line)} — got [${got}]`); fail++; }
   }
 }
+/* Way number + phase suffix are NOT part of a board's identity.
+ *
+ * Observed on a real job: 344 boards against 187 devices — more boards than
+ * devices, which is impossible. Every schedule row was minting its own board
+ * because the row's leading way number and its -L1/-L2/-L3 phase suffix were
+ * being absorbed into the reference, so one board appeared once per way and
+ * again once per phase. */
+const CANON = [
+  // [raw reference, canonical norm, wayPrefix, phase]
+  ['154-DB-7-GCS-11-L2', 'DB7GCS11', 154, 'L2'],
+  ['155-DB-7-GCS-11-L3', 'DB7GCS11', 155, 'L3'],
+  ['156-DB-7-GCS-12-L1', 'DB7GCS12', 156, 'L1'],
+  ['DB-1-GF-5-L3', 'DB1GF5', null, 'L3'],
+  // a board whose name genuinely starts with a number keeps it: a leading
+  // digit alone is not evidence of a way.
+  ['2A4', '2A4', null, null],
+  // the -L/-LP/-P split section names a real lighting/power section and must
+  // survive the new phase rule.
+  ['DB-01-21-L', 'DB0121', null, null],
+];
+for (const [raw, wantNorm, wantWay, wantPhase] of CANON) {
+  const got = P.EstimationExtractorCore.canonicalBoardReference(raw);
+  if (got.normalised !== wantNorm) { console.log(`FAIL [canonical] ${raw} → ${got.normalised}, want ${wantNorm}`); fail++; }
+  if ((got.wayPrefix ?? null) !== wantWay) { console.log(`FAIL [canonical] ${raw} way ${got.wayPrefix}, want ${wantWay}`); fail++; }
+  if ((got.phase ?? null) !== wantPhase) { console.log(`FAIL [canonical] ${raw} phase ${got.phase}, want ${wantPhase}`); fail++; }
+}
+if (P.EstimationExtractorCore.canonicalBoardReference('DB-01-21-L').splitSection !== 'L') {
+  console.log('FAIL [canonical] split section L was swallowed by the phase rule'); fail++;
+}
+
+/* The end-to-end invariant the screenshot violated: three phase rows of two
+ * boards are TWO boards, not six. */
+{
+  const rows = [
+    '154-DB-7-GCS-11-L1 16A MCB', '155-DB-7-GCS-11-L2 16A MCB', '156-DB-7-GCS-11-L3 16A MCB',
+    '157-DB-7-GCS-12-L1 16A MCB', '158-DB-7-GCS-12-L2 16A MCB', '159-DB-7-GCS-12-L3 16A MCB',
+  ];
+  for (const [name, fn] of Object.entries(engines)) {
+    const distinct = new Set(rows.flatMap(fn));
+    if (distinct.size !== 2) {
+      console.log(`FAIL [${name}] 6 phase rows of 2 boards → ${distinct.size} boards [${[...distinct]}]`); fail++;
+    }
+  }
+}
+
 if (fail) { console.log(`\n${fail} failure(s)`); process.exit(1); }
 console.log(`PASS: ${POSITIVE.length} positives, ${NEGATIVE.length} negatives, containment — both engines.`);
