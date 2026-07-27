@@ -287,6 +287,16 @@
     if (protectionCodes >= 4 && phaseRows >= 6) add('db-schedule', 7);
     const codedRows = (source.match(/(?:^|\n)\s*(?:\d{1,3}\s+)?(?:L[123]\s+)?\d+(?:\.\d+)?\s+[JKLMN]\s+[BCD]\b[^\n]*\b(?:Ri|Ra)\s+[LP]\b/gim) || []).length;
     if (codedRows >= 2 && phaseRows >= 3) add('db-schedule', 9);
+    /* Row FORMAT varies wildly between vendors — P-codes, coded columns, plain
+     * manufacturer strings ("Acti9 iC60H, MCB, Type C") — so keying only on row
+     * shape misses whole dialects, and a page that is plainly a board schedule
+     * scores `unknown`. The HEADER BLOCK is the stable signal: a board schedule
+     * names its board and states its way count. Real example this was found on:
+     * "REFERENCE DB-1-GF … NUMBER OF WAYS 18 WAYS … Circuit Ref". */
+    const headerBlock = /\breference\b/.test(lower)
+      && /(number of ways|circuit ref|\bway\b|\bways\b)/.test(lower);
+    if (headerBlock && phaseRows >= 3) add('db-schedule', 8);
+    if (headerBlock && /\b(mcb|rcbo|mccb|rcd|afdd)\b/.test(lower)) add('db-schedule', 6);
     const boardCount = extractBoardReferences(source).length;
     if (boardCount >= 3 && /mccb|fuse|cable|connected from|connected to/i.test(source)) add('sld', 5);
     if (pageIndex === 0 && totalPages > 1 && /project|issued|revision/.test(lower) && !Object.keys(scores).length) add('cover', 3);
