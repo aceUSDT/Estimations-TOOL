@@ -618,6 +618,10 @@
       associated,
       reviewCount,
       coverageIssueCount,
+      /* Carried onto the model so the WORKBOOK can state completeness, not just
+         count issues. The take-off an estimator hands over is the artefact that
+         has to be honest about what it could not account for. */
+      coverage: coverage || null,
       unassignedQty,
       includedRows: included.length,
       sourceTotal,
@@ -1006,6 +1010,43 @@
     return sheet;
   }
 
+  /* One row per board: what the drawing declared, what was captured, and what
+   * could not be accounted for.
+   *
+   * "Not checkable" is reported as its own status and never as complete. A board
+   * that never stated a way count has not been verified, and a take-off that
+   * implies otherwise is worse than one that admits the gap — the estimator
+   * cannot see which is which once it is a number on a page. */
+  function completenessRows(model) {
+    const coverage = model && model.coverage;
+    const perBoard = coverage && Array.isArray(coverage.perBoard) ? coverage.perBoard : [];
+    if (!perBoard.length) return [];
+    const rows = perBoard.slice().sort((a, b) => {
+      const gap = Number(b.unaccountedWays || 0) - Number(a.unaccountedWays || 0);
+      return gap || naturalCompare(text(a.orig || a.norm), text(b.orig || b.norm));
+    });
+    return rows.map((board) => {
+      const declared = board.expectedWays == null ? null : Number(board.expectedWays);
+      const unaccounted = board.unaccountedWays == null ? null : Number(board.unaccountedWays);
+      const status = declared == null
+        ? "Not checkable — board states no way count"
+        : unaccounted > 0
+          ? `Incomplete — ${unaccounted} way${unaccounted === 1 ? "" : "s"} unaccounted for`
+          : "Complete — every declared way accounted for";
+      return [
+        text(board.orig || board.norm),
+        declared == null ? "—" : declared,
+        Number(board.capturedWays || 0),
+        declared == null ? "—" : unaccounted,
+        Number(board.rowsCaptured || 0),
+        status,
+        board.evidence && board.evidence.text
+          ? `p${board.evidence.page}: ${text(board.evidence.text)}`
+          : "—",
+      ];
+    });
+  }
+
   function createFlatSheet(workbook, name, headers, rows, widths) {
     const sheet = workbook.addWorksheet(name, { views: [{ state: "frozen", ySplit: 1, activeCell: "A2" }] });
     headers.forEach((value, index) => { sheet.getCell(1, index + 1).value = value; });
@@ -1169,6 +1210,9 @@
       "Application / Purpose", "Circuit Description", "Pole Configuration", "Tripping Curve", "Breaking Capacity", "Role",
       "Source Document", "Page", "Source Region", "Source Text", "Confidence", "Extraction Method", "Review Status",
     ], detailRows(model), [34, 28, 14, 14, 10, 14, 20, 36, 15, 14, 16, 12, 28, 9, 24, 48, 12, 25, 16]);
+    createFlatSheet(workbook, "Board Completeness", [
+      "Board", "Declared Ways", "Ways Captured", "Ways Unaccounted", "Rows Captured", "Status", "Evidence For Declared Ways",
+    ], completenessRows(model), [22, 14, 14, 16, 14, 30, 46]);
     createFlatSheet(workbook, "Review Required", [
       "Scope", "Group / Source ID", "Device", "Field", "Issue", "Required Action", "Source Pages", "Confidence", "Status",
     ], reviewRows(model), [20, 34, 28, 18, 36, 55, 36, 12, 18]);

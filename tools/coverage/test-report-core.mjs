@@ -89,3 +89,53 @@ assert.equal(wideRoundTrip.getWorksheet("Device Take-Off").getCell("G4").value, 
 assert.equal(wideRoundTrip.getWorksheet("Device Take-Off").getCell("H4").value, null);
 
 console.log("Report matrix and XLSX export: OK");
+
+
+/* The workbook must state completeness, not just count issues.
+ *
+ * The take-off an estimator hands over is the artefact that has to be honest
+ * about what it could not account for. Coverage was computed and used only for
+ * an issue COUNT; the numbers behind it never reached the deliverable. */
+{
+  const covModel = Report.buildModel({
+    projectName: "Completeness",
+    boards: {
+      DB1GF: { norm: "DB1GF", orig: "DB-1-GF", type: "DB" },
+      DB4FF: { norm: "DB4FF", orig: "DB-4-FF", type: "DB" },
+      DBX: { norm: "DBX", orig: "DB-X", type: "DB" },
+    },
+    rows: [
+      { id: "c1", boardNorm: "DB1GF", device: "MCB", rating: 10, poles: 1, desc: "Lighting", qty: 1, status: "confirmed", conf: 1 },
+      { id: "c2", boardNorm: "DB4FF", device: "MCB", rating: 10, poles: 1, desc: "Lighting", qty: 1, status: "confirmed", conf: 1 },
+      { id: "c3", boardNorm: "DBX", device: "MCB", rating: 10, poles: 1, desc: "Lighting", qty: 1, status: "confirmed", conf: 1 },
+    ],
+    coverage: {
+      perBoard: [
+        { norm: "DB1GF", orig: "DB-1-GF", expectedWays: 18, capturedWays: 18, unaccountedWays: 0, rowsCaptured: 34, inScope: true },
+        { norm: "DB4FF", orig: "DB-4-FF", expectedWays: 24, capturedWays: 11, unaccountedWays: 13, rowsCaptured: 29, inScope: true },
+        { norm: "DBX", orig: "DB-X", expectedWays: null, capturedWays: 5, unaccountedWays: null, rowsCaptured: 5, inScope: true },
+      ],
+      zeroRowSchedulePages: [],
+    },
+  });
+
+  assert.ok(covModel.coverage && covModel.coverage.perBoard, "coverage must reach the model");
+
+  const covBook = Report.createExcelWorkbook(covModel, ExcelJS);
+  const sheet = covBook.getWorksheet("Board Completeness");
+  assert.ok(sheet, "workbook must carry a Board Completeness sheet");
+  const read = (r, c) => { const v = sheet.getCell(r, c).value; return v == null ? "" : String(v); };
+
+  // worst gap first: an estimator reads the top of the sheet
+  assert.match(read(2, 1), /DB-4-FF/, "boards ordered worst-gap first");
+  assert.equal(read(2, 4), "13", "the shortfall is stated");
+  assert.match(read(2, 6), /Incomplete/i, "an incomplete board says so");
+
+  const statuses = [2, 3, 4].map((r) => `${read(r, 1)}=${read(r, 6)}`).join(" | ");
+  assert.match(statuses, /Complete — every declared way/i, "a complete board says complete");
+  // the one that matters most: unknown must never read as verified
+  assert.match(statuses, /DB-X=Not checkable/i, "an unstated way count is not checkable, never complete");
+  assert.doesNotMatch(statuses, /DB-X=Complete/i, "an unstated way count must never read as complete");
+
+  console.log("ok  workbook states per-board completeness, with 'not checkable' kept distinct");
+}
