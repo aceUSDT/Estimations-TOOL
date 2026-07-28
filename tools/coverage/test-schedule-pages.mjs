@@ -807,3 +807,55 @@ console.log('PASS: descriptive board names, with codes still winning.');
 }
 
 if (fail) { console.log(`\n${fail} failure(s)`); process.exit(1); }
+
+/* Feeds stated by a schedule ROW.
+ *
+ * A Trimble sheet's "Connected To:" column simply holds the downstream board's
+ * reference, with none of the words parseFeeders looks for ("fed from",
+ * "supplies", "sub-main to"). On a 386-page tender that meant ZERO feed
+ * relationships were captured from 45 schedule pages that each state them, and
+ * every board reported "no known supply source" while the document said exactly
+ * what supplied it.
+ *
+ * Lines below are the shape that dialect really produces: a board declared as
+ * "Id No:", and rows already grouped into single lines. */
+{
+  const page = [
+    'Distribution Board Schedule',
+    'Board Data',
+    'Id No:  MEP MAIN DB  ModelNo:  L1  L2  L3',
+    'Name:  MCCB PANELBOARD  No. of Ways:  12  Spare:  33.3',
+    'Way  Id No  Cable Type  Cores  Phase  Connected To:  Overcurrent Protective Device  Rating (A)',
+    '1  L1  Single-core 90C thermosetting  1 x 4 x 1c  16  DB-1-GF  Schneider, Acti9 MCB, iC60H Type C  63',
+    '2  L1  Single-core 90C thermosetting  1 x 4 x 1c  16  DB-2-GF  Schneider, Acti9 MCB, iC60H Type C  63',
+    '3  L3  Multicore 90C thermosetting  1 x 1 x 2c  16  DB-WORKSHOP  Schneider, ComPacT NSX MCCB  100',
+  ];
+  const typed = [{ page: 1, lines: page, type: P.classifyPage(page.join('\n'), 0, 1).type }];
+  const F = P.analyseDocument(typed);
+  const feeds = (F.feeders || []).map((f) => `${f.from} -> ${f.to}`);
+  for (const want of ['MEPMAINDB -> DB1GF', 'MEPMAINDB -> DB2GF', 'MEPMAINDB -> DBWORKSHOP']) {
+    check(`feeds: row states ${want}`, feeds.includes(want), feeds.join(', ') || 'none');
+  }
+  check('feeds: a board does not feed itself', !feeds.some((f) => /^MEPMAINDB -> MEPMAINDB$/.test(f)), feeds.join(', '));
+  check('feeds: each pair is recorded once', new Set(feeds).size === feeds.length, feeds.join(', '));
+
+  /* A cable is named after the board and way it serves, so its identifier must
+     not become a board this one feeds. */
+  const cablePage = page.slice(0, 5).concat([
+    '7  Cbl_FC-143-MEP MAIN DB-7-  Multicore  1 x 1 x 2c  16  Load-148-MEP MAIN DB-7-L1  Schneider MCCB  63',
+  ]);
+  const C = P.analyseDocument([{ page: 1, lines: cablePage, type: P.classifyPage(cablePage.join('\n'), 0, 1).type }]);
+  check('feeds: a cable identifier is not a board that is fed',
+    !(C.feeders || []).some((f) => /^DB7$|^DB12$/.test(String(f.to))),
+    (C.feeders || []).map((f) => `${f.from} -> ${f.to}`).join(', '));
+
+  /* A line stating what feeds THIS board points the other way and would invert
+     the tree. It is already read as the board's own header fact. */
+  const upstream = page.slice(0, 4).concat(['SERVED BY  LVAC SWITCHBOARD', 'Way  Id No  Connected To:']);
+  const U = P.analyseDocument([{ page: 1, lines: upstream, type: P.classifyPage(upstream.join('\n'), 0, 1).type }]);
+  check('feeds: an upstream label does not invert the tree',
+    !(U.feeders || []).some((f) => f.from === 'MEPMAINDB' && /LVAC/.test(String(f.to))),
+    (U.feeders || []).map((f) => `${f.from} -> ${f.to}`).join(', '));
+}
+
+if (fail) { console.log(`\n${fail} failure(s)`); process.exit(1); }

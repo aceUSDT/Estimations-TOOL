@@ -538,6 +538,21 @@ function analyseDocument(pages){
           A.rows.push({boardNorm:ctx.board, boardSection:ctx.boardSection, page:pageNo, line:li, status:'pending', kind:'schedule', ...row});
         }
         parseFeeders(t, pageBoards, ctx.board).forEach(fd=>A.feeders.push({page:pageNo,line:li,...fd}));
+        /* A board named in a row of THIS board's schedule is fed BY this board.
+           Trimble's "Connected To:" column simply holds the downstream board's
+           reference, with none of the words parseFeeders looks for. */
+        if (ctx.board && !/\b(?:SERVED\s+BY|FED\s+FROM|SUPPLIED\s+(?:FROM|BY))\b/i.test(t)){
+          const named=detectBoards(t);
+          const kept=EstimationExtractorCore.reconcilePageBoards
+            ? EstimationExtractorCore.reconcilePageBoards(ctx.board,named) : named;
+          kept.forEach(b=>{
+            if (b.norm===ctx.board) return;
+            if (A.feeders.some(fd=>fd.from===ctx.board&&fd.to===b.norm)) return;
+            A.feeders.push({page:pageNo, line:li, from:ctx.board, to:b.norm,
+              cable:detectCables(t)[0]||null, device:detectDeviceIn(t), rating:ratingOf(t),
+              poles:polesOf(t), srcText:t.trim(), conf:0.75});
+          });
+        }
       } else if (pg.type==='sld'||pg.type==='schematic'||pg.type==='notes'){
         const mainCtx = pageBoards.find(b=>b.type==='MAIN') || pageBoards.find(b=>b.type==='SMDB'||b.type==='MDB');
         parseFeeders(t, pageBoards, mainCtx?mainCtx.norm:null).forEach(fd=>A.feeders.push({page:pageNo,line:li,...fd}));

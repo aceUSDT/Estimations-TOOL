@@ -24,6 +24,13 @@ await page.setInputFiles('#fileInput',FILE);
 await page.waitForFunction('state.cur.files.length===1 && state.cur.files[0].status==="ready"',null,{timeout:180000});
 await page.waitForFunction('state.cur.files[0].pages.every(p=>(p.lines||[]).length) && state.cur.analysis',null,{timeout:600000});
 const rows=await page.evaluate('state.cur.analysis.rows.map(r=>({b:r.boardNorm,w:r.way,p:r.phase,d:r.device,r:r.rating,s:r.spare,src:(r.resolutionSource||"")}))');
+const tree=await page.evaluate(`({
+  feeders: (state.cur.analysis.feeders||[]).map(f=>f.from+' -> '+f.to),
+  parents: Object.values(state.cur.analysis.boards).map(b=>b.norm+(b.parent?(' <- '+b.parent):' (no parent)')),
+})`);
+console.log('feeders found:',tree.feeders.length);
+console.log('  ',[...new Set(tree.feeders)].slice(0,14).join('\n   '));
+console.log('parents:'); tree.parents.forEach(x=>console.log('  ',x));
 const byBoard={}; rows.forEach(r=>{ byBoard[r.b||'(none)']=(byBoard[r.b||'(none)']||0)+1; });
 console.log('rows',rows.length); console.log('per board',JSON.stringify(byBoard));
 const bySrc={}; rows.forEach(r=>{ bySrc[r.src]=(bySrc[r.src]||0)+1; }); console.log('by parser',JSON.stringify(bySrc));
