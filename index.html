@@ -1978,6 +1978,13 @@ async function ocrPdfPage(f,pageNo,{reanalyze=true,quiet=false}={}){
       selected=core.selectBestOcrCandidate(attempts);
     }
     const chosen=selected.candidate,keptEmbedded=chosen?.id==='embedded-text';
+    /* Every orientation has now been tried. If the best of them is still below
+       the readable floor, this page is line-work and symbols, not text — and
+       what OCR returned is noise that happens to be well-formed ASCII. Accepting
+       it is the worst outcome available: the page then looks read, so it is
+       never sent to an agent, and it silently contributes nothing. Mark it
+       instead, and let runAiExtraction route it to the vision agent. */
+    const ocrUnreadable=!keptEmbedded&&selected.readable===false;
     const lines=(chosen?.lines||[]).map(line=>{
       if(keptEmbedded)return {...line,originalText:line.originalText||line.text,corrections:line.corrections||[],
         extractionMethod:line.extractionMethod||'Embedded text / deterministic parser'};
@@ -1989,19 +1996,26 @@ async function ocrPdfPage(f,pageNo,{reanalyze=true,quiet=false}={}){
     pg.lines=lines;pg.w=base.width;pg.h=base.height;
     const pageWords=(chosen.mappedWords||[]).map(word=>{const box=word.bbox;return {...word,bbox:{x0:box.x0*base.width/cv.width,y0:box.y0*base.height/cv.height,x1:box.x1*base.width/cv.width,y1:box.y1*base.height/cv.height}};});
     pg.tableRows=core.reconstructSpatialRows(pageWords);
-    pg.textQuality=chosen.scoring.textQuality;pg.needsOcr=false;
-    pg.ocr={status:'done',confidence:chosen.confidence??null,qualityScore:chosen.score,selectedCandidate:chosen.id,
+    pg.textQuality=chosen.scoring.textQuality;pg.needsOcr=false;pg.ocrUnreadable=ocrUnreadable;
+    pg.ocr={status:'done',unreadable:ocrUnreadable,readableFloor:selected.floor,confidence:chosen.confidence??null,qualityScore:chosen.score,selectedCandidate:chosen.id,
       candidates:attempts.map(item=>({id:item.id,preprocessing:item.preprocessing,confidence:item.confidence,qualityScore:item.score,lineCount:item.lines.length,textQuality:item.scoring.textQuality})),
       corrections:lines.flatMap((line,lineIndex)=>line.corrections.map(correction=>({...correction,line:lineIndex}))),at:new Date().toISOString()};
-    const c=classifyPage(lines.map(l=>l.text).join('\n'),pageNo-1,f.pages.length);
-    if(!pg.typeManual){ pg.type=c.type;pg.conf=c.conf;pg.sub_format=c.type;pg.threeType=toThreeType(c.type); }
+    /* Classifying off noise is how an LV schematic ends up typed "spec": the
+       type would be read from text the page does not contain. Leave it unknown
+       and let the vision agent say what the page is. */
+    if(!pg.typeManual&&!ocrUnreadable){
+      const c=classifyPage(lines.map(l=>l.text).join('\n'),pageNo-1,f.pages.length);
+      pg.type=c.type;pg.conf=c.conf;pg.sub_format=c.type;pg.threeType=toThreeType(c.type);
+    }
     pg.source=keptEmbedded?'native_text':'ocr';
     f.ocrReady=true;
     const remaining=f.pages.filter(x=>x.needsOcr).length;
     f.warn=remaining?`${remaining} page${remaining===1?'':'s'} still need OCR.`:null;
     saveProject(state.cur);renderDocs();renderPgclass();
     if(reanalyze) await runAnalysis({auto:true});
-    if(!quiet) toast(keptEmbedded?`Embedded text retained on page ${pageNo} after OCR comparison`:`OCR read ${lines.length} lines from page ${pageNo} using ${chosen.id.replace(/-/g,' ')}`);
+    if(!quiet) toast(keptEmbedded?`Embedded text retained on page ${pageNo} after OCR comparison`
+      :ocrUnreadable?`Page ${pageNo} is a drawing OCR cannot read — it will be read from the image instead`
+      :`OCR read ${lines.length} lines from page ${pageNo} using ${chosen.id.replace(/-/g,' ')}`);
     return lines;
   }finally{
     ocrBusy=false;
@@ -2102,8 +2116,12 @@ async function aiExtractPage(f,pageNo,pg){
   const ctrl=new AbortController(); const timer=setTimeout(()=>ctrl.abort(),90000);
   try{
     const r=await aiFetch(apiUrl(AI_RUN_ENDPOINT),{method:'POST',headers:{'content-type':'application/json'},signal:ctrl.signal,
+      /* Noise is worse than silence here. Sending an unreadable page's OCR
+         output would both pollute the prompt and route it to the text agent —
+         the server picks vision_parse only when there is an image and no text —
+         which is the reader that cannot do anything with a drawing. */
       body:JSON.stringify({filename:f.name, page_number:pageNo, image_base64, media_type:'image/jpeg',
-        text_lines:(pg.lines||[]).map(l=>l.text).slice(0,400), hints:{type:pg.type}})});
+        text_lines:pg.ocrUnreadable?[]:(pg.lines||[]).map(l=>l.text).slice(0,400), hints:{type:pg.type}})});
     if(!r.ok){ const err=await r.json().catch(()=>({})); throw new Error((err.error&&err.error.message)||err.error||('HTTP '+r.status)); }
     return await r.json();   // {result, verification?, provider, model}
   }catch(e){
@@ -2271,7 +2289,12 @@ async function runAiExtraction(A,f,p,pageSet){
       const signalled = window.EstimationExtractorCore?.pageHasElectricalSignal
         ? window.EstimationExtractorCore.pageHasElectricalSignal((pg.lines||[]).map(l=>l.text))
         : true;
-      if (typed || signalled) jobs.push({fl,id,pg,pageNo});
+      /* A page OCR could not read shows no signal BECAUSE it could not be read,
+         so the two tests above both say "nothing here" on exactly the pages
+         where nothing has been tried yet. Large-format schematics are the
+         common case, and skipping one loses a whole switchboard. Vision is the
+         only reader left, so it always gets these. */
+      if (typed || signalled || pg.ocrUnreadable) jobs.push({fl,id,pg,pageNo});
     });
   }
   if(!jobs.length) return;
@@ -2596,7 +2619,18 @@ function renderCoverage(){
           const fl=p.files.find(x=>x.id===z.fileId);
           return `<span class="chip grey">${esc(fl?fl.name.slice(0,24):'?')} p${z.page}</span>`;
         }).join(' ')
-    : '<span class="chip green">Every schedule-looking page produced rows.</span>');
+    : '<span class="chip green">Every schedule-looking page produced rows.</span>')
+    /* A drawing no reader could open is a harder failure than a schedule page
+       that parsed to nothing, so it gets its own line rather than being folded
+       into the count above. */
+    + ((cov.unreadablePages||[]).length
+    ? '<div style="margin-top:7px"><span class="chip red">'+cov.unreadablePages.length+' page(s) could not be read as text or by the extraction service:</span> '
+      + cov.unreadablePages.slice(0,30).map(z=>{
+          const fl=p.files.find(x=>x.id===z.fileId);
+          return `<span class="chip grey">${esc(fl?fl.name.slice(0,24):'?')} p${z.page}</span>`;
+        }).join(' ')
+      + ' <span class="hint" style="display:inline;margin:0">Large-format schematics scan poorly. Turn on online extraction, or supply the drawing at a higher resolution.</span></div>'
+    : '');
 }
 
 /* ============================ ANALYSIS CONTROLS ============================ */
@@ -3087,7 +3121,8 @@ async function runAnalysis(opts){
     for (const id of f.fileIds){
       const fl=p.files.find(x=>x.id===id); if(!fl||fl.status!=='ready') continue;
       fl.pages.forEach((pg,pi)=>{ if(pageSet && !pageSet.has(pi+1)) return;
-        covPages.push({fileId:id, page:pi+1, text:(pg.lines||[]).map(l=>l.text).join('\n'), type:pg.type}); });
+        covPages.push({fileId:id, page:pi+1, text:(pg.lines||[]).map(l=>l.text).join('\n'), type:pg.type,
+          unreadable:pg.ocrUnreadable===true}); });
     }
     A.coverage = window.EstimationExtractorCore.buildCoverage({boards:A.boards, rows:A.rows, pages:covPages});
   }
@@ -3884,6 +3919,9 @@ function renderReview(){
   if (A.coverage){
     A.coverage.perBoard.filter(b=>(b.unaccountedWays||0)>0).forEach(b=>items.push({kind:'gap',g:b,conf:0}));
     A.coverage.zeroRowSchedulePages.forEach(z=>items.push({kind:'zeropage',z,conf:0.1}));
+    /* Sorted to the top of the queue: a page nothing could read is the largest
+       single omission the tool can have, and it is invisible everywhere else. */
+    (A.coverage.unreadablePages||[]).forEach(z=>items.push({kind:'unreadable',z,conf:0}));
   }
   if (!items.length){ host.innerHTML='<div class="empty"><div class="ico">✓</div>Nothing to review — all results are confirmed or high confidence.</div>'; return; }
   host.innerHTML='';
@@ -3925,6 +3963,13 @@ function renderReview(){
         <div class="racts">${g.evidence?'<button class="btn sm" data-a="view">View page</button>':''}</div>`;
       const vb=div.querySelector('[data-a=view]');
       if (vb) vb.addEventListener('click',()=>{ state.viewer.fileId=g.evidence.fileId; state.viewer.page=g.evidence.page; setTab('viewer'); });
+    } else if (it.kind==='unreadable'){
+      const z=it.z, fl=p.files.find(x=>x.id===z.fileId);
+      div.innerHTML=`<div class="ric" style="background:var(--red-soft)">⚠</div>
+        <div style="flex:1"><h4>${esc(fl?fl.name:'?')} page ${z.page} could not be read</h4>
+        <div class="hint">OCR returned only line-work, and no device came back from the extraction service either. Nothing on this page is in the take-off. Large-format schematics are the usual cause — supply the drawing at a higher resolution, or enter its devices by hand.</div></div>
+        <div class="racts"><button class="btn sm" data-a="view">View page</button></div>`;
+      div.querySelector('[data-a=view]').addEventListener('click',()=>{ state.viewer.fileId=z.fileId; state.viewer.page=z.page; setTab('viewer'); });
     } else if (it.kind==='zeropage'){
       const z=it.z, fl=p.files.find(x=>x.id===z.fileId);
       div.innerHTML=`<div class="ric" style="background:var(--amber-soft)">▤</div>

@@ -92,5 +92,29 @@ const upstreamCoverage = core.buildCoverage({
 check('upstream switchboard excluded from DB take-off coverage', upstreamCoverage.summary.boards === 0);
 check('upstream switchboard does not create a zero-row warning', upstreamCoverage.zeroRowSchedulePages.length === 0);
 
+/* A page OCR could not read has no header, does not look tabular and declares
+ * no way count, so every test in the zero-row walk skips it. Before this it
+ * appeared in no count anywhere: the take-off was short a whole schematic and
+ * said nothing. It has to be reported. */
+const unreadableCoverage = core.buildCoverage({
+  boards: {},
+  rows: [],
+  pages: [{ fileId: 'f5', page: 1, text: 'fli HHI hilt jl\nHH ILL iE il ili oi J', type: 'unknown', unreadable: true }],
+});
+check('unreadable page is reported', unreadableCoverage.unreadablePages.length === 1);
+check('unreadable page is counted in the summary', unreadableCoverage.summary.unreadablePages === 1);
+check('unreadable page is not miscounted as a zero-row schedule',
+  unreadableCoverage.zeroRowSchedulePages.length === 0);
+
+/* Once the vision agent has read it, the page is no longer an omission and
+ * must drop out of the warning — otherwise the warning is permanent noise. */
+const rescued = core.buildCoverage({
+  boards: { SWB1: { norm: 'SWB1', orig: 'SWB1', type: 'UNK', pages: [{ fileId: 'f5', page: 1, primary: true }] } },
+  rows: [{ fileId: 'f5', page: 1, boardNorm: 'SWB1', kind: 'schedule', way: 1, device: 'MCCB' }],
+  pages: [{ fileId: 'f5', page: 1, text: 'fli HHI hilt jl', type: 'unknown', unreadable: true }],
+});
+check('an unreadable page that the vision agent read is no longer reported',
+  rescued.unreadablePages.length === 0);
+
 if (fail) { console.log(`\n${fail} failure(s)`); process.exit(1); }
-console.log('PASS: expectedWaysFromText, pageLooksTabular, buildCoverage (header-vs-rows, zero-row pages, no-header case)');
+console.log('PASS: expectedWaysFromText, pageLooksTabular, buildCoverage (header-vs-rows, zero-row pages, unreadable pages, no-header case)');

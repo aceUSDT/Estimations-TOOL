@@ -1281,10 +1281,29 @@
     return { score, confidence, textQuality: quality, domainHits, tableRows };
   }
 
-  function selectBestOcrCandidate(candidates) {
+  /* Below this, the best candidate is not text — it is what Tesseract returns
+   * when pointed at line-work and symbols it cannot resolve, and it is
+   * well-formed ASCII, so nothing downstream can tell it from a real reading.
+   *
+   * Measured on the fixture set (tools/coverage/probe-schematic.mjs):
+   *   unreadable  C056-BBK 0.592, 250405-GG 0.605, SKM_scanned 0.578
+   *   readable    doc08967 pages 1-6, 0.770 - 0.882
+   * The band between 0.605 and 0.770 is empty, so the floor sits in the middle
+   * of it. Raising it past ~0.75 would start rejecting real scans; lowering it
+   * past ~0.62 lets line-work back in. */
+  const OCR_READABLE_FLOOR = 0.68;
+
+  function selectBestOcrCandidate(candidates, options = {}) {
     const scored = (candidates || []).map((candidate, index) => ({ candidate, index, ...scoreOcrCandidate(candidate) }));
     scored.sort((left, right) => right.score - left.score || left.index - right.index);
-    return scored.length ? { candidate: scored[0].candidate, score: scored[0].score, scored } : { candidate: null, score: 0, scored: [] };
+    const floor = Number.isFinite(options.floor) ? options.floor : OCR_READABLE_FLOOR;
+    if (!scored.length) return { candidate: null, score: 0, scored: [], readable: false };
+    const best = scored[0];
+    /* An embedded text layer is not OCR output and is not judged by this floor:
+     * it was either decoded correctly or it was not, which assessPageText
+     * already decides. */
+    const readable = best.candidate?.id === 'embedded-text' || best.score >= floor;
+    return { candidate: best.candidate, score: best.score, scored, readable, floor };
   }
 
   function correctElectricalOcrText(value) {
@@ -1586,8 +1605,20 @@
     }
 
     const scopedBoardNorms = new Set(perBoard.filter((board) => board.inScope).map((board) => board.norm));
+    /* Pages OCR could not read at all. They have no header, do not look
+     * tabular and declare no way count, so every test below skips them and
+     * they would otherwise appear in no count anywhere — the exact silent
+     * omission the completeness rule exists to prevent. A large-format
+     * schematic that reached no reader is a whole switchboard missing. */
+    const unreadablePages = [];
     const zeroRowSchedulePages = [];
     for (const pg of pages || []) {
+      if (pg.unreadable) {
+        const gotRows = scheduleRows.some((r) => r.fileId === pg.fileId && r.page === pg.page)
+          || (rows || []).some((r) => r.fileId === pg.fileId && r.page === pg.page);
+        if (!gotRows) unreadablePages.push({ fileId: pg.fileId, page: pg.page, type: pg.type });
+        continue;
+      }
       if (!String(pg.text || '').trim()) continue;
       const pageKey = `${pg.fileId}#${pg.page}`;
       const primaryBoards = primaryBoardsByPage.get(pageKey);
@@ -1618,6 +1649,7 @@
     return {
       perBoard,
       zeroRowSchedulePages,
+      unreadablePages,
       summary: {
         boards: scopedBoards.length,
         boardsWithRows: scopedBoards.filter((b) => b.rowsCaptured > 0).length,
@@ -1625,6 +1657,7 @@
         capturedWays: capturedTotal,
         pctComplete: expectedTotal ? Math.round((100 * capturedTotal) / expectedTotal) : null,
         unaccountedBoards: scopedBoards.filter((b) => (b.unaccountedWays || 0) > 0).length,
+        unreadablePages: unreadablePages.length,
       },
     };
   }
@@ -1687,6 +1720,7 @@
     buildOcrCandidatePlan,
     scoreOcrCandidate,
     selectBestOcrCandidate,
+    OCR_READABLE_FLOOR,
     correctElectricalOcrText,
     extractTrippingCurve,
     extractBreakingCapacity,
