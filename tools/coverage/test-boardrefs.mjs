@@ -246,6 +246,35 @@ console.log(`PASS: ${POSITIVE.length} positives, ${NEGATIVE.length} negatives, c
   if (f.location !== 'LVAC ROOM' || f.servedBy !== 'MEP MAIN DB') {
     console.log('FAIL [header] the plausibility guard rejected a real value'); fail++;
   }
+  /* A board code has no three letters in a row. Requiring one rejected
+   * "DB-1-GF", which is unmistakably a board. */
+  const code = parseBoardHeaderFacts(['REFERENCE DB-2 FED FROM DB-1-GF LOCATION RISER']);
+  if (code.servedBy !== 'DB-1-GF') { console.log(`FAIL [header] board-code feed = ${JSON.stringify(code.servedBy)}`); fail++; }
+
+  /* The feed value has to stop where the drawing stops naming the feed. Two
+   * shapes, both from real sheets: a label repeating because the next table's
+   * header landed in the same text run, and ordinary sentence text running on
+   * after the name. */
+  for (const [source, want] of [
+    ['REFERENCE DB-4-FF SERVED BY MEP MAIN DB SERVED BY MEP MAIN DB RING', 'MEP MAIN DB'],
+    ['REFERENCE DB-3-FF SERVED BY MEP MAIN DB DBs PREWIRED IN FACTORY', 'MEP MAIN DB'],
+    ['REFERENCE DB-7-GCS SERVED BY LVAC SWITCHBOARD NUMBER OF WAYS 18 WAYS', 'LVAC SWITCHBOARD'],
+  ]) {
+    const got = parseBoardHeaderFacts([source]).servedBy;
+    if (got !== want) { console.log(`FAIL [header] feed = ${JSON.stringify(got)}, want ${JSON.stringify(want)}`); fail++; }
+  }
+
+  /* A header block naming TWO boards covers two boards, and a feed grabbed from
+   * it belongs to whichever table came first. Asserting it points an estimator
+   * at the wrong supply, so nothing is asserted — while the way count, which is
+   * what the completeness check needs, still stands. */
+  const ambiguous = parseBoardHeaderFacts([
+    'REFERENCE  110 AC  REFERENCE  DB-3-FF', 'SERVED BY LVAC SWITCHBOARD', 'NUMBER OF WAYS 18 WAYS',
+  ]);
+  if (ambiguous.servedBy !== null) {
+    console.log(`FAIL [header] feed asserted from a block naming two boards: ${JSON.stringify(ambiguous.servedBy)}`); fail++;
+  }
+  if (ambiguous.waysTotal !== 18) { console.log('FAIL [header] the way count was lost with the feed'); fail++; }
 
   /* An 18-way three-phase board holds at most 54. This is the check that
      should have caught 86 devices on one board without a human noticing. */

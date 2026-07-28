@@ -86,6 +86,23 @@ assert.equal(quote.getCell("D3").value, "Quantity");
 assert.equal(quote.getCell("A4").value, "001");
 assert.ok(/^DB-2/.test(String(quote.getCell("C4").value)), String(quote.getCell("C4").value));
 assert.ok(/^ {4}\S/.test(String(quote.getCell("C5").value)), String(quote.getCell("C5").value));
+/* Two line items that PRINT identically read as a mistake on a quotation and a
+ * supplier cannot price the difference between them. The take-off keeps them
+ * apart when they differ in something it tracks; the quotation merges them. */
+{
+  // per board — the same device legitimately appears under two different boards
+  let current = [];
+  const check = () => assert.equal(new Set(current).size, current.length,
+    `the quotation repeated a line item within one board: ${current.join(" | ")}`);
+  quote.eachRow((r) => {
+    const label = String(r.getCell(3).value || "");
+    if (/^\d{3}$/.test(String(r.getCell(1).value || ""))) { check(); current = []; return; }
+    if (/^ {4}\S/.test(label)) current.push(label);
+  });
+  check();
+  assert.ok(current.length || true);
+}
+
 // and the project total, which must equal the take-off's own grand total
 const quoteRowsAll = [];
 quote.eachRow((r) => quoteRowsAll.push(r));

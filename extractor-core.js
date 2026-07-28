@@ -482,8 +482,13 @@
     const plausible = (value) => {
       const v = String(value || '').trim();
       if (v.length < 2) return false;
-      // a legend code ("2.5/2.5/X", "xx mm²/xx mm²") names nothing
-      if (!/[A-Za-z]{3}/.test(v)) return false;
+      /* A name reads as a word ("MEP MAIN DB", "LVAC ROOM") or as a board code
+       * ("DB-1-GF", "2A4") — letters with a number in them. A legend code
+       * ("2.5/2.5/X") is neither: one stray letter among the numbers. Requiring
+       * a three-letter run alone rejected DB-1-GF, which has no three letters
+       * in a row and is unmistakably a board. */
+      const letters = (v.match(/[A-Za-z]/g) || []).length;
+      if (!/[A-Za-z]{3}/.test(v) && !(letters >= 2 && /\d/.test(v))) return false;
       const tokens = v.split(/[\s,]+/).filter(Boolean);
       // a run of column headings is the table, not a value
       return !tokens.every((t) => COLUMN_WORDS.test(t.replace(/[():]/g, '')));
@@ -508,10 +513,43 @@
      * openers end the value too: a revision panel, a date, a status. */
     const NEXT = '(?=\\s+(?:DESCRIPTION|LOCATION|NUMBER\\s+OF\\s+WAYS|INCOMER|BOARD\\s+DEVICE|REFERENCE'
       + '|CIRCUIT\\s+REF|PHASE|REV|SUIT|DRAWING\\s+STATUS|ISSUED\\s+FOR|CABLE\\s+TYPES?|NOTES?'
+      /* A label REPEATING ends the value too. On a sheet whose tables sit side
+       * by side, the next table's "SERVED BY" lands in the same text run, and
+       * the value read "MEP MAIN DB SERVED BY MEP MAIN DB RING". */
+      + '|SERVED\\s+BY|FED\\s+FROM|SUPPLIED\\s+(?:FROM|BY)'
       + '|WITH\\s+NEW|[A-Z]\\d{2}\\s+[A-Z]\\d\\b|\\d{1,2}\\.\\d{1,2}\\.\\d{2,4})\\b|$)';
     return {
       waysTotal: Number.isFinite(waysTotal) && waysTotal > 0 && waysTotal <= 200 ? waysTotal : null,
-      servedBy: grab(new RegExp('\\b(?:SERVED\\s+BY|FED\\s+FROM|SUPPLIED\\s+(?:FROM|BY))\\s*[:=-]?\\s*(.{2,40}?)' + NEXT, 'i')),
+      /* What feeds this board is a BOARD, so the value is trimmed back to the
+       * board reference inside it. The terminator alone cannot do this on a
+       * drawing sheet, where the next cell is arbitrary text: the raw grabs
+       * read "MEP MAIN DB DBs PREWIRED IN" and "MEP MAIN DB SERVED BY MEP MAIN
+       * DB RING", both of which name MEP MAIN DB and then run on. */
+      servedBy: (() => {
+        /* If this header block names more than one board, it covers more than
+         * one board — sheets whose tables sit side by side put two headers in
+         * the same text run — and a feed grabbed from it belongs to whichever
+         * table happened to come first. That is a relationship asserted about a
+         * specific other board, so getting it wrong points an estimator at the
+         * wrong supply. Better to say nothing: the way count and the completeness
+         * check still stand, and the drawing is still there to be read. */
+        if ((text.match(/(?<!(?:cable|drawing|document|project|job|schedule)\s)\bREFERENCE\b/gi) || []).length > 1) return null;
+        const raw = grab(new RegExp('\\b(?:SERVED\\s+BY|FED\\s+FROM|SUPPLIED\\s+(?:FROM|BY))\\s*[:=-]?\\s*(.{2,40}?)' + NEXT, 'i'));
+        if (!raw) return null;
+        /* A board reference inside the value settles it outright. */
+        const refs = extractBoardReferences(raw);
+        if (refs.length && refs[0].original.trim().length >= 3) return refs[0].original.trim();
+        /* Otherwise the value is a NAME in the sheet's own upper case, and the
+         * first token carrying a lowercase letter is where the drawing stopped
+         * naming the feed and started saying something else — "MEP MAIN DB DBs
+         * PREWIRED IN FACTORY" names MEP MAIN DB. */
+        const tokens = raw.split(/\s+/);
+        if (/^[A-Z0-9][A-Z0-9&/.-]*$/.test(tokens[0] || '')) {
+          const stop = tokens.findIndex((t) => /[a-z]/.test(t));
+          if (stop > 0) return tokens.slice(0, stop).join(' ');
+        }
+        return raw;
+      })(),
       location: grab(new RegExp('\\bLOCATION\\s*[:=-]?\\s*(.{2,40}?)' + NEXT, 'i')),
       description: grab(new RegExp('\\bDESCRIPTION\\s*[:=-]?\\s*(.{2,60}?)' + NEXT, 'i')),
       incomer: grab(new RegExp('\\bINCOMER\\s*[:=-]?\\s*(.{2,40}?)' + NEXT, 'i')),

@@ -918,13 +918,26 @@
       return per.find((c) => text(c.norm) === text(board.norm) || text(c.norm) === text(board.sourceNorm)) || null;
     };
     boards.forEach((board, index) => {
-      const items = [];
+      /* Merged by label. The take-off keeps lines apart when they differ in
+         something it tracks — purpose, curve evidence, source page — but two
+         lines that PRINT identically and carry different quantities read as a
+         mistake on a quotation, and a supplier cannot price the difference
+         between them. Whatever separates them is still in the detail sheets. */
+      const byLabel = new Map();
       (model.groups || []).forEach((group) => {
         group.rows.forEach((row) => {
           const qty = Number(row.quantities[index]) || 0;
-          if (qty > 0) items.push({ label: row.label, qty, review: row.reviewStatus === "Review required" });
+          if (qty <= 0) return;
+          const existing = byLabel.get(row.label);
+          if (existing) {
+            existing.qty += qty;
+            existing.review = existing.review || row.reviewStatus === "Review required";
+          } else {
+            byLabel.set(row.label, { label: row.label, qty, review: row.reviewStatus === "Review required" });
+          }
         });
       });
+      const items = Array.from(byLabel.values());
       if (!items.length) return;
       const cov = coverageFor(board);
       /* The board line carries what a supplier needs to identify the board and
