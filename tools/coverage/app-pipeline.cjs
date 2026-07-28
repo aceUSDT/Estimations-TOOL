@@ -216,7 +216,15 @@ function scheduleBoardFromLines(lines){
        Requiring detectBoards to recognise it is what rejects "110V". */
     const label=joined.match(/(?<!(?:cable|drawing|document|project|job|schedule)\s)\b(?:DB\s+|BOARD\s+)?REFERENCE\b\s*[:=\-]?\s*/i);
     if(label){
-      const window=joined.slice(label.index, label.index+240);
+      let window=joined.slice(label.index, label.index+240);
+      /* A value sits before the NEXT label. Reading on past one takes a board
+         reference out of the first circuit row instead: a page headed
+         "REFERENCE  MEP MAIN DB" resolved to DB-1-GF, the board its way 1
+         feeds, because "MEP MAIN DB" matches no code-shaped pattern and the
+         scan simply carried on to the next thing that did. Stopping here lets
+         the descriptive-name fallback further down do its job. */
+      const nextLabel=window.slice(10).search(/\b(?:NUMBER\s+OF\s+WAYS|SERVED\s+BY|FED\s+FROM|SUPPLIED\s+(?:FROM|BY)|LOCATION|DESCRIPTION|INCOMER|CIRCUIT\s+REF|BOARD\s+DEVICE|PHASE|TYPE)\b/i);
+      if(nextLabel>0) window=window.slice(0, nextLabel+10);
       const det=detectBoards(window)[0];
       if(det) return det;
     }
@@ -240,9 +248,17 @@ function scheduleBoardFromLines(lines){
     if(/\bREFERENCE\b/i.test(joined)){
       const CIRCUIT_ROW=/\b\d{1,2}-L[123]\b/;
       const HEADER_VALUE=/(ISOLATOR|SWITCH(?:GEAR)?|SCHNEIDER|MERLIN|ACTI9|HAGER|\b\d{2,4}\s?A\b|FLOOR|ROOM|CORRIDOR|RISER)/i;
+      /* A board's own reference is in its HEADER BLOCK, which precedes the
+         table. Scanning the whole page instead took the reference out of the
+         first circuit row: a page headed "REFERENCE  MEP MAIN DB" resolved to
+         DB-1-GF — the board its way 1 FEEDS — because the header value matches
+         no code-shaped pattern and the scan carried on into the rows. */
+      const arrAll=(lines||[]).map(l=>String(l||'').trim());
+      let firstRow=arrAll.findIndex(t=>t&&CIRCUIT_ROW.test(t));
+      if(firstRow<0) firstRow=arrAll.length;
       const candidates=[];
-      for(const line of (lines||[])){
-        const t=String(line||'').trim();
+      for(let li=0; li<firstRow; li++){
+        const t=arrAll[li];
         if(!t||CIRCUIT_ROW.test(t)) continue;
         const det=detectBoards(t)[0];
         if(det) candidates.push({t,det});

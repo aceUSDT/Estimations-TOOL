@@ -887,4 +887,32 @@ if (fail) { console.log(`\n${fail} failure(s)`); process.exit(1); }
   check('way marker: a core count is not a way', !cable || cable.way !== 2, cable ? String(cable.way) : 'no row');
 }
 
+/* A board's own reference is in its HEADER BLOCK, which precedes the table.
+ *
+ * A page headed "REFERENCE  MEP MAIN DB" resolved to DB-1-GF — the board its
+ * way 1 FEEDS — because "MEP MAIN DB" matches no code-shaped pattern, so the
+ * window scan read past it and the values-line scan carried on into the rows.
+ * Both now stop where the header does. */
+{
+  const descriptive = ['REFERENCE', 'MEP MAIN DB', 'NUMBER OF WAYS', '12 WAYS',
+    'Circuit Ref', '1-L1', '63', 'Acti9 iC60H, MCB, Type C', 'DB-1-GF'];
+  const got = P.scheduleBoardFromLines(descriptive);
+  check('header: a descriptive board name is not replaced by a row value',
+    got && got.norm === 'MEPMAINDB', got ? got.norm : 'null');
+
+  /* The cases that path already handled must be unaffected: a code-shaped
+     value beside its label, a value cell on the same line, and a ROTATED sheet
+     whose labels and values arrive as two separate lines. */
+  for (const [lines, want] of [
+    [['REFERENCE', 'DB-1-GF', 'SERVED BY', 'MEP MAIN DB', 'NUMBER OF WAYS', '18 WAYS', 'Circuit Ref'], 'DB1GF'],
+    [['REFERENCE  DB LP3 (EXISTING)', 'TYPE  12-WAY TP&N', 'WAY PHASE'], 'DBLP3'],
+    [['NUMBER OF WAYS  LOCATION  DESCRIPTION  SERVED BY  REFERENCE',
+      '18 WAYS  LVAC ROOM  GROUND FLOOR LIGHTING  MEP MAIN DB  DB-1-GF',
+      '1-L1  10  MCB'], 'DB1GF'],
+  ]) {
+    const b = P.scheduleBoardFromLines(lines);
+    check(`header: ${want} still resolves`, b && b.norm === want, b ? b.norm : 'null');
+  }
+}
+
 if (fail) { console.log(`\n${fail} failure(s)`); process.exit(1); }
