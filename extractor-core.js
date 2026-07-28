@@ -858,6 +858,53 @@
       }
     }
 
+    /* Device-prefixed circuit refs: "MCB/21  16  30mA  2 x 1/core x 2.5  1 x 1.5
+     * Sockets Radial  GIS HALL 110V SOCKETS 1".
+     *
+     * A real 110V AC board in the owner's set numbers its ways by device rather
+     * than by way-and-phase, and no existing dialect matched, so all fourteen of
+     * its circuits were dropped. The device class is stated outright in the ref,
+     * which is better evidence than inferring it from an RCD column — but an RCD
+     * value still promotes an MCB to an RCBO, because a device with residual
+     * current protection is an RCBO whatever the drawing calls it. */
+    /* Matched against the RAW line, not the whitespace-collapsed copy: the
+     * column separators ARE the double spaces, and collapsing them first would
+     * leave the circuit name indistinguishable from the cable and CPC columns
+     * that precede it. */
+    const deviceRef = String(line || '').match(/^\s*(MCB|RCBO|MCCB|RCD|AFDD)\s*\/\s*(\d{1,3})\s+(\d+(?:\.\d+)?)\s+(\d+\s*mA|No|-)\s+([\s\S]+)$/i);
+    if (deviceRef) {
+      const declared = deviceRef[1].toUpperCase();
+      const rcdMatch = deviceRef[4].match(/(\d+)\s*mA/i);
+      const rcdMa = rcdMatch ? Number(rcdMatch[1]) : null;
+      const rest = deviceRef[5].replace(/\s+$/, '');
+      /* Trailing columns are cable, CPC, circuit type and finally the circuit
+       * NAME. Only the name is taken as the description; the rest is structure
+       * that the cable detector reads separately. */
+      const tail = rest.split(/\s{2,}/).map((c) => c.trim()).filter(Boolean);
+      const description = (tail.length > 1 ? tail[tail.length - 1] : rest).replace(/\s+/g, ' ').trim();
+      const circuitType = tail.length > 2 ? tail[tail.length - 2] : null;
+      const device = declared === 'MCB' && rcdMa > 0 ? 'RCBO' : declared;
+      return {
+        way: Number(deviceRef[2]),
+        phase: null,
+        rating: Number(deviceRef[3]),
+        device,
+        curve: null,
+        sens: rcdMa,
+        afdd: declared === 'AFDD',
+        poles: 1,
+        circuitConfig: /\bring\b/i.test(circuitType || '') ? 'ring'
+          : /\bradial\b/i.test(circuitType || '') ? 'radial' : null,
+        desc: description,
+        associatedDevices: extractAssociatedEquipment(description),
+        spare: /^spare$/i.test(description),
+        space: false,
+        incomer: false,
+        srcText: text,
+        conf: 0.9,
+      };
+    }
+
     const bes = text.match(/^(\d{1,3})\s+(L[123])\s+(.+?)\s+(RAD|RING)\s+(\d+(?:\.\d+)?)\s+([BCD])\s+(\d+(?:\.\d+)?|-)\s+(YES|NO)$/i);
     if (bes) {
       const rcdMa = bes[7] === '-' ? null : Number(bes[7]);

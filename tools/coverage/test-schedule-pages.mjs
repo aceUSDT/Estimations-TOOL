@@ -347,6 +347,38 @@ console.log(`PASS: ${pages.length} schedule pages → ${boards.length} boards, s
 }
 
 
+/* Device-prefixed circuit refs — "MCB/21 ..." rather than "21-L1 ...".
+ *
+ * A real 110V AC board numbers its ways by device, and no dialect matched, so
+ * all fourteen of its circuits were dropped on the floor. */
+{
+  const { parseKnownScheduleLine } = P.EstimationExtractorCore;
+
+  const rcbo = parseKnownScheduleLine('MCB/21  16  30mA  2 x 1/core x 2.5  1 x 1.5  Sockets Radial  GIS HALL 110V SOCKETS 1');
+  check('device-ref row parses', Boolean(rcbo), 'null');
+  if (rcbo) {
+    check('way comes from the ref', rcbo.way === 21, String(rcbo.way));
+    check('rating read', rcbo.rating === 16, String(rcbo.rating));
+    /* An RCD value promotes a declared MCB to an RCBO: a device with residual
+       current protection is an RCBO whatever the drawing labels it. */
+    check('RCD promotes MCB to RCBO', rcbo.device === 'RCBO', String(rcbo.device));
+    check('sensitivity read', rcbo.sens === 30, String(rcbo.sens));
+    /* Only the circuit NAME becomes the description — not the cable and CPC
+       columns that precede it. That requires matching the raw line, because
+       collapsing whitespace first destroys the column separators. */
+    check('description is the circuit name only', rcbo.desc === 'GIS HALL 110V SOCKETS 1', rcbo.desc);
+  }
+
+  const plain = parseKnownScheduleLine('MCB/05  32  No  2 x 1/core x 6  1 x 2.5  Fixed Power  TELECOMS ROOM 110V');
+  check('no RCD stays an MCB', Boolean(plain && plain.device === 'MCB'), plain ? plain.device : 'null');
+  check('name read without an RCD column', Boolean(plain && plain.desc === 'TELECOMS ROOM 110V'), plain ? plain.desc : 'null');
+
+  /* The way-and-phase dialect must be untouched by the new one. */
+  const wayPhase = parseKnownScheduleLine('11-L3  16  Acti9 iC60H, MCB, Type B  No  2 x 1/core x 2.5  Fixed Power  MALE WC WATER HEATER');
+  check('way-phase rows do not match the device-ref dialect',
+    !wayPhase || wayPhase.way !== 11 || wayPhase.phase === 'L3', JSON.stringify(wayPhase));
+}
+
 /* The exit gate is LAST on purpose: it once sat mid-file, so checks appended
    after it could fail while the suite still reported green. */
 if (fail) { console.log(`\n${fail} failure(s)`); process.exit(1); }
