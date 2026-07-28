@@ -215,6 +215,38 @@ console.log(`PASS: ${POSITIVE.length} positives, ${NEGATIVE.length} negatives, c
   // "SERVED BY" must stop at the next label, not swallow the rest of the header
   if (/DESCRIPTION/i.test(String(f.servedBy))) { console.log('FAIL [header] servedBy ran into the next field'); fail++; }
 
+  /* On a DRAWING sheet the value is not followed by another header label — it
+   * is followed by the title block. This ran past forty characters without
+   * meeting a label, matched nothing, and the board reported no known supply
+   * source while the drawing said exactly what fed it. */
+  const drawing = parseBoardHeaderFacts([
+    'REFERENCE  DB LP3 (EXISTING)',
+    'TYPE  12-WAY TP&N - BOTTOM ENTRY / TOP EXIT (ABB DIST BOARD)',
+    'SUPPLIED FROM MAIN',
+    'PANELBOARD',
+    'P01  D2  SS 16.06.26 ISSUED FOR TENDER.',
+  ]);
+  if (drawing.servedBy !== 'MAIN PANELBOARD') {
+    console.log(`FAIL [header] drawing-sheet supply = ${JSON.stringify(drawing.servedBy)}, want "MAIN PANELBOARD"`); fail++;
+  }
+  if (drawing.waysTotal !== 12) { console.log(`FAIL [header] way count from a TYPE cell = ${drawing.waysTotal}, want 12`); fail++; }
+
+  /* A header value must be a NAME. On the same sheet the LOCATION label lands
+   * beside the table's column headings and DESCRIPTION beside the cable legend,
+   * so the board reported its location as "SERVICE CIRCUIT RATING DEVICE WAY"
+   * and its description as "2.5/2.5/X". Both read as facts and neither is one. */
+  const junk = parseBoardHeaderFacts([
+    'REFERENCE  DB LP3A',
+    'LOCATION  SERVICE  CIRCUIT  RATING DEVICE  WAY',
+    'DESCRIPTION  2.5/2.5/X',
+  ]);
+  if (junk.location !== null) { console.log(`FAIL [header] column headings taken as a location: ${JSON.stringify(junk.location)}`); fail++; }
+  if (junk.description !== null) { console.log(`FAIL [header] legend code taken as a description: ${JSON.stringify(junk.description)}`); fail++; }
+  // and the guard must not reject a real one
+  if (f.location !== 'LVAC ROOM' || f.servedBy !== 'MEP MAIN DB') {
+    console.log('FAIL [header] the plausibility guard rejected a real value'); fail++;
+  }
+
   /* An 18-way three-phase board holds at most 54. This is the check that
      should have caught 86 devices on one board without a human noticing. */
   const warn = boardCapacityWarnings([

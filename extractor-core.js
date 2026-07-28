@@ -473,7 +473,24 @@
    * a missing field stays null rather than being guessed at. */
   function parseBoardHeaderFacts(lines) {
     const text = (Array.isArray(lines) ? lines.join(' \n ') : String(lines || '')).replace(/\s+/g, ' ');
-    const grab = (re) => { const m = text.match(re); return m ? m[1].trim() : null; };
+    /* A header value has to be a NAME, not whatever text sat next to the label.
+     * On a drawing sheet the LOCATION label lands beside the table's column
+     * headings and DESCRIPTION beside the cable legend, so the board reported
+     * its location as "SERVICE CIRCUIT RATING DEVICE WAY" and its description
+     * as "2.5/2.5/X". Both read as facts about the board and neither is one. */
+    const COLUMN_WORDS = /^(?:WAY|PHASE|BUSBAR|SERVICE|CIRCUIT|RATING|DEVICE|LOCATION|CABLE|CORES|TYPE|CPC|REF|NO|CONDUCTOR|C\.?S\.?A\.?)$/i;
+    const plausible = (value) => {
+      const v = String(value || '').trim();
+      if (v.length < 2) return false;
+      // a legend code ("2.5/2.5/X", "xx mm²/xx mm²") names nothing
+      if (!/[A-Za-z]{3}/.test(v)) return false;
+      const tokens = v.split(/[\s,]+/).filter(Boolean);
+      // a run of column headings is the table, not a value
+      return !tokens.every((t) => COLUMN_WORDS.test(t.replace(/[():]/g, '')));
+    };
+    const grabRaw = (re) => { const m = text.match(re); return m ? m[1].trim() : null; };
+    // Name fields only — a numeric field is judged by its own pattern.
+    const grab = (re) => { const v = grabRaw(re); return plausible(v) ? v : null; };
     /* Delegates to expectedWaysFromText rather than carrying a second pattern.
      * The two had already drifted: that one reads Trimble's "No. of Ways: 24"
      * and this one did not, so a whole dialect's boards showed no way count
@@ -481,15 +498,24 @@
     const waysFound = expectedWaysFromText(text);
     const waysTotal = waysFound ? waysFound.ways : null;
     /* Stop at the next header LABEL, not at a fixed length: "SERVED BY MEP MAIN
-     * DB DESCRIPTION GROUND FLOOR…" must yield "MEP MAIN DB", not run on. */
-    const NEXT = '(?=\\s+(?:DESCRIPTION|LOCATION|NUMBER\\s+OF\\s+WAYS|INCOMER|BOARD\\s+DEVICE|REFERENCE|CIRCUIT\\s+REF|PHASE)\\b|$)';
+     * DB DESCRIPTION GROUND FLOOR…" must yield "MEP MAIN DB", not run on.
+     *
+     * On a drawing sheet the value is not followed by another header label — it
+     * is followed by the title block. "SUPPLIED FROM MAIN PANELBOARD P01 D2 SS
+     * 16.06.26 ISSUED FOR TENDER" ran past forty characters without meeting a
+     * label, matched nothing, and the board reported no known supply source
+     * while the drawing said exactly what fed it. So the title block's own
+     * openers end the value too: a revision panel, a date, a status. */
+    const NEXT = '(?=\\s+(?:DESCRIPTION|LOCATION|NUMBER\\s+OF\\s+WAYS|INCOMER|BOARD\\s+DEVICE|REFERENCE'
+      + '|CIRCUIT\\s+REF|PHASE|REV|SUIT|DRAWING\\s+STATUS|ISSUED\\s+FOR|CABLE\\s+TYPES?|NOTES?'
+      + '|WITH\\s+NEW|[A-Z]\\d{2}\\s+[A-Z]\\d\\b|\\d{1,2}\\.\\d{1,2}\\.\\d{2,4})\\b|$)';
     return {
       waysTotal: Number.isFinite(waysTotal) && waysTotal > 0 && waysTotal <= 200 ? waysTotal : null,
       servedBy: grab(new RegExp('\\b(?:SERVED\\s+BY|FED\\s+FROM|SUPPLIED\\s+(?:FROM|BY))\\s*[:=-]?\\s*(.{2,40}?)' + NEXT, 'i')),
       location: grab(new RegExp('\\bLOCATION\\s*[:=-]?\\s*(.{2,40}?)' + NEXT, 'i')),
       description: grab(new RegExp('\\bDESCRIPTION\\s*[:=-]?\\s*(.{2,60}?)' + NEXT, 'i')),
       incomer: grab(new RegExp('\\bINCOMER\\s*[:=-]?\\s*(.{2,40}?)' + NEXT, 'i')),
-      incomerRatingA: (() => { const v = grab(/INCOMER\s+SIZE\s*[:=-]?\s*(\d{1,4})\s*A\b/i); return v ? Number(v) : null; })(),
+      incomerRatingA: (() => { const v = grabRaw(/INCOMER\s+SIZE\s*[:=-]?\s*(\d{1,4})\s*A\b/i); return v ? Number(v) : null; })(),
     };
   }
 
@@ -591,6 +617,20 @@
     'CHARTS', 'IDENTITY', 'AND', 'OR', 'THE', 'FOR', 'WITH', 'IS', 'ARE', 'MODEL',
   ]);
 
+  /* Words that can follow "DB " on a drawing without naming a board. A dash
+   * binds the two into one token; a space does not, so "…Sockets Ring" and a
+   * repeated "DB DB" column label both read as board names until this says
+   * otherwise. Only consulted by the space-separated pattern. */
+  const DB_NAME_STOPWORDS = new Set([
+    'DB', 'MDB', 'SMDB', 'LDB', 'PDB', 'SB', 'PB', 'CU', 'MCC', 'MCP', 'MSB',
+    'MCB', 'MCCB', 'RCBO', 'RCD', 'RCCB', 'AFDD', 'SPD', 'ACB', 'FUSE', 'ISOLATOR', 'CONTACTOR',
+    'RING', 'RADIAL', 'SPARE', 'SPACE', 'SUB', 'MAIN', 'NEW', 'OLD', 'EXISTING', 'TBC', 'TBA', 'NA', 'NIL',
+    'TYPE', 'TYPES', 'PHASE', 'PHASES', 'BUSBAR', 'DEVICE', 'DEVICES', 'SERVICE', 'SERVICES',
+    'CABLE', 'CABLES', 'CORES', 'CPC', 'TOTAL', 'LEGEND', 'PANEL', 'PANELS', 'SUPPLY', 'SUPPLIES',
+    'LIGHTING', 'POWER', 'SOCKET', 'SOCKETS', 'LOAD', 'LOADS', 'SEE', 'FULL', 'DETAIL', 'DETAILS',
+    'TPN', 'SPN', 'DPN', 'TP', 'SP', 'DP', 'KA', 'AMP', 'AMPS', 'TO', 'ON', 'AT', 'IN', 'OF', 'BY',
+  ]);
+
   /* A cable or load is named after the board and way it serves, so a board
    * reference appears INSIDE it: "Cbl_FC-143-MEP MAIN DB-7-" is one cable on
    * way 7 of MEP MAIN DB, and "Cbl_SM-99-MEP MAIN DB-12" is one on way 12 —
@@ -622,9 +662,11 @@
       { re: /\bDB\s?[.\-_/]\s?[A-Z0-9]{1,8}(?:[.\-_/][A-Z0-9]{1,8})*\b/gi, guard: true },
       /* "DB LP3", "DB KIT" — separated by a SPACE, which the pattern above
        * requires to be a dash, dot, slash or underscore. A whole consultant's
-       * drawing set resolved no board at all because of it. Uppercase only and
-       * stopword-guarded, so "DB schedule" still mints nothing. */
-      { re: /\bDB\s+[A-Z]{1,6}\d{0,3}[A-Z]?\b/g, guard: true },
+       * drawing set resolved no board at all because of it.
+       * A space is a much weaker signal than a dash, so the word after DB is
+       * checked against electrical vocabulary as well as the shared stopwords:
+       * a row reading "…Sockets Ring" gave a board called "DB RING". */
+      { re: /\bDB\s+[A-Z]{1,6}\d{0,3}[A-Z]?\b/g, dbName: true },
       { re: /\bDB\.?(?:[\s._/-]?\d+[A-Z]?)+(?:\s+[A-Z])?\b/gi },
       // panelboards / switchboards: PB01, MSB1
       { re: /\b(?:PB|MSB)[\s.\-_/]?\d+[A-Z]?\b/gi },
@@ -636,7 +678,7 @@
     // header-labelled refs catch names no generic pattern can (e.g. "Reference: 2A4")
     const headerRe = /(?<!(?:cable|drawing|document|project|job|schedule)\s)\b(?:board\s+)?(?:reference|identity)\s*[:\-]?\s+([A-Z0-9][A-Z0-9/._-]{1,14})/gi;
     const spans = [];
-    for (const { re, guard, cu } of patterns) {
+    for (const { re, guard, cu, dbName } of patterns) {
       re.lastIndex = 0;
       for (const match of source.matchAll(re)) {
         let original = match[0].trim();
@@ -644,6 +686,11 @@
         if (guard) {
           const tokens = original.split(/[\s.\-_/]+/).slice(1);
           if (!tokens.length || BOARD_REF_STOPWORDS.has(tokens[0].toUpperCase())) continue;
+        }
+        if (dbName) {
+          const tokens = original.split(/\s+/).slice(1);
+          const t = tokens.length ? tokens[0].toUpperCase() : '';
+          if (!t || BOARD_REF_STOPWORDS.has(t) || DB_NAME_STOPWORDS.has(t)) continue;
         }
         if (insideEquipmentIdentifier(source, match.index)) continue;
         spans.push({ original, start: match.index, end: match.index + match[0].length });

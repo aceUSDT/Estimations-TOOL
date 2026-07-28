@@ -48,6 +48,16 @@ const BOARD_REF_STOPWORDS = new Set(['SCHEDULE','SCHEDULES','REFERENCE','REF','B
   'TO','SERVING','SERVED','TYPE','RATING','SIZE','WAY','WAYS','NO','NUMBER','DATA','INCOMER','LOCATION',
   'NOTES','NOTE','LEGEND','CHART','CHARTS','IDENTITY','AND','OR','THE','FOR','WITH','IS','ARE','MODEL']);
 
+const DB_NAME_STOPWORDS = new Set([
+  'DB','MDB','SMDB','LDB','PDB','SB','PB','CU','MCC','MCP','MSB',
+  'MCB','MCCB','RCBO','RCD','RCCB','AFDD','SPD','ACB','FUSE','ISOLATOR','CONTACTOR',
+  'RING','RADIAL','SPARE','SPACE','SUB','MAIN','NEW','OLD','EXISTING','TBC','TBA','NA','NIL',
+  'TYPE','TYPES','PHASE','PHASES','BUSBAR','DEVICE','DEVICES','SERVICE','SERVICES',
+  'CABLE','CABLES','CORES','CPC','TOTAL','LEGEND','PANEL','PANELS','SUPPLY','SUPPLIES',
+  'LIGHTING','POWER','SOCKET','SOCKETS','LOAD','LOADS','SEE','FULL','DETAIL','DETAILS',
+  'TPN','SPN','DPN','TP','SP','DP','KA','AMP','AMPS','TO','ON','AT','IN','OF','BY',
+]);
+
 const BOARD_PATTERNS = [
   {re:/\b([A-Z0-9]{1,6}(?:-[A-Z0-9]{1,6})*-DB(?:-[A-Z0-9]{1,6})+)\b/gi, type:'DB'},
   {re:/\b(S\s?M\s?D\s?B[\s.\-_\/]?\d*[A-Z]?)\b/gi, type:'SMDB'},
@@ -55,7 +65,7 @@ const BOARD_PATTERNS = [
   {re:/\b(L\s?D\s?B[\s.\-_\/]?\d*[A-Z]?)\b/gi, type:'LDB'},
   {re:/\b(P\s?D\s?B[\s.\-_\/]?\d*[A-Z]?)\b/gi, type:'PDB'},
   {re:/\b(DB\s?[.\-_\/]\s?[A-Z0-9]{1,8}(?:[.\-_\/][A-Z0-9]{1,8})*)\b/gi, type:'DB', guard:true},
-  {re:/\b(DB\s+[A-Z]{1,6}\d{0,3}[A-Z]?)\b/g, type:'DB', guard:true},
+  {re:/\b(DB\s+[A-Z]{1,6}\d{0,3}[A-Z]?)\b/g, type:'DB', dbName:true},
   {re:/\b(D\.?\s?B\.?(?:[\s.\-_\/]?\d+[A-Z]?)+(?:\s+[A-Z])?)\b/gi, type:'DB'},
   {re:/\b(MCC(?!B)[\s.\-_\/]?\d*)\b/gi, type:'MCC'},
   {re:/\b(MCP[\s.\-_\/]?\d*[A-Z]?)\b/gi, type:'MECH'},
@@ -122,6 +132,11 @@ function detectBoards(line){
       if (bp.guard){
         const tokens = orig.split(/[\s.\-_\/]+/).slice(1);
         if (!tokens.length || BOARD_REF_STOPWORDS.has(tokens[0].toUpperCase())) continue;
+      }
+      if (bp.dbName){
+        const tokens = orig.split(/\s+/).slice(1);
+        const t = tokens.length ? tokens[0].toUpperCase() : '';
+        if (!t || BOARD_REF_STOPWORDS.has(t) || DB_NAME_STOPWORDS.has(t)) continue;
       }
       if (bp.header){
         orig = orig.replace(/[.,:]+$/,'');

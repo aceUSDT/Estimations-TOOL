@@ -1170,6 +1170,20 @@ const BOARD_REF_STOPWORDS = new Set(['SCHEDULE','SCHEDULES','REFERENCE','REF','B
 
 /* board reference patterns — DB-01, DB-MECH, DB/GF, G1-GF-DB-LL, PB01, MSB1, SB12, CU variants…
    Ordered most-specific first; detectBoards drops matches contained inside a longer match. */
+/* Words that can follow "DB " on a drawing without naming a board. A dash binds
+   ("DB-RING" would still be odd, but it is at least written as one token); a
+   space does not, so "…Sockets Ring" and a repeated "DB DB" column label both
+   read as board names until this list says otherwise. */
+const DB_NAME_STOPWORDS = new Set([
+  'DB','MDB','SMDB','LDB','PDB','SB','PB','CU','MCC','MCP','MSB',
+  'MCB','MCCB','RCBO','RCD','RCCB','AFDD','SPD','ACB','FUSE','ISOLATOR','CONTACTOR',
+  'RING','RADIAL','SPARE','SPACE','SUB','MAIN','NEW','OLD','EXISTING','TBC','TBA','NA','NIL',
+  'TYPE','TYPES','PHASE','PHASES','BUSBAR','DEVICE','DEVICES','SERVICE','SERVICES',
+  'CABLE','CABLES','CORES','CPC','TOTAL','LEGEND','PANEL','PANELS','SUPPLY','SUPPLIES',
+  'LIGHTING','POWER','SOCKET','SOCKETS','LOAD','LOADS','SEE','FULL','DETAIL','DETAILS',
+  'TPN','SPN','DPN','TP','SP','DP','KA','AMP','AMPS','TO','ON','AT','IN','OF','BY',
+]);
+
 const BOARD_PATTERNS = [
   {re:/\b([A-Z0-9]{1,6}(?:-[A-Z0-9]{1,6})*-DB(?:-[A-Z0-9]{1,6})+)\b/gi, type:'DB'},
   {re:/\b(S\s?M\s?D\s?B[\s.\-_\/]?\d*[A-Z]?)\b/gi, type:'SMDB'},
@@ -1179,9 +1193,12 @@ const BOARD_PATTERNS = [
   {re:/\b(DB\s?[.\-_\/]\s?[A-Z0-9]{1,8}(?:[.\-_\/][A-Z0-9]{1,8})*)\b/gi, type:'DB', guard:true},
   /* "DB LP3", "DB KIT" — separated by a SPACE, which every pattern above
      requires to be a dash, dot, slash or underscore. A whole consultant's
-     drawing set resolved no board at all because of it. Uppercase only and
-     stopword-guarded, so "DB schedule" and "DB reference" still mint nothing. */
-  {re:/\b(DB\s+[A-Z]{1,6}\d{0,3}[A-Z]?)\b/g, type:'DB', guard:true},
+     drawing set resolved no board at all because of it.
+     A space is a much weaker signal than a dash, so the word after DB is
+     checked against electrical vocabulary as well as the shared stopwords:
+     a schedule row reading "…Sockets Ring" gave a board called "DB RING", and
+     a repeated column label gave one called "DB DB". */
+  {re:/\b(DB\s+[A-Z]{1,6}\d{0,3}[A-Z]?)\b/g, type:'DB', dbName:true},
   {re:/\b(D\.?\s?B\.?(?:[\s.\-_\/]?\d+[A-Z]?)+(?:\s+[A-Z])?)\b/gi, type:'DB'},
   {re:/\b(MCC(?!B)[\s.\-_\/]?\d*)\b/gi, type:'MCC'},
   {re:/\b(MCP[\s.\-_\/]?\d*[A-Z]?)\b/gi, type:'MECH'},
@@ -1261,6 +1278,11 @@ function detectBoards(line){
         const tokens = orig.split(/[\s.\-_\/]+/).slice(1);
         if (!tokens.length || BOARD_REF_STOPWORDS.has(tokens[0].toUpperCase())) continue;
       }
+      if (bp.dbName){
+        const tokens = orig.split(/\s+/).slice(1);
+        const t = tokens.length ? tokens[0].toUpperCase() : '';
+        if (!t || BOARD_REF_STOPWORDS.has(t) || DB_NAME_STOPWORDS.has(t)) continue;
+      }
       if (bp.header){
         // labelled refs ("Board Reference: 2A4") need a digit or separator to avoid prose
         orig = orig.replace(/[.,:]+$/,'');
@@ -1304,6 +1326,13 @@ function detectBoards(line){
 function scheduleBoardSegments(lines){
   const arr=(lines||[]).map(l=>String(l||'').trim());
   const REFERENCE=/(?<!(?:cable|drawing|document|project|job|schedule)\s)\bREFERENCE\b\s*[:=\-]?\s+(.{2,40}?)\s*$/i;
+  /* Deliberately NOT excluding lines that also carry circuit rows. On a sheet
+     whose tables sit side by side, one text line crosses several of them, so a
+     board's REFERENCE genuinely shares a line with another board's rows —
+     skipping those lines loses a board and doubles the mis-attribution
+     (measured: 4 boards with rows down to 3, duplicate slots 14 up to 24).
+     Separating side-by-side tables properly needs clustering by x position,
+     not by line index; that is the real fix and it is not this one. */
   const starts=[];
   arr.forEach((t,i)=>{ if(REFERENCE.test(t)) starts.push(i); });
   if(starts.length<2) return null;
@@ -3022,7 +3051,17 @@ async function runAnalysis(opts){
         if (window.EstimationExtractorCore?.parseBoardHeaderFacts){
           const f2=window.EstimationExtractorCore.parseBoardHeaderFacts(lines.slice(seg.from,seg.to));
           const e2=A.boards[seg.board.norm];
-          if (e2 && f2.waysTotal){ e2.waysTotal=f2.waysTotal; e2.header=Object.assign({},e2.header||{},{ways_total:f2.waysTotal}); }
+          if (e2){
+            e2.header=Object.assign({},e2.header||{},{
+              ways_total: f2.waysTotal ?? (e2.header||{}).ways_total ?? null,
+              fed_from_ref: f2.servedBy || (e2.header||{}).fed_from_ref || null,
+              location: f2.location || (e2.header||{}).location || null,
+              serving: f2.description || (e2.header||{}).serving || null,
+              incomer_class: f2.incomer || (e2.header||{}).incomer_class || null,
+              incomer_rating_a: f2.incomerRatingA ?? (e2.header||{}).incomer_rating_a ?? null,
+            });
+            if (f2.waysTotal) e2.waysTotal=f2.waysTotal;
+          }
         }
       });
       /* The board's own header block states its way count, its upstream feed
@@ -4076,7 +4115,14 @@ function renderReview(){
   const items=[];
   A.rows.filter(r=>r.status==='pending'&&r.conf<0.8).forEach(r=>items.push({kind:'row',r,conf:r.conf}));
   p.files.filter(f=>f.status==='ready'&&!f.native&&f.pages.some(pg=>!(pg.lines||[]).length)).forEach(f=>items.push({kind:'scan',f}));
-  Object.values(A.boards).filter(b=>!b.parent&&!b.manual&&b.type!=='MAIN').forEach(b=>items.push({kind:'orphan',b}));
+  /* "No known supply source" must mean the DOCUMENTS do not say — not that the
+     board they name is absent from this project. A sheet reading "SUPPLIED FROM
+     MAIN PANELBOARD" states the feed plainly; raising it as unknown sends an
+     estimator looking for something the drawing already answered. The feed only
+     becomes a parent link when the named board exists here, which is deliberate
+     — a header must not invent boards — but the header text is still an answer. */
+  Object.values(A.boards).filter(b=>!b.parent&&!b.manual&&b.type!=='MAIN'&&!((b.header||{}).fed_from_ref))
+    .forEach(b=>items.push({kind:'orphan',b}));
   if (A.coverage){
     A.coverage.perBoard.filter(b=>(b.unaccountedWays||0)>0).forEach(b=>items.push({kind:'gap',g:b,conf:0}));
     A.coverage.zeroRowSchedulePages.forEach(z=>items.push({kind:'zeropage',z,conf:0.1}));
