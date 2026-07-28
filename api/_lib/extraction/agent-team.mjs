@@ -81,30 +81,81 @@ export function wayCoverage(declared, ...extractions) {
   return { captured: [...seen], missing, checkable: true };
 }
 
-/* The board contract every extraction sub-agent works under. The failures this
- * exists to stop were all seen in production output:
- *   - the board ref returned per ROW as "DB-1-GF-5", inventing a board per way;
- *   - the phase suffix folded into the board name, tripling the board count;
- *   - three-phase ways collapsed to one row, losing two devices in three. */
-function boardContract(facts) {
+/* The standing orders every extraction sub-agent works under.
+ *
+ * Source of truth: docs/EXTRACTION_SOP.md. Every rule here exists because a real
+ * document broke without it, and each is phrased as the decision the agent has
+ * to make rather than as general advice — an instruction the model cannot act
+ * on is decoration.
+ *
+ * Deliberately NOT included: anything code already decides. Counting, grouping,
+ * capacity and completeness are arithmetic and belong to the deterministic
+ * layer. Asking a model to do them invites it to disagree with the answer.
+ */
+function boardContract(facts, role) {
   const lines = [
     '',
-    '--- BOARD CONTRACT (follow exactly) ---',
-    '1. The BOARD is named once, in the page header. Every row on this page belongs',
-    '   to that one board. Return its reference EXACTLY as the header writes it.',
-    '2. NEVER build a board reference out of a row. A way number or phase is NOT part',
-    '   of the board name: the board is "DB-1-GF", never "DB-1-GF-5" or "DB-1-GF-5-L2".',
-    '3. The way number and the phase are SEPARATE fields — way: "5", phase: "L2".',
-    '4. A three-phase way is THREE devices, one per phase. Return one row per phase,',
-    '   never one row for the way. Missing a phase loses two devices in three.',
-    '5. Return a row for EVERY way the header declares, including spares. Mark an',
-    '   unused way as spare rather than omitting it — an omission is indistinguishable',
-    '   from a miss, and completeness is the thing being audited.',
-    '6. Copy ratings, curves and cable data as printed. Do not normalise, round, or',
-    '   infer a value that is not on the page. Leave a field null instead of guessing.',
+    '--- STANDING ORDERS (follow exactly; these override any habit) ---',
+    '',
+    'BOARD IDENTITY',
+    '1. The BOARD is named ONCE, in the page header block. Every row on this page',
+    '   belongs to that one board. Return its reference EXACTLY as the header writes',
+    '   it — same punctuation, same case.',
+    '2. NEVER build a board reference out of a row. A way number or a phase is not',
+    '   part of a board name: the board is "DB-1-GF", never "DB-1-GF-5", never',
+    '   "DB-1-GF-5-L2", never "154-DB-7-GCS-11".',
+    '3. A current rating is not a board. "630A" is the size of a device.',
+    '4. If the header names the board by DESCRIPTION ("110V AC DISTRIBUTION BOARD"),',
+    '   that IS the board reference. Return it as written.',
+    '5. If this page has no header of its own, it continues the previous board —',
+    '   return the same board reference rather than inventing one.',
+    '',
+    'CIRCUITS',
+    '6. The way number and the phase are SEPARATE fields: way "5", phase "L2".',
+    '   Never merge them, never put either in the board reference.',
+    '7. A three-phase way is THREE devices, one per phase. Return one row per phase.',
+    '   Returning one row for the way loses two devices in three.',
+    '8. Return a row for EVERY way the header declares, including spares. Mark an',
+    '   unused way as spare rather than omitting it — an omission cannot be told',
+    '   apart from a miss.',
+    '9. A block row such as "12-L1,L2,L3 - 18-L1,L2,L3 ... SPARE" declares ways 12',
+    '   THROUGH 18 spare. Expand it: one spare row per way in the range.',
+    '10. Copy ratings, curves, cable sizes and CPC as printed. Do not round, do not',
+    '    normalise, do not infer a value that is not on the page. A null field is',
+    '    honest; a plausible invention is not.',
+    '',
+    'DEVICE CLASS',
+    '11. Protection decides the class, not the label. A device with a residual',
+    '    current value (30mA, 100mA) is an RCBO even where the drawing prints "MCB".',
+    '12. AFDD with RCD protection is "AFDD+RCBO" — not AFDD alone, not RCBO alone.',
+    '13. Control equipment — contactor, time clock, photocell, relay, starter, meter,',
+    '    transformer — belongs to the board but is NOT a protective device. Return it',
+    '    with its own class; never fold it into MCB/RCBO counts.',
+    '14. A way marked SPARE has no device. A way marked SPACE has no device and no',
+    '    outgoing circuit. They are different; keep them so.',
+    '',
+    'WHAT NOT TO DO',
+    '15. Do not count anything. Do not total, subtotal or reconcile — deterministic',
+    '    code does that, and a number from you competes with the one that is right.',
+    '16. Do not resolve a disagreement between two documents. Report both readings.',
+    '17. Do not skip a row because it looks malformed. Return it with the fields you',
+    '    can read and leave the rest null, so a human sees it in Review.',
   ];
-  if (facts && facts.boardRef) lines.push(`7. This page's header declares board: ${facts.boardRef}. Use it verbatim.`);
-  if (facts && facts.waysTotal) lines.push(`8. This page's header declares ${facts.waysTotal} ways. Account for all ${facts.waysTotal}.`);
+  if (role === 'vision_parse') {
+    lines.push(
+      '',
+      'THIS PAGE IS AN IMAGE — no reliable text layer accompanies it.',
+      '18. Read the table visually, column by column. Drawing sheets are frequently',
+      '    ROTATED: if the text runs vertically, read it in the orientation the table',
+      '    is drawn, not the orientation of the page.',
+      '19. Follow the ruled lines. A value belongs to the row and column its cell',
+      '    sits in, not to the nearest text on the page.',
+      '20. If the image is too faint or cropped to read a region, say so in that',
+      '    row rather than guessing at it.',
+    );
+  }
+  if (facts && facts.boardRef) lines.push('', `THIS PAGE DECLARES BOARD: ${facts.boardRef}. Use it verbatim for every row.`);
+  if (facts && facts.waysTotal) lines.push(`THIS PAGE DECLARES ${facts.waysTotal} WAYS. Account for all ${facts.waysTotal}, spares included.`);
   return lines.join('\n');
 }
 
@@ -132,6 +183,21 @@ function masterPrompt({ textLines, primary, second, mismatches, facts, coverage 
     'device the agents did not return, list it in "missed". If it is genuinely blank',
     'or marked SPARE, do not list it. A way count that does not add up is the single',
     'most important thing to report: set complete=false when real devices are absent.',
+    '',
+    'HOW TO AUDIT (in order):',
+    'a. A block row such as "12-L1,L2,L3 - 18-L1,L2,L3 ... SPARE" accounts for every',
+    '   way in that range. Those ways are NOT missing.',
+    'b. A three-phase way needs THREE rows, one per phase. Two rows where the source',
+    '   shows three phases is a miss — report the absent phase.',
+    'c. Control equipment (contactor, time clock, photocell, relay, starter, meter) is',
+    '   often listed apart from the protective devices. If the page shows it and',
+    '   neither agent returned it, that is a miss.',
+    'd. A device with a residual current value is an RCBO even where the drawing says',
+    '   MCB. Disagreement on class alone is a review flag, not a missing device.',
+    'e. Do NOT count, total or reconcile. The numbers above were computed; your job is',
+    '   to explain the gaps, not to recalculate them.',
+    'f. Report only what the SOURCE shows. An empty region of the page is not a miss,',
+    '   and inventing one sends a real estimator hunting for a device that is not there.',
     '',
     '--- SOURCE PAGE TEXT LINES ---',
     ...(textLines || []).slice(0, 400),
@@ -164,9 +230,14 @@ export async function runAgentTeam(page, deps) {
   /* Every sub-agent works under the same explicit board contract, so the roles
      cannot disagree about what a board, a way and a phase are. */
   const facts = declaredHeaderFacts(textLines);
+  /* Role is decided BEFORE the request is built, so a vision agent receives the
+     orders written for reading an image — a page with no text layer is a
+     different job from a page with one, and sending the same brief to both is
+     how an image-only page came back empty. */
+  const role = imageBase64 && (!textLines || textLines.length === 0) ? 'vision_parse' : 'extract';
   const req = {
     system: EXTRACTION_SYSTEM_PROMPT,
-    prompt: instruction + boardContract(facts) + SCHEMA_DEMAND,
+    prompt: instruction + boardContract(facts, role) + SCHEMA_DEMAND,
     imageBase64, mediaType,
     maxTokens: 12000,
   };
@@ -174,7 +245,6 @@ export async function runAgentTeam(page, deps) {
   // 1) primary extraction — route to vision_parse if image is present but text is absent
   // (image-only pages silently fail on non-vision models). Extract chain handles pages
   // with text + optional image; vision_parse handles image-only pages.
-  const role = imageBase64 && (!textLines || textLines.length === 0) ? 'vision_parse' : 'extract';
   const a = await deps.pool.callRole(role, req);
   const primary = coerceResult(parseModelJson(a.content) || {});
 

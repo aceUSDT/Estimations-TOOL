@@ -371,3 +371,53 @@ console.log('PASS: nvidia pool + agent team + engine selector + worker master-au
 
   if (!process.exitCode) console.log('ok  key pool: all slots usable, key actually used is reported');
 }
+
+/* The standing orders must actually reach the sub-agents, and the vision agent
+ * must get the orders written for reading an image.
+ *
+ * A prompt rule that is written but never sent is worse than none: it reads as
+ * a control while doing nothing, which is the same class of defect as the
+ * master verdict the client discarded. */
+{
+  const team = await import('../../api/_lib/extraction/agent-team.mjs');
+  const prompts = [];
+  const pool = {
+    callRole: async (role, req) => { prompts.push({ role, prompt: req.prompt }); return { content: '{"devices":[]}', model: 'm', keyId: 1, ms: 1 }; },
+  };
+  const deps = {
+    pool, crossCheck: () => ({ mismatches: [] }), geminiConfigured: false,
+    buildInstruction: () => 'INSTRUCTION',
+  };
+
+  const header = ['REFERENCE DB-1-GF', 'NUMBER OF WAYS 18 WAYS', 'SERVED BY MEP MAIN DB'];
+  await team.runAgentTeam({ textLines: header, filename: 'f.pdf', pageNumber: 1 }, deps);
+  const textPrompt = prompts[0] ? prompts[0].prompt : '';
+
+  const required = [
+    ['board named once', /named ONCE, in the page header/i],
+    ['no board built from a row', /NEVER build a board reference out of a row/i],
+    ['way and phase separate', /way number and the phase are SEPARATE/i],
+    ['three-phase is three devices', /three-phase way is THREE devices/i],
+    ['spare block expanded', /SPARE. declares ways 12/i],
+    ['RCD decides class', /residual\s+current value .* is an RCBO/is],
+    ['control equipment kept apart', /NOT a protective device/i],
+    ['agents must not count', /Do not count anything/i],
+  ];
+  for (const [name, re] of required) {
+    if (!re.test(textPrompt)) { console.log(`FAIL [orders] missing: ${name}`); process.exitCode = 1; }
+  }
+  // the page's own declared facts must be injected, not just the generic rules
+  if (!/DECLARES BOARD: DB-1-GF/.test(textPrompt)) { console.log('FAIL [orders] declared board not injected'); process.exitCode = 1; }
+  if (!/DECLARES 18 WAYS/.test(textPrompt)) { console.log('FAIL [orders] declared way count not injected'); process.exitCode = 1; }
+  // a text page must NOT receive the image-reading orders
+  if (/THIS PAGE IS AN IMAGE/.test(textPrompt)) { console.log('FAIL [orders] text page got vision orders'); process.exitCode = 1; }
+
+  prompts.length = 0;
+  await team.runAgentTeam({ imageBase64: 'aGk=', mediaType: 'image/jpeg', textLines: [], filename: 'f.pdf', pageNumber: 2 }, deps);
+  const visionPrompt = prompts[0] ? prompts[0].prompt : '';
+  if (prompts[0] && prompts[0].role !== 'vision_parse') { console.log(`FAIL [orders] image page routed to ${prompts[0].role}`); process.exitCode = 1; }
+  if (!/THIS PAGE IS AN IMAGE/.test(visionPrompt)) { console.log('FAIL [orders] vision page lacks image-reading orders'); process.exitCode = 1; }
+  if (!/ROTATED/.test(visionPrompt)) { console.log('FAIL [orders] vision orders omit rotation'); process.exitCode = 1; }
+
+  if (!process.exitCode) console.log('ok  standing orders reach the agents, vision orders only to vision');
+}
