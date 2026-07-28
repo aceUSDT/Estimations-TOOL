@@ -285,3 +285,33 @@ console.log(`PASS: ${pages.length} schedule pages → ${boards.length} boards, s
 
   if (!fail) console.log('PASS: line band measured from page geometry.');
 }
+
+/* A page whose board cannot be NAMED must not donate its devices to the
+ * previous board.
+ *
+ * This is the defect that reached a user's screen as one board holding 83
+ * devices against an 18-way capacity of 54, while every board after it held
+ * none. Unattributed is the correct outcome — an estimator can see and fix a
+ * gap, but silently wrong attribution looks like a finished take-off. */
+{
+  const declared = boardPage('DB-8-EX', 18, 'MEP MAIN DB', 'EXTERNAL', 6);
+  // a real page from the owner's document: a 110V board whose reference is a
+  // description, with circuit refs the schedule parser does not recognise
+  const unnamed = ['REFERENCE', 'SP&N DISTRIBUTION BOARD', 'SERVED BY', 'LVAC SWITCHBOARD',
+    'NUMBER OF WAYS', '12 WAYS', 'Circuit Ref',
+    'MCB/21  16  30mA  2 x 1/core x 2.5  1 x 1.5  Sockets Radial  GIS HALL 110V SOCKETS 1',
+    'MCB/22  16  30mA  2 x 1/core x 2.5  1 x 1.5  Sockets Radial  GIS HALL 110V SOCKETS 2'];
+  const rawMix = [{ page: 1, lines: declared }, { page: 2, lines: unnamed }];
+  const mixed = rawMix.map((pg, i) => ({ ...pg, type: P.classifyPage(pg.lines.join('\n'), i, rawMix.length).type }));
+  const M = P.analyseDocument(mixed);
+
+  const leaked = M.rows.filter((r) => r.page === 2 && r.boardNorm === 'DB8EX');
+  if (leaked.length) {
+    console.log(`FAIL [leak] ${leaked.length} rows from an unnamed board attributed to DB8EX`); fail++;
+  }
+  const own = M.rows.filter((r) => r.page === 1);
+  if (own.some((r) => r.boardNorm !== 'DB8EX')) {
+    console.log('FAIL [leak] the declared page lost its own rows'); fail++;
+  }
+  if (!fail) console.log('PASS: an unnamed board does not donate devices to its neighbour.');
+}
