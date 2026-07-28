@@ -3136,6 +3136,7 @@ async function runAnalysis(opts){
               serving: f2.description || (e2.header||{}).serving || null,
               incomer_class: f2.incomer || (e2.header||{}).incomer_class || null,
               incomer_rating_a: f2.incomerRatingA ?? (e2.header||{}).incomer_rating_a ?? null,
+              spare_percent: f2.sparePercent ?? (e2.header||{}).spare_percent ?? null,
             });
             if (f2.waysTotal) e2.waysTotal=f2.waysTotal;
           }
@@ -3156,6 +3157,10 @@ async function runAnalysis(opts){
             serving: facts.description || (e.header||{}).serving || null,
             incomer_class: facts.incomer || (e.header||{}).incomer_class || null,
             incomer_rating_a: facts.incomerRatingA ?? (e.header||{}).incomer_rating_a ?? null,
+            /* What the drawing says is spare. Some schedules print no row for a
+               spare way and state the proportion here instead, so without it
+               every such board reads as short by exactly its spare capacity. */
+            spare_percent: facts.sparePercent ?? (e.header||{}).spare_percent ?? null,
           });
           if (facts.waysTotal) e.waysTotal=facts.waysTotal;
         }

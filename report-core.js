@@ -1191,11 +1191,17 @@
     return rows.map((board) => {
       const declared = board.expectedWays == null ? null : Number(board.expectedWays);
       const unaccounted = board.unaccountedWays == null ? null : Number(board.unaccountedWays);
+      /* A board that declares itself part spare is not short by its spare
+         capacity, and saying so is what keeps the check believable. */
+      const spareWays = board.spareWays == null ? null : Number(board.spareWays);
+      const spareNote = spareWays
+        ? ` (${spareWays} of them declared spare${board.sparePercent != null ? `, ${board.sparePercent}%` : ""})`
+        : "";
       const status = declared == null
         ? "Not checkable — board states no way count"
         : unaccounted > 0
-          ? `Incomplete — ${unaccounted} way${unaccounted === 1 ? "" : "s"} unaccounted for`
-          : "Complete — every declared way accounted for";
+          ? `Incomplete — ${unaccounted} way${unaccounted === 1 ? "" : "s"} unaccounted for${spareNote}`
+          : `Complete — every declared way accounted for${spareNote}`;
       return [
         text(board.orig || board.norm),
         declared == null ? "—" : declared,

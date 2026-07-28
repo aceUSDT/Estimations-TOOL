@@ -649,6 +649,23 @@
       description: grab(new RegExp('\\bDESCRIPTION\\s*[:=-]?\\s*(.{2,60}?)' + NEXT, 'i')),
       incomer: grab(new RegExp('\\bINCOMER\\s*[:=-]?\\s*(.{2,40}?)' + NEXT, 'i')),
       incomerRatingA: (() => { const v = grabRaw(/INCOMER\s+SIZE\s*[:=-]?\s*(\d{1,4})\s*A\b/i); return v ? Number(v) : null; })(),
+      /* How much of the board the drawing itself says is SPARE, as a
+       * percentage of its ways. Trimble's board-data block states it directly
+       * ("Spare: 53.8") and does not print a row for a spare way at all.
+       *
+       * Without it every such board looks short. Measured across the ten boards
+       * of a real 386-page tender, the declared percentage equalled the ways
+       * reported unaccounted for EXACTLY on all eight boards that state one —
+       * 53.8% of 26 is 14, and 14 was the shortfall; 100% of 12 is 12, and that
+       * board reported all twelve missing. Every one of those alarms was false,
+       * and a completeness check that cries wolf on every board stops being
+       * read. */
+      sparePercent: (() => {
+        const v = grabRaw(/\bSpare\s*:\s*(\d{1,3}(?:\.\d+)?)\s*%?(?=\s|$)/i);
+        if (v == null) return null;
+        const n = Number(v);
+        return Number.isFinite(n) && n >= 0 && n <= 100 ? n : null;
+      })(),
     };
   }
 
@@ -2056,7 +2073,25 @@
       }
       const boardRows = scheduleRows.filter((r) => r.boardNorm === board.norm);
       const ways = new Set(boardRows.filter((r) => r.way != null).map((r) => `${r.boardSection || ''}:${r.way}`));
-      const unaccounted = expected != null ? Math.max(0, expected - ways.size) : null;
+      /* Ways the drawing itself declares SPARE. Some schedules print no row at
+       * all for a spare way and state the proportion in the board-data block
+       * instead ("Spare: 53.8"), so without reading it every such board looks
+       * short by exactly its spare capacity — measured on a real tender, the
+       * declared percentage equalled the reported shortfall on all eight boards
+       * that state one, so every alarm on that document was false.
+       *
+       * Subtracted, never added: where spare ways DO appear as rows they are
+       * already counted in capturedWays, and the floor at zero keeps the two
+       * from double-counting into a negative. */
+      const sparePercent = Number(
+        (board.header && board.header.spare_percent) != null ? board.header.spare_percent : board.sparePercent,
+      );
+      const spareWays = expected != null && Number.isFinite(sparePercent) && sparePercent > 0
+        ? Math.round((expected * sparePercent) / 100)
+        : null;
+      const unaccounted = expected != null
+        ? Math.max(0, expected - ways.size - (spareWays || 0))
+        : null;
       const upstreamType = /^(?:MAIN|MDB|SMDB|MCC|SB|PB)$/.test(String(board.type || '').toUpperCase());
       const upstreamReference = /^(?:MAIN|MSB|SWB|SMDB|MDB|PB|MCC|MCP|GENERATOR)/i.test(String(board.orig || '').replace(/[\s._/\\-]+/g, ''));
       const inScope = hasPrimaryMetadata ? boardPages.length > 0 && !upstreamType && !upstreamReference : true;
@@ -2064,6 +2099,9 @@
         norm: board.norm, orig: board.orig,
         expectedWays: expected, evidence,
         capturedWays: ways.size, rowsCaptured: boardRows.length,
+        // what the drawing says is spare, so a shortfall it explains is not a gap
+        sparePercent: Number.isFinite(sparePercent) ? sparePercent : null,
+        spareWays,
         unaccountedWays: unaccounted, inScope,
       });
     }
@@ -2096,7 +2134,15 @@
       const hasRows = scheduleRows.some((r) =>
         r.fileId === pg.fileId && r.page === pg.page
         && (!hasPrimaryMetadata || primaryBoards.has(r.boardNorm)));
-      if (!hasRows) {
+      /* A board the drawing declares 100% spare has no devices, so its schedule
+       * page correctly produces no rows. Reporting that as a failure to
+       * investigate sends an estimator to a page whose answer is "nothing here,
+       * as stated". */
+      const fullySpare = primaryBoards && Array.from(primaryBoards).some((norm) => {
+        const b = perBoard.find((entry) => entry.norm === norm);
+        return b && b.expectedWays != null && b.spareWays != null && b.spareWays >= b.expectedWays;
+      });
+      if (!hasRows && !fullySpare) {
         zeroRowSchedulePages.push({
           fileId: pg.fileId,
           page: pg.page,

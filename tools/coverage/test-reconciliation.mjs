@@ -116,5 +116,68 @@ const rescued = core.buildCoverage({
 check('an unreadable page that the vision agent read is no longer reported',
   rescued.unreadablePages.length === 0);
 
+/* Ways the drawing declares SPARE without printing a row for them.
+ *
+ * Trimble's board-data block states the proportion ("Spare: 53.8") and prints
+ * nothing for a spare way, so every such board looked short by exactly its
+ * spare capacity. Measured across the ten boards of a real 386-page tender, the
+ * declared percentage equalled the reported shortfall EXACTLY on all eight
+ * boards that state one — 53.8% of 26 ways is 14, and 14 was the shortfall;
+ * 100% of 12 is 12, and that board reported all twelve missing. Every alarm on
+ * that document was false, and a check that cries wolf on every board stops
+ * being read. */
+{
+  const mk = (sparePercent, liveWays) => {
+    const rows = [];
+    for (let w = 1; w <= liveWays; w += 1) rows.push({ boardNorm: 'DB1', way: String(w), device: 'MCB', kind: 'schedule', fileId: 'f', page: 1 });
+    return core.buildCoverage({
+      boards: { DB1: { norm: 'DB1', orig: 'DB-1', type: 'DB', header: { spare_percent: sparePercent }, pages: [{ fileId: 'f', page: 1, primary: true }] } },
+      rows,
+      pages: [{ fileId: 'f', page: 1, type: 'db-schedule', text: 'DB REFERENCE DB-1\n26 Way\nCircuit Ref' }],
+    });
+  };
+  // 110-AC-MCB: 26 ways, 53.8% spare = 14 spare, 12 live, 12 captured
+  const partial = mk(53.8, 12).perBoard.find((b) => b.norm === 'DB1');
+  check('spare capacity: declared spare ways are not a shortfall', partial.unaccountedWays === 0,
+    `unaccounted=${partial.unaccountedWays} spareWays=${partial.spareWays}`);
+  check('spare capacity: the spare count is reported', partial.spareWays === 14, String(partial.spareWays));
+  check('spare capacity: the declared total is unchanged', partial.expectedWays === 26, String(partial.expectedWays));
+
+  // DB-6-SEC: 12 ways, 100% spare, no rows at all — complete, not empty
+  const allSpare = mk(100, 0).perBoard.find((b) => b.norm === 'DB1');
+  check('spare capacity: a fully spare board is complete', allSpare.unaccountedWays === 0,
+    String(allSpare.unaccountedWays));
+
+  // and a board with a REAL gap must still report it
+  const short = mk(0, 12).perBoard.find((b) => b.norm === 'DB1');
+  check('spare capacity: a real shortfall is still reported', short.unaccountedWays === 14, String(short.unaccountedWays));
+  const noDeclaration = mk(null, 12).perBoard.find((b) => b.norm === 'DB1');
+  check('spare capacity: a board declaring no spare is unchanged', noDeclaration.unaccountedWays === 14,
+    String(noDeclaration.unaccountedWays));
+
+  /* A fully spare board's schedule page correctly produces no rows, so it is
+   * not a page to investigate. */
+  check('spare capacity: a fully spare board is not a zero-row failure',
+    mk(100, 0).zeroRowSchedulePages.length === 0,
+    JSON.stringify(mk(100, 0).zeroRowSchedulePages));
+  check('spare capacity: a genuinely empty schedule page still is',
+    mk(0, 0).zeroRowSchedulePages.length === 1,
+    JSON.stringify(mk(0, 0).zeroRowSchedulePages));
+}
+
+/* The header block states it; the coverage model must be able to read it. */
+{
+  const facts = core.parseBoardHeaderFacts([
+    'Id No:  DB-6-SEC  ModelNo:  L1  L2  L3',
+    'Name:  SECURITY  No. of Ways:  12  Spare:  100  Total Connected Load (A):  0.00  0.00  0.00',
+  ]);
+  check('spare capacity: percentage read from the board-data block', facts.sparePercent === 100, String(facts.sparePercent));
+  check('spare capacity: way count still read alongside it', facts.waysTotal === 12, String(facts.waysTotal));
+  const decimal = core.parseBoardHeaderFacts(['Name:  110V AC DB  No. of Ways:  26  Spare:  53.8  Total Connected Load (A):  65.95']);
+  check('spare capacity: a decimal percentage is read', decimal.sparePercent === 53.8, String(decimal.sparePercent));
+  const none = core.parseBoardHeaderFacts(['REFERENCE DB-1-GF NUMBER OF WAYS 18 WAYS']);
+  check('spare capacity: a board that states none reports null', none.sparePercent === null, String(none.sparePercent));
+}
+
 if (fail) { console.log(`\n${fail} failure(s)`); process.exit(1); }
 console.log('PASS: expectedWaysFromText, pageLooksTabular, buildCoverage (header-vs-rows, zero-row pages, unreadable pages, no-header case)');
