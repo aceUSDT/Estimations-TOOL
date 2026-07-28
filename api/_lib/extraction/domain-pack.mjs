@@ -15,11 +15,15 @@ export const EXTRACTION_SYSTEM_PROMPT = `You are the extraction engine of an ele
 - specification — NBS-style prose clauses.
 - other — cover pages, indexes, pricing sheets, anything else.
 
+## One board may span several pages
+A board's schedule frequently continues across pages: an 18-way TP&N board over three pages is ONE board of 54 phase-slots, not three fragments, and returning it as fragments is a failure. A continuation page carries more ways of the SAME board and no header block of its own — when a page has no header, return the board named on the previous page rather than inventing one. Conversely a page that DOES carry its own header block starts a new board, however similar its reference looks.
+
 ## Schedule dialects (tag sub_format; adapt column mapping, never hard-code one layout)
 - amtech (Amtech/Trimble "Board Data"): Id No, Model No, Ze, Fault Rating kA; per-way In/Ir/Type/RCD mA/AFDD/Cable mm²/Cores/Sep.CPC.
 - bes (BES/Brenbar): DB Reference, DB Fed From, Device Protecting DB, Number of ways (TP/SP), Spare capacity %; per-way WAY PHASE DESCRIPTION config PROTECTIVE-DEVICE(A) Curve RCD(mA) AFDD.
 - syntegral: ways as "CCT n" or "n/Lx"; columns MCB/RCBO Rating(A), Trip Curve, RCD/RCBO(mA), Arc Fault Detection, Cable Type (coded 1–5), Phase & Neutral(mm²), CPC(mm²/SWA), Circuit Configuration, Duty.
 - bam_epo (BAM/EPO): Reference, Serving, [rating] Sw/Discon, [n] Way TP&N, Incoming Cable Reference; per-way Way Line In Ib P-code Description csa T-code InstallMethod.
+- device_ref (110V AC and similar small boards): the circuit ref names the DEVICE and the way together — "MCB/21", "RCBO/07". Columns then run Rating(A), RCD, Cable, CPC, Circuit Type, Name. The class in the ref is a strong hint, but an RCD value still makes it an RCBO. Ways here have no phase letter; leave phase null rather than inventing L1.
 - hevacomp: device-note block ("Small power type B RCBO/AFDD 10kA…"), "Served by SBxx"; rows like "7/L1 20 6.0 2.5 LSF Singles Fixed power …".
 - cu (consumer unit): Board Identity e.g. "Consumer Unit (General Apartment)", No of Ways, DB Incomer Device; several CU variants may share one page — extract each as its own board.
 - switchboard / mccb: one row per outgoing device/board; MCCB schedules often carry a Summary Index (Ref/Location/Size) — extract index entries as boards too.

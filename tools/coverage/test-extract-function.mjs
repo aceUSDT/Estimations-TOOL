@@ -176,3 +176,25 @@ check('prompt forbids counting', /NEVER count/.test(EXTRACTION_SYSTEM_PROMPT));
 
 if (fail) { console.log(`\n${fail} failure(s)`); process.exit(1); }
 console.log('PASS: inline-extract validation, health probe, and schema invariants.');
+
+/* Dialect and structural knowledge the fixtures proved the prompt needs.
+ *
+ * The failures behind each: a 110V board numbering ways by device yielded
+ * nothing because no dialect described it, and a board stitched across three
+ * pages was returned as three fragments. Both are knowledge the model cannot
+ * infer from one page in isolation. */
+{
+  const required = [
+    ['device-prefixed circuit refs', /MCB\/21/],
+    ['RCD still decides class there', /RCD value still makes it an RCBO/i],
+    ['no phase letter invented', /leave phase null rather than inventing/i],
+    ['a board may span pages', /ONE board of 54 phase-slots/],
+    ['continuation has no header', /no header block of its own/i],
+    ['own header starts a new board', /carry its own header block starts a new board|DOES carry its own header block/i],
+  ];
+  for (const [name, re] of required) {
+    check(`system prompt: ${name}`, re.test(EXTRACTION_SYSTEM_PROMPT));
+  }
+  // the invariant that must never be edited out of it
+  check('system prompt still forbids counting', /NEVER count/.test(EXTRACTION_SYSTEM_PROMPT));
+}
