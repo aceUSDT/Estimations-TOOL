@@ -1177,6 +1177,11 @@ const BOARD_PATTERNS = [
   {re:/\b(L\s?D\s?B[\s.\-_\/]?\d*[A-Z]?)\b/gi, type:'LDB'},
   {re:/\b(P\s?D\s?B[\s.\-_\/]?\d*[A-Z]?)\b/gi, type:'PDB'},
   {re:/\b(DB\s?[.\-_\/]\s?[A-Z0-9]{1,8}(?:[.\-_\/][A-Z0-9]{1,8})*)\b/gi, type:'DB', guard:true},
+  /* "DB LP3", "DB KIT" — separated by a SPACE, which every pattern above
+     requires to be a dash, dot, slash or underscore. A whole consultant's
+     drawing set resolved no board at all because of it. Uppercase only and
+     stopword-guarded, so "DB schedule" and "DB reference" still mint nothing. */
+  {re:/\b(DB\s+[A-Z]{1,6}\d{0,3}[A-Z]?)\b/g, type:'DB', guard:true},
   {re:/\b(D\.?\s?B\.?(?:[\s.\-_\/]?\d+[A-Z]?)+(?:\s+[A-Z])?)\b/gi, type:'DB'},
   {re:/\b(MCC(?!B)[\s.\-_\/]?\d*)\b/gi, type:'MCC'},
   {re:/\b(MCP[\s.\-_\/]?\d*[A-Z]?)\b/gi, type:'MECH'},
@@ -1289,6 +1294,31 @@ function detectBoards(line){
     .map(({orig,norm,type,section})=>({orig,norm,type,section}));
 }
 
+/* One drawing sheet often carries TWO board schedules — the existing board and
+   its replacement, printed side by side. Resolving one board per page gave the
+   whole sheet to whichever header resolved first, and the other board's ways
+   were attributed to it or lost outright.
+
+   Returns null unless the page really does declare more than one board, so the
+   single-board path stays exactly as it was. */
+function scheduleBoardSegments(lines){
+  const arr=(lines||[]).map(l=>String(l||'').trim());
+  const REFERENCE=/(?<!(?:cable|drawing|document|project|job|schedule)\s)\bREFERENCE\b\s*[:=\-]?\s+(.{2,40}?)\s*$/i;
+  const starts=[];
+  arr.forEach((t,i)=>{ if(REFERENCE.test(t)) starts.push(i); });
+  if(starts.length<2) return null;
+  const segs=[];
+  starts.forEach((from,k)=>{
+    const to=k+1<starts.length?starts[k+1]:arr.length;
+    const board=scheduleBoardFromLines(arr.slice(from,to));
+    if(board) segs.push({from,to,board});
+  });
+  /* Two headers that resolve to the same board are one board printed twice —
+     no segmentation needed, and pretending otherwise would split its ways. */
+  if(segs.length<2||new Set(segs.map(s=>s.board.norm)).size<2) return null;
+  return segs;
+}
+
 function scheduleBoardFromLines(lines){
   /* pdf.js emits one line per table CELL, so a header label and its value
      routinely land on SEPARATE lines: "REFERENCE" then "DB-1-GF". Scanning
@@ -1317,7 +1347,13 @@ function scheduleBoardFromLines(lines){
     const canonical=canonicalBoardRef(declared,{declared:true});
     if(canonical.normalised&&/[A-Z]/i.test(declared)) return {orig:canonical.display,norm:canonical.normalised,type:'UNK',section:canonical.splitSection};
   }
-  if(/(number of ways|circuit ref|served by|incomer)/i.test(joined)){
+  /* The gate names the header labels that prove a page is a board schedule, so
+     a cable or drawing reference cannot name a board. It knew four, and a whole
+     consultant dialect uses none of them: its header reads
+     "REFERENCE / LOCATION / TYPE  12-WAY TP&N / MCBs / RCDs / RCBOs" over a
+     table headed "WAY PHASE". Both additions are board-schedule specific — a
+     way count in the TYPE cell, and the way/phase column pair. */
+  if(/(number of ways|circuit ref|served by|incomer|\b\d{1,3}\s*-?\s*way\b|\bway\s+phase\b)/i.test(joined)){
     /* Take the first BOARD-SHAPED reference in the window after the label, not
        the token that happens to sit next to it. pdf.js orders cells by
        position, so a header block frequently arrives as all labels then all
@@ -1478,6 +1514,13 @@ function classifyPage(text, pageIdx, totalPages){
   const phaseRows=(text.match(/\bL[123]\b/g)||[]).length;
   const codedRows=(text.match(/(?:^|\n)\s*(?:\d{1,3}\s+)?(?:L[123]\s+)?\d+(?:\.\d+)?\s+[JKLMN]\s+[BCD]\b[^\n]*\b(?:Ri|Ra)\s+[LP]\b/gim)||[]).length;
   if(codedRows>=2&&phaseRows>=3) add('db-schedule',9);
+  /* A mirrored circuit chart is a board schedule beyond argument — a busbar
+     spine with a way and phase on each side, repeated down the sheet. It has to
+     outweigh 'sld', because BUSBAR is one of that chart's COLUMN HEADINGS: the
+     word alone scored the page as a single-line diagram, which switched off the
+     entire schedule walk and returned a board with no devices. */
+  if (window.EstimationExtractorCore?.looksLikeMirroredChart
+      && window.EstimationExtractorCore.looksLikeMirroredChart(text.split('\n'))) add('db-schedule',10);
   /* Row FORMAT varies wildly between vendors — P-codes, coded columns, plain
      manufacturer strings ("Acti9 iC60H, MCB, Type C") — so keying only on row
      shape misses whole dialects and a page that is plainly a board schedule
@@ -2198,6 +2241,12 @@ function bindDeviceBoard(ref,pageBoard){
    any caller that does hand over a whole envelope working. */
 function mergeAiResult(A,out,fileId,pageNo,masterVerdict){
   if(!out) return;
+  /* How the agent read the sheet. A wrong layout reading is the largest miss
+     there is — it loses a whole board, or half of every row — and it surfaces
+     as an empty result rather than a wrong value, which is the hardest kind of
+     failure to spot. Kept so it can be shown next to the result instead of
+     being discarded like the master verdict once was. */
+  if(out.layout){ A.layouts=A.layouts||{}; A.layouts[fileId+'#'+pageNo]=out.layout; }
   const pageBoard=primaryBoardForPage(A,fileId,pageNo);
   (out.boards||[]).forEach(b=>{
     if(!b.ref) return;
@@ -2948,12 +2997,16 @@ async function runAnalysis(opts){
       /* The header is resolved BEFORE any board is registered. Registering
          every ref scanned out of row text first is what let one board's ways
          and phases each mint a board of their own. */
-      let ctxBoard=null;
+      let ctxBoard=null, segments=null;
       if (isSched){
-        ctxBoard=scheduleBoardFromLines(lines);
+        /* A sheet may print two board schedules side by side — the existing
+           board and its replacement. Resolved as one board, the whole sheet
+           went to whichever header came first. */
+        segments=scheduleBoardSegments(lines);
+        ctxBoard=segments?segments[0].board:scheduleBoardFromLines(lines);
         const hasBoardHeader=hasScheduleBoardHeader(lines);
         if (!ctxBoard && !hasBoardHeader && prevBoard) ctxBoard=prevBoard; // continuation page
-        if (ctxBoard) prevBoard=ctxBoard;
+        if (ctxBoard) prevBoard=segments?segments[segments.length-1].board:ctxBoard;
         else if(hasBoardHeader) prevBoard=null;
       } else prevBoard=null;
       const keptBoards=(ctxBoard&&window.EstimationExtractorCore?.reconcilePageBoards)
@@ -2961,6 +3014,17 @@ async function runAnalysis(opts){
         : pageBoards;
       keptBoards.forEach(b=>regBoard(b,id,pageNo));
       if (ctxBoard) regBoard(ctxBoard,id,pageNo,true);
+      /* Every board the sheet declares is a board, not just the first. Header
+         facts are read from each one's own block so a 12-way board and an
+         8-way board on the same sheet each get their own way count. */
+      if (segments) segments.forEach(seg=>{
+        regBoard(seg.board,id,pageNo,true);
+        if (window.EstimationExtractorCore?.parseBoardHeaderFacts){
+          const f2=window.EstimationExtractorCore.parseBoardHeaderFacts(lines.slice(seg.from,seg.to));
+          const e2=A.boards[seg.board.norm];
+          if (e2 && f2.waysTotal){ e2.waysTotal=f2.waysTotal; e2.header=Object.assign({},e2.header||{},{ways_total:f2.waysTotal}); }
+        }
+      });
       /* The board's own header block states its way count, its upstream feed
          and its incomer. These are the document's words, so they beat anything
          inferred from rows — and the way count is what makes the capacity
@@ -2996,14 +3060,34 @@ async function runAnalysis(opts){
         A.rows.push({id:uid(), boardNorm:ctx.board, boardSection:ctx.boardSection, fileId:id, page:pageNo, line, status:'pending', kind:'schedule', ...row,...trace,conf:confidence});
       };
       if(codedPage.matched) codedPage.rows.forEach(row=>addScheduleRow(row,row.line));
+      /* A mirrored ("double-sided") chart prints two half-tables facing each
+         other across the busbar, so ONE line carries TWO ways. Every other row
+         parser reads left to right and returns one row, so these sheets matched
+         nothing and their boards came back with no devices at all. */
+      const mirrored=isSched&&!codedPage.matched&&window.EstimationExtractorCore?.looksLikeMirroredChart
+        ? window.EstimationExtractorCore.looksLikeMirroredChart(lines) : false;
       lines.forEach((t,li)=>{
         const lower=t.toLowerCase();
         if (f.ignore.length && f.ignore.some(w=>lower.includes(w))) return;
+        /* Rows belong to the board whose header block precedes them. */
+        if (segments){
+          const seg=segments.find(s=>li>=s.from&&li<s.to);
+          if (seg && seg.board.norm!==ctx.board){ ctx.board=seg.board.norm; ctx.boardOrig=seg.board.orig; ctx.boardSection=seg.board.section||null; }
+        }
         detectCables(t).forEach(c=>{
           A.cables.push({id:uid(), fileId:id, page:pageNo, line:li, boardNorm:ctx.board, srcText:t.trim(),
             conf: (isSched||pg.type==='cable-schedule')?0.85:0.7, status:'pending', ...c});
         });
         if (isSched){
+          if (mirrored){
+            const pair=window.EstimationExtractorCore.parseMirroredChartLine(t);
+            if (pair){
+              if (pair.left) addScheduleRow(pair.left,li);
+              if (pair.right) addScheduleRow(pair.right,li);
+              parseFeeders(t, pageBoards, ctx.board).forEach(fd=>A.feeders.push({id:uid(),fileId:id,page:pageNo,line:li,...fd}));
+              return;
+            }
+          }
           const row=codedPage.matched?null:parseScheduleLine(t, ctx);
           if (row){
             addScheduleRow(row,li);
@@ -3299,6 +3383,13 @@ function renderResults(){
   const sum=$('#anSummary');
   if (!A || !A.rows.length){
     sum.innerHTML='';
+    /* The coverage bar lives outside the two panels cleared here, so this early
+       return used to leave the PREVIOUS project's banner on screen — a project
+       with two boards and no devices displayed another project's nine boards
+       and their unaccounted ways. Every panel this function owns must be
+       cleared on every path, not only on the path that draws them. */
+    const bar=$('#anCoverage');
+    if (bar){ bar.innerHTML=''; bar.style.display='none'; }
     host.innerHTML='<div class="empty"><div class="ico">▦</div>No results yet — press <b>Count devices</b>.</div>';
     return;
   }
@@ -3351,6 +3442,17 @@ function renderResults(){
       if(byRole.extractor.length) bits.push('extract: '+byRole.extractor.join(', '));
       if(byRole.second.length) bits.push('second opinion: '+byRole.second.join(', '));
       if(bits.length) parts.push(`<span class="cov-dim">Sub-agents used \u2014 ${esc(bits.join(' \u00b7 '))}.</span>`);
+    }
+    /* State how the sheets were read. An estimator who can see "read as one way
+       per row" next to a half-empty board can tell a layout misreading from a
+       genuinely sparse schedule; without it both look the same. */
+    if(A.layouts&&Object.keys(A.layouts).length){
+      const tally={};
+      Object.values(A.layouts).forEach(l=>{ const k=l.rows_read||'unclear'; tally[k]=(tally[k]||0)+1; });
+      const label={left_to_right:'one way per row', mirrored:'mirrored, two ways per row', vertical:'vertical', unclear:'layout unclear'};
+      const bits=Object.entries(tally).map(([k,n])=>`${n} page${n===1?'':'s'} ${label[k]||k}`);
+      const unclear=tally.unclear||0;
+      parts.push(`<span class="${unclear?'cov-bad':'cov-dim'}">Read as — ${esc(bits.join(', '))}.</span>`);
     }
     if(A.master&&A.master.pages){
       parts.push(`<span class="cov-dim">Master audit: ${A.master.pages} page${A.master.pages===1?'':'s'} reviewed`

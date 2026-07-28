@@ -450,4 +450,37 @@ console.log('PASS: nvidia pool + agent team + engine selector + worker master-au
     if (!re.test(schematicPrompt)) { console.log(`FAIL [schematic orders] missing: ${name}`); process.exitCode = 1; }
   }
   if (!process.exitCode) console.log('ok  schematic orders reach schematic pages only');
+
+  /* Every practice draws these sheets differently, so the orders can say what a
+   * board schedule MEANS but not where this one puts things. The agent is told
+   * to work the layout out first and state it — a wrong layout reading loses a
+   * whole board or half of every row, and shows up as an empty result rather
+   * than a wrong value, which is the hardest kind of failure to notice. */
+  const layoutRequired = [
+    ['read the layout first', /READ THE LAYOUT BEFORE YOU READ THE DATA/],
+    ['find the header block whatever it is called', /The label varies/i],
+    ['ask whether the sheet carries more than one board', /MORE THAN ONE board/],
+    ['identify columns by heading, not position', /by their headings, not by position/i],
+    ['mirrored charts read outward from the busbar', /two half-tables facing/i],
+    ['the mirrored giveaway is the way/phase spine', /way, phase, phase, way/i],
+    ['ignore notes printed beside the table', /run into your row text/i],
+    ['state the reading, and say so when unsure', /State your reading in "layout"/],
+  ];
+  for (const [name, re] of layoutRequired) {
+    if (!re.test(textPrompt)) { console.log(`FAIL [layout] missing: ${name}`); process.exitCode = 1; }
+  }
+
+  /* The master audits the layout reading too, because way arithmetic cannot
+   * catch it: a sheet read one-way-per-row when it is mirrored returns half the
+   * devices and a way count that looks plausible. */
+  const master = await import('../../api/_lib/extraction/agent-team.mjs');
+  if (typeof master.MASTER_VERDICT_SCHEMA !== 'object') { console.log('FAIL [layout] master schema missing'); process.exitCode = 1; }
+
+  const pack = await import('../../api/_lib/extraction/domain-pack.mjs');
+  const layoutField = pack.EXTRACTION_SCHEMA.properties.layout;
+  if (!layoutField) { console.log('FAIL [layout] schema has no layout field for the agent to answer in'); process.exitCode = 1; }
+  else if (!(layoutField.properties.rows_read.enum || []).includes('mirrored')) {
+    console.log('FAIL [layout] rows_read cannot express a mirrored sheet'); process.exitCode = 1;
+  }
+  if (!process.exitCode) console.log('ok  layout reconnaissance: ordered, answerable, and audited');
 }

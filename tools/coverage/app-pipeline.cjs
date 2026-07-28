@@ -55,6 +55,7 @@ const BOARD_PATTERNS = [
   {re:/\b(L\s?D\s?B[\s.\-_\/]?\d*[A-Z]?)\b/gi, type:'LDB'},
   {re:/\b(P\s?D\s?B[\s.\-_\/]?\d*[A-Z]?)\b/gi, type:'PDB'},
   {re:/\b(DB\s?[.\-_\/]\s?[A-Z0-9]{1,8}(?:[.\-_\/][A-Z0-9]{1,8})*)\b/gi, type:'DB', guard:true},
+  {re:/\b(DB\s+[A-Z]{1,6}\d{0,3}[A-Z]?)\b/g, type:'DB', guard:true},
   {re:/\b(D\.?\s?B\.?(?:[\s.\-_\/]?\d+[A-Z]?)+(?:\s+[A-Z])?)\b/gi, type:'DB'},
   {re:/\b(MCC(?!B)[\s.\-_\/]?\d*)\b/gi, type:'MCC'},
   {re:/\b(MCP[\s.\-_\/]?\d*[A-Z]?)\b/gi, type:'MECH'},
@@ -145,6 +146,22 @@ function detectBoards(line){
     .map(({orig,norm,type,section})=>({orig,norm,type,section}));
 }
 
+function scheduleBoardSegments(lines){
+  const arr=(lines||[]).map(l=>String(l||'').trim());
+  const REFERENCE=/(?<!(?:cable|drawing|document|project|job|schedule)\s)\bREFERENCE\b\s*[:=\-]?\s+(.{2,40}?)\s*$/i;
+  const starts=[];
+  arr.forEach((t,i)=>{ if(REFERENCE.test(t)) starts.push(i); });
+  if(starts.length<2) return null;
+  const segs=[];
+  starts.forEach((from,k)=>{
+    const to=k+1<starts.length?starts[k+1]:arr.length;
+    const board=scheduleBoardFromLines(arr.slice(from,to));
+    if(board) segs.push({from,to,board});
+  });
+  if(segs.length<2||new Set(segs.map(x=>x.board.norm)).size<2) return null;
+  return segs;
+}
+
 function scheduleBoardFromLines(lines){
   /* pdf.js emits one line per table CELL, so a header label and its value
      routinely land on SEPARATE lines: "REFERENCE" then "DB-1-GF". Scanning
@@ -173,7 +190,7 @@ function scheduleBoardFromLines(lines){
     const canonical=canonicalBoardRef(declared,{declared:true});
     if(canonical.normalised&&/[A-Z]/i.test(declared)) return {orig:canonical.display,norm:canonical.normalised,type:'UNK',section:canonical.splitSection};
   }
-  if(/(number of ways|circuit ref|served by|incomer)/i.test(joined)){
+  if(/(number of ways|circuit ref|served by|incomer|\b\d{1,3}\s*-?\s*way\b|\bway\s+phase\b)/i.test(joined)){
     /* Take the first BOARD-SHAPED reference in the window after the label, not
        the token that happens to sit next to it. pdf.js orders cells by
        position, so a header block frequently arrives as all labels then all
@@ -332,6 +349,7 @@ function classifyPage(text, pageIdx, totalPages){
   const phaseRows=(text.match(/\bL[123]\b/g)||[]).length;
   const codedRows=(text.match(/(?:^|\n)\s*(?:\d{1,3}\s+)?(?:L[123]\s+)?\d+(?:\.\d+)?\s+[JKLMN]\s+[BCD]\b[^\n]*\b(?:Ri|Ra)\s+[LP]\b/gim)||[]).length;
   if(codedRows>=2&&phaseRows>=3) add('db-schedule',9);
+  if (EstimationExtractorCore.looksLikeMirroredChart && EstimationExtractorCore.looksLikeMirroredChart(text.split('\n'))) add('db-schedule',10);
   /* Row FORMAT varies wildly between vendors — P-codes, coded columns, plain
      manufacturer strings ("Acti9 iC60H, MCB, Type C") — so keying only on row
      shape misses whole dialects and a page that is plainly a board schedule
@@ -575,7 +593,7 @@ module.exports = {
   EstimationExtractorCore,
   BOARD_TYPES, normBoard,
   detectBoards, detectCables, classifyPage,
-  scheduleBoardFromLines,
+  scheduleBoardFromLines, scheduleBoardSegments,
   isHeaderLine, isSeparator, isNoteLine, detectDeviceIn, qtyIn,
   parseScheduleLine, parseFeeders, analyseDocument,
   SCHEDULE_TYPES, MENTION_TYPES,

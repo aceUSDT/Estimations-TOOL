@@ -572,6 +572,141 @@ console.log('PASS: descriptive board names, with codes still winning.');
     extractBoardReferences(connectedTo).some((b) => b.normalised === 'DBWORKSHOP'));
 }
 
+/* Mirrored ("double-sided") circuit charts.
+ *
+ * A consultant's whole drawing set returned ZERO devices. Three independent
+ * causes, each of which alone was enough:
+ *
+ *   1. "DB LP3" and "DB KIT" are separated by a SPACE. Every board pattern
+ *      required a dash, dot, slash or underscore, so no board resolved at all.
+ *   2. The header gate listed four labels that prove a page is a board
+ *      schedule. This dialect uses none of them — its header reads
+ *      "REFERENCE / LOCATION / TYPE 12-WAY TP&N" over a table headed
+ *      "WAY PHASE".
+ *   3. BUSBAR is one of the chart's COLUMN HEADINGS, and the classifier scored
+ *      the word as evidence of a single-line diagram — which switched off the
+ *      entire schedule walk.
+ *
+ * And then the layout itself: two half-tables facing each other across the
+ * busbar, so one printed line carries TWO ways. Every row parser here reads
+ * left to right and returns one row.
+ *
+ * Rows below are quoted from 2678-BWP-DR-E-70-0001; the expected values are
+ * from the estimator's own reading of the sheet. */
+{
+  const { parseMirroredChartLine, looksLikeMirroredChart, extractBoardReferences } = P.EstimationExtractorCore;
+
+  // 1. space-separated board references
+  for (const [name, expected] of [['REFERENCE  DB LP3 (EXISTING)', 'DBLP3'],
+    ['REFERENCE  DB LP3A', 'DBLP3A'], ['REFERENCE  DB KIT (EXISTING)', 'DBKIT']]) {
+    check(`mirrored: core resolves ${expected}`,
+      extractBoardReferences(name).some((b) => b.normalised === expected),
+      JSON.stringify(extractBoardReferences(name).map((b) => b.normalised)));
+    check(`mirrored: app resolves ${expected}`,
+      P.detectBoards(name).some((b) => b.norm === expected),
+      JSON.stringify(P.detectBoards(name).map((b) => b.norm)));
+  }
+  // the space form must not let prose mint a board
+  for (const prose of ['DB schedule', 'DB reference', 'the DB was replaced', 'DB TYPE']) {
+    check(`mirrored: "${prose}" mints no board`, P.detectBoards(prose).length === 0,
+      JSON.stringify(P.detectBoards(prose).map((b) => b.norm)));
+  }
+
+  const chart = [
+    'REFERENCE  DB LP3 (EXISTING)',
+    'TYPE  12-WAY TP&N - BOTTOM ENTRY / TOP EXIT (ABB DIST BOARD)',
+    'WAY PHASE  PHASE WAY',
+    'LOCATION  SERVICE  CIRCUIT  RATING DEVICE  BUSBAR  DEVICE RATING  CIRCUIT  SERVICE  LOCATION',
+    'STORES (G.67, G.68), ELEC CUPBOARD  LIGHTING  RADIAL  10  MCB  1  L1  L1  2  RCBO  10  RADIAL  LIGHTING  DUTY MANAGER',
+    'ELEC CUPBOARD, EAST CORRIDOR  SOCKETS  RING  2.5mm²/2.5mm²/S  32  RCBO  3  L3  L3  4  MCB  32  RADIAL  BATH  BATHING RM',
+    '*  SPARE  SPARE  -  -  9  L1  L1  10  RCBO  20  RADIAL  SOCKETS  SOCKET BEHIND BED & EN SUITE G78',
+  ];
+
+  // 2 + 3. the page must resolve a board and classify as a schedule
+  check('mirrored: layout is recognised', looksLikeMirroredChart(chart) === true);
+  const board = P.scheduleBoardFromLines(chart);
+  check('mirrored: the header resolves the board', board && board.norm === 'DBLP3', JSON.stringify(board));
+  check('mirrored: the page classifies as a schedule, not an SLD',
+    P.classifyPage(chart.join('\n'), 0, 1).type === 'db-schedule',
+    JSON.stringify(P.classifyPage(chart.join('\n'), 0, 1)));
+
+  // 4. one line, two ways — read outward on the left, inward on the right
+  const row = parseMirroredChartLine(chart[4]);
+  check('mirrored: left half is way 1 L1, MCB 10A',
+    row && row.left && row.left.way === 1 && row.left.phase === 'L1'
+      && row.left.device === 'MCB' && row.left.rating === 10, JSON.stringify(row && row.left));
+  check('mirrored: right half is way 2 L1, RCBO 10A',
+    row && row.right && row.right.way === 2 && row.right.phase === 'L1'
+      && row.right.device === 'RCBO' && row.right.rating === 10, JSON.stringify(row && row.right));
+  /* Room references identify the circuit. Stripping every number to remove the
+     rating turned "STORES (G.67, G.68)" into "STORES (G. , G. )". */
+  check('mirrored: room references survive rating removal',
+    /G\.67/.test(row.left.desc) && /G\.68/.test(row.left.desc), row.left.desc);
+  check('mirrored: ring/radial is read', row.left.circuitConfig === 'radial');
+
+  const ring = parseMirroredChartLine(chart[5]);
+  check('mirrored: ring circuit on way 3 L3 is RCBO 32A',
+    ring.left.way === 3 && ring.left.phase === 'L3' && ring.left.device === 'RCBO'
+      && ring.left.rating === 32 && ring.left.circuitConfig === 'ring', JSON.stringify(ring.left));
+  check('mirrored: cable size is captured, not read as a rating',
+    ring.left.cable && /2\.5mm/.test(ring.left.cable.orig), JSON.stringify(ring.left.cable));
+
+  const spare = parseMirroredChartLine(chart[6]);
+  check('mirrored: a spare way is a spare, not a device', spare.left.spare === true && spare.left.way === 9);
+  check('mirrored: its opposite half is still read', spare.right.device === 'RCBO' && spare.right.rating === 20);
+
+  /* A device whose rating did not survive the line grouping is still a device
+     and belongs in the take-off — but it is not a confident reading, so it
+     goes to Review rather than being dropped or presented as certain. */
+  const noRating = parseMirroredChartLine('RCBO RCBO  5  L2  L2  6  RCBO  20');
+  check('mirrored: a device with no rating is kept', noRating.left.device === 'RCBO');
+  check('mirrored: and is marked for review', noRating.left.rating === null && noRating.left.conf < 0.8);
+
+  /* The spine is way, phase, phase, way — consecutive, odd then even. A run of
+     unrelated numbers is not a busbar. */
+  check('mirrored: non-consecutive ways are not a spine',
+    parseMirroredChartLine('4  L1  L1  9  MCB  20') === null);
+  check('mirrored: even-then-odd is not a spine',
+    parseMirroredChartLine('2  L1  L1  3  MCB  20') === null);
+  check('mirrored: a busbar rating between the phases is tolerated',
+    (parseMirroredChartLine('10  RCBO  3  L2  250A L2  4  MCB  20') || {}).left?.way === 3);
+  check('mirrored: one matching line is not a layout',
+    looksLikeMirroredChart(['1  L1  L1  2  MCB  20']) === false);
+}
+
+/* One sheet, two board schedules — the existing board and its replacement,
+ * printed side by side. Resolved as one board, the whole sheet went to
+ * whichever header came first and the other board's ways were lost. */
+{
+  const twoBoards = [
+    'REFERENCE  DB LP3 (EXISTING)',
+    'TYPE  12-WAY TP&N',
+    'STORES  LIGHTING  RADIAL  10  MCB  1  L1  L1  2  RCBO  10  RADIAL  LIGHTING  DUTY MANAGER',
+    'REFERENCE  DB LP3A',
+    'TYPE  12-WAY TP&N',
+    'ELEC CUPBOARD  SOCKETS  RING  32  AFDD  1  L1  L1  2  AFDD  32  RING  SOCKETS  KITCHEN',
+  ];
+  const segs = P.scheduleBoardSegments(twoBoards);
+  check('two boards: the sheet is split', segs && segs.length === 2, JSON.stringify(segs));
+  check('two boards: first segment is DB LP3', segs[0].board.norm === 'DBLP3');
+  check('two boards: second segment is DB LP3A', segs[1].board.norm === 'DBLP3A');
+  check('two boards: the split falls on the second header', segs[1].from === 3, String(segs[1].from));
+
+  /* Two headers naming the SAME board are one board printed twice — splitting
+     it would divide its ways across two copies of itself. */
+  const sameBoard = [
+    'REFERENCE  DB KIT (EXISTING)', 'TYPE  8-WAY TP&N',
+    'WC  LIGHTING  RADIAL  10  MCB  1  L1  L1  2  MCB  20  RADIAL  SOCKETS  FRIDGE',
+    'REFERENCE  DB KIT (EXISTING)', 'TYPE  8-WAY TP&N',
+    'OFFICE  SOCKETS  RING  32  AFDD  1  L3  L3  2  MCB  20  RADIAL  SOCKETS  KITCHEN',
+  ];
+  check('two boards: one board printed twice is not split',
+    P.scheduleBoardSegments(sameBoard) === null);
+  // and a page with a single header keeps the original single-board path
+  check('two boards: a single header is not segmented',
+    P.scheduleBoardSegments(['REFERENCE  DB LP3A', 'TYPE  12-WAY TP&N']) === null);
+}
+
 /* Trimble/Amtech "Board Data" blocks declare the board as "Id No:".
  *
  * These pages carry no REFERENCE label at all, so they resolved no board — and

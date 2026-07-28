@@ -620,6 +620,11 @@
       { re: /\b(?:LDB|PDB|MCC|MCP|SB)(?:[\s._/-]?\d+[A-Z]?)+\b/gi },
       // DB + letter-bearing tokens: DB-MECH, DB-AV, DB/GF, DB-ESS-01, DB-00-SUBEXT
       { re: /\bDB\s?[.\-_/]\s?[A-Z0-9]{1,8}(?:[.\-_/][A-Z0-9]{1,8})*\b/gi, guard: true },
+      /* "DB LP3", "DB KIT" — separated by a SPACE, which the pattern above
+       * requires to be a dash, dot, slash or underscore. A whole consultant's
+       * drawing set resolved no board at all because of it. Uppercase only and
+       * stopword-guarded, so "DB schedule" still mints nothing. */
+      { re: /\bDB\s+[A-Z]{1,6}\d{0,3}[A-Z]?\b/g, guard: true },
       { re: /\bDB\.?(?:[\s._/-]?\d+[A-Z]?)+(?:\s+[A-Z])?\b/gi },
       // panelboards / switchboards: PB01, MSB1
       { re: /\b(?:PB|MSB)[\s.\-_/]?\d+[A-Z]?\b/gi },
@@ -1015,6 +1020,140 @@
   function dialectDevice({ rcdMa = null, afdd = false } = {}) {
     if (afdd) return 'AFDD+RCBO';
     return Number(rcdMa) > 0 ? 'RCBO' : 'MCB';
+  }
+
+  /* ---- Mirrored ("double-sided") circuit charts -------------------------
+   *
+   * A very common UK consultant layout: the board's ways are printed as two
+   * half-tables facing each other across the busbar, so ONE printed row carries
+   * TWO ways — odd on the left, even on the right:
+   *
+   *   LOCATION SERVICE CIRCUIT RATING DEVICE │ WAY PHASE │ PHASE WAY │ DEVICE RATING CIRCUIT SERVICE LOCATION
+   *   STORES, ELEC CUPBOARD LIGHTING RADIAL 10 MCB │ 1  L1 │ L1  2 │ RCBO 10 RADIAL LIGHTING DUTY MANAGER
+   *
+   * Every row parser in this file reads left-to-right and returns one row, so
+   * on these sheets each line matched nothing and the boards came back with
+   * zero devices — the board reference resolved, the ways did not.
+   *
+   * The left half reads OUTWARD from the busbar (…RATING DEVICE, way) and the
+   * right half reads INWARD (way, DEVICE RATING…), so the device nearest the
+   * spine is the one that belongs to that way. */
+
+  /* The spine: way, phase, phase, way. A busbar rating is sometimes printed
+   * across the middle ("3 L2 250A L2 4"), so one token is tolerated between
+   * the phases. Both ways must be plausible and adjacent in the way ordering
+   * (odd then its following even), which is what stops a run of unrelated
+   * numbers from reading as a spine. */
+  const MIRROR_SPINE = /(?:^|\s)(\d{1,3})\s+(L[123])\s+(?:\S{1,6}\s+)?(L[123])\s+(\d{1,3})(?=\s|$)/i;
+  const MIRROR_DEVICE = /\b(AFDD\s*\+?\s*RCBO|RCBO|MCCB|ACB|AFDD|MCB|RCD|SPD|ISOLATOR|CONTACTOR|FUSE)\b/gi;
+  const MIRROR_CABLE = /\d+(?:\.\d+)?\s*mm²\s*\/\s*\d+(?:\.\d+)?\s*mm²\s*\/\s*[A-Z0-9]+/i;
+  const MIRROR_CIRCUIT = /\b(RADIAL|RING)\b/i;
+  /* Device names as the rest of the take-off spells them, so a mirrored chart's
+   * devices group with everything else rather than forming their own types. */
+  const DEVICE_DISPLAY = {
+    'AFDD+RCBO': 'AFDD+RCBO', RCBO: 'RCBO', MCCB: 'MCCB', ACB: 'ACB', AFDD: 'AFDD',
+    MCB: 'MCB', RCD: 'RCD', SPD: 'SPD', ISOLATOR: 'Isolator', CONTACTOR: 'Contactor', FUSE: 'Fuse',
+  };
+
+  /* One side of the spine. `fromSpine` says which end of the half sits against
+   * the busbar, because the device that belongs to this way is the one nearest
+   * it — the far end of the half is the previous or next column block. */
+  function parseMirrorHalf(half, way, phase, fromSpine, srcText) {
+    const text = String(half || '').replace(/\s+/g, ' ').trim();
+    if (!text) return null;
+    const spare = /\bSPARE\b/i.test(text);
+
+    MIRROR_DEVICE.lastIndex = 0;
+    const hits = [...text.matchAll(MIRROR_DEVICE)];
+    if (!hits.length) return spare ? dialectSpareRow(srcText, way, phase) : null;
+    const hit = fromSpine === 'end' ? hits[hits.length - 1] : hits[0];
+    const raw = hit[1].toUpperCase().replace(/\s+/g, '');
+    const device = DEVICE_DISPLAY[raw] || raw;
+
+    /* The rating is the bare number adjacent to that device. Look on the side
+     * away from the spine first, which is where the column sits, then on the
+     * other — some sheets print "AFDD 32" and some print "32 AFDD". */
+    let before = text.slice(0, hit.index);
+    let after = text.slice(hit.index + hit[0].length);
+    const lastNum = (before.match(/(\d{1,4})(?:\s*A)?\s*$/) || [])[1];
+    const firstNum = (after.match(/^\s*(\d{1,4})(?:\s*A)?\b/) || [])[1];
+    const takeBefore = fromSpine === 'end' ? lastNum != null : lastNum != null && firstNum == null;
+    const ratingRaw = takeBefore ? lastNum : (firstNum ?? lastNum);
+    const rating = ratingRaw == null ? null : Number(ratingRaw);
+    /* Remove only the ONE number that was read as the rating. Stripping every
+     * number instead turned "STORES (G.67, G.68)" into "STORES (G. , G. )" and
+     * lost the room references an estimator identifies the circuit by. */
+    if (rating != null) {
+      if (takeBefore) before = before.replace(/(\d{1,4})(?:\s*A)?\s*$/, ' ');
+      else after = after.replace(/^\s*(\d{1,4})(?:\s*A)?\b/, ' ');
+    }
+
+    const cable = (text.match(MIRROR_CABLE) || [])[0] || null;
+    const circuit = (text.match(MIRROR_CIRCUIT) || [])[0];
+    /* What is left once the structural columns are removed is the circuit's
+     * service and location, which is what an estimator reads to identify it. */
+    const desc = `${before} ${after}`
+      .replace(MIRROR_CABLE, ' ')
+      .replace(/\b(RADIAL|RING)\b/gi, ' ')
+      .replace(/[*]+/g, ' ')
+      .replace(/\s+-\s+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    return {
+      way,
+      phase,
+      rating,
+      device,
+      poles: 1,
+      circuitConfig: circuit ? (/ring/i.test(circuit) ? 'ring' : 'radial') : null,
+      cable: cable ? { orig: cable.replace(/\s+/g, '') } : null,
+      desc: desc || null,
+      associatedDevices: extractAssociatedEquipment(desc || ''),
+      spare: false,
+      space: false,
+      incomer: false,
+      qty: 1,
+      srcText,
+      /* A device read without its rating is still a device and belongs in the
+       * take-off, but it is not a confident reading — it goes to Review rather
+       * than being dropped or presented as certain. */
+      conf: rating == null ? 0.55 : 0.9,
+      resolutionSource: 'mirrored_chart',
+    };
+  }
+
+  /* Both ways carried by one printed row of a mirrored chart, or null if this
+   * line is not one. */
+  function parseMirroredChartLine(line) {
+    const text = String(line || '').replace(/\s+/g, ' ').trim();
+    if (!text) return null;
+    const m = text.match(MIRROR_SPINE);
+    if (!m) return null;
+    const leftWay = Number(m[1]);
+    const rightWay = Number(m[4]);
+    /* The two halves of a row are consecutive ways — 1|2, 3|4, 11|12. Anything
+     * else is a coincidence of numbers, not a busbar. */
+    if (!(leftWay > 0 && rightWay === leftWay + 1 && leftWay % 2 === 1)) return null;
+    const start = text.indexOf(m[0]);
+    return {
+      left: parseMirrorHalf(text.slice(0, start), leftWay, m[2].toUpperCase(), 'end', text),
+      right: parseMirrorHalf(text.slice(start + m[0].length), rightWay, m[3].toUpperCase(), 'start', text),
+    };
+  }
+
+  /* Is this page laid out as a mirrored chart? One matching line is a
+   * coincidence; a board's worth of them is a layout. */
+  function looksLikeMirroredChart(lines) {
+    const list = Array.isArray(lines) ? lines : String(lines || '').split(/\r?\n/);
+    let spines = 0;
+    for (const line of list) {
+      const text = String(line || '').replace(/\s+/g, ' ');
+      const m = text.match(MIRROR_SPINE);
+      if (m && Number(m[4]) === Number(m[1]) + 1 && Number(m[1]) % 2 === 1) spines += 1;
+      if (spines >= 3) return true;
+    }
+    return false;
   }
 
   function parseKnownScheduleLine(line) {
@@ -1866,6 +2005,8 @@
     scoreOcrCandidate,
     selectBestOcrCandidate,
     OCR_READABLE_FLOOR,
+    parseMirroredChartLine,
+    looksLikeMirroredChart,
     pageIsWorthExtracting,
     pageIsSpecificationProse,
     pageIsNonDeviceSchedule,

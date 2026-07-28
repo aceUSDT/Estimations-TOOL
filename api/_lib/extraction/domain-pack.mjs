@@ -156,7 +156,7 @@ const FEED = {
 export const EXTRACTION_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['classification', 'boards', 'devices', 'feeds', 'flags'],
+  required: ['classification', 'layout', 'boards', 'devices', 'feeds', 'flags'],
   properties: {
     classification: {
       type: 'object',
@@ -166,6 +166,33 @@ export const EXTRACTION_SCHEMA = {
         type: { type: 'string', enum: ['schematic', 'db_schedule', 'specification', 'other'] },
         sub_format: { type: 'string', enum: ['amtech', 'trimble', 'bes', 'bam_epo', 'syntegral', 'hevacomp', 'imsc_tba', 'cu', 'switchboard', 'mccb', 'hager_grid', 'simple', 'unknown'] },
         confidence: NUM,
+      },
+    },
+    /* How the agent read this sheet, stated BEFORE the rows.
+     *
+     * Every practice draws these differently, and the standing orders can say
+     * what a board schedule means but not where this one puts things. Making
+     * the reading explicit does two jobs: it forces the layout to be worked out
+     * rather than assumed, and it gives a reviewer something checkable when the
+     * rows look wrong — "it read this as one way per row" explains a sheet that
+     * came back half empty far better than the empty result does. */
+    layout: {
+      type: 'object',
+      additionalProperties: false,
+      /* Every field is required, as everywhere else in this schema — the
+       * providers' structured-output mode demands it, and it also stops the
+       * agent skipping the awkward questions. Where something genuinely cannot
+       * be determined, an empty string or 0 says so. */
+      required: ['rows_read', 'boards_on_sheet', 'header_label', 'way_count_source', 'columns', 'notes'],
+      properties: {
+        // 'left_to_right' = one way per printed row; 'mirrored' = two half-tables
+        // facing each other across a busbar, so one row carries two ways.
+        rows_read: { type: 'string', enum: ['left_to_right', 'mirrored', 'vertical', 'unclear'] },
+        boards_on_sheet: { type: 'integer' },
+        header_label: { type: 'string' },
+        way_count_source: { type: 'string' },
+        columns: { type: 'array', items: { type: 'string' } },
+        notes: { type: 'string' },
       },
     },
     boards: { type: 'array', items: BOARD },
