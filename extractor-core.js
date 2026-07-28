@@ -682,6 +682,54 @@
    * "not checkable", never "verified".
    *
    * `boards`: [{ norm, waysTotal, phases, deviceCount }] → [{ norm, ... }] */
+  /* One way, two different readings.
+   *
+   * A way holds one device. Two rows claiming the same way of the same board
+   * with a DIFFERENT device or rating means the same circuit was read twice and
+   * the readings disagree — and a take-off that silently keeps both counts a
+   * device that does not exist.
+   *
+   * It happens for real reasons, not only from parser faults. A drawing sheet
+   * often shows a board twice, once as it is and once as proposed, under the
+   * same reference: on one such sheet way 1 L2 is an MCB in the first table and
+   * an RCBO in the second. Choosing between them is not this tool's decision to
+   * make — the rule is to flag a conflict, not resolve it — so both readings go
+   * to Review with their source text and the estimator decides.
+   *
+   * It is also a net under every parser here: the way-marker fault that put
+   * circuits 8, 12 and 24 all on way 1 would have surfaced as four of these. */
+  function conflictingWayRows(rows) {
+    const slots = new Map();
+    for (const row of rows || []) {
+      if (!row || row.kind !== 'schedule') continue;
+      if (row.way == null || row.way === '') continue;
+      if (!row.boardNorm) continue;
+      const key = `${row.boardNorm} ${row.way} ${row.phase || ''}`;
+      if (!slots.has(key)) slots.set(key, []);
+      slots.get(key).push(row);
+    }
+    const out = [];
+    for (const [key, group] of slots) {
+      if (group.length < 2) continue;
+      /* Same device and rating read twice is a duplicate, not a disagreement —
+       * deduplication handles that and it is not the estimator's problem. */
+      const distinct = new Set(group.map((r) => `${(r.device || '').toUpperCase()} ${r.rating ?? ''} ${r.spare ? 'S' : ''}`));
+      if (distinct.size < 2) continue;
+      const [boardNorm, way, phase] = key.split(' ');
+      out.push({
+        boardNorm,
+        way: Number(way),
+        phase: phase || null,
+        readings: group.map((r) => ({
+          device: r.device || null, rating: r.rating ?? null, spare: Boolean(r.spare),
+          page: r.page ?? null, line: r.line ?? null, srcText: String(r.srcText || '').slice(0, 160),
+        })),
+      });
+    }
+    return out.sort((a, b) => String(a.boardNorm).localeCompare(String(b.boardNorm)) || a.way - b.way
+      || String(a.phase).localeCompare(String(b.phase)));
+  }
+
   function boardCapacityWarnings(boards) {
     const out = [];
     for (const b of (Array.isArray(boards) ? boards : [])) {
@@ -2212,6 +2260,7 @@
     pageHasElectricalSignal,
     parseBoardHeaderFacts,
     boardCapacityWarnings,
+    conflictingWayRows,
     planPrefixMerges,
     planWayBoardMerges,
     extractBoardReferences,

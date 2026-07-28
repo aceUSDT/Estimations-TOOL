@@ -3382,6 +3382,13 @@ async function runAnalysis(opts){
       })));
     if(A.capacityWarnings.length) console.warn('Board capacity exceeded:',A.capacityWarnings);
   }
+  /* One way, two different readings. A drawing sheet often shows a board twice
+     — once as it is, once as proposed — under the same reference, and keeping
+     both counts a device that does not exist. Choosing between them is not this
+     tool's decision, so both go to Review with their source text. */
+  if(window.EstimationExtractorCore?.conflictingWayRows){
+    A.wayConflicts=window.EstimationExtractorCore.conflictingWayRows(A.rows);
+  }
   /* One structured line describing what the deterministic pass actually did.
      Every failure this project hit was silent — a page classified as unknown, a
      board never marked primary, a merge that found nothing to merge — and none
@@ -4264,6 +4271,10 @@ function renderReview(){
      — a header must not invent boards — but the header text is still an answer. */
   Object.values(A.boards).filter(b=>!b.parent&&!b.manual&&b.type!=='MAIN'&&!((b.header||{}).fed_from_ref))
     .forEach(b=>items.push({kind:'orphan',b}));
+  /* Sorted to the top: a way with two disagreeing readings is a device that may
+     not exist, and it is the one thing here an estimator must settle before
+     pricing. */
+  (A.wayConflicts||[]).forEach(c=>items.push({kind:'wayconflict',c,conf:0}));
   if (A.coverage){
     A.coverage.perBoard.filter(b=>(b.unaccountedWays||0)>0).forEach(b=>items.push({kind:'gap',g:b,conf:0}));
     A.coverage.zeroRowSchedulePages.forEach(z=>items.push({kind:'zeropage',z,conf:0.1}));
@@ -4311,6 +4322,16 @@ function renderReview(){
         <div class="racts">${g.evidence?'<button class="btn sm" data-a="view">View page</button>':''}</div>`;
       const vb=div.querySelector('[data-a=view]');
       if (vb) vb.addEventListener('click',()=>{ state.viewer.fileId=g.evidence.fileId; state.viewer.page=g.evidence.page; setTab('viewer'); });
+    } else if (it.kind==='wayconflict'){
+      const c=it.c;
+      const readings=c.readings.map(r=>`${esc(r.spare?'Spare':(r.device||'?'))}${r.rating!=null?' '+r.rating+'A':''} <span class="hint" style="display:inline;margin:0">p${r.page}</span>`).join(' &nbsp;vs&nbsp; ');
+      div.innerHTML=`<div class="ric" style="background:var(--amber-soft)">\u26a0</div>
+        <div style="flex:1"><h4>${esc(boardLabel(c.boardNorm))} way ${c.way}${c.phase?' '+esc(c.phase):''} has ${c.readings.length} different readings</h4>
+        <div class="hint">${readings}</div>
+        <div class="hint">A way holds one device. This usually means the sheet shows the board twice — once as it is and once as proposed — under the same reference. Keeping both counts a device that does not exist; decide which applies before pricing.</div></div>
+        <div class="racts"><button class="btn sm" data-a="view">View page</button></div>`;
+      const vb=div.querySelector('[data-a=view]');
+      if(vb) vb.addEventListener('click',()=>{ const r=c.readings[0]; if(r&&r.page){ state.viewer.page=r.page; setTab('viewer'); } });
     } else if (it.kind==='unreadable'){
       const z=it.z, fl=p.files.find(x=>x.id===z.fileId);
       div.innerHTML=`<div class="ric" style="background:var(--red-soft)">⚠</div>

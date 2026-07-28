@@ -179,5 +179,54 @@ check('an unreadable page that the vision agent read is no longer reported',
   check('spare capacity: a board that states none reports null', none.sparePercent === null, String(none.sparePercent));
 }
 
+/* One way, two different readings.
+ *
+ * A way holds one device, so two rows claiming the same way of the same board
+ * with a different device or rating means the circuit was read twice and the
+ * readings disagree — a take-off keeping both counts a device that does not
+ * exist. It happens for real reasons: a drawing sheet often shows a board
+ * twice, once as it is and once as proposed, under the same reference. On one
+ * such sheet way 1 L2 is an MCB in the first table and an RCBO in the second.
+ * Choosing between them is not this tool's decision. */
+{
+  const { conflictingWayRows } = core;
+  const rows = [
+    { kind: 'schedule', boardNorm: 'DBKIT', way: 1, phase: 'L2', device: 'MCB', rating: 10, page: 1, line: 27, srcText: 'KITCHEN AREA 10 MCB 1 L2' },
+    { kind: 'schedule', boardNorm: 'DBKIT', way: 1, phase: 'L2', device: 'RCBO', rating: 10, page: 1, line: 79, srcText: 'LIGHTING RADIAL 10 RCBO 1 L2' },
+    // the same reading twice is a duplicate, not a disagreement
+    { kind: 'schedule', boardNorm: 'DBKIT', way: 3, phase: 'L1', device: 'MCB', rating: 16, page: 1, line: 40 },
+    { kind: 'schedule', boardNorm: 'DBKIT', way: 3, phase: 'L1', device: 'MCB', rating: 16, page: 1, line: 41 },
+    // one reading is not a conflict
+    { kind: 'schedule', boardNorm: 'DBKIT', way: 5, phase: 'L1', device: 'AFDD', rating: 32, page: 1, line: 50 },
+    // different phases of one way are different circuits
+    { kind: 'schedule', boardNorm: 'DBKIT', way: 7, phase: 'L1', device: 'MCB', rating: 6, page: 1, line: 60 },
+    { kind: 'schedule', boardNorm: 'DBKIT', way: 7, phase: 'L2', device: 'RCBO', rating: 20, page: 1, line: 61 },
+    // and different boards never collide with each other
+    { kind: 'schedule', boardNorm: 'DBLP3', way: 1, phase: 'L2', device: 'AFDD', rating: 32, page: 1, line: 70 },
+  ];
+  const conflicts = conflictingWayRows(rows);
+  check('way conflict: a disagreeing slot is reported', conflicts.length === 1, JSON.stringify(conflicts.map((c) => `${c.boardNorm}|${c.way}|${c.phase}`)));
+  check('way conflict: it is the one that disagrees',
+    conflicts[0] && conflicts[0].way === 1 && conflicts[0].phase === 'L2', JSON.stringify(conflicts[0]));
+  check('way conflict: both readings are carried, with their source',
+    conflicts[0] && conflicts[0].readings.length === 2
+      && conflicts[0].readings.some((r) => r.device === 'MCB') && conflicts[0].readings.some((r) => r.device === 'RCBO')
+      && conflicts[0].readings.every((r) => r.page === 1), JSON.stringify(conflicts[0] && conflicts[0].readings));
+  check('way conflict: an identical pair is not a conflict', !conflicts.some((c) => c.way === 3));
+  check('way conflict: phases of one way are separate circuits', !conflicts.some((c) => c.way === 7));
+
+  /* A row with no way, no board, or from another pass cannot collide. */
+  check('way conflict: rows without a way are ignored',
+    conflictingWayRows([
+      { kind: 'schedule', boardNorm: 'DB1', way: null, device: 'MCB', rating: 10 },
+      { kind: 'schedule', boardNorm: 'DB1', way: null, device: 'RCBO', rating: 10 },
+    ]).length === 0);
+  check('way conflict: non-schedule rows are ignored',
+    conflictingWayRows([
+      { kind: 'ai', boardNorm: 'DB1', way: 1, device: 'MCB', rating: 10 },
+      { kind: 'ai', boardNorm: 'DB1', way: 1, device: 'RCBO', rating: 10 },
+    ]).length === 0);
+}
+
 if (fail) { console.log(`\n${fail} failure(s)`); process.exit(1); }
 console.log('PASS: expectedWaysFromText, pageLooksTabular, buildCoverage (header-vs-rows, zero-row pages, unreadable pages, no-header case)');
