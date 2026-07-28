@@ -288,7 +288,11 @@
       const split = label.match(/^(DB(?:-[A-Z0-9]+)+)-(LP|L|P)$/i);
       if (split && /(?:^|-)\d{1,3}$/.test(split[1])) label = split[1];
       const norm = label.replace(/[\s._/\\-]+/g, "");
-      return { sourceNorm, norm, label: label || rawLabel, type: text(board && board.type) };
+      /* What the board's own header says feeds it. The quotation names it so a
+         supplier can tell two similarly-named boards apart. */
+      const fedFrom = text(board && ((board.header && board.header.fed_from_ref) || board.fedFrom))
+        || (board && board.parent ? text(board.parent) : "");
+      return { sourceNorm, norm, label: label || rawLabel, type: text(board && board.type), fedFrom };
     });
   }
 
@@ -893,6 +897,144 @@
     });
   }
 
+  /* The quotable document.
+   *
+   * The workbook grew to seven sheets, of which one — an Extraction Audit —
+   * ran to 1,291 rows and another to 259 rows of nineteen columns, around
+   * eighteen rows of actual take-off. Every one of those columns exists for a
+   * reason and none of them is what a supplier prices from: a quotation is
+   * "board, item, quantity", grouped per board, with the qualifications stated
+   * once. That is the shape of the supplier quotes this take-off is sent to
+   * price against, and it is what this sheet produces.
+   *
+   * Nothing is deleted to achieve it — the provenance sheets still exist and
+   * are still built on request. They are simply not what an estimator is handed
+   * first. */
+  function quoteLines(model) {
+    const out = [];
+    const boards = model.boards || [];
+    const coverageFor = (board) => {
+      const per = (model.coverage && model.coverage.perBoard) || [];
+      return per.find((c) => text(c.norm) === text(board.norm) || text(c.norm) === text(board.sourceNorm)) || null;
+    };
+    boards.forEach((board, index) => {
+      const items = [];
+      (model.groups || []).forEach((group) => {
+        group.rows.forEach((row) => {
+          const qty = Number(row.quantities[index]) || 0;
+          if (qty > 0) items.push({ label: row.label, qty, review: row.reviewStatus === "Review required" });
+        });
+      });
+      if (!items.length) return;
+      const cov = coverageFor(board);
+      /* The board line carries what a supplier needs to identify the board and
+         nothing else: its reference, its size, and what feeds it. The internal
+         type code ("DB") is not one of those things. */
+      const ways = cov && cov.expectedWays != null ? `${cov.expectedWays} way` : null;
+      const fed = text(board.fedFrom) ? `fed from ${text(board.fedFrom)}` : null;
+      const detail = [ways, fed].filter(Boolean).join(' · ');
+      out.push({
+        kind: 'board',
+        code: String(index + 1).padStart(3, '0'),
+        label: board.label + (detail ? ` — ${detail}` : ''),
+        qty: items.reduce((s, i) => s + i.qty, 0),
+      });
+      items.forEach((item) => out.push({ kind: 'item', label: item.label, qty: item.qty, review: item.review }));
+      /* A board that cannot be shown complete says so HERE, next to its own
+         items, rather than in a separate sheet the reader may never open. A
+         quotation built on an incomplete take-off is the expensive mistake. */
+      if (cov && cov.expectedWays != null && Number(cov.unaccountedWays || 0) > 0) {
+        out.push({
+          kind: 'note',
+          label: `${cov.unaccountedWays} of ${cov.expectedWays} ways not accounted for on this board — check before pricing.`,
+        });
+      }
+    });
+    return out;
+  }
+
+  function createQuoteWorksheet(workbook, model) {
+    const sheet = workbook.addWorksheet("Quotation Take-Off", {
+      views: [{ state: "frozen", ySplit: 4, activeCell: "A5" }],
+      pageSetup: { paperSize: 9, orientation: "portrait", fitToPage: true, fitToWidth: 1, fitToHeight: 0, margins: { left: 0.5, right: 0.5, top: 0.6, bottom: 0.6, header: 0.3, footer: 0.3 } },
+    });
+    sheet.columns = [{ width: 8 }, { width: 62 }, { width: 12 }];
+    addTitleRows(sheet, model, "Device take-off for quotation", 3);
+
+    /* Cells are written positionally, never with addRow: this module is loaded
+       into a vm sandbox by the tests, and an array built inside that sandbox is
+       not the host realm's Array, so addRow silently produces empty rows. Every
+       other sheet here writes the same way for the same reason. */
+    let cursor = 3;
+    const put = (values) => {
+      values.forEach((value, index) => { sheet.getCell(cursor, index + 1).value = value; });
+      const row = sheet.getRow(cursor);
+      cursor += 1;
+      return row;
+    };
+
+    const headerRow = cursor;
+    put(["#", "Item description", "Quantity"]);
+    sheet.getRow(headerRow).height = 20;
+    styleHeaderRow(sheet, headerRow, 3);
+
+    const firstData = cursor;
+    quoteLines(model).forEach((line) => {
+      const at = cursor;
+      put([
+        line.kind === "board" ? line.code : "",
+        line.kind === "item" ? `    ${line.label}` : line.label,
+        line.kind === "note" ? "" : line.qty,
+      ]);
+      const row = sheet.getRow(at);
+      if (line.kind === "board") {
+        row.font = { name: "Montserrat", size: 10, bold: true };
+        for (let c = 1; c <= 3; c += 1) sheet.getCell(at, c).fill = { type: "pattern", pattern: "solid", fgColor: { argb: XLSX_COLORS.grey } };
+      } else if (line.kind === "note") {
+        row.font = { name: "Montserrat", size: 9, italic: true };
+        sheet.getCell(at, 2).fill = { type: "pattern", pattern: "solid", fgColor: { argb: XLSX_COLORS.amber } };
+      } else {
+        row.font = { name: "Montserrat", size: 10 };
+        /* An item that still needs review is marked in the quotable document
+           itself. Pricing an unreviewed line is exactly what this must not let
+           happen quietly. */
+        if (line.review) sheet.getCell(at, 2).fill = { type: "pattern", pattern: "solid", fgColor: { argb: XLSX_COLORS.amber } };
+      }
+      sheet.getCell(at, 3).alignment = { horizontal: "right" };
+    });
+
+    const totalAt = cursor;
+    const totalRow = put(["", "PROJECT TOTAL — protective devices", model.grandTotal]);
+    totalRow.font = { name: "Montserrat", size: 11, bold: true };
+    for (let c = 1; c <= 3; c += 1) sheet.getCell(totalAt, c).fill = { type: "pattern", pattern: "solid", fgColor: { argb: XLSX_COLORS.peach } };
+    styleDataRange(sheet, firstData, totalAt, 3);
+    sheet.getCell(totalAt, 3).alignment = { horizontal: "right" };
+
+    /* Qualifications belong on the quotation, stated once, the way a supplier
+       states them — not on a sheet of their own that nobody opens. */
+    cursor += 1;
+    const qualAt = cursor;
+    put(["", "Notes and qualifications", ""]);
+    sheet.getRow(qualAt).font = { name: "Montserrat", size: 11, bold: true };
+    if (model.reviewCount) {
+      put(["", `${model.reviewCount} line${model.reviewCount === 1 ? "" : "s"} need review before pricing — shaded above, and listed in full on the Review Required sheet.`, ""]);
+    }
+    if (model.coverageIssueCount) {
+      put(["", `${model.coverageIssueCount} board${model.coverageIssueCount === 1 ? "" : "s"} could not be shown complete — see Board Completeness.`, ""]);
+    }
+    const seen = new Set();
+    qualificationRows(model).forEach((q) => {
+      const line = text(q[3]);
+      if (!line || seen.has(line) || seen.size >= 25) return;
+      seen.add(line);
+      put(["", line, ""]);
+    });
+    if (!model.reviewCount && !model.coverageIssueCount && !seen.size) {
+      put(["", "No outstanding qualifications — every device is reviewed and every declared way is accounted for.", ""]);
+    }
+    return sheet;
+  }
+
   function createTakeOffWorksheet(workbook, model) {
     const sheet = workbook.addWorksheet("Device Take-Off", {
       views: [{ state: "frozen", xSplit: 6, ySplit: 3, activeCell: "G4" }],
@@ -1192,7 +1334,16 @@
     return rows;
   }
 
-  function createExcelWorkbook(model, ExcelJS) {
+  /* `options.fullAudit` adds the two provenance sheets.
+   *
+   * They are off by default because they are not what anyone quotes from: on a
+   * real project they came to 1,291 and 259 rows around eighteen rows of
+   * take-off, and an estimator opening the file met the audit trail before the
+   * numbers. Nothing is lost — the same call with fullAudit: true still
+   * produces them, every row still carries its document, page, source text and
+   * confidence, and the Review and Completeness sheets that an estimator does
+   * act on are always present. */
+  function createExcelWorkbook(model, ExcelJS, options = {}) {
     if (!ExcelJS || typeof ExcelJS.Workbook !== "function") throw new Error("Excel export library is unavailable");
     const reconciliation = validateModel(model);
     if (!reconciliation.valid) throw new Error(`Report reconciliation failed: ${reconciliation.issues.join("; ")}`);
@@ -1204,12 +1355,16 @@
     workbook.modified = model.generatedAt;
     workbook.calcProperties.fullCalcOnLoad = true;
 
+    // The quotable document comes first — it is what the file is for.
+    createQuoteWorksheet(workbook, model);
     createTakeOffWorksheet(workbook, model);
-    createFlatSheet(workbook, "Device Detail", [
-      "Consolidated Group ID", "Device Description", "Board", "Circuit / Way", "Quantity", "Current Rating (A)",
-      "Application / Purpose", "Circuit Description", "Pole Configuration", "Tripping Curve", "Breaking Capacity", "Role",
-      "Source Document", "Page", "Source Region", "Source Text", "Confidence", "Extraction Method", "Review Status",
-    ], detailRows(model), [34, 28, 14, 14, 10, 14, 20, 36, 15, 14, 16, 12, 28, 9, 24, 48, 12, 25, 16]);
+    if (options.fullAudit) {
+      createFlatSheet(workbook, "Device Detail", [
+        "Consolidated Group ID", "Device Description", "Board", "Circuit / Way", "Quantity", "Current Rating (A)",
+        "Application / Purpose", "Circuit Description", "Pole Configuration", "Tripping Curve", "Breaking Capacity", "Role",
+        "Source Document", "Page", "Source Region", "Source Text", "Confidence", "Extraction Method", "Review Status",
+      ], detailRows(model), [34, 28, 14, 14, 10, 14, 20, 36, 15, 14, 16, 12, 28, 9, 24, 48, 12, 25, 16]);
+    }
     createFlatSheet(workbook, "Board Completeness", [
       "Board", "Declared Ways", "Ways Captured", "Ways Unaccounted", "Rows Captured", "Status", "Evidence For Declared Ways",
     ], completenessRows(model), [22, 14, 14, 16, 14, 30, 46]);
@@ -1219,10 +1374,12 @@
     createFlatSheet(workbook, "Assumptions and Qualifications", [
       "Scope", "Group ID", "Device", "Qualification", "Applies To / Source", "Status",
     ], qualificationRows(model), [18, 34, 28, 70, 42, 18]);
-    createFlatSheet(workbook, "Extraction Audit", [
-      "Audit ID", "Consolidated Group ID", "Source Record ID", "Field", "Original OCR / Source Text", "Normalised Value",
-      "Source Document", "Page", "Bounding Box", "Extraction Method", "Confidence", "Correction Applied", "Correction Reason", "Review Status",
-    ], auditRows(model), [34, 34, 22, 20, 55, 20, 28, 9, 24, 25, 12, 22, 42, 18]);
+    if (options.fullAudit) {
+      createFlatSheet(workbook, "Extraction Audit", [
+        "Audit ID", "Consolidated Group ID", "Source Record ID", "Field", "Original OCR / Source Text", "Normalised Value",
+        "Source Document", "Page", "Bounding Box", "Extraction Method", "Confidence", "Correction Applied", "Correction Reason", "Review Status",
+      ], auditRows(model), [34, 34, 22, 20, 55, 20, 28, 9, 24, 25, 12, 22, 42, 18]);
+    }
     if (model.associated && model.associated.grandTotal) {
       createMatrixWorksheet(workbook, model, {
         sheetName: "Control Equipment",

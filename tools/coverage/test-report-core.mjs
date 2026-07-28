@@ -56,10 +56,41 @@ assert.equal(sheet.getCell("G7").value.formula, "SUM(G4:G6)");
 assert.equal(sheet.getCell("E4").fill.fgColor.argb, "FFFFF2CC");
 assert.equal(sheet.getCell("A3").fill.fgColor.argb, "FFF7E0D1");
 assert.equal(sheet.views[0].ySplit, 3);
-assert.equal(workbook.getWorksheet("Device Detail").rowCount, 6);
 assert.ok(workbook.getWorksheet("Review Required"));
 assert.ok(workbook.getWorksheet("Assumptions and Qualifications"));
-assert.ok(workbook.getWorksheet("Extraction Audit"));
+
+/* The provenance sheets are what nobody quotes from: on a real project they
+ * came to 1,291 and 259 rows around eighteen rows of take-off, and the file
+ * opened on the audit trail rather than on the numbers. They are off by
+ * default and one option away, and nothing else is removed to achieve it. */
+assert.equal(workbook.getWorksheet("Device Detail"), undefined,
+  "the detail sheet must not be in the default export");
+assert.equal(workbook.getWorksheet("Extraction Audit"), undefined,
+  "the audit sheet must not be in the default export");
+const audited = Report.createExcelWorkbook(model, ExcelJS, { fullAudit: true });
+assert.equal(audited.getWorksheet("Device Detail").rowCount, 6);
+assert.ok(audited.getWorksheet("Extraction Audit"), "fullAudit must still produce the audit trail");
+
+/* The quotable document. A supplier quotation is board, item, quantity —
+ * grouped per board, with the qualifications stated once — so that is the
+ * first sheet in the file. */
+const quote = workbook.getWorksheet("Quotation Take-Off");
+assert.ok(quote, "the quotation sheet must exist");
+assert.equal(workbook.worksheets[0].name, "Quotation Take-Off", "it must be the sheet the file opens on");
+assert.equal(quote.getCell("A1").value, "Llangatwg Test");
+assert.equal(quote.getCell("A3").value, "#");
+assert.equal(quote.getCell("B3").value, "Item description");
+assert.equal(quote.getCell("C3").value, "Quantity");
+// a board line, then its items indented beneath it
+assert.equal(quote.getCell("A4").value, "001");
+assert.ok(/^DB-2/.test(String(quote.getCell("B4").value)), String(quote.getCell("B4").value));
+assert.ok(/^ {4}\S/.test(String(quote.getCell("B5").value)), String(quote.getCell("B5").value));
+// and the project total, which must equal the take-off's own grand total
+const quoteRowsAll = [];
+quote.eachRow((r) => quoteRowsAll.push(r));
+const totalRow = quoteRowsAll.find((r) => /PROJECT TOTAL/.test(String(r.getCell(2).value || "")));
+assert.ok(totalRow, "the quotation must state a project total");
+assert.equal(totalRow.getCell(3).value, model.grandTotal);
 assert.equal(controlSheet.getCell("A2").value, "Control & Associated Equipment");
 assert.equal(controlSheet.getCell("C5").value, 1);
 

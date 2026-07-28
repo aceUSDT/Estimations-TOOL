@@ -774,6 +774,14 @@
             <button class="btn" id="reportCsvBtn">Export CSV</button>
             <button class="btn primary" id="reportXlsxBtn">Export Excel</button>
           </div>
+          <!-- The audit trail is kept, but it is not what anyone quotes from:
+               on a real project it came to 1,550 rows around eighteen rows of
+               take-off. Off by default, one click away when a value has to be
+               traced back to its page. -->
+          <label class="chk" style="margin-top:6px;display:flex;gap:6px;align-items:center;font-size:12px;color:var(--txt2)">
+            <input type="checkbox" id="reportFullAudit">
+            Include full extraction audit (source text, page and confidence for every value)
+          </label>
         </div>
         <div class="report-status" id="reportStatus"></div>
         <div class="report-matrix-scroll" id="reportMatrixHost">
@@ -3889,7 +3897,8 @@ $('#reportXlsxBtn').addEventListener('click',async()=>{
   const button=$('#reportXlsxBtn'), label=button.textContent;
   button.disabled=true; button.textContent='Preparing Excel...';
   try{
-    const workbook=window.EstimationReport.createExcelWorkbook(model,window.ExcelJS);
+    const workbook=window.EstimationReport.createExcelWorkbook(model,window.ExcelJS,
+      {fullAudit:!!($('#reportFullAudit')&&$('#reportFullAudit').checked)});
     const buffer=await workbook.xlsx.writeBuffer();
     download(reportFileName('xlsx'),'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',buffer);
     toast('Excel take-off exported');
