@@ -176,7 +176,6 @@ check('no board exceeds ways × phases', (A.capacityWarnings || []).length === 0
   check('all three boards are checkable for completeness', checkable === 3, `${checkable} of 3`);
 }
 
-if (fail) { console.log(`\n${fail} failure(s)`); process.exit(1); }
 console.log(`PASS: ${pages.length} schedule pages → ${boards.length} boards, split-cell headers, real continuations, capacity intact.`);
 
 /* Rotated sheets must read exactly as upright ones.
@@ -315,3 +314,40 @@ console.log(`PASS: ${pages.length} schedule pages → ${boards.length} boards, s
   }
   if (!fail) console.log('PASS: an unnamed board does not donate devices to its neighbour.');
 }
+
+/* A board named by DESCRIPTION is still a board.
+ *
+ * A real page reads "REFERENCE  110V AC DISTRIBUTION BOARD" and carries
+ * fourteen circuits. No code-shaped pattern matches it, so it resolved nothing
+ * and its devices sat unattributed — a bucket of homeless rows where a board
+ * should be. The name is taken only from the REFERENCE cell of a genuine
+ * header block, so body text cannot invent boards. */
+{
+  const descriptive = ['REFERENCE', '110V AC DISTRIBUTION BOARD', 'SERVED BY', 'LVAC SWITCHBOARD',
+    'NUMBER OF WAYS', '12 WAYS', 'INCOMER', 'GENERIC ISOLATOR', 'Circuit Ref',
+    'MCB/21  16  30mA  2 x 1/core x 2.5  Sockets Radial  GIS HALL 110V SOCKETS 1'];
+  const got = P.scheduleBoardFromLines(descriptive);
+  check('a descriptively named board resolves', Boolean(got && /110V AC/i.test(got.orig)),
+    got ? got.orig : 'NONE');
+
+  /* Codes still win: a page carrying both must resolve to the code. */
+  const coded = ['REFERENCE', 'DB-1-GF', 'SERVED BY', 'MEP MAIN DB', 'NUMBER OF WAYS', '18 WAYS',
+    'INCOMER', 'GENERIC ISOLATOR', 'SCHNEIDER ELECTRIC 125A DB-1-GF LVAC ROOM'];
+  const codedGot = P.scheduleBoardFromLines(coded);
+  check('a code-shaped reference still wins', Boolean(codedGot && codedGot.norm === 'DB1GF'),
+    codedGot ? codedGot.orig : 'NONE');
+
+  /* And the negatives must hold: no header block, no board. */
+  for (const page of [['Incoming Cable Reference', 'F28', 'Cable schedule'],
+                      ['Drawing Reference', '847-RME-XX', 'Revision B'],
+                      ['REFERENCE', 'SOME TEXT']]) {   // REFERENCE but no header block
+    const bad = P.scheduleBoardFromLines(page);
+    if (bad) { console.log(`FAIL [descriptive] ${page[0]} became board ${bad.orig}`); fail++; }
+  }
+}
+
+
+/* The exit gate is LAST on purpose: it once sat mid-file, so checks appended
+   after it could fail while the suite still reported green. */
+if (fail) { console.log(`\n${fail} failure(s)`); process.exit(1); }
+console.log('PASS: descriptive board names, with codes still winning.');

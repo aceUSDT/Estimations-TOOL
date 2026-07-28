@@ -193,6 +193,29 @@ function scheduleBoardFromLines(lines){
       }
       const best=candidates.find(c=>HEADER_VALUE.test(c.t))||candidates[0];
       if(best) return best.det;
+
+      /* A board named by DESCRIPTION rather than by code. Real example: a page
+         whose header reads "REFERENCE  110V AC DISTRIBUTION BOARD" — a genuine
+         board with fourteen circuits, which no code-shaped pattern will ever
+         match. Left unresolved its devices stay unattributed, so the estimator
+         sees a bucket of homeless rows instead of a board.
+         Only taken from the REFERENCE cell of a real header block, so this
+         cannot invent boards out of body text, and only once the line grouping
+         has actually paired the label with its value. */
+      const LABEL=/^(number\s+of\s+ways|served\s+by|location|description|incomer|circuit\s+ref|board\s+device)/i;
+      const arr=(lines||[]).map(l=>String(l||'').trim());
+      for(let i=0;i<arr.length;i++){
+        const t=arr[i];
+        if(!/(?<!(?:cable|drawing|document|project|job|schedule)\s)\bREFERENCE\b/i.test(t)) continue;
+        /* The value may sit on the same line once grouping has paired label with
+           value, or on the next line when the label stands alone in its cell. */
+        const inline=t.match(/\bREFERENCE\b\s*[:=\-]?\s+(.{2,40}?)\s*$/i);
+        const name=(inline?inline[1]:(arr[i+1]||'')).replace(/\s{2,}.*$/,'').trim();
+        if(!name||name.length<2||name.length>40) continue;
+        if(!/[A-Z0-9]/i.test(name)||LABEL.test(name)) continue;
+        const canonical=canonicalBoardRef(name);
+        if(canonical.normalised) return {orig:canonical.display,norm:canonical.normalised,type:'UNK',section:canonical.splitSection};
+      }
     }
   }
   let sawLabel=false;
