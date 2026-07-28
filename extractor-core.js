@@ -375,6 +375,101 @@
    * 0°) and a rotated page reads as the drawing does.
    *
    * items: [{ str, x, y, w, h, angle }] → [{ text, x, y, w, h }] */
+  /* Sheets that print several board schedules SIDE BY SIDE.
+   *
+   * One text line then crosses several tables — a board's REFERENCE shares a
+   * line with a neighbouring board's circuit rows — so nothing that works on
+   * line index can separate them, and on one real sheet four of seven boards
+   * received no rows at all.
+   *
+   * Whitespace cannot separate them either: measured on that sheet, the widest
+   * vertical corridor is 1.2% of the across-page span, because the tables are
+   * packed edge to edge (tools/coverage/probe-bands.mjs). What DOES separate
+   * them is the drawing's own ruling lines. The same sheet has long vertical
+   * rules at two x positions, and they sort its eight boards into three bands
+   * with the boards stacked vertically inside each — which is the shape the
+   * rest of the pipeline already handles.
+   *
+   * Given those boundaries this splits the items into bands so each table can
+   * be read on its own. It returns null unless the page really is banded, so a
+   * single-table page keeps exactly its current behaviour.
+   *
+   * `boundaries` are across-page positions in the SAME projected space the
+   * caller measures items in — see groupTextItemsIntoLines' rotation handling. */
+  function columnBandsFromRules(items, boundaries, options = {}) {
+    const list = (Array.isArray(items) ? items : []).filter((it) => it && String(it.str || '').trim());
+    const rules = Array.from(new Set((boundaries || []).map(Number).filter(Number.isFinite))).sort((a, b) => a - b);
+    if (list.length < 40 || !rules.length) return null;
+
+    const across = typeof options.across === 'function' ? options.across : ((it) => Number(it.x) || 0);
+
+    /* Which rules are TABLE boundaries rather than a table's own inner column
+     * rules? The ones that separate the board headers. Each side-by-side table
+     * carries its header in its own across-page position, so the headers
+     * cluster — on the measured sheet at 70, 920 and 1769 — and a boundary is a
+     * rule lying between two adjacent clusters. Passing every rule instead
+     * shattered the page into bands too small to keep. */
+    if (typeof options.isHeader !== 'function') return null;
+    const headerXs = list.filter(options.isHeader).map(across).sort((a, b) => a - b);
+    if (headerXs.length < 2) return null;
+    const allX = list.map(across);
+    const span = Math.max(...allX) - Math.min(...allX);
+    if (!(span > 0)) return null;
+
+    const clusters = [];
+    for (const x of headerXs) {
+      const last = clusters[clusters.length - 1];
+      if (last && x - last[last.length - 1] <= span * 0.05) last.push(x);
+      else clusters.push([x]);
+    }
+    if (clusters.length < 2) return null;
+
+    const cuts = [];
+    for (let i = 1; i < clusters.length; i += 1) {
+      const left = Math.max(...clusters[i - 1]);
+      const right = Math.min(...clusters[i]);
+      const between = rules.filter((x) => x > left && x < right);
+      /* No ruled separation between two header columns means the drawing does
+       * not divide them there, and guessing a boundary would scatter a board's
+       * rows across two bands. */
+      if (!between.length) return null;
+      const mid = (left + right) / 2;
+      cuts.push(between.reduce((best, x) => (Math.abs(x - mid) < Math.abs(best - mid) ? x : best), between[0]));
+    }
+    if (!cuts.length) return null;
+    const bandOf = (it) => {
+      const u = across(it);
+      let index = 0;
+      while (index < cuts.length && u >= cuts[index]) index += 1;
+      return index;
+    };
+    const bands = new Map();
+    for (const it of list) {
+      const key = bandOf(it);
+      if (!bands.has(key)) bands.set(key, []);
+      bands.get(key).push(it);
+    }
+    /* A boundary that leaves almost nothing on one side is a table's own inner
+     * column rule, not a division between tables. Requiring a real share of the
+     * page on both sides is what stops a single table being cut in half. */
+    const minShare = Number.isFinite(options.minShare) ? options.minShare : 0.12;
+    const kept = [...bands.entries()]
+      .filter(([, group]) => group.length >= list.length * minShare)
+      .sort((a, b) => a[0] - b[0])
+      .map(([, group]) => group);
+    if (kept.length < 2) return null;
+    /* Every band must name a board of its own, otherwise this is one table with
+     * a heavy internal rule and splitting it would scatter one board's rows. */
+    if (options.bandNamesABoard) {
+      if (!kept.every((group) => options.bandNamesABoard(group))) return null;
+    }
+    /* Nothing may be dropped: an item outside every kept band would vanish from
+     * the take-off entirely, which is worse than reading the page unsplit. */
+    const covered = kept.reduce((sum, group) => sum + group.length, 0);
+    if (covered < list.length) return null;
+    return kept;
+  }
+
   function groupTextItemsIntoLines(items, options = {}) {
     const list = (Array.isArray(items) ? items : []).filter((it) => it && String(it.str || '').trim());
     if (!list.length) return [];
@@ -2090,6 +2185,7 @@
     scoreOcrCandidate,
     selectBestOcrCandidate,
     OCR_READABLE_FLOOR,
+    columnBandsFromRules,
     parseMirroredChartLine,
     looksLikeMirroredChart,
     pageIsWorthExtracting,

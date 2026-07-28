@@ -2437,7 +2437,48 @@ async function runAiExtraction(A,f,p,pageSet){
 }
 
 /* reconstruct lines (text + bbox) from a pdf.js text content object */
-function linesFromTextContent(tc, vp){
+/* Long vertical ruling lines, in viewport space.
+ *
+ * A drawing sheet that prints several board schedules side by side has no
+ * whitespace between them — measured, the widest corridor on one such sheet is
+ * 1.2% of the across-page span — so its own table borders are the only
+ * boundary there is. Page-border clip rectangles are drawn repeatedly and are
+ * not table rules, so anything hugging an edge or spanning the whole sheet is
+ * dropped. */
+async function verticalRulesForPage(page, vp){
+  const lib=window.pdfjsLib; if(!lib||!page.getOperatorList) return null;
+  const ops=await page.getOperatorList(); const OPS=lib.OPS, U=lib.Util;
+  let ctm=vp.transform.slice(); const stack=[]; const found=[];
+  const keep=(ax,ay,bx,by)=>{
+    if(Math.abs(bx-ax)>1.5||Math.abs(by-ay)<vp.height*0.25) return;
+    const x=(ax+bx)/2;
+    if(x<8||x>vp.width-8) return;                    // page border
+    if(Math.abs(by-ay)>vp.height*0.95) return;       // full-height clip box
+    found.push(x);
+  };
+  for(let i=0;i<ops.fnArray.length;i++){
+    const fn=ops.fnArray[i], args=ops.argsArray[i];
+    if(fn===OPS.save) stack.push(ctm.slice());
+    else if(fn===OPS.restore) ctm=stack.pop()||ctm;
+    else if(fn===OPS.transform) ctm=U.transform(ctm,args);
+    else if(fn===OPS.constructPath){
+      const [fns,coords]=args; let k=0,cx=0,cy=0;
+      const pt=(x,y)=>U.applyTransform([x,y],ctm);
+      for(const f of fns){
+        if(f===OPS.moveTo){ cx=coords[k++]; cy=coords[k++]; }
+        else if(f===OPS.lineTo){ const a=pt(cx,cy); cx=coords[k++]; cy=coords[k++]; const b=pt(cx,cy); keep(a[0],a[1],b[0],b[1]); }
+        else if(f===OPS.curveTo){ k+=6; cx=coords[k-2]; cy=coords[k-1]; }
+        else if(f===OPS.rectangle){ const x=coords[k++],y=coords[k++],w=coords[k++],h=coords[k++];
+          const a=pt(x,y), b=pt(x+w,y+h); keep(a[0],a[1],b[0],b[1]); }
+      }
+    }
+  }
+  if(!found.length) return null;
+  // cluster to the nearest few units so one drawn border is one boundary
+  return [...new Set(found.map(x=>Math.round(x/4)*4))].sort((a,b)=>a-b);
+}
+
+function linesFromTextContent(tc, vp, rules){
   /* Each run carries its own transform, so a ROTATED sheet is detectable rather
      than something to be guessed at. Grouping by y regardless merges text from
      different table rows on a rotated page — a schedule then arrives as
@@ -2449,8 +2490,30 @@ function linesFromTextContent(tc, vp){
     return {str:it.str, x:tx[4], y:tx[5], w:it.width*vp.scale, h:Math.hypot(tx[2],tx[3])||10,
       angle:Math.atan2(tx[1],tx[0])};
   }).filter(i=>i.str.trim());
-  const grouped = window.EstimationExtractorCore?.groupTextItemsIntoLines
-    ? window.EstimationExtractorCore.groupTextItemsIntoLines(items)
+  const core=window.EstimationExtractorCore;
+  /* Board schedules printed SIDE BY SIDE. One text line then crosses several
+     tables — a board's REFERENCE shares a line with a neighbouring board's
+     circuit rows — so no amount of line-index work can separate them, and on a
+     real sheet four of seven boards received no rows at all. The drawing's
+     ruling lines do separate them: reading each band on its own turns a 2-D
+     layout back into the sequential one the rest of the pipeline handles.
+     Every guard sits in columnBandsFromRules; it returns null unless the page
+     really is banded, so a single-table page is untouched. */
+  if (core?.columnBandsFromRules && core.groupTextItemsIntoLines && Array.isArray(rules) && rules.length){
+    const isHeader=it=>/^REFERENCE$|^Id\s*No:?$/i.test(String(it.str||'').trim());
+    const bands=core.columnBandsFromRules(items, rules, {
+      across: it=>it.x,
+      isHeader,
+      bandNamesABoard: group=>group.some(isHeader),
+    });
+    if (bands){
+      const out=[];
+      bands.forEach(group=>core.groupTextItemsIntoLines(group).forEach(l=>out.push(l)));
+      return out.map(l=>({text:l.text, bbox:[l.x, l.y-l.h, l.w, l.h*1.4]}));
+    }
+  }
+  const grouped = core?.groupTextItemsIntoLines
+    ? core.groupTextItemsIntoLines(items)
     : (()=>{ // identical fallback for a build without the core loaded
         items.sort((a,b)=> Math.abs(a.y-b.y)>5 ? a.y-b.y : a.x-b.x);
         const lines=[];
@@ -2501,7 +2564,13 @@ async function ingestFile(file){
         const pg=await doc.getPage(i);
         const vp=pg.getViewport({scale:1});
         const tc=await pg.getTextContent();
-        const lines=linesFromTextContent(tc,vp);
+        /* The drawing's own ruling lines, which are the only thing that
+           separates board schedules printed side by side — see
+           linesFromTextContent. Cheap to ask for and skipped entirely on pages
+           with no vector content. */
+        let rules=null;
+        try{ rules=await verticalRulesForPage(pg,vp); }catch(e){ rules=null; }
+        const lines=linesFromTextContent(tc,vp,rules);
         const preliminary=classifyPage(lines.map(line=>line.text).join('\n'),i-1,doc.numPages);
         const textQuality=window.EstimationExtractorCore
           ? window.EstimationExtractorCore.assessPageText(lines,{expectedType:preliminary.type,pageWidth:vp.width,pageHeight:vp.height})

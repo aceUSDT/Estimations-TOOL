@@ -753,3 +753,57 @@ console.log('PASS: descriptive board names, with codes still winning.');
   check('connected-load refs are rejected', JSON.stringify(kept) === JSON.stringify(['DB7GCS', 'MEPMAINDB']),
     JSON.stringify(kept));
 }
+
+/* Board schedules printed SIDE BY SIDE.
+ *
+ * One text line then crosses several tables — a board's REFERENCE shares a line
+ * with a neighbouring board's circuit rows — so nothing working on line index
+ * can separate them, and on a real sheet four of seven boards received no rows
+ * at all. Whitespace cannot separate them either: measured, the widest vertical
+ * corridor on that sheet is 1.2% of the across-page span. The drawing's own
+ * ruling lines can, and do.
+ *
+ * Positions below are that sheet's: headers at x = 70, 920 and 1769, table
+ * rules at 903 and 1755. */
+{
+  const { columnBandsFromRules } = P.EstimationExtractorCore;
+  const isHeader = (it) => /^REFERENCE$/i.test(String(it.str || '').trim());
+  const opts = { across: (it) => it.x, isHeader, bandNamesABoard: (g) => g.some(isHeader) };
+
+  const sheet = [];
+  [70, 920, 1769].forEach((x, board) => {
+    sheet.push({ str: 'REFERENCE', x, y: 60 });
+    sheet.push({ str: `DB-${board + 1}`, x: x + 90, y: 60 });
+    for (let row = 0; row < 20; row += 1) sheet.push({ str: `${row + 1}-L1 32 MCB`, x: x + 20, y: 120 + row * 30 });
+  });
+  const bands = columnBandsFromRules(sheet, [903, 1755], opts);
+  check('bands: a side-by-side sheet splits into one band per table',
+    bands && bands.length === 3, bands ? String(bands.length) : 'null');
+  check('bands: nothing is dropped',
+    bands && bands.reduce((n, g) => n + g.length, 0) === sheet.length);
+  check('bands: each band holds only its own table',
+    bands && bands.every((g) => new Set(g.map((it) => Math.floor(it.x / 800))).size === 1));
+
+  /* A rule INSIDE one table is a column rule, not a table boundary. Splitting
+   * on it would scatter one board's rows across two bands, so a boundary is
+   * only taken between two header columns. */
+  const single = [];
+  single.push({ str: 'REFERENCE', x: 70, y: 60 });
+  single.push({ str: 'DB-1', x: 160, y: 60 });
+  for (let row = 0; row < 60; row += 1) single.push({ str: `${row + 1}-L1 32 MCB`, x: 90 + (row % 6) * 200, y: 120 + row * 20 });
+  check('bands: one table with inner column rules is not split',
+    columnBandsFromRules(single, [300, 500, 700, 900, 1100], opts) === null);
+
+  /* No ruled separation between two header columns means the drawing does not
+   * divide them there. Guessing a boundary would scatter a board's rows. */
+  /* Rules that do not fall between two header columns (here: outside them
+     entirely) leave the drawing undivided at the only places that matter. */
+  check('bands: without a rule between the headers, nothing is split',
+    columnBandsFromRules(sheet, [40, 1900], opts) === null);
+  check('bands: a page with no rules at all is untouched',
+    columnBandsFromRules(sheet, [], opts) === null);
+  check('bands: a short page is untouched',
+    columnBandsFromRules(sheet.slice(0, 12), [903, 1755], opts) === null);
+}
+
+if (fail) { console.log(`\n${fail} failure(s)`); process.exit(1); }
