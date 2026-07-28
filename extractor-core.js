@@ -145,6 +145,35 @@
     return RATING_REF.test(String(normalised || ''));
   }
 
+  /* Is this page worth spending an extraction call on?
+   *
+   * A tender is mostly not circuit schedules. One real 441-page document holds
+   * 45 schedule pages; the other 396 are title blocks, drawing registers,
+   * lighting calculations and specification prose. Sending all of them to the
+   * agents costs roughly ten times what the job needs and, worse, harvests
+   * "electrical equipment" out of calculation sheets and spec clauses — noise
+   * that then has to be reviewed out of a take-off by hand.
+   *
+   * Recall still comes first: this asks only whether the page shows ANY sign of
+   * carrying devices, not whether it is a schedule. A page naming a board, or
+   * pairing a device class with a rating, or laying out way/circuit rows, is
+   * worth reading even when the classifier could not type it. A page with none
+   * of those has nothing for an extraction agent to find.
+   *
+   * Deliberately generous, because a missed schedule page costs more than a
+   * wasted call: any ONE of the three signals is enough. */
+  const SIGNAL_DEVICE = /\b(MCB|RCBO|MCCB|ACB|RCD|SPD|AFDD|isolator|contactor|busbar|switchgear)\b/i;
+  const SIGNAL_RATING = /\b\d{1,4}\s?A\b|\b\d{1,3}\s?kA\b/i;
+  const SIGNAL_ROWS = /\b\d{1,3}\s*-\s*L[123]\b|\bcircuit\s*ref\b|\bway\s*(?:no\.?|number)\b|\bno\.?\s*of\s*ways\b/i;
+
+  function pageHasElectricalSignal(lines) {
+    const text = Array.isArray(lines) ? lines.join('\n') : String(lines || '');
+    if (!text.trim()) return false;
+    if (SIGNAL_ROWS.test(text)) return true;
+    if (SIGNAL_DEVICE.test(text) && SIGNAL_RATING.test(text)) return true;
+    return extractBoardReferences(text).length > 0;
+  }
+
   /* Ways a schedule declares SPARE as a block rather than row by row.
    *
    * A board with 18 ways may list 11 circuits and then one merged row reading
@@ -1605,6 +1634,7 @@
     isRatingLikeRef,
     groupTextItemsIntoLines,
     spareWayRanges,
+    pageHasElectricalSignal,
     parseBoardHeaderFacts,
     boardCapacityWarnings,
     planPrefixMerges,

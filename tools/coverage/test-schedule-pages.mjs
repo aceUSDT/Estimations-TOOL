@@ -418,3 +418,39 @@ console.log(`PASS: ${pages.length} schedule pages → ${boards.length} boards, s
    after it could fail while the suite still reported green. */
 if (fail) { console.log(`\n${fail} failure(s)`); process.exit(1); }
 console.log('PASS: descriptive board names, with codes still winning.');
+
+/* Not every page of a tender is a circuit schedule.
+ *
+ * A real 441-page document holds 45 schedule pages. Sending all 441 to the
+ * agents cost roughly ten times what the job needed and harvested "devices"
+ * out of lighting calculations and specification prose, which then had to be
+ * reviewed out of the take-off by hand. */
+{
+  const { pageHasElectricalSignal } = P.EstimationExtractorCore;
+
+  // worth reading — any ONE signal is enough, because a missed schedule page
+  // costs more than a wasted call
+  const worth = {
+    'way/phase rows': ['1-L1  10  Acti9 iC60H, MCB, Type C  No  2 x 1/core x 4'],
+    'board header': ['REFERENCE DB-1-GF', 'NUMBER OF WAYS 18 WAYS'],
+    'device with a rating': ['Schneider Acti9 MCB iC60H Type B  63A'],
+    'circuit ref column': ['Circuit Ref   Device Type   RCD Applied'],
+    'board reference alone': ['Sub-main to DB/GF in riser 2'],
+  };
+  for (const [name, lines] of Object.entries(worth)) {
+    check(`signal: ${name} is read`, pageHasElectricalSignal(lines) === true);
+  }
+
+  // nothing for an agent to find
+  const skip = {
+    'title block': ['1 of 1 Pages Client national grid', 'Site Name DIDCOT 400kV SUBSTATION'],
+    'lighting calculations': ['Object : Didcot SS Ground Floor Lighting Calculations', 'Installation : Didcot SS'],
+    'page footer only': ['Page 1 of 8'],
+    'empty page': [''],
+    'specification prose': ['The contractor shall provide all necessary labour and materials.'],
+  };
+  for (const [name, lines] of Object.entries(skip)) {
+    check(`signal: ${name} is skipped`, pageHasElectricalSignal(lines) === false,
+      JSON.stringify(lines[0]).slice(0, 60));
+  }
+}

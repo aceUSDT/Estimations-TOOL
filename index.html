@@ -2241,9 +2241,19 @@ async function runAiExtraction(A,f,p,pageSet){
       const pageNo=pi+1;
       if (pageSet && !pageSet.has(pageNo)) return;
       const rowsHere=A.rows.filter(r=>r.fileId===id&&r.page===pageNo&&r.kind==='schedule').length;
-      // recall-first: any schedule/schematic/unknown page, plus any page the regex pass left empty
-      if (SCHEDULE_TYPES.has(pg.type)||pg.type==='sld'||pg.type==='schematic'||pg.type==='unknown'||rowsHere===0)
-        jobs.push({fl,id,pg,pageNo});
+      /* Recall-first, but not indiscriminate. Sending every page — which
+         "unknown || rowsHere===0" amounted to — meant a 441-page tender made
+         441 extraction calls for 45 schedule pages, and harvested "devices"
+         out of lighting calculations and specification prose that then had to
+         be reviewed out of the take-off by hand.
+         A page is still read whenever it is typed as a schedule or schematic,
+         OR shows any sign of carrying devices. A page with no such sign has
+         nothing for an agent to find. */
+      const typed = SCHEDULE_TYPES.has(pg.type)||pg.type==='sld'||pg.type==='schematic';
+      const signalled = window.EstimationExtractorCore?.pageHasElectricalSignal
+        ? window.EstimationExtractorCore.pageHasElectricalSignal((pg.lines||[]).map(l=>l.text))
+        : true;
+      if (typed || signalled) jobs.push({fl,id,pg,pageNo});
     });
   }
   if(!jobs.length) return;
