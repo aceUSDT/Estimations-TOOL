@@ -958,8 +958,15 @@
       views: [{ state: "frozen", ySplit: 4, activeCell: "A5" }],
       pageSetup: { paperSize: 9, orientation: "portrait", fitToPage: true, fitToWidth: 1, fitToHeight: 0, margins: { left: 0.5, right: 0.5, top: 0.6, bottom: 0.6, header: 0.3, footer: 0.3 } },
     });
-    sheet.columns = [{ width: 8 }, { width: 62 }, { width: 12 }];
-    addTitleRows(sheet, model, "Device take-off for quotation", 3);
+    /* Four columns, matching the supplier quotations this take-off is sent to
+       be priced against: #, product code, item description, quantity. The
+       product code is left BLANK — this tool reads schedules, not catalogues,
+       and inventing a manufacturer reference would be the worst kind of guess.
+       The column is here because the supplier fills it in and sends it back,
+       so the sheet round-trips instead of having to be retyped. */
+    const LAST = 4;
+    sheet.columns = [{ width: 6 }, { width: 16 }, { width: 58 }, { width: 11 }];
+    addTitleRows(sheet, model, "Device take-off for quotation", LAST);
 
     /* Cells are written positionally, never with addRow: this module is loaded
        into a vm sandbox by the tests, and an array built inside that sandbox is
@@ -974,63 +981,64 @@
     };
 
     const headerRow = cursor;
-    put(["#", "Item description", "Quantity"]);
+    put(["#", "Product code", "Item description", "Quantity"]);
     sheet.getRow(headerRow).height = 20;
-    styleHeaderRow(sheet, headerRow, 3);
+    styleHeaderRow(sheet, headerRow, LAST);
 
     const firstData = cursor;
     quoteLines(model).forEach((line) => {
       const at = cursor;
       put([
         line.kind === "board" ? line.code : "",
+        "",
         line.kind === "item" ? `    ${line.label}` : line.label,
         line.kind === "note" ? "" : line.qty,
       ]);
       const row = sheet.getRow(at);
       if (line.kind === "board") {
         row.font = { name: "Montserrat", size: 10, bold: true };
-        for (let c = 1; c <= 3; c += 1) sheet.getCell(at, c).fill = { type: "pattern", pattern: "solid", fgColor: { argb: XLSX_COLORS.grey } };
+        for (let c = 1; c <= LAST; c += 1) sheet.getCell(at, c).fill = { type: "pattern", pattern: "solid", fgColor: { argb: XLSX_COLORS.grey } };
       } else if (line.kind === "note") {
         row.font = { name: "Montserrat", size: 9, italic: true };
-        sheet.getCell(at, 2).fill = { type: "pattern", pattern: "solid", fgColor: { argb: XLSX_COLORS.amber } };
+        sheet.getCell(at, 3).fill = { type: "pattern", pattern: "solid", fgColor: { argb: XLSX_COLORS.amber } };
       } else {
         row.font = { name: "Montserrat", size: 10 };
         /* An item that still needs review is marked in the quotable document
            itself. Pricing an unreviewed line is exactly what this must not let
            happen quietly. */
-        if (line.review) sheet.getCell(at, 2).fill = { type: "pattern", pattern: "solid", fgColor: { argb: XLSX_COLORS.amber } };
+        if (line.review) sheet.getCell(at, 3).fill = { type: "pattern", pattern: "solid", fgColor: { argb: XLSX_COLORS.amber } };
       }
-      sheet.getCell(at, 3).alignment = { horizontal: "right" };
+      sheet.getCell(at, LAST).alignment = { horizontal: "right" };
     });
 
     const totalAt = cursor;
-    const totalRow = put(["", "PROJECT TOTAL — protective devices", model.grandTotal]);
+    const totalRow = put(["", "", "PROJECT TOTAL — protective devices", model.grandTotal]);
     totalRow.font = { name: "Montserrat", size: 11, bold: true };
-    for (let c = 1; c <= 3; c += 1) sheet.getCell(totalAt, c).fill = { type: "pattern", pattern: "solid", fgColor: { argb: XLSX_COLORS.peach } };
-    styleDataRange(sheet, firstData, totalAt, 3);
-    sheet.getCell(totalAt, 3).alignment = { horizontal: "right" };
+    for (let c = 1; c <= LAST; c += 1) sheet.getCell(totalAt, c).fill = { type: "pattern", pattern: "solid", fgColor: { argb: XLSX_COLORS.peach } };
+    styleDataRange(sheet, firstData, totalAt, LAST);
+    sheet.getCell(totalAt, LAST).alignment = { horizontal: "right" };
 
     /* Qualifications belong on the quotation, stated once, the way a supplier
        states them — not on a sheet of their own that nobody opens. */
     cursor += 1;
     const qualAt = cursor;
-    put(["", "Notes and qualifications", ""]);
+    put(["", "", "Notes and qualifications", ""]);
     sheet.getRow(qualAt).font = { name: "Montserrat", size: 11, bold: true };
     if (model.reviewCount) {
-      put(["", `${model.reviewCount} line${model.reviewCount === 1 ? "" : "s"} need review before pricing — shaded above, and listed in full on the Review Required sheet.`, ""]);
+      put(["", "", `${model.reviewCount} line${model.reviewCount === 1 ? "" : "s"} need review before pricing — shaded above, and listed in full on the Review Required sheet.`, ""]);
     }
     if (model.coverageIssueCount) {
-      put(["", `${model.coverageIssueCount} board${model.coverageIssueCount === 1 ? "" : "s"} could not be shown complete — see Board Completeness.`, ""]);
+      put(["", "", `${model.coverageIssueCount} board${model.coverageIssueCount === 1 ? "" : "s"} could not be shown complete — see Board Completeness.`, ""]);
     }
     const seen = new Set();
     qualificationRows(model).forEach((q) => {
       const line = text(q[3]);
       if (!line || seen.has(line) || seen.size >= 25) return;
       seen.add(line);
-      put(["", line, ""]);
+      put(["", "", line, ""]);
     });
     if (!model.reviewCount && !model.coverageIssueCount && !seen.size) {
-      put(["", "No outstanding qualifications — every device is reviewed and every declared way is accounted for.", ""]);
+      put(["", "", "No outstanding qualifications — every device is reviewed and every declared way is accounted for.", ""]);
     }
     return sheet;
   }

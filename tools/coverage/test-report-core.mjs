@@ -79,18 +79,19 @@ assert.ok(quote, "the quotation sheet must exist");
 assert.equal(workbook.worksheets[0].name, "Quotation Take-Off", "it must be the sheet the file opens on");
 assert.equal(quote.getCell("A1").value, "Llangatwg Test");
 assert.equal(quote.getCell("A3").value, "#");
-assert.equal(quote.getCell("B3").value, "Item description");
-assert.equal(quote.getCell("C3").value, "Quantity");
+assert.equal(quote.getCell("B3").value, "Product code");
+assert.equal(quote.getCell("C3").value, "Item description");
+assert.equal(quote.getCell("D3").value, "Quantity");
 // a board line, then its items indented beneath it
 assert.equal(quote.getCell("A4").value, "001");
-assert.ok(/^DB-2/.test(String(quote.getCell("B4").value)), String(quote.getCell("B4").value));
-assert.ok(/^ {4}\S/.test(String(quote.getCell("B5").value)), String(quote.getCell("B5").value));
+assert.ok(/^DB-2/.test(String(quote.getCell("C4").value)), String(quote.getCell("C4").value));
+assert.ok(/^ {4}\S/.test(String(quote.getCell("C5").value)), String(quote.getCell("C5").value));
 // and the project total, which must equal the take-off's own grand total
 const quoteRowsAll = [];
 quote.eachRow((r) => quoteRowsAll.push(r));
-const totalRow = quoteRowsAll.find((r) => /PROJECT TOTAL/.test(String(r.getCell(2).value || "")));
+const totalRow = quoteRowsAll.find((r) => /PROJECT TOTAL/.test(String(r.getCell(3).value || "")));
 assert.ok(totalRow, "the quotation must state a project total");
-assert.equal(totalRow.getCell(3).value, model.grandTotal);
+assert.equal(totalRow.getCell(4).value, model.grandTotal);
 assert.equal(controlSheet.getCell("A2").value, "Control & Associated Equipment");
 assert.equal(controlSheet.getCell("C5").value, 1);
 

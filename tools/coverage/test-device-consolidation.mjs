@@ -176,9 +176,9 @@ for (const sheetName of ["Device Detail", "Extraction Audit"]) {
   const q = quoteOnly.getWorksheet("Quotation Take-Off");
   const rows = [];
   q.eachRow((r) => rows.push(r));
-  const total = rows.find((r) => /PROJECT TOTAL/.test(String(r.getCell(2).value || "")));
+  const total = rows.find((r) => /PROJECT TOTAL/.test(String(r.getCell(3).value || "")));
   assert.ok(total, "quotation must state a project total");
-  assert.equal(total.getCell(3).value, riverside.grandTotal);
+  assert.equal(total.getCell(4).value, riverside.grandTotal);
   // every board that owns devices appears exactly once as a numbered line
   const boardLines = rows.filter((r) => /^\d{3}$/.test(String(r.getCell(1).value || "")));
   assert.equal(boardLines.length, riverside.boards.filter((_, i) => riverside.boardTotals[i] > 0).length);

@@ -33,8 +33,9 @@ const out=await page.evaluate(async ()=>{
   const lines=[]; const sheets=wb.worksheets.map(w=>w.name);
   const q=wb.getWorksheet('Quotation Take-Off');
   q.eachRow({includeEmpty:false},(r,n)=>{
-    const a=r.getCell(1).value??'', bb=r.getCell(2).value??'', c=r.getCell(3).value??'';
-    lines.push(String(a).padEnd(5)+String(bb).padEnd(72)+String(c));
+    if(n<3) return;  // merged title rows repeat across every column
+    const a=r.getCell(1).value??'', b2=r.getCell(2).value??'', c=r.getCell(3).value??'', d=r.getCell(4).value??'';
+    lines.push(String(a).padEnd(5)+String(b2).padEnd(14)+String(c).padEnd(62)+String(d));
   });
   return {sheets, lines, rows:q.actualRowCount};
 });
