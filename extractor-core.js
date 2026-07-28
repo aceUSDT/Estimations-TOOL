@@ -188,6 +188,133 @@
     return extractBoardReferences(text).length > 0;
   }
 
+  /* ---- Where the circuit schedules actually are -------------------------
+   *
+   * The signal test above is deliberately generous, and in a real tender that
+   * generosity has a cost: a specification clause describing RCBO sensitivities
+   * carries every signal a schedule does, so the spec chapter gets read as if
+   * it held devices. On the 386-page Didcot tender the selection returns 54
+   * pages for the 45 real schedules.
+   *
+   * The remedy is not to tighten the signal test — that trades an over-read for
+   * a missed board, which is the more serious failure. It is to VETO pages that
+   * carry positive evidence of being something else, and only when they show no
+   * schedule structure of their own. Absence of evidence never excludes a page.
+   *
+   * Two things get vetoed, both named by the estimator who reported this:
+   * specification prose, and the schedules that are not device schedules
+   * (cable, I/O, alarm, drawing registers). */
+
+  /* A schedule is columns; a specification is sentences. Measured over Didcot:
+   * function-word share runs 0.019-0.045 on the 45 schedule pages and
+   * 0.247-0.300 on the spec chapter, with sentence counts of 0 against 7-17.
+   * Both must fire, so a wordy table is not mistaken for prose. */
+  const PROSE_WORDS = /\b(?:will|shall|should|must|the|of|and|in|to|be|is|are|which|where|with|for|from|that|this|as|by)\b/gi;
+  const SENTENCE = /[a-z]{3,}\.\s+[A-Z]/g;
+  function pageProseRatio(text) {
+    const words = String(text || '').match(/[A-Za-z][A-Za-z'-]+/g) || [];
+    if (!words.length) return 0;
+    return (String(text).match(PROSE_WORDS) || []).length / words.length;
+  }
+  function pageIsSpecificationProse(text) {
+    const source = String(text || '');
+    if (!source.trim()) return false;
+    const sentences = (source.match(SENTENCE) || []).length;
+    return sentences >= 3 && pageProseRatio(source) >= 0.10;
+  }
+
+  /* Schedules that are not device schedules. The estimator's own rule: "where
+   * cable schedules start is where we mark the end of the circuit schedules,
+   * because we are not interested in the cable schedules at this point." */
+  const OTHER_SCHEDULE = /\b(?:cable|I\/O|IO|alarm|signal|containment|valve|ductwork|luminaire|drawing|equipment)\s+schedule\b|\bschedule\s+of\s+(?:drawings|m&e\s+drawings|rates|values)\b/i;
+  function pageIsNonDeviceSchedule(text) {
+    return OTHER_SCHEDULE.test(String(text || ''));
+  }
+
+  /* Positive evidence that a page IS a device schedule, in two tiers.
+   *
+   * Way-numbered rows, a "Way Id No" or "Circuit Ref" column and a declared way
+   * count cannot occur in running prose, so they outrank the vetoes outright.
+   *
+   * A TITLE can: the Didcot specification says "a typed circuit chart will be
+   * fitted within or adjacent to the board", and reading that phrase as
+   * structure would have let the whole spec chapter back in. A title therefore
+   * counts only on a page that is not prose. */
+  const SCHEDULE_ROWS = /\bcircuit\s*ref\b|\bway\s+id\s*no\b|\b\d{1,3}\s*-\s*L[123]\b/i;
+  const SCHEDULE_TITLE = /\b(?:distribution\s+board|circuit|panel|panelboard)\s+(?:schedule|chart)s?\b/i;
+  function pageIsDeviceSchedule(text) {
+    const source = String(text || '');
+    if (SCHEDULE_ROWS.test(source) || expectedWaysFromText(source) != null) return true;
+    return SCHEDULE_TITLE.test(source) && !pageIsSpecificationProse(source);
+  }
+
+  /* Should this page be sent to an extraction agent?
+   *
+   * Inclusion is unchanged — any electrical signal is enough. The veto only
+   * removes a page that positively identifies as prose or as a non-device
+   * schedule AND shows no schedule structure of its own. A cable schedule that
+   * also carries circuit rows is still read. */
+  function pageIsWorthExtracting(lines) {
+    const text = Array.isArray(lines) ? lines.join('\n') : String(lines || '');
+    if (!pageHasElectricalSignal(text)) return false;
+    if (pageIsDeviceSchedule(text)) return true;
+    if (pageIsSpecificationProse(text)) return false;
+    if (pageIsNonDeviceSchedule(text)) return false;
+    return true;
+  }
+
+  /* The contiguous runs of device-schedule pages in a document, with the text
+   * that introduces and ends each one.
+   *
+   * This is reported, not enforced: the estimator asked to be shown where the
+   * circuit charts begin and end in a 300-page tender, and a run stated plainly
+   * ("pages 18-62 of 386") is checkable in a way a page count is not. Nothing
+   * is excluded on the strength of it — a schedule page outside a run is still
+   * read, because a run is an observation about this document, not a rule. */
+  function findScheduleSections(pages) {
+    const list = (pages || [])
+      .map((pg) => ({ page: Number(pg.page), text: String(pg.text || '') }))
+      .filter((pg) => Number.isFinite(pg.page))
+      .sort((a, b) => a.page - b.page);
+    const sections = [];
+    let run = null;
+    /* A run is bounded by pages that CONTAIN schedules, so only the hard
+     * structure tier counts here. The divider page announces the section — its
+     * heading reads "C1 – Circuit Charts" — and counting it as a member would
+     * report the run starting one page early. A page that holds a schedule
+     * always has way rows or a declared way count; a divider never does. */
+    const holdsSchedule = (text) => SCHEDULE_ROWS.test(text) || expectedWaysFromText(text) != null;
+    for (const pg of list) {
+      if (holdsSchedule(pg.text) && !pageIsSpecificationProse(pg.text)) {
+        if (!run) run = { from: pg.page, to: pg.page, pages: 0 };
+        run.to = pg.page;
+        run.pages += 1;
+      } else if (run) {
+        sections.push(run); run = null;
+      }
+    }
+    if (run) sections.push(run);
+    /* Name each run from its neighbours: the divider before it ("SECTION C :
+     * ... CIRCUIT CHARTS", "C1 - Circuit Charts") and whatever ends it. */
+    const textAt = new Map(list.map((pg) => [pg.page, pg.text]));
+    const heading = (text) => {
+      const m = String(text || '').match(/\b(?:SECTION\s+[A-Z0-9]+\s*[:\-–][^.]{0,120}|[A-Z]\d\s*[-–]\s*[A-Z][^.]{0,120})/);
+      if (!m) return null;
+      /* A divider page runs straight on into its own body text. The heading
+       * ends where running prose begins — a capitalised word followed by three
+       * or more lowercase ones ("The following information is…"). Title case
+       * inside a heading ("Capacity and Loading") never trips this. */
+      const cut = m[0].search(/[A-Z][a-z]+(?:\s+[a-z]+){3,}/);
+      return (cut > 0 ? m[0].slice(0, cut) : m[0]).replace(/\s+/g, ' ').trim() || null;
+    };
+    return sections.map((s) => ({
+      ...s,
+      introducedBy: heading(textAt.get(s.from - 1)),
+      endedBy: heading(textAt.get(s.to + 1))
+        || (pageIsNonDeviceSchedule(textAt.get(s.to + 1) || '') ? 'a schedule that is not a device schedule' : null),
+    }));
+  }
+
   /* Ways a schedule declares SPARE as a block rather than row by row.
    *
    * A board with 18 ways may list 11 circuits and then one merged row reading
@@ -1721,6 +1848,11 @@
     scoreOcrCandidate,
     selectBestOcrCandidate,
     OCR_READABLE_FLOOR,
+    pageIsWorthExtracting,
+    pageIsSpecificationProse,
+    pageIsNonDeviceSchedule,
+    pageIsDeviceSchedule,
+    findScheduleSections,
     correctElectricalOcrText,
     extractTrippingCurve,
     extractBreakingCapacity,

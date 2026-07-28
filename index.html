@@ -2285,10 +2285,21 @@ async function runAiExtraction(A,f,p,pageSet){
          A page is still read whenever it is typed as a schedule or schematic,
          OR shows any sign of carrying devices. A page with no such sign has
          nothing for an agent to find. */
-      const typed = SCHEDULE_TYPES.has(pg.type)||pg.type==='sld'||pg.type==='schematic';
-      const signalled = window.EstimationExtractorCore?.pageHasElectricalSignal
-        ? window.EstimationExtractorCore.pageHasElectricalSignal((pg.lines||[]).map(l=>l.text))
-        : true;
+      const core=window.EstimationExtractorCore;
+      const pageText=(pg.lines||[]).map(l=>l.text);
+      /* A specification clause about RCBO sensitivities carries every signal a
+         schedule does, so the spec chapter used to be read as if it held
+         devices — the 386-page Didcot tender returned 54 pages for its 45
+         schedules. A page that positively identifies as prose, or as a schedule
+         that is not a device schedule (cable, I/O, alarm, drawing register), is
+         vetoed — but only when it shows no schedule structure of its own, so
+         nothing is ever dropped for lack of evidence. */
+      const vetoed = core?.pageIsSpecificationProse
+        ? (core.pageIsSpecificationProse(pageText.join('\n'))||core.pageIsNonDeviceSchedule(pageText.join('\n')))
+          && !core.pageIsDeviceSchedule(pageText.join('\n'))
+        : false;
+      const typed = (SCHEDULE_TYPES.has(pg.type)||pg.type==='sld'||pg.type==='schematic') && !vetoed;
+      const signalled = core?.pageIsWorthExtracting ? core.pageIsWorthExtracting(pageText) : true;
       /* A page OCR could not read shows no signal BECAUSE it could not be read,
          so the two tests above both say "nothing here" on exactly the pages
          where nothing has been tried yet. Large-format schematics are the
@@ -2612,7 +2623,15 @@ function renderCoverage(){
   const aiStats = appSettings.onlineExtraction&&p.analysis&&p.analysis.aiPages!=null ? ` · ${p.analysis.aiPages} page(s) read${p.analysis.aiErrors?', '+p.analysis.aiErrors+' failed':''}` : '';
   const xc=p.analysis&&p.analysis.xcheck;
   const xcChip = xc&&xc.pages ? `<span class="chip ${xc.mismatches?'amber':'green'}" title="A second AI model re-read every page; disagreements are in the Review queue">Cross-check (${esc(xc.provider||'gemini')}): ${xc.pages} page(s)${xc.mismatches?', '+xc.mismatches+' disagreement(s) → Review':' — models agree'}</span> ` : '';
+  const secs=(p.analysis&&p.analysis.scheduleSections)||[];
+  const secChips = secs.length
+    ? '<div style="margin-bottom:7px">'+secs.map(s=>
+        `<span class="chip green" title="${esc([s.introducedBy?'Introduced by: '+s.introducedBy:'',s.endedBy?'Ends at: '+s.endedBy:''].filter(Boolean).join(' · ')||'Detected from the pages themselves')}">`
+        +`${esc(s.fileName.slice(0,24))}: circuit schedules on pages ${s.from}–${s.to} of ${s.totalPages}</span>`).join(' ')
+      +'</div>'
+    : '';
   pagesEl.innerHTML = `<div style="margin-bottom:7px"><span class="chip ${aiCls}">Extraction service: ${esc(ai)}${esc(aiStats)}</span> ${xcChip}</div>`
+    + secChips
     + (cov.zeroRowSchedulePages.length
     ? '<span class="chip amber">Check '+cov.zeroRowSchedulePages.length+' schedule page(s) with no rows:</span> '
       + cov.zeroRowSchedulePages.slice(0,30).map(z=>{
@@ -3125,6 +3144,19 @@ async function runAnalysis(opts){
           unreadable:pg.ocrUnreadable===true}); });
     }
     A.coverage = window.EstimationExtractorCore.buildCoverage({boards:A.boards, rows:A.rows, pages:covPages});
+    /* Where the circuit charts begin and end. Reported per file, because in a
+       300-page tender "pages 18-62 of 386" is checkable against the document
+       in a way that a page count on its own is not. Nothing is excluded on the
+       strength of it — this is an observation, not a filter. */
+    if (window.EstimationExtractorCore.findScheduleSections){
+      A.scheduleSections=[];
+      for (const id of f.fileIds){
+        const fl=p.files.find(x=>x.id===id); if(!fl) continue;
+        const secs=window.EstimationExtractorCore.findScheduleSections(
+          covPages.filter(cp=>cp.fileId===id).map(cp=>({page:cp.page,text:cp.text})));
+        secs.filter(s=>s.pages>=3).forEach(s=>A.scheduleSections.push({...s,fileId:id,fileName:fl.name,totalPages:fl.pages.length}));
+      }
+    }
   }
   // §5.3 — schematic ↔ DB-schedule cross-referencing (deterministic code, not the model).
   try{ A.discrepancies = buildCrossReference(A, p, prev&&prev.discrepancies); }

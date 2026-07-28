@@ -455,6 +455,91 @@ console.log('PASS: descriptive board names, with codes still winning.');
   }
 }
 
+/* The signal test above is generous by design, and that generosity has a cost:
+ * a specification clause about RCBO sensitivities carries every signal a
+ * schedule does. On the 386-page Didcot tender the selection returned 54 pages
+ * for its 45 schedules — the spec chapter, the drawing register and the I/O
+ * cable schedule came with them.
+ *
+ * The veto removes a page only on POSITIVE evidence of being something else,
+ * and only when it shows no schedule structure of its own. Absence of evidence
+ * never excludes a page, because a missed board is the more serious failure.
+ *
+ * Text below is quoted from Didcot; page numbers are that document's. */
+{
+  const { pageIsWorthExtracting, pageIsSpecificationProse, pageIsNonDeviceSchedule,
+    pageIsDeviceSchedule, findScheduleSections } = P.EstimationExtractorCore;
+
+  // p9: specification prose. Names boards, switchgear and MCCBs, but describes
+  // them rather than scheduling them.
+  const specProse = 'Sub-distribution Boards A main switch board complete with a moulded case circuit '
+    + 'breakers will be located within the LVAC room. The main switch board will be as manufactured '
+    + 'by Schneider Electric or equal. Sub-distribution boards will be surface mounted and will be '
+    + 'fitted with a 125A isolator. Each board will be provided with a minimum of 20% spare ways. '
+    + 'Combined residual current devices will have a 30mA sensitivity and tripping characteristic '
+    + 'in accordance with BSEN61009 type B and C. A typed circuit chart will be fitted within or '
+    + 'adjacent to the board. All boards will be labelled in accordance with the drawings.';
+  check('veto: specification prose is recognised', pageIsSpecificationProse(specProse) === true);
+  check('veto: specification prose is not extracted', pageIsWorthExtracting([specProse]) === false);
+  /* The phrase "a typed circuit chart will be fitted" is a schedule title
+   * inside a sentence. Reading it as structure would let the whole spec
+   * chapter back in, so a title only counts on a page that is not prose. */
+  check('veto: a schedule title inside a sentence is not structure',
+    pageIsDeviceSchedule(specProse) === false);
+
+  // p299: an I/O cable schedule. The estimator's own rule — "where cable
+  // schedules start is where we mark the end of the circuit schedules".
+  const cableSchedule = 'DIDCOT 132kV GIS Building Services I/O Cable Schedule Signals Proposed for '
+    + 'connection to SCADA System name Interface Panel Terminal Reference SCADA Ferrule Cable Type '
+    + 'CSA Cores Field Terminals Notes Fire Alarm Fire Condition 001 A-B PH30 Fire resistant '
+    + 'multcore 1.5 1x3C From fire alarm panel.';
+  check('veto: cable schedule is recognised', pageIsNonDeviceSchedule(cableSchedule) === true);
+  check('veto: cable schedule is not extracted', pageIsWorthExtracting([cableSchedule]) === false);
+
+  // p4: a drawing register, which is a schedule of drawings and not of devices.
+  const drawingRegister = 'SECTION A: SCHEDULE OF M&E DRAWINGS Didcot 132kV GIS Building NUMBER SCALE '
+    + 'TITLE 32_LI_000220 1:200 BUILDING SERVICES - SITE WIDE POWER SUPPLIES 630A';
+  check('veto: drawing register is not extracted', pageIsWorthExtracting([drawingRegister]) === false);
+
+  // The veto must never outrank real schedule structure. A page carrying both
+  // is still read — this is the check that keeps the veto from costing a board.
+  const cableScheduleWithCircuits = `${cableSchedule} Circuit Ref 1-L1 32 MCB Type C 2-L2 16 MCB Type B`;
+  check('veto: a page with circuit rows survives the cable-schedule veto',
+    pageIsWorthExtracting([cableScheduleWithCircuits]) === true);
+  const proseWithSchedule = `${specProse} Distribution Board Schedule Way Id No Circuit Ref 1-L1 32 MCB`;
+  check('veto: a page with a schedule header survives the prose veto',
+    pageIsWorthExtracting([proseWithSchedule]) === true);
+
+  // A real schedule must not read as prose at any point.
+  const realSchedule = 'Distribution Board Schedule Job Number: Didcot SS Board Data Incomer Details '
+    + 'Device Rating (A): Total Connected Load (A): Ze: Board Rating (A): Name: Id No: L3 L2 L1 '
+    + 'Way Id No 1-L1 32 Acti9 iC60H MCB Type C 2-L2 16 MCB Type B';
+  check('veto: a real schedule is never read as prose', pageIsSpecificationProse(realSchedule) === false);
+  check('veto: a real schedule is extracted', pageIsWorthExtracting([realSchedule]) === true);
+  check('veto: a real schedule is identified as one', pageIsDeviceSchedule(realSchedule) === true);
+
+  /* Where the circuit charts begin and end. The estimator asked to be shown
+   * this for a 300-page tender: the divider page announces the section, and the
+   * next section heading closes it. */
+  const sections = findScheduleSections([
+    { page: 1, text: 'Contents' },
+    { page: 2, text: 'SECTION C : DIDCOT 132kV GIS CIRCUIT CHARTS & CABLE CALCULATIONS C1 – Circuit Charts The following information is to supplement the layout drawings.' },
+    { page: 3, text: realSchedule },
+    { page: 4, text: realSchedule },
+    { page: 5, text: realSchedule },
+    { page: 6, text: 'C2 – Containment Capacity and Loading The following tables demonstrate the capacity and extent of fill for strategic points.' },
+    { page: 7, text: cableSchedule },
+  ]);
+  check('sections: one run found', sections.length === 1, JSON.stringify(sections));
+  check('sections: run covers exactly the schedule pages',
+    sections[0] && sections[0].from === 3 && sections[0].to === 5 && sections[0].pages === 3,
+    JSON.stringify(sections[0]));
+  check('sections: the divider that introduces it is quoted',
+    /C1 – Circuit Charts$/.test(sections[0].introducedBy || ''), sections[0].introducedBy);
+  check('sections: the heading that ends it is quoted',
+    sections[0].endedBy === 'C2 – Containment Capacity and Loading', sections[0].endedBy);
+}
+
 /* Trimble/Amtech "Board Data" blocks declare the board as "Id No:".
  *
  * These pages carry no REFERENCE label at all, so they resolved no board — and
