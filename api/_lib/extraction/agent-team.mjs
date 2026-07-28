@@ -56,11 +56,20 @@ export const MASTER_VERDICT_SCHEMA = {
  * board and its way count in a header block, and that is the yardstick every
  * agent is measured against. */
 export function declaredHeaderFacts(textLines) {
-  const text = (Array.isArray(textLines) ? textLines.join(' \n ') : String(textLines || '')).replace(/\s+/g, ' ');
+  const raw = Array.isArray(textLines) ? textLines.join(' \n ') : String(textLines || '');
+  const text = raw.replace(/\s+/g, ' ');
   const ref = (text.match(/\bREFERENCE\s*[:=-]?\s*([A-Z0-9][A-Z0-9/._-]{1,20})/i) || [])[1] || null;
   const waysRaw = (text.match(/NUMBER\s+OF\s+WAYS\s*[:=-]?\s*(\d{1,3})/i) || [])[1] || null;
   const ways = waysRaw ? Number(waysRaw) : null;
-  return { boardRef: ref, waysTotal: Number.isFinite(ways) && ways > 0 && ways <= 200 ? ways : null };
+  /* A schematic is a different reading job from a schedule, so the agent is
+   * told which one it has. Signals are the drawing's own words. */
+  const schematic = /\b(single[- ]?line|schematic|busbar|switchboard|riser diagram)\b/i.test(text)
+    && !/\bcircuit ref\b/i.test(text);
+  return {
+    boardRef: ref,
+    waysTotal: Number.isFinite(ways) && ways > 0 && ways <= 200 ? ways : null,
+    schematic,
+  };
 }
 
 /* Ways the agents actually returned, and which declared ways are unaccounted
@@ -141,6 +150,29 @@ function boardContract(facts, role) {
     '17. Do not skip a row because it looks malformed. Return it with the fields you',
     '    can read and leave the rest null, so a human sees it in Review.',
   ];
+  if (facts && facts.schematic) {
+    lines.push(
+      '',
+      'THIS PAGE IS A SCHEMATIC / SINGLE-LINE DIAGRAM — read it as a TREE, not a table.',
+      '18. Capture the UPSTREAM equipment, not only what hangs below it. The',
+      '    transformer, the ACB, the main LV panel or switchboard and any',
+      '    panelboards are equipment in their own right and belong in the take-off.',
+      '    Returning only the downstream distribution boards is the single most',
+      '    common failure on these pages.',
+      '19. Every OUTGOING WAY of a panel carries a protective device — an ACB or',
+      '    MCCB with a rating printed beside it ("125A", "630A", "2500A"). Return',
+      '    one device per outgoing way, attributed to the PANEL it sits in, not to',
+      '    the board it feeds. A board fed by a 125A MCCB does not own that MCCB.',
+      '20. A feed is a relationship: from the panel, through a device and a cable,',
+      '    to a board. Return the pair — the device on the panel side AND the board',
+      '    it feeds — so the tree can be rebuilt. Do not merge them into one row.',
+      '21. Ratings printed alongside a line belong to the device on that line. A',
+      '    cable size ("4C 95mm²", "SWA") is not a device rating; keep them apart.',
+      '22. Feeder pillars, EV charge points and similar sub-assemblies carry their',
+      '    own outgoing devices. Return them; they are frequently the largest',
+      '    single omission on a schematic.',
+    );
+  }
   if (role === 'vision_parse') {
     lines.push(
       '',

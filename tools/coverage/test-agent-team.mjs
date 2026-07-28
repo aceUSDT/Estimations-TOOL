@@ -420,4 +420,34 @@ console.log('PASS: nvidia pool + agent team + engine selector + worker master-au
   if (!/ROTATED/.test(visionPrompt)) { console.log('FAIL [orders] vision orders omit rotation'); process.exitCode = 1; }
 
   if (!process.exitCode) console.log('ok  standing orders reach the agents, vision orders only to vision');
+
+  /* A schematic is a different reading job: the failure recorded against the
+   * tool is that it returns the sub-boards hanging off a panel but not the
+   * panel or the MCCBs feeding them. The schematic orders exist to close that,
+   * so they must arrive on a schematic page and stay off a schedule page —
+   * a schedule row is not an outgoing way of a switchboard. */
+  if (/THIS PAGE IS A SCHEMATIC/.test(textPrompt)) {
+    console.log('FAIL [orders] schedule page got schematic orders'); process.exitCode = 1;
+  }
+
+  const scheduleFacts = team.declaredHeaderFacts(header);
+  if (scheduleFacts.schematic) { console.log('FAIL [orders] schedule page flagged schematic'); process.exitCode = 1; }
+  const schematicLines = ['LV SINGLE LINE DIAGRAM', 'MAIN LV SWITCHBOARD', '2500A ACB', '125A MCCB TO DB-1-GF'];
+  const schematicFacts = team.declaredHeaderFacts(schematicLines);
+  if (!schematicFacts.schematic) { console.log('FAIL [orders] schematic page not flagged'); process.exitCode = 1; }
+
+  prompts.length = 0;
+  await team.runAgentTeam({ textLines: schematicLines, filename: 'f.pdf', pageNumber: 3 }, deps);
+  const schematicPrompt = prompts[0] ? prompts[0].prompt : '';
+  const schematicRequired = [
+    ['upstream equipment captured', /transformer, the ACB, the main LV panel/i],
+    ['device attributed to the panel', /attributed to the PANEL it sits in/i],
+    ['feed returned as a pair', /Return the pair/i],
+    ['cable size is not a rating', /not a device rating/i],
+    ['feeder pillars returned', /Feeder pillars/i],
+  ];
+  for (const [name, re] of schematicRequired) {
+    if (!re.test(schematicPrompt)) { console.log(`FAIL [schematic orders] missing: ${name}`); process.exitCode = 1; }
+  }
+  if (!process.exitCode) console.log('ok  schematic orders reach schematic pages only');
 }
