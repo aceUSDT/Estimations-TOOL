@@ -145,6 +145,50 @@
     return RATING_REF.test(String(normalised || ''));
   }
 
+  /* Ways a schedule declares SPARE as a block rather than row by row.
+   *
+   * A board with 18 ways may list 11 circuits and then one merged row reading
+   * "12-L1,L2,L3 - 18-L1,L2,L3 ... SPARE". Without reading it, completeness
+   * reports seven ways unaccounted for on a board the drawing says is fully
+   * described — a false alarm on every such board, which is how a completeness
+   * check stops being believed.
+   *
+   * Two forms appear in real documents, both handled:
+   *   - the range inline on the spare row: "1-L1 - 12-L1  -  -  ...  SPARE"
+   *   - the endpoints on the rows either side of it, because the merged cell
+   *     is centred across the span it covers.
+   *
+   * An adjacent line only counts as an endpoint when it is JUST a way
+   * reference. A neighbouring line carrying device data is a LIVE circuit —
+   * a real page has one directly above its spare block — and reading it as a
+   * spare boundary would silently delete a device. */
+  const BARE_WAY = /^\s*(\d{1,3})\s*-\s*L[123](?:\s*,\s*L[123])*\s*-?\s*$/i;
+  function spareWayRanges(lines) {
+    const arr = (Array.isArray(lines) ? lines : []).map((l) => String(l || ''));
+    const ranges = [];
+    for (let i = 0; i < arr.length; i++) {
+      if (!/\bSPARE\b/i.test(arr[i])) continue;
+      const inline = arr[i].match(/\b(\d{1,3})\s*-\s*L[123][^\n]*?-\s*(\d{1,3})\s*-\s*L[123]/i);
+      if (inline) {
+        const from = Math.min(Number(inline[1]), Number(inline[2]));
+        const to = Math.max(Number(inline[1]), Number(inline[2]));
+        if (to >= from && to - from < 200) ranges.push({ from, to });
+        continue;
+      }
+      const ends = [];
+      for (const j of [i - 1, i + 1]) {
+        const m = arr[j] && arr[j].match(BARE_WAY);
+        if (m) ends.push(Number(m[1]));
+      }
+      if (ends.length === 2) {
+        const from = Math.min(...ends);
+        const to = Math.max(...ends);
+        if (to > from && to - from < 200) ranges.push({ from, to });
+      }
+    }
+    return ranges;
+  }
+
   /* Group positioned text runs into visual lines, honouring PAGE ROTATION.
    *
    * Rotated drawing sheets are common in this domain, and pdf.js reports each
@@ -1560,6 +1604,7 @@
     reconcilePageBoards,
     isRatingLikeRef,
     groupTextItemsIntoLines,
+    spareWayRanges,
     parseBoardHeaderFacts,
     boardCapacityWarnings,
     planPrefixMerges,

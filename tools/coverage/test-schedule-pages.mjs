@@ -379,6 +379,41 @@ console.log(`PASS: ${pages.length} schedule pages → ${boards.length} boards, s
     !wayPhase || wayPhase.way !== 11 || wayPhase.phase === 'L3', JSON.stringify(wayPhase));
 }
 
+/* Ways declared SPARE as a block.
+ *
+ * A board with 18 ways may list 11 circuits then one merged row covering
+ * "12-L1,L2,L3 - 18-L1,L2,L3 ... SPARE". Unread, completeness reports seven
+ * ways unaccounted for on a board the drawing fully describes — a false alarm
+ * on every such board, and a check that cries wolf stops being read. */
+{
+  const { spareWayRanges } = P.EstimationExtractorCore;
+
+  // endpoints on the rows either side, because the merged cell is centred
+  const split = spareWayRanges(['18-L1,L2,L3', '-  -  -  -  SPARE', '12-L1,L2,L3 -']);
+  check('spare block read from surrounding rows', JSON.stringify(split) === JSON.stringify([{ from: 12, to: 18 }]),
+    JSON.stringify(split));
+
+  // the range stated inline on the spare row itself
+  const inline = spareWayRanges(['1-L1 - 12-L1  -  -  -  -  SPARE']);
+  check('spare block read inline', JSON.stringify(inline) === JSON.stringify([{ from: 1, to: 12 }]),
+    JSON.stringify(inline));
+
+  /* A neighbouring row carrying DEVICE DATA is a live circuit, not a spare
+     boundary. A real page has exactly that directly above its spare block, and
+     misreading it would silently delete a device — the worst error available. */
+  const live = spareWayRanges([
+    '24-L1,L2,L3  63  Acti9 iC60H, MCB, Type C  No  4 x 1/core x 16  Sockets',
+    '23-L1,L2,L3',
+    '-  -  -  -  SPARE',
+    '17-L1,L2,L3  -',
+  ]);
+  check('live circuit is not read as a spare boundary',
+    JSON.stringify(live) === JSON.stringify([{ from: 17, to: 23 }]), JSON.stringify(live));
+
+  // no SPARE anywhere ⇒ nothing inferred
+  check('no spare marker ⇒ no range', spareWayRanges(['12-L1,L2,L3', '11-L1  16  MCB']).length === 0);
+}
+
 /* The exit gate is LAST on purpose: it once sat mid-file, so checks appended
    after it could fail while the suite still reported green. */
 if (fail) { console.log(`\n${fail} failure(s)`); process.exit(1); }

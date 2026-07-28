@@ -2923,6 +2923,26 @@ async function runAnalysis(opts){
           }
         }
       });
+      /* Ways the drawing declares spare as a BLOCK ("12-L1,L2,L3 - 18-L1,L2,L3
+         ... SPARE") are recorded as spare ways. Without this, completeness
+         reports them as unaccounted for on a board the drawing fully
+         describes — a false alarm on every such board, and a completeness
+         check that cries wolf stops being read. */
+      if (isSched && ctx.board && window.EstimationExtractorCore?.spareWayRanges){
+        const claimed=new Set(A.rows.filter(r=>r.boardNorm===ctx.board&&r.way!=null).map(r=>String(r.way)));
+        window.EstimationExtractorCore.spareWayRanges(lines).forEach(({from,to})=>{
+          for(let w=from;w<=to;w++){
+            if(claimed.has(String(w))) continue;
+            claimed.add(String(w));
+            A.rows.push({id:uid(), boardNorm:ctx.board, boardSection:ctx.boardSection, fileId:id, page:pageNo,
+              line:null, status:'pending', kind:'schedule', way:w, phase:null, desc:'Spare (declared as a block)',
+              device:null, rating:null, poles:null, poleConfiguration:null, curve:null, sens:null, afdd:false,
+              ka:null, cable:null, spare:true, space:false, incomer:false, qty:1,
+              srcText:`Ways ${from}-${to} declared SPARE`, conf:0.85,
+              extractionMethod:'Schedule spare block'});
+          }
+        });
+      }
       if (isSched && !codedPage.matched && window.EstimationExtractorCore){
         window.EstimationExtractorCore.finalizeScheduleContext(ctx);
       }

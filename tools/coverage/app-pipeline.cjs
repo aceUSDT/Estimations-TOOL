@@ -491,6 +491,18 @@ function analyseDocument(pages){
         }
       }
     });
+    if (isSched && ctx.board){
+      const claimed=new Set(A.rows.filter(r=>r.boardNorm===ctx.board&&r.way!=null).map(r=>String(r.way)));
+      EstimationExtractorCore.spareWayRanges(lines).forEach(({from,to})=>{
+        for(let w=from;w<=to;w++){
+          if(claimed.has(String(w))) continue;
+          claimed.add(String(w));
+          A.rows.push({boardNorm:ctx.board, page:pageNo, line:null, status:'pending', kind:'schedule',
+            way:w, phase:null, desc:'Spare (declared as a block)', device:null, rating:null,
+            spare:true, space:false, incomer:false, qty:1, srcText:`Ways ${from}-${to} declared SPARE`, conf:0.85});
+        }
+      });
+    }
     if (isSched&&!codedPage.matched){
       const flushed = EstimationExtractorCore.finalizeScheduleContext(ctx);
       flushed.forEach(row=>{ /* rows already pushed by parseBamScheduleLine path; nothing extra */ });
