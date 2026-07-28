@@ -858,4 +858,33 @@ if (fail) { console.log(`\n${fail} failure(s)`); process.exit(1); }
     (U.feeders || []).map((f) => `${f.from} -> ${f.to}`).join(', '));
 }
 
+/* The way a row belongs to is the one its MARKER states.
+ *
+ * Rows on a large-format schedule routinely begin with the cable spec —
+ * "1 x 1.5", "2 x 1/core x 2.5" — and the way was read as the first number at
+ * the start of the line. Circuit 8's RCBO was recorded on way 1, circuit 24's
+ * SPD on way 1, circuit 12's MCB on way 1: devices landing on the WRONG
+ * circuit, which corrupts the circuit map and the completeness check rather
+ * than merely inflating a count. Four such collisions on one real sheet. */
+{
+  const ctx = () => ({ board: 'DB1', sawHeader: true, inNotes: false, lastWay: null, lastPhase: null, pendingRows: [] });
+  const cases = [
+    ['1 x 1.5  Separate  Lighting, radial circuits  GF CORRIDOR LIGHTING  8-L3  32  Acti9 iC60H, RCBO, Type B  30mA', 8],
+    ['1 x 16  Separate  Fixed Power  TYPE 2 SPD  24-L1,L2,L3  -  -  SPARE', 24],
+    ['1 x 1.5  Separate  Fixed Power  AH.1F.01 MVHR  12-L2  63  Acti9 iC60H, MCB, Type B', 12],
+    // a row that leads with its own marker is unchanged
+    ['5-L1  32  Acti9 iC60H, MCB, Type C  No  2 x 1/core x 2.5', 5],
+    // and so is a dialect that carries no marker at all
+    ['7  10  Acti9 iC60H, MCB, Type C  Lighting', 7],
+  ];
+  for (const [line, want] of cases) {
+    const row = P.parseScheduleLine(line, ctx());
+    check(`way marker: ${String(want).padStart(2)} from ${line.slice(0, 40)}`,
+      row && row.way === want, row ? `got ${row.way}` : 'no row');
+  }
+  /* A leading number followed by "x" is a core count, never a way. */
+  const cable = P.parseScheduleLine('2 x 1/core x 2.5  Separate  Sockets  MCB  32', ctx());
+  check('way marker: a core count is not a way', !cable || cable.way !== 2, cable ? String(cable.way) : 'no row');
+}
+
 if (fail) { console.log(`\n${fail} failure(s)`); process.exit(1); }

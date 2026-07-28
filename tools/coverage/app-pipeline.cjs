@@ -417,7 +417,16 @@ function parseScheduleLine(line, ctx){
   if (structured) return structured;
   const dialect = EstimationExtractorCore && EstimationExtractorCore.parseKnownScheduleLine(line, ctx);
   if (dialect) return dialect;
-  const wayM = line.match(/^\s*(?:way|cct|ckt|circuit)?\s*[:#]?\s*(\d{1,3})\b/i);
+  /* An explicit way/phase marker is the way, wherever it sits in the row.
+     A leading bare number is not: rows on a large-format schedule routinely
+     begin with the CABLE spec ("1 x 1.5", "2 x 1/core x 2.5"), and reading its
+     first number as the way put circuit 8's RCBO on way 1 and circuit 24's SPD
+     on way 1 — devices landing on the wrong circuit, not merely counted twice.
+     The leading form still applies to rows that carry no marker, and a number
+     immediately followed by "x" is a core count, never a way. */
+  const markerM = line.match(/\b(\d{1,3})\s*-\s*L[123]\b/);
+  const leadM = line.match(/^\s*(?:way|cct|ckt|circuit)?\s*[:#]?\s*(\d{1,3})\b(?!\s*[x\u00d7])/i);
+  const wayM = markerM || leadM;
   const spare = /\bspare\b/i.test(line);
   const space = /\bspace\b/i.test(line);
   const device = detectDeviceIn(line);
@@ -427,7 +436,8 @@ function parseScheduleLine(line, ctx){
   const cables = detectCables(line);
   const row = {
     way: wayM? +wayM[1] : null,
-    desc: line.replace(/^\s*(?:way|cct|ckt|circuit)?\s*[:#]?\s*\d{1,3}\s*/i,'').trim(),
+    // strip only a LEADING way label; a marker mid-row is part of the text
+    desc: (leadM ? line.replace(/^\s*(?:way|cct|ckt|circuit)?\s*[:#]?\s*\d{1,3}\s*/i,'') : line).trim(),
     device, rating,
     poles: polesOf(line), poleConfiguration:poleConfigOf(line), curve: curveOf(line), sens: sensOf(line),
     phase: phaseOf(line), ka: kaOf(line),

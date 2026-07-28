@@ -37,4 +37,10 @@ const bySrc={}; rows.forEach(r=>{ bySrc[r.src]=(bySrc[r.src]||0)+1; }); console.
 const keys=rows.filter(r=>r.w!=null).map(r=>`${r.b}|${r.w}|${r.p}`);
 const dupes=keys.filter((k,i)=>keys.indexOf(k)!==i);
 console.log('duplicate way/phase slots:',[...new Set(dupes)].length,[...new Set(dupes)].slice(0,10).join(', '));
+const dupKeys=new Set(dupes);
+if(dupKeys.size){
+  const full=await page.evaluate('state.cur.analysis.rows.map(r=>({k:r.boardNorm+"|"+r.way+"|"+r.phase,p:r.page,l:r.line,d:r.device,rt:r.rating,s:(r.srcText||"").slice(0,110)}))');
+  console.log('duplicated rows:');
+  full.filter(r=>dupKeys.has(r.k)).slice(0,12).forEach(r=>console.log('  ',r.k.padEnd(18),'p'+r.p,'line'+r.l,(r.d||'-')+'/'+(r.rt??'-'),'|',r.s));
+}
 await b.close();
