@@ -106,6 +106,11 @@ const phaseOf  = s => { const m=s.match(/\b(L[123])\b/); return m?m[1]:(/\bTP&?N
 const kaOf     = s => EstimationExtractorCore.extractBreakingCapacity(s)?.value??null;
 
 /* ==================== BOARD DETECTION (index.html:806) ==================== */
+const EQUIPMENT_PREFIX=/(?:^|\s\s)\s*(?:Cbl|Cable|Load|FC|SM)[-_]/i;
+function INSIDE_EQUIPMENT_ID(line,index){
+  const cellStart=String(line).lastIndexOf('  ',index);
+  return EQUIPMENT_PREFIX.test(String(line).slice(cellStart<0?0:cellStart,index));
+}
 function detectBoards(line){
   const found=[];
   for (const bp of BOARD_PATTERNS){
@@ -121,6 +126,7 @@ function detectBoards(line){
         orig = orig.replace(/[.,:]+$/,'');
         if (!/[\d\/-]/.test(orig) || BOARD_REF_STOPWORDS.has(orig.toUpperCase())) continue;
       }
+      if (INSIDE_EQUIPMENT_ID(line, m.index)) continue;
       const canonical = canonicalBoardRef(orig);
       orig = canonical.display;
       const norm = canonical.normalised;

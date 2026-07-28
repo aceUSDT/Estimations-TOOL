@@ -23,17 +23,38 @@ await page.goto('http://127.0.0.1:8765/vendor/PDFJS_LICENSE.txt', { waitUntil: '
 await page.addScriptTag({ content: fs.readFileSync(path.join(ROOT, 'vendor/pdf.min.js'), 'utf8') });
 await page.evaluate(() => { window.pdfjsLib.GlobalWorkerOptions.workerSrc = '/vendor/pdf.worker.min.js'; });
 
+/* --lines runs the app's OWN line grouping, transform for transform.
+ *
+ * Flat joined text is not what the app reads, and measuring against it is
+ * measuring against a fiction: these schedules put labels in one column and
+ * their values in another, so joining runs in reading order destroys the
+ * correspondence between "No. of Ways:" and its number. */
+const WANT_LINES = process.argv.includes('--lines');
+if (WANT_LINES) await page.addScriptTag({ content: fs.readFileSync(path.join(ROOT, 'extractor-core.js'), 'utf8') });
+
 const bytes = Array.from(new Uint8Array(fs.readFileSync(FILE)));
-const pages = await page.evaluate(async (data) => {
+const pages = await page.evaluate(async ({ data, wantLines }) => {
   const doc = await window.pdfjsLib.getDocument({ data: new Uint8Array(data) }).promise;
   const out = [];
   for (let n = 1; n <= doc.numPages; n += 1) {
     const p = await doc.getPage(n);
     const c = await p.getTextContent();
-    out.push({ page: n, text: c.items.map((i) => i.str).join(' ').replace(/\s+/g, ' ').trim() });
+    const rec = { page: n, text: c.items.map((i) => i.str).join(' ').replace(/\s+/g, ' ').trim() };
+    if (wantLines) {
+      // identical to linesFromTextContent() in index.html
+      const vp = p.getViewport({ scale: 1 });
+      const items = c.items.map((it) => {
+        const tx = window.pdfjsLib.Util.transform(vp.transform, it.transform);
+        return { str: it.str, x: tx[4], y: tx[5], w: it.width * vp.scale,
+          h: Math.hypot(tx[2], tx[3]) || 10, angle: Math.atan2(tx[1], tx[0]) };
+      }).filter((i) => i.str.trim());
+      rec.rotation = vp.rotation;
+      rec.lines = window.EstimationExtractorCore.groupTextItemsIntoLines(items).map((l) => l.text);
+    }
+    out.push(rec);
   }
   return out;
-}, bytes);
+}, { data: bytes, wantLines: WANT_LINES });
 
 if (OUT) fs.writeFileSync(OUT, JSON.stringify(pages, null, 1));
 console.error(`${pages.length} pages read from ${path.basename(FILE)}`);

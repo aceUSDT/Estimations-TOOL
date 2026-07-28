@@ -540,6 +540,38 @@ console.log('PASS: descriptive board names, with codes still winning.');
     sections[0].endedBy === 'C2 – Containment Capacity and Loading', sections[0].endedBy);
 }
 
+/* A cable or load is named after the board and way it serves, so a board
+ * reference sits INSIDE its name. Reading those as boards invented two per page
+ * on the Didcot tender — DB-7 and DB-12 out of "Cbl_FC-143-MEP MAIN DB-7-" and
+ * "Cbl_SM-99-MEP MAIN DB-12" — each landing in the take-off with no ways and no
+ * rows against a board that does not exist.
+ *
+ * Both the core and the app's own detector are checked, because they are
+ * separate implementations and a fix applied to one is not a fix. */
+{
+  const { extractBoardReferences } = P.EstimationExtractorCore;
+  const cableRow = '7  Cbl_FC-143-MEP MAIN DB-7-  Multicore 90°C thermosetting  1 x 1 x 2c  16  '
+    + 'Load-148-MEP MAIN DB-7-L1  Schneider, ComPacT NSX MCCB, NSX100N - 25kA  63';
+  const submainRow = '12  Cbl_SM-99-MEP MAIN DB-12  Single-core 90°C thermosetting  1 x 4 x 1c  16  '
+    + 'Load-99-MEP MAIN DB-12  Generic, BS 88-2, Fuse, System E  2';
+  for (const [name, row] of [['cable id', cableRow], ['submain id', submainRow]]) {
+    check(`equipment id: core mints no board from a ${name}`,
+      extractBoardReferences(row).length === 0,
+      JSON.stringify(extractBoardReferences(row).map((b) => b.normalised)));
+    check(`equipment id: app mints no board from a ${name}`,
+      P.detectBoards(row).length === 0,
+      JSON.stringify(P.detectBoards(row).map((b) => b.norm)));
+  }
+
+  /* A board named in its own column is still a board. This is the check that
+   * keeps the guard from costing the downstream boards a panel feeds. */
+  const connectedTo = 'L3  DB-WORKSHOP  0  DB-WORKSHOP  None  N/A';
+  check('equipment id: a board in the Connected To column survives',
+    P.detectBoards(connectedTo).some((b) => b.norm === 'DBWORKSHOP'));
+  check('equipment id: core keeps a board in the Connected To column',
+    extractBoardReferences(connectedTo).some((b) => b.normalised === 'DBWORKSHOP'));
+}
+
 /* Trimble/Amtech "Board Data" blocks declare the board as "Id No:".
  *
  * These pages carry no REFERENCE label at all, so they resolved no board — and

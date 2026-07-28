@@ -591,6 +591,23 @@
     'CHARTS', 'IDENTITY', 'AND', 'OR', 'THE', 'FOR', 'WITH', 'IS', 'ARE', 'MODEL',
   ]);
 
+  /* A cable or load is named after the board and way it serves, so a board
+   * reference appears INSIDE it: "Cbl_FC-143-MEP MAIN DB-7-" is one cable on
+   * way 7 of MEP MAIN DB, and "Cbl_SM-99-MEP MAIN DB-12" is one on way 12 —
+   * neither is a board called DB-7 or DB-12. Reading them as boards invented
+   * two boards per page on the Didcot tender, each with no ways and no rows.
+   *
+   * The board's own identity comes from the page header, which is
+   * authoritative, so nothing real is lost by refusing to mint one here. The
+   * scan stops at the column separator (two spaces, which is what the line
+   * grouper emits between cells) so a prefix never reaches across a column. */
+  const EQUIPMENT_PREFIX = /(?:^|\s\s)\s*(?:Cbl|Cable|Load|FC|SM)[-_]/i;
+  function insideEquipmentIdentifier(source, index) {
+    const cellStart = source.lastIndexOf('  ', index);
+    const prefix = source.slice(cellStart < 0 ? 0 : cellStart, index);
+    return EQUIPMENT_PREFIX.test(prefix);
+  }
+
   function extractBoardReferences(text) {
     const source = String(text || '');
     // Ordered most-specific first; shorter matches fully contained inside an
@@ -623,6 +640,7 @@
           const tokens = original.split(/[\s.\-_/]+/).slice(1);
           if (!tokens.length || BOARD_REF_STOPWORDS.has(tokens[0].toUpperCase())) continue;
         }
+        if (insideEquipmentIdentifier(source, match.index)) continue;
         spans.push({ original, start: match.index, end: match.index + match[0].length });
       }
     }
