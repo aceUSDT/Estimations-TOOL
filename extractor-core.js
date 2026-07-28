@@ -76,7 +76,12 @@
     return String(value || '').toUpperCase().replace(/[\s._/-]+/g, '');
   }
 
-  function canonicalBoardReference(value) {
+  /* `options.declared` marks a reference the document stated OUTRIGHT — a
+   * Trimble "Id No:" field, for instance. A declaration is authoritative and
+   * must not be second-guessed: the way-prefix rule exists to strip the row
+   * number off "154-DB-7-GCS-11", but applied to a declared "110-AC-MCB" it
+   * eats the 110 that is part of the board's own name. */
+  function canonicalBoardReference(value, options) {
     const original = String(value || '').trim();
     let display = original.toUpperCase()
       .replace(/\s*[._/\\-]\s*/g, '-')
@@ -88,8 +93,10 @@
      * remains still starts with a letter, so a board genuinely named "1-DB-A"
      * is untouched — a leading number alone is not evidence of a way. */
     let wayPrefix = null;
-    const way = display.match(/^(\d{1,3})-([A-Z].*)$/);
-    if (way) { wayPrefix = Number(way[1]); display = way[2]; }
+    if (!(options && options.declared)) {
+      const way = display.match(/^(\d{1,3})-([A-Z].*)$/);
+      if (way) { wayPrefix = Number(way[1]); display = way[2]; }
+    }
 
     /* The same board appears once per PHASE on a three-phase way (…-L1, …-L2,
      * …-L3). Those are the same board; keeping the suffix triples it. Distinct
@@ -133,6 +140,13 @@
       if (!norm || norm === header) return true;
       if (header.startsWith(norm)) return false;   // bare prefix: DB1 under DB1GF
       if (norm.startsWith(header)) return false;   // way/phase extension: DB1GF5L2
+      /* A schedule row names what each way is CONNECTED TO — "Load-85-DB-7-GCS-1",
+       * "Cbl_FC-86-DB-7-GCS-1". Those contain the page's own board with a load
+       * or cable reference wrapped around it, and each was registering as a
+       * separate board: one real 441-page tender produced 178 boards, nearly all
+       * of them row decoration. On a page that DECLARED its board, a longer
+       * candidate containing that board is this board's row data. */
+      if (norm.length > header.length && norm.includes(header)) return false;
       return true;
     });
   }
@@ -333,8 +347,12 @@
   function parseBoardHeaderFacts(lines) {
     const text = (Array.isArray(lines) ? lines.join(' \n ') : String(lines || '')).replace(/\s+/g, ' ');
     const grab = (re) => { const m = text.match(re); return m ? m[1].trim() : null; };
-    const waysRaw = grab(/NUMBER\s+OF\s+WAYS\s*[:=-]?\s*(\d{1,3})/i);
-    const waysTotal = waysRaw ? Number(waysRaw) : null;
+    /* Delegates to expectedWaysFromText rather than carrying a second pattern.
+     * The two had already drifted: that one reads Trimble's "No. of Ways: 24"
+     * and this one did not, so a whole dialect's boards showed no way count
+     * while the coverage model read it correctly from the same page. */
+    const waysFound = expectedWaysFromText(text);
+    const waysTotal = waysFound ? waysFound.ways : null;
     /* Stop at the next header LABEL, not at a fixed length: "SERVED BY MEP MAIN
      * DB DESCRIPTION GROUND FLOOR…" must yield "MEP MAIN DB", not run on. */
     const NEXT = '(?=\\s+(?:DESCRIPTION|LOCATION|NUMBER\\s+OF\\s+WAYS|INCOMER|BOARD\\s+DEVICE|REFERENCE|CIRCUIT\\s+REF|PHASE)\\b|$)';
@@ -1477,8 +1495,22 @@
       const ways = Number(split[1]) + Number(split[2]);
       if (ways >= 2 && ways <= 200) return { ways, evidence: split[0].trim(), split: true };
     }
-    for (const pattern of WAY_HEADER_PATTERNS) {
+    /* LABELLED forms first — "No. of Ways: 24", "Ways: 12" — because they state
+     * the count outright and cannot be confused with anything else. */
+    for (const pattern of WAY_HEADER_PATTERNS.slice(1)) {
       const match = source.match(pattern);
+      if (match) {
+        const ways = Number(match[1]);
+        if (ways >= 2 && ways <= 200) return { ways, evidence: match[0].trim() };
+      }
+    }
+    /* The bare "18 WAY TP&N" form is matched LINE BY LINE. Run across joined
+     * text it spans the line break between an incomer row ending "Device Rating
+     * (A): 160" and the table's "Way  Id No ..." column header, and reads a
+     * 24-way board as having 160 ways. A count and a column heading on two
+     * different lines are not one phrase. */
+    for (const line of source.split(/\r?\n/)) {
+      const match = line.match(/\b(\d{1,3})[ \t]*-?[ \t]*WAYS?\b/i);
       if (match) {
         const ways = Number(match[1]);
         if (ways >= 2 && ways <= 200) return { ways, evidence: match[0].trim() };

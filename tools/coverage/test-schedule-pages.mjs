@@ -454,3 +454,50 @@ console.log('PASS: descriptive board names, with codes still winning.');
       JSON.stringify(lines[0]).slice(0, 60));
   }
 }
+
+/* Trimble/Amtech "Board Data" blocks declare the board as "Id No:".
+ *
+ * These pages carry no REFERENCE label at all, so they resolved no board — and
+ * their way count, which parsed perfectly well, had nothing to attach to. That
+ * is the reported error "boards clearly have the number of ways marked up, the
+ * tool somehow still misses it": the count was never the problem, the board
+ * was. The fallback then picked a ref out of a ROW, inventing a board per
+ * circuit. */
+{
+  const trimble = [
+    'Distribution Board Schedule',
+    'Board Data',
+    'Id No:  DB-7-GCS  ModelNo:  L1  L2  L3',
+    'Name:  DB GAS CART SOCKETS  No. of Ways:  24  Spare:  41.7',
+    'Incomer Details',
+    'Device Manufacturer: N/A  Device Type:  Isolating Switch  Device Rating (A): 160',
+    'Way  Id No  Cable Type  Cores  Connected To:  Overcurrent Protective Device  Rating (A)',
+    '1  Cbl_FC-86-DB-7-GCS-1  Single-core  Load-85-DB-7-GCS-1  Schneider, Acti9 MCB, iC60H Type B  63',
+  ];
+  const got = P.scheduleBoardFromLines(trimble);
+  check('Id No declares the board', Boolean(got && got.orig === 'DB-7-GCS'), got ? got.orig : 'NONE');
+
+  /* The way count is read by ONE reader shared with the coverage model. Two
+     readers had already drifted: coverage read "No. of Ways: 24" and the header
+     facts did not, so a whole dialect showed no ways on the board while the
+     same page reported them correctly elsewhere. */
+  const facts = P.EstimationExtractorCore.parseBoardHeaderFacts(trimble);
+  check('No. of Ways is read by parseBoardHeaderFacts', facts.waysTotal === 24, String(facts.waysTotal));
+  const expected = P.EstimationExtractorCore.expectedWaysFromText(trimble.join('\n'));
+  check('both way readers agree', Boolean(expected && expected.ways === facts.waysTotal),
+    `${expected && expected.ways} vs ${facts.waysTotal}`);
+
+  /* A declared reference is authoritative: "110-AC-MCB" names a 110V board and
+     the 110 is NOT a way number, however much it looks like one. */
+  const declared = P.EstimationExtractorCore.canonicalBoardReference('110-AC-MCB', { declared: true });
+  check('a declared ref keeps its leading number', declared.normalised === '110ACMCB', declared.normalised);
+  const rowRef = P.EstimationExtractorCore.canonicalBoardReference('154-DB-7-GCS-11');
+  check('a row ref still loses its way prefix', rowRef.normalised === 'DB7GCS11', rowRef.normalised);
+
+  /* A row's "Connected To" column is not a board. One 441-page tender produced
+     178 boards, nearly all of them row decoration wrapped around the real one. */
+  const kept = P.EstimationExtractorCore.reconcilePageBoards('DB7GCS',
+    ['DB7GCS', 'LOAD141DB7GCS5', 'CBLFC86DB7GCS1', 'MEPMAINDB']);
+  check('connected-load refs are rejected', JSON.stringify(kept) === JSON.stringify(['DB7GCS', 'MEPMAINDB']),
+    JSON.stringify(kept));
+}

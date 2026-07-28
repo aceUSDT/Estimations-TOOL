@@ -149,6 +149,24 @@ function scheduleBoardFromLines(lines){
   const joined=(lines||[]).map(l=>String(l||'').trim()).filter(Boolean).join(' ');
   // Only trust a bare "REFERENCE" when the page also carries board-schedule
   // header labels, so a cable or drawing reference cannot name a board.
+  /* Trimble/Amtech "Board Data" blocks declare the board as "Id No:  DB-7-GCS"
+     with no REFERENCE label anywhere on the page. Unread, these pages resolved
+     no board at all — so their way count, which parses perfectly well, had
+     nothing to attach to and the board appeared to have none. The fallback scan
+     then picked a ref out of a ROW ("DB-7-GCS-5"), inventing a board per
+     circuit. Checked first because it is an explicit declaration.
+     The colon matters: the row table's column header also reads "Id No", but
+     only the declaration carries a value after it. */
+  const idNo=joined.match(/\bId\s*No\.?\s*:\s*([A-Z0-9][A-Z0-9._\/ -]{1,38}?)(?=\s{2,}|\s*ModelNo|\s*Model\s*No|$)/i);
+  if(idNo){
+    const declared=idNo[1].trim();
+    const det=detectBoards(declared)[0];
+    if(det) return det;
+    /* Taken as DECLARED: no way-prefix stripping, because "110-AC-MCB" names a
+       110V board and the 110 is not a way number. */
+    const canonical=canonicalBoardRef(declared,{declared:true});
+    if(canonical.normalised&&/[A-Z]/i.test(declared)) return {orig:canonical.display,norm:canonical.normalised,type:'UNK',section:canonical.splitSection};
+  }
   if(/(number of ways|circuit ref|served by|incomer)/i.test(joined)){
     /* Take the first BOARD-SHAPED reference in the window after the label, not
        the token that happens to sit next to it. pdf.js orders cells by
@@ -435,13 +453,19 @@ function analyseDocument(pages){
     const lines=pg.lines;
     const pageBoards=[];
     lines.forEach(t=>detectBoards(t).forEach(b=>{ if(!pageBoards.some(x=>x.norm===b.norm)) pageBoards.push(b); }));
-    pageBoards.forEach(b=>regBoard(b,pageNo));
+    /* Header resolved BEFORE registration, and row-derived candidates
+       reconciled against it — mirroring index.html. Registering first is what
+       let a schedule's "Connected To" column mint a board per row. */
     const isSched=SCHEDULE_TYPES.has(pg.type) && pg.type!=='cable-schedule';
     let ctxBoard=null;
     if (isSched){
       ctxBoard=scheduleBoardFromLines(lines);
       const hasBoardHeader=hasScheduleBoardHeader(lines);
       if (!ctxBoard && !hasBoardHeader && prevBoard) ctxBoard=prevBoard;
+      const kept = ctxBoard
+        ? EstimationExtractorCore.reconcilePageBoards(ctxBoard.norm, pageBoards)
+        : pageBoards;
+      kept.forEach(b=>regBoard(b,pageNo));
       if (ctxBoard){
         regBoard(ctxBoard,pageNo); prevBoard=ctxBoard;
         const e=A.boards[ctxBoard.norm];
@@ -453,7 +477,7 @@ function analyseDocument(pages){
         }
       }
       else if(hasBoardHeader) prevBoard=null;
-    } else prevBoard=null;
+    } else { pageBoards.forEach(b=>regBoard(b,pageNo)); prevBoard=null; }
     const parsedLegend=EstimationExtractorCore.parseProtectionLegend(lines.join('\n'));
     const ctx={board:ctxBoard?ctxBoard.norm:null, boardOrig:ctxBoard?ctxBoard.orig:null, boardSection:ctxBoard?ctxBoard.section||null:null, sawHeader:false, inNotes:false,
       lastWay:null, lastPhase:null, pendingRows:[], protectionLegend:parsedLegend.legend};
