@@ -945,6 +945,29 @@ if (fail) { console.log(`\n${fail} failure(s)`); process.exit(1); }
        review threshold — an unnamed device is uncertain, not settled. */
     check(`compact marker: unnamed device goes to review`, r && !r.device && r.conf < 0.8, r ? `${r.device}/${r.conf}` : 'no row');
   }
+  /* The same row shape with the phase SPACED off the way, and a load id before
+     the rating — "1 L1 Load-31 16". Amtech charts write it this way, and 32
+     pages of them returned nothing. Tokens carrying letters are identifiers,
+     not ratings, so the scan steps over "Load-31". */
+  for (const [line, way, phase, rating] of [
+    ['1 L1 Load-31 16 N/A N/A N/A 4 15', 1, 'L1', 16],
+    ['3 L1 Load-33 16 NIA N/A N/A 6 15', 3, 'L1', 16],
+  ]) {
+    const r = P.parseScheduleLine(line, ctx());
+    check(`spaced marker: way ${way} rating ${rating}A`,
+      r && r.way === way && r.phase === phase && r.rating === rating,
+      r ? `${r.way}${r.phase} ${r.rating}` : 'no row');
+  }
+  /* The dash form carries its rating the same way, and its rating was never
+     being read at all — there is no "A" beside it either. */
+  const dash = P.parseScheduleLine('5-L1  32  Acti9 iC60H, MCB, Type C  No  2 x 1/core x 2.5', ctx());
+  check('dash marker: rating read positionally', dash && dash.way === 5 && dash.rating === 32,
+    dash ? `${dash.way}/${dash.rating}` : 'no row');
+  /* A marker mid-row scans from where it matched, not from the line start. */
+  const mid = P.parseScheduleLine('1 x 1.5  Separate  Lighting  GF CORRIDOR  8-L3  32  Acti9 iC60H, RCBO, Type B', ctx());
+  check('mid-row marker: rating follows the marker, not the cable spec',
+    mid && mid.way === 8 && mid.rating === 32, mid ? `${mid.way}/${mid.rating}` : 'no row');
+
   const spare = P.parseScheduleLine('16L1 - - - - - Spare -', ctx());
   check('compact marker: a spare way is still a spare', spare && spare.way === 16 && spare.spare === true,
     spare ? JSON.stringify({ way: spare.way, spare: spare.spare }) : 'no row');
