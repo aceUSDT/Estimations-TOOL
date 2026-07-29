@@ -439,12 +439,28 @@ console.log('PASS: nvidia pool + agent team + engine selector + worker master-au
   prompts.length = 0;
   await team.runAgentTeam({ textLines: schematicLines, filename: 'f.pdf', pageNumber: 3 }, deps);
   const schematicPrompt = prompts[0] ? prompts[0].prompt : '';
+  /* The anatomy below is taken from an estimator's own annotated drawing: a
+   * 12-way TP&N panelboard with its identity block, its incoming chain, and its
+   * outgoing ways. Each order corresponds to something marked on that drawing
+   * that the tool had no instruction to look for. */
   const schematicRequired = [
-    ['upstream equipment captured', /transformer, the ACB, the main LV panel/i],
-    ['device attributed to the panel', /attributed to the PANEL it sits in/i],
+    // Part 1 — the panel is a board, not just a thing that feeds boards
+    ['panel identity block read as a board header', /That block is the BOARD HEADER/],
+    // Part 2 — the incoming chain
+    ['incomer frame AND setting', /frame is 200A and the setting 160A/],
+    ['meter, SPD and CT are not protective devices', /NOT protective devices/],
+    // Part 3 — the outgoing ways
+    ['way, phase, rating and pole configuration', /pole configuration/],
+    ['device named by MODEL, not by a class word', /named by its MODEL, not by a class word/],
+    ['a frame\/trip pair returns both', /frame size and a trip/],
+    ['a per-phase way is three devices', /ONE way carrying THREE single-phase devices/],
+    ['a spare way is returned', /SPARE WAY" is a way that exists/],
+    ['a circled M is a meter on that way', /circled M drawn on an outgoing way/],
+    // across all three
     ['feed returned as a pair', /Return the pair/i],
-    ['cable size is not a rating', /not a device rating/i],
+    ['cable specification is not a rating', /not a device rating/i],
     ['feeder pillars returned', /Feeder pillars/i],
+    ['"by others" is flagged, not dropped or priced', /BY OTHERS/],
   ];
   for (const [name, re] of schematicRequired) {
     if (!re.test(schematicPrompt)) { console.log(`FAIL [schematic orders] missing: ${name}`); process.exitCode = 1; }
