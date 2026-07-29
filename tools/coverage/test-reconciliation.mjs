@@ -228,5 +228,40 @@ check('an unreadable page that the vision agent read is no longer reported',
     ]).length === 0);
 }
 
+/* Pages the OCR read well enough to TYPE but not well enough to PARSE.
+ *
+ * Between the readability floor and a confident reading lies a band where the
+ * prose survives and the numbers do not. On a real sheet the circuit
+ * descriptions came through cleanly while every way number, rating and curve
+ * became "we wif me [a |v". The page scored 0.705, was correctly called a
+ * schedule, and produced one spurious row — so it escaped the zero-row check,
+ * because one row is not none, and NOTHING was reported. A failure that looks
+ * like a result is the worst outcome available. */
+{
+  const page = (ocrScore, rows) => core.buildCoverage({
+    boards: {},
+    rows,
+    pages: [{ fileId: 'f', page: 1, type: 'db-schedule', ocrScore, text: 'WAY PHASE CIRCUIT DESCRIPTION Rating Curve' }],
+  });
+  const marginal = page(0.705, [{ fileId: 'f', page: 1, boardNorm: 'DB1', way: 1, device: 'Meter', kind: 'schedule' }]);
+  check('poorly read: a marginal page yielding one row is reported',
+    marginal.poorlyReadPages.length === 1, JSON.stringify(marginal.poorlyReadPages));
+  check('poorly read: it is counted in the summary', marginal.summary.poorlyReadPages === 1);
+  check('poorly read: the score is carried so the reason is checkable',
+    marginal.poorlyReadPages[0] && marginal.poorlyReadPages[0].ocrScore === 0.705);
+
+  /* A page that read WELL and yielded little is a different problem — it is
+     the schedule parser's, not the scan's — so it must not be blamed on OCR. */
+  check('poorly read: a well-read page is not blamed on the scan',
+    page(0.93, []).poorlyReadPages.length === 0);
+  /* And a marginal page that nonetheless produced a table is fine. */
+  const productive = page(0.70, [1, 2, 3, 4].map((w) => ({ fileId: 'f', page: 1, boardNorm: 'DB1', way: w, device: 'MCB', kind: 'schedule' })));
+  check('poorly read: a marginal page that produced rows is not reported',
+    productive.poorlyReadPages.length === 0, JSON.stringify(productive.poorlyReadPages));
+  /* Documents with an embedded text layer never went through OCR at all. */
+  check('poorly read: a page with no OCR score is not reported',
+    page(null, []).poorlyReadPages.length === 0);
+}
+
 if (fail) { console.log(`\n${fail} failure(s)`); process.exit(1); }
 console.log('PASS: expectedWaysFromText, pageLooksTabular, buildCoverage (header-vs-rows, zero-row pages, unreadable pages, no-header case)');

@@ -3497,7 +3497,9 @@ async function runAnalysis(opts){
       const fl=p.files.find(x=>x.id===id); if(!fl||fl.status!=='ready') continue;
       fl.pages.forEach((pg,pi)=>{ if(pageSet && !pageSet.has(pi+1)) return;
         covPages.push({fileId:id, page:pi+1, text:(pg.lines||[]).map(l=>l.text).join('\n'), type:pg.type,
-          unreadable:pg.ocrUnreadable===true}); });
+          unreadable:pg.ocrUnreadable===true,
+          // how well OCR read it, so a marginal page can be told from a good one
+          ocrScore:(pg.ocr&&Number.isFinite(Number(pg.ocr.qualityScore)))?Number(pg.ocr.qualityScore):null}); });
     }
     A.coverage = window.EstimationExtractorCore.buildCoverage({boards:A.boards, rows:A.rows, pages:covPages});
     /* Where the circuit charts begin and end. Reported per file, because in a
@@ -4340,6 +4342,9 @@ function renderReview(){
     /* Sorted to the top of the queue: a page nothing could read is the largest
        single omission the tool can have, and it is invisible everywhere else. */
     (A.coverage.unreadablePages||[]).forEach(z=>items.push({kind:'unreadable',z,conf:0}));
+    /* Read well enough to type, not well enough to parse. Silent before this:
+       one row is not zero rows, so the zero-row check never fired. */
+    (A.coverage.poorlyReadPages||[]).forEach(z=>items.push({kind:'poorlyread',z,conf:0.05}));
   }
   if (!items.length){ host.innerHTML='<div class="empty"><div class="ico">✓</div>Nothing to review — all results are confirmed or high confidence.</div>'; return; }
   host.innerHTML='';
@@ -4398,6 +4403,14 @@ function renderReview(){
         <div class="hint">OCR returned only line-work, and no device came back from the extraction service either. Nothing on this page is in the take-off. Large-format schematics are the usual cause — supply the drawing at a higher resolution, or enter its devices by hand.</div></div>
         <div class="racts"><button class="btn sm" data-a="view">View page</button></div>`;
       div.querySelector('[data-a=view]').addEventListener('click',()=>{ state.viewer.fileId=z.fileId; state.viewer.page=z.page; setTab('viewer'); });
+    } else if (it.kind==='poorlyread'){
+      const z=it.z, fl=p.files.find(x=>x.id===z.fileId);
+      div.innerHTML=`<div class="ric" style="background:var(--amber-soft)">\u25a4</div>
+        <div style="flex:1"><h4>${esc(fl?fl.name:'?')} page ${z.page} was read poorly \u2014 ${z.rows===0?'no':z.rows} circuit${z.rows===1?'':'s'} came off it</h4>
+        <div class="hint">The scan was clear enough to recognise the page as a schedule but not to read its table. On pages like this the descriptions usually survive and the way numbers and ratings do not, so treat this board as unread rather than empty.</div></div>
+        <div class="racts"><button class="btn sm" data-a="view">View page</button></div>`;
+      const vb=div.querySelector('[data-a=view]');
+      if(vb) vb.addEventListener('click',()=>{ state.viewer.fileId=z.fileId; state.viewer.page=z.page; setTab('viewer'); });
     } else if (it.kind==='zeropage'){
       const z=it.z, fl=p.files.find(x=>x.id===z.fileId);
       div.innerHTML=`<div class="ric" style="background:var(--amber-soft)">▤</div>

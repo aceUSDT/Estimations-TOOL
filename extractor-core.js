@@ -2161,6 +2161,16 @@
      * omission the completeness rule exists to prevent. A large-format
      * schematic that reached no reader is a whole switchboard missing. */
     const unreadablePages = [];
+    /* Pages the OCR read well enough to TYPE but not well enough to parse.
+     *
+     * The readability floor separates noise from text, and between it and a
+     * confident reading lies a band where the prose survives and the numbers do
+     * not. On one real sheet the circuit descriptions came through cleanly while
+     * every way number, rating and curve became "we wif me [a |v" — the page
+     * scored 0.705, was called a schedule, and produced a single spurious row.
+     * It escaped the zero-row check because one row is not none, so nothing was
+     * reported at all: the worst outcome, a failure that looks like a result. */
+    const poorlyReadPages = [];
     const zeroRowSchedulePages = [];
     for (const pg of pages || []) {
       if (pg.unreadable) {
@@ -2190,6 +2200,15 @@
         const b = perBoard.find((entry) => entry.norm === norm);
         return b && b.expectedWays != null && b.spareWays != null && b.spareWays >= b.expectedWays;
       });
+      /* A schedule page whose OCR was marginal and which yielded almost nothing
+       * is reported whether that "almost nothing" is zero rows or one. */
+      // null means the page never went through OCR at all — an embedded text
+      // layer is not a poor scan, and Number(null) is 0, which is not a score.
+      const score = pg.ocrScore == null ? null : Number(pg.ocrScore);
+      const rowsHere = scheduleRows.filter((r) => r.fileId === pg.fileId && r.page === pg.page).length;
+      if (Number.isFinite(score) && score < 0.8 && rowsHere < 2 && !fullySpare) {
+        poorlyReadPages.push({ fileId: pg.fileId, page: pg.page, type: pg.type, ocrScore: score, rows: rowsHere });
+      }
       if (!hasRows && !fullySpare) {
         zeroRowSchedulePages.push({
           fileId: pg.fileId,
@@ -2208,6 +2227,7 @@
       perBoard,
       zeroRowSchedulePages,
       unreadablePages,
+      poorlyReadPages,
       summary: {
         boards: scopedBoards.length,
         boardsWithRows: scopedBoards.filter((b) => b.rowsCaptured > 0).length,
@@ -2216,6 +2236,7 @@
         pctComplete: expectedTotal ? Math.round((100 * capturedTotal) / expectedTotal) : null,
         unaccountedBoards: scopedBoards.filter((b) => (b.unaccountedWays || 0) > 0).length,
         unreadablePages: unreadablePages.length,
+        poorlyReadPages: poorlyReadPages.length,
       },
     };
   }
