@@ -1565,6 +1565,14 @@ function classifyPage(text, pageIdx, totalPages){
   if (hasWays>=3) add('db-schedule',4);
   if (/board ref|board reference/.test(low)) add('db-schedule',2);
   const phaseRows=(text.match(/\bL[123]\b/g)||[]).length;
+  /* Rows whose way and phase are ONE token — "17L2", "18L1". The count above
+     cannot see them: there is no word boundary between the digits and the L.
+     A Hevacomp chart is nothing but these, so it scored no schedule signal at
+     all, typed 'unknown', and the entire schedule walk was skipped — the same
+     shape of failure as BUSBAR typing a circuit chart as a single-line diagram.
+     Three or more is a table; one is a coincidence. */
+  const compactWayRows=(text.match(/(?:^|\n)\s*\d{1,3}L[123]\b/gi)||[]).length;
+  if (compactWayRows>=3) add('db-schedule',8);
   const codedRows=(text.match(/(?:^|\n)\s*(?:\d{1,3}\s+)?(?:L[123]\s+)?\d+(?:\.\d+)?\s+[JKLMN]\s+[BCD]\b[^\n]*\b(?:Ri|Ra)\s+[LP]\b/gim)||[]).length;
   if(codedRows>=2&&phaseRows>=3) add('db-schedule',9);
   /* A mirrored circuit chart is a board schedule beyond argument — a busbar
@@ -1634,24 +1642,50 @@ function parseScheduleLine(line, ctx){
      on way 1 — devices landing on the wrong circuit, not merely counted twice.
      The leading form still applies to rows that carry no marker, and a number
      immediately followed by "x" is a core count, never a way. */
-  const markerM = line.match(/\b(\d{1,3})\s*-\s*L[123]\b/);
+  const markerM = line.match(/\b(\d{1,3})\s*-\s*(L[123])\b/);
+  /* Some circuit charts write the way and phase as ONE token with no separator
+     — "17L2", "18L1" — which no way pattern matched and which also defeats
+     phaseOf(), because there is no word boundary between the digits and the L.
+     A whole Hevacomp document returned zero rows for this alone. Anchored to
+     the start of the row so a cable code mid-line cannot look like one. */
+  const compactM = line.match(/^\s*(\d{1,3})(L[123])\b/i);
   const leadM = line.match(/^\s*(?:way|cct|ckt|circuit)?\s*[:#]?\s*(\d{1,3})\b(?!\s*[x\u00d7])/i);
-  const wayM = markerM || leadM;
+  const wayM = markerM || compactM || leadM;
+  const markerPhase = (markerM && markerM[2]) || (compactM && compactM[2].toUpperCase()) || null;
   const spare = /\bspare\b/i.test(line);
   const space = /\bspace\b/i.test(line);
   const device = detectDeviceIn(line);
   const rating = ratingOf(line);
   const isIncomer = /\bincomer\b|\bincoming\b|\bmain switch\b/i.test(line);
   // A row must look like a scheduled circuit: way number + (device|spare|space), or incomer with device
-  if (!( (wayM && (device||spare||space)) || (isIncomer && device) )) return null;
+  /* A row stating a way and a RATING is a circuit even when it never names the
+     device class. Hevacomp's chart prints way, rating, cable and description
+     with no "MCB" anywhere, so requiring a device word dropped every live way
+     and kept only the spares. The class is left null rather than assumed, and
+     the confidence below sends it to Review — an unnamed device is uncertain,
+     not absent. */
+  const compactRating = compactM
+    ? (line.slice(compactM[0].length).match(/^\s*(\d{1,4}(?:\.\d+)?)\s*[*\u00b0]?(?=\s|$)/) || [])[1]
+    : null;
+  if (!( (wayM && (device||spare||space||rating!=null||compactRating!=null)) || (isIncomer && device) )) return null;
   const cables = detectCables(line);
+  /* In a compact-marker chart the rating is the column immediately after the
+     way, written as a bare number with no "A" — "17L2  16*  1.5  1x2core...".
+     Read by pattern instead, the only "A" on the row is in its DESCRIPTION, so
+     "Radial 13A sockets" made a 20A circuit read as 13A. Position is the only
+     honest source here, and it applies solely to rows of this shape. */
+  const positional = compactM
+    ? (line.slice(compactM[0].length).match(/^\s*(\d{1,4}(?:\.\d+)?)\s*[*\u00b0]?(?=\s|$)/) || [])[1]
+    : null;
+  const finalRating = positional != null ? Number(positional) : rating;
+  const cables2 = cables;
   const row = {
     way: wayM? +wayM[1] : null,
     // strip only a LEADING way label; a marker mid-row is part of the text
     desc: (leadM ? line.replace(/^\s*(?:way|cct|ckt|circuit)?\s*[:#]?\s*\d{1,3}\s*/i,'') : line).trim(),
-    device, rating,
+    device, rating: finalRating,
     poles: polesOf(line), poleConfiguration:poleConfigOf(line), curve: curveOf(line), sens: sensOf(line),
-    phase: phaseOf(line), ka: kaOf(line),
+    phase: markerPhase || phaseOf(line), ka: kaOf(line),
     cable: cables.length? cables[0] : null,
     spare, space, incomer: isIncomer,
     qty: device? qtyIn(line, device) : 1,
@@ -1661,9 +1695,13 @@ function parseScheduleLine(line, ctx){
   let conf = 0.6;
   if (row.way!==null) conf+=0.15;
   if (row.device) conf+=0.1;
-  if (row.rating!==null) conf+=0.1;
+  if (row.rating!==null && row.rating!==undefined) conf+=0.1;
   if (ctx.sawHeader) conf+=0.05;
   if (ctx.board) conf+=0.05; else conf-=0.2;
+  /* A circuit whose device class the row never names is a real circuit, but it
+     is not a confident reading: it must sit below the review threshold rather
+     than being presented as settled. */
+  if (!row.device && !row.spare && !row.space) conf-=0.25;
   row.conf = Math.max(0.2, Math.min(0.97, conf));
   return row;
 }

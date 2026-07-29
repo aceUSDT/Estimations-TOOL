@@ -915,4 +915,48 @@ if (fail) { console.log(`\n${fail} failure(s)`); process.exit(1); }
   }
 }
 
+/* A circuit chart whose way and phase are ONE token, with no device named.
+ *
+ * Found by running a document the fixes in this session were NOT built against.
+ * A whole Hevacomp schedule returned zero rows for three compounding reasons,
+ * and the lines below are its real OCR output, quoted:
+ *
+ *   1. "17L2" has no separator, so no way pattern matched it — and no word
+ *      boundary either, so phaseOf() could not see the phase.
+ *   2. The classifier counts \bL[123]\b for the same reason and scored no
+ *      schedule signal at all, typing the page 'unknown', which switches off
+ *      the entire schedule walk.
+ *   3. The rows name no device class, and the parser required one.
+ *
+ * The rating is read by POSITION here because the only "A" on the row is in
+ * its description: "Radial 13A sockets" made a 20A circuit read as 13A. */
+{
+  const ctx = () => ({ board: 'G1', sawHeader: true, inNotes: false, lastWay: null, lastPhase: null, pendingRows: [] });
+  const rows = [
+    ['17L2 16\u00b0 1.5 1x2corex4 - PVC multi RE Fixed power Bar Water Boiler', 17, 'L2', 16],
+    ['18L1 20\u00b0 15 1x2coex25 - PVCmutiRE Radial 13A sockets Bar EPOS sockers', 18, 'L1', 20],
+    ['18L3 16* 1.5 1x2corex4 - PVC multi RE Fixed power Bar lce Chests 11.10', 18, 'L3', 16],
+  ];
+  for (const [line, way, phase, rating] of rows) {
+    const r = P.parseScheduleLine(line, ctx());
+    check(`compact marker: way ${way}${phase}`, r && r.way === way && r.phase === phase, r ? `${r.way}${r.phase}` : 'no row');
+    check(`compact marker: rating ${rating}A read by position`, r && r.rating === rating, r ? String(r.rating) : 'no row');
+    /* The class is left null rather than assumed, and must sit below the
+       review threshold — an unnamed device is uncertain, not settled. */
+    check(`compact marker: unnamed device goes to review`, r && !r.device && r.conf < 0.8, r ? `${r.device}/${r.conf}` : 'no row');
+  }
+  const spare = P.parseScheduleLine('16L1 - - - - - Spare -', ctx());
+  check('compact marker: a spare way is still a spare', spare && spare.way === 16 && spare.spare === true,
+    spare ? JSON.stringify({ way: spare.way, spare: spare.spare }) : 'no row');
+
+  const page = ['JCP - Page 47 of 52', 'Project The Angel Hotel, Cardiff',
+    '15L3 - - - - - Spare -', '16L1 - - - - - Spare -', rows[0][0], rows[1][0]];
+  check('compact marker: the page classifies as a schedule',
+    P.classifyPage(page.join('\n'), 1, 2).type === 'db-schedule',
+    JSON.stringify(P.classifyPage(page.join('\n'), 1, 2)));
+  /* One such line is a coincidence, not a table. */
+  check('compact marker: a single line is not a schedule',
+    P.classifyPage('Project notes\n17L2 see drawing', 0, 1).type !== 'db-schedule');
+}
+
 if (fail) { console.log(`\n${fail} failure(s)`); process.exit(1); }
