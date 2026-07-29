@@ -1,0 +1,10 @@
+# Pinned third-party browser runtimes. They are shipped verbatim (see CLAUDE.md
+# "vendor/: pinned local browser runtimes required for offline PDF and OCR
+# handling") and are minified, so every symbol lands on one line and swamps the
+# graph — a query for this project's own code came back mostly pdf.worker.
+vendor/
+tools/coverage/vendor/
+desktop/node_modules/
+tools/coverage/node_modules/
+node_modules/
+graphify-out/
