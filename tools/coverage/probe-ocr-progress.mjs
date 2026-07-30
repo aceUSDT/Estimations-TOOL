@@ -22,6 +22,16 @@ await page.click('.proj-card.new'); await page.fill('#mName','Rowdump'); await p
 await page.waitForFunction('state.cur && state.cur.name === "Rowdump"');
 await page.setInputFiles('#fileInput',FILE);
 await page.waitForFunction('state.cur.files.length===1 && state.cur.files[0].status==="ready"',null,{timeout:180000});
+/* Capture what the PAGE says. Ingestion stalling silently is the symptom; an
+ * uncaught error or a rejected promise inside the OCR loop is the likeliest
+ * cause, and none of it reaches the probe's stdout without this. */
+page.on('pageerror', (err) => console.log('  !! pageerror:', String(err).slice(0, 300)));
+page.on('crash', () => console.log('  !! PAGE CRASHED'));
+page.on('console', (msg) => {
+  const t = msg.type();
+  if (t === 'error' || t === 'warning') console.log(`  !! console.${t}:`, msg.text().slice(0, 300));
+});
+
 /* Sample ingestion progress instead of waiting for it.
  *
  * probe-pages and probe-rows both block on "every page has lines", so a document

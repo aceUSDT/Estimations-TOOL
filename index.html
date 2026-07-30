@@ -2264,19 +2264,27 @@ async function ocrPdfPage(f,pageNo,{reanalyze=true,quiet=false}={}){
        it is the worst outcome available: the page then looks read, so it is
        never sent to an agent, and it silently contributes nothing. Mark it
        instead, and let runAiExtraction route it to the vision agent. */
-    const ocrUnreadable=!keptEmbedded&&selected.readable===false;
+    const ocrUnreadableByScore=!keptEmbedded&&selected.readable===false;
     const lines=(chosen?.lines||[]).map(line=>{
       if(keptEmbedded)return {...line,originalText:line.originalText||line.text,corrections:line.corrections||[],
         extractionMethod:line.extractionMethod||'Embedded text / deterministic parser'};
       const corrected=core.correctElectricalOcrText(line.text);
       return {...line,text:corrected.text,originalText:corrected.originalText,corrections:corrected.corrections,extractionMethod:`OCR (${chosen.id})`};
     });
-    if(!lines.length) throw new Error('OCR completed but found no readable words on this page');
+    /* A page with NO readable words is an expected outcome — line-work, a photo,
+       a blank sheet — and this tool already has a category for exactly that.
+       Throwing here was wrong twice over: it skipped the recording immediately
+       below, so the page kept needsOcr, never got pg.ocr, and was therefore
+       invisible to every completeness check; and it aborted the caller's loop.
+       Measured on MCCB-Schedule_BowGreen.pdf: page 4 threw this, and sixteen of
+       nineteen pages were never attempted and reported nowhere. An unreadable
+       page is a finding, not an exception. */
+    const ocrUnreadable=ocrUnreadableByScore||!lines.length;
     const pg=f.pages[pageNo-1];
     pg.lines=lines;pg.w=base.width;pg.h=base.height;
     const pageWords=(chosen.mappedWords||[]).map(word=>{const box=word.bbox;return {...word,bbox:{x0:box.x0*base.width/cv.width,y0:box.y0*base.height/cv.height,x1:box.x1*base.width/cv.width,y1:box.y1*base.height/cv.height}};});
     pg.tableRows=core.reconstructSpatialRows(pageWords);
-    pg.textQuality=chosen.scoring.textQuality;pg.needsOcr=false;pg.ocrUnreadable=ocrUnreadable;
+    pg.textQuality=chosen?.scoring?.textQuality||null;pg.needsOcr=false;pg.ocrUnreadable=ocrUnreadable;
     pg.ocr={status:'done',unreadable:ocrUnreadable,readableFloor:selected.floor,confidence:chosen.confidence??null,qualityScore:chosen.score,selectedCandidate:chosen.id,
       candidates:attempts.map(item=>({id:item.id,preprocessing:item.preprocessing,confidence:item.confidence,qualityScore:item.score,lineCount:item.lines.length,textQuality:item.scoring.textQuality})),
       corrections:lines.flatMap((line,lineIndex)=>line.corrections.map(correction=>({...correction,line:lineIndex}))),at:new Date().toISOString()};
@@ -2304,20 +2312,41 @@ async function ocrPdfPage(f,pageNo,{reanalyze=true,quiet=false}={}){
   }
 }
 async function ocrScannedPages(f,limit=20,{reanalyze=true,quiet=false}={}){
-  const queue=f.pages.map((pg,i)=>({pg,page:i+1})).filter(x=>x.pg.needsOcr||!(x.pg.lines||[]).length).slice(0,limit);
+  /* A page that has BEEN through OCR is not re-queued just because it produced
+     no words. Without the second clause, every page that genuinely holds only
+     line-work is re-OCR'd on every run — several Tesseract passes each time, for
+     a result that cannot change — and the run reports it as still "remaining". */
+  const queue=f.pages.map((pg,i)=>({pg,page:i+1})).filter(x=>x.pg.needsOcr||(!(x.pg.lines||[]).length&&!x.pg.ocr)).slice(0,limit);
   if(!queue.length){if(!quiet)toast('Every page has a reliable text result');return 0;}
-  let done=0,stopped=null;
+  let done=0,stopped=null;const failed=[];let consecutive=0;
   for(const [index,item] of queue.entries()){
     ocrProgressContext=`${f.name} | Page ${item.page} of ${f.pages.length}`;
     setProcessingDock('Reading scanned pages',ocrProgressContext,Math.max(2,Math.round((index+1)/queue.length*(100/STAGES.length))),0);
     await paintProcessing();
-    try{await ocrPdfPage(f,item.page,{reanalyze:false,quiet:true});done++;}
-    catch(error){stopped={page:item.page,error};break;}
+    try{await ocrPdfPage(f,item.page,{reanalyze:false,quiet:true});done++;consecutive=0;}
+    catch(error){
+      /* ONE page failing must not abandon the document. This used to `break`.
+         Measured on MCCB-Schedule_BowGreen.pdf: pages 1-3 read in about twenty
+         seconds, page 4 threw, and the break left SIXTEEN of nineteen pages
+         unread — with no text they were then invisible to every completeness
+         check too, so the document simply came back small and said nothing.
+         A bad page costs its own page now, not the sixteen behind it. */
+      const message=String(error&&error.message||error);
+      failed.push({page:item.page,message});
+      const rec=f.pages[item.page-1]; if(rec) rec.ocrFailed=message;
+      /* But do not grind through four hundred pages of a dead worker: several
+         failures in a row means the pipeline is broken, not the page. */
+      if(++consecutive>=3){stopped={page:item.page,error};break;}
+    }
   }
   ocrProgressContext='';
   if(done&&reanalyze) await runAnalysis({auto:true});
-  const remain=f.pages.filter(pg=>pg.needsOcr||!(pg.lines||[]).length).length;
-  if(stopped)toast(`OCR stopped on page ${stopped.page}: ${stopped.error.message||stopped.error}. ${remain} page${remain===1?'':'s'} remain.`);
+  const remain=f.pages.filter(pg=>pg.needsOcr||(!(pg.lines||[]).length&&!pg.ocr)).length;
+  /* Every failed page is named, not just the one that stopped the run — and the
+     pages themselves carry ocrFailed, so Review reports them after the toast has
+     gone. A toast is the weakest possible record of a missing board. */
+  if(stopped)toast(`OCR gave up after ${consecutive} pages in a row failed (page ${stopped.page}: ${stopped.error.message||stopped.error}). ${done} page${done===1?'':'s'} read, ${remain} remain.`);
+  else if(failed.length)toast(`OCR read ${done} page${done===1?'':'s'}; ${failed.length} failed (page${failed.length===1?'':'s'} ${failed.map(x=>x.page).join(', ')}) and ${remain} remain - see Review.`);
   else if(!quiet||remain) toast(`OCR completed ${done} page${done===1?'':'s'}${remain?`; ${remain} remain - run OCR scans again`:''}`);
   renderViewer();
   return done;
@@ -2329,7 +2358,7 @@ async function autoOcrScannedFiles(){
   let total=0;
   for (const f of p.files){
     if (f.status!=='ready'||(f.ext!=='pdf'&&!IMAGE_EXTS.has(f.ext))) continue;
-    if (!f.pages.some(pg=>pg.needsOcr||!(pg.lines||[]).length)) continue;
+    if (!f.pages.some(pg=>pg.needsOcr||(!(pg.lines||[]).length&&!pg.ocr))) continue;
     toast(`Reading pages with missing or unreliable text in ${f.name}…`);
     try{ total+=await ocrScannedPages(f, Infinity, {reanalyze:false, quiet:true}); }
     catch(e){ toast('Auto-OCR: '+e.message); }
@@ -3599,6 +3628,8 @@ async function runAnalysis(opts){
       fl.pages.forEach((pg,pi)=>{ if(pageSet && !pageSet.has(pi+1)) return;
         covPages.push({fileId:id, page:pi+1, text:(pg.lines||[]).map(l=>l.text).join('\n'), type:pg.type,
           unreadable:pg.ocrUnreadable===true,
+          /* So buildCoverage can tell "never read" from "read badly". */
+          needsOcr:pg.needsOcr===true, ocrFailed:pg.ocrFailed||null,
           // how well OCR read it, so a marginal page can be told from a good one
           ocrScore:(pg.ocr&&Number.isFinite(Number(pg.ocr.qualityScore)))?Number(pg.ocr.qualityScore):null}); });
     }
@@ -4443,6 +4474,8 @@ function renderReview(){
     /* Sorted to the top of the queue: a page nothing could read is the largest
        single omission the tool can have, and it is invisible everywhere else. */
     (A.coverage.unreadablePages||[]).forEach(z=>items.push({kind:'unreadable',z,conf:0}));
+    /* A page that was never read at all outranks one that was read badly. */
+    (A.coverage.neverReadPages||[]).forEach(z=>items.push({kind:'neverread',z,conf:0}));
     /* Read well enough to type, not well enough to parse. Silent before this:
        one row is not zero rows, so the zero-row check never fired. */
     (A.coverage.poorlyReadPages||[]).forEach(z=>items.push({kind:'poorlyread',z,conf:0.05}));

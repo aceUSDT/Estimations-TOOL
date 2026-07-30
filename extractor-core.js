@@ -2186,6 +2186,14 @@
      * reported at all: the worst outcome, a failure that looks like a result. */
     const poorlyReadPages = [];
     const zeroRowSchedulePages = [];
+    /* Pages that produced no text AT ALL. Distinct from unreadablePages, which
+     * means OCR ran and scored below the readable floor — this means OCR never
+     * ran, or ran and threw. Nothing else in this function can see them: with no
+     * text they cannot look schedule-ish, with no score they cannot be poorly
+     * read, and `unreadable` is only set by a completed OCR pass. Measured on
+     * MCCB-Schedule_BowGreen.pdf, where sixteen of nineteen pages were abandoned
+     * mid-document and reported NOWHERE. */
+    const neverReadPages = [];
     for (const pg of pages || []) {
       if (pg.unreadable) {
         const gotRows = scheduleRows.some((r) => r.fileId === pg.fileId && r.page === pg.page)
@@ -2193,7 +2201,17 @@
         if (!gotRows) unreadablePages.push({ fileId: pg.fileId, page: pg.page, type: pg.type });
         continue;
       }
-      if (!String(pg.text || '').trim()) continue;
+      if (!String(pg.text || '').trim()) {
+        /* Only pages that were SUPPOSED to yield text. A genuinely blank sheet
+         * carries no needsOcr flag and no failure, and is not a finding. */
+        if (pg.ocrFailed || pg.needsOcr) {
+          neverReadPages.push({
+            fileId: pg.fileId, page: pg.page, type: pg.type,
+            reason: pg.ocrFailed ? String(pg.ocrFailed) : 'OCR did not run on this page',
+          });
+        }
+        continue;
+      }
       const pageKey = `${pg.fileId}#${pg.page}`;
       const primaryBoards = primaryBoardsByPage.get(pageKey);
       if (hasPrimaryMetadata && (!primaryBoards || !primaryBoards.size)) continue;
@@ -2242,6 +2260,7 @@
       zeroRowSchedulePages,
       unreadablePages,
       poorlyReadPages,
+      neverReadPages,
       summary: {
         boards: scopedBoards.length,
         boardsWithRows: scopedBoards.filter((b) => b.rowsCaptured > 0).length,

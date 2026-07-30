@@ -25,7 +25,7 @@ await page.click('.proj-card.new'); await page.fill('#mName','Quote probe'); awa
 await page.waitForFunction('state.cur && state.cur.name === "Quote probe"');
 await page.setInputFiles('#fileInput',FILE);
 await page.waitForFunction('state.cur.files.length===1 && state.cur.files[0].status==="ready"',null,{timeout:180000});
-await page.waitForFunction('state.cur.files[0].pages.every(p=>(p.lines||[]).length) && state.cur.analysis',null,{timeout:600000});
+await page.waitForFunction('state.cur.files[0].pages.every(p=>(p.lines||[]).length||p.ocr) && state.cur.analysis',null,{timeout:600000});
 const out=await page.evaluate(async ()=>{
   const model=currentReportModel();
   if(!model||!model.groups.length) return {error:'no model'};

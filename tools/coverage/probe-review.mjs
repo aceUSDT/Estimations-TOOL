@@ -22,7 +22,7 @@ await page.click('.proj-card.new'); await page.fill('#mName','Rowdump'); await p
 await page.waitForFunction('state.cur && state.cur.name === "Rowdump"');
 await page.setInputFiles('#fileInput',FILE);
 await page.waitForFunction('state.cur.files.length===1 && state.cur.files[0].status==="ready"',null,{timeout:180000});
-await page.waitForFunction('state.cur.files[0].pages.every(p=>(p.lines||[]).length) && state.cur.analysis',null,{timeout:600000});
+await page.waitForFunction('state.cur.files[0].pages.every(p=>(p.lines||[]).length||p.ocr) && state.cur.analysis',null,{timeout:600000});
 const out = await page.evaluate(`(() => {
   const a = state.cur.analysis;
   const rev = (a.review || a.reviewItems || []);

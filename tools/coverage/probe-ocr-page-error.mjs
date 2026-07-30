@@ -22,25 +22,31 @@ await page.click('.proj-card.new'); await page.fill('#mName','Rowdump'); await p
 await page.waitForFunction('state.cur && state.cur.name === "Rowdump"');
 await page.setInputFiles('#fileInput',FILE);
 await page.waitForFunction('state.cur.files.length===1 && state.cur.files[0].status==="ready"',null,{timeout:180000});
-await page.waitForFunction('state.cur.files[0].pages.every(p=>(p.lines||[]).length||p.ocr) && state.cur.analysis',null,{timeout:600000});
-const rows=await page.evaluate('state.cur.analysis.rows.map(r=>({b:r.boardNorm,w:r.way,p:r.phase,d:r.device,r:r.rating,s:r.spare,src:(r.resolutionSource||"")}))');
-const tree=await page.evaluate(`({
-  feeders: (state.cur.analysis.feeders||[]).map(f=>f.from+' -> '+f.to),
-  parents: Object.values(state.cur.analysis.boards).map(b=>b.norm+(b.parent?(' <- '+b.parent):' (no parent)')),
-})`);
-console.log('feeders found:',tree.feeders.length);
-console.log('  ',[...new Set(tree.feeders)].slice(0,14).join('\n   '));
-console.log('parents:'); tree.parents.forEach(x=>console.log('  ',x));
-const byBoard={}; rows.forEach(r=>{ byBoard[r.b||'(none)']=(byBoard[r.b||'(none)']||0)+1; });
-console.log('rows',rows.length); console.log('per board',JSON.stringify(byBoard));
-const bySrc={}; rows.forEach(r=>{ bySrc[r.src]=(bySrc[r.src]||0)+1; }); console.log('by parser',JSON.stringify(bySrc));
-const keys=rows.filter(r=>r.w!=null).map(r=>`${r.b}|${r.w}|${r.p}`);
-const dupes=keys.filter((k,i)=>keys.indexOf(k)!==i);
-console.log('duplicate way/phase slots:',[...new Set(dupes)].length,[...new Set(dupes)].slice(0,10).join(', '));
-const dupKeys=new Set(dupes);
-if(dupKeys.size){
-  const full=await page.evaluate('state.cur.analysis.rows.map(r=>({k:r.boardNorm+"|"+r.way+"|"+r.phase,p:r.page,l:r.line,d:r.device,rt:r.rating,s:(r.srcText||"").slice(0,110)}))');
-  console.log('duplicated rows:');
-  full.filter(r=>dupKeys.has(r.k)).slice(0,12).forEach(r=>console.log('  ',r.k.padEnd(18),'p'+r.p,'line'+r.l,(r.d||'-')+'/'+(r.rt??'-'),'|',r.s));
-}
+/* Why does ocrScannedPages stop? Its catch swallows the error into a toast, so
+ * nothing reaches pageerror and nothing reaches the probe. Call ocrPdfPage on
+ * the page it stopped at and report what it actually throws. */
+const PAGE = Number(process.argv[3] || 4);
+await new Promise((r) => setTimeout(r, 45000));   // let the auto-OCR pass stop on its own
+const before = await page.evaluate(`(() => {
+  const f = state.cur.files[0];
+  return { total: f.pages.length, read: f.pages.filter(p => (p.lines||[]).length).length,
+           toasts: [...document.querySelectorAll('[class*=toast], [id*=toast]')].map(e => e.textContent.trim()).filter(Boolean).slice(-6),
+           unread: f.pages.map((p, i) => ({ n: i + 1, lines: (p.lines||[]).length, needsOcr: !!p.needsOcr,
+                                            ocr: !!p.ocr, unreadable: p.ocrUnreadable === true }))
+                    .filter(p => !p.lines).slice(0, 6) };
+})()`);
+console.log(`auto-OCR settled: ${before.read}/${before.total} pages read`);
+console.log('toasts visible:', JSON.stringify(before.toasts));
+console.log('pages with no lines:', JSON.stringify(before.unread));
+const result = await page.evaluate(`(async () => {
+  const f = state.cur.files[0];
+  try {
+    await ocrPdfPage(f, ${PAGE}, { reanalyze: false, quiet: true });
+    return { ok: true, lines: (f.pages[${PAGE} - 1].lines || []).length };
+  } catch (e) {
+    return { ok: false, name: e && e.name, message: String(e && e.message || e).slice(0, 400),
+             stack: String(e && e.stack || '').split(String.fromCharCode(10)).slice(0, 6).join(' | ') };
+  }
+})()`);
+console.log(`page ${PAGE}:`, JSON.stringify(result, null, 1));
 await b.close();
