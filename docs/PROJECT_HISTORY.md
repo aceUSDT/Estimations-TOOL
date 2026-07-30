@@ -125,7 +125,64 @@ The owner's screenshot showed notes from an earlier project after loading a new
 one — `#anCoverage` was not cleared on the early-return path in `renderResults`.
 One line, but it undermines trust in every number on the page.
 
-### 2.8 Poorly-read pages not reported
+### 2.8 The take-off discarded every row whose sheet never named the class
+**Found by running the tool before handing it to the owner, not by a test.**
+Broomfield House: 16 boards found, 180 rows extracted, and the export came out
+**empty**. The badge read *"16 boards, 0 devices."* One line, `includeRow` in
+`report-core.js`:
+
+```js
+if (!row || row.status === "rejected" || row.space || !row.device) return false;
+```
+
+Every row on that document carries `device: null` — §2.3 again, the dialect that
+never writes MCB. The parser fix was correct and the report stage threw the
+result away. **Extraction succeeded and delivered nothing, which at the only
+point the user looks is indistinguishable from failure.**
+
+A way with a rating is a device even when the sheet won't name its class. Those
+rows now enter the take-off as `Unclassified device` with a review reason.
+Broomfield reconciles **159 devices across 78 quotation lines**; The Angel
+returns 22.
+
+**Four call sites had to agree** and it took two runs to find them all:
+`includeRow` decides inclusion, `deviceSpecification` sets the family used for
+grouping, `deviceLabel` **independently re-derived** the family from
+`canonicalDevice` (so the first attempt grouped rows as unclassified then
+labelled them "Other device"), and `projStats` in `index.html` computes the
+badge. If one changes, all four change.
+
+*Lesson: "180 rows extracted" was the number I reported as a held-out success.
+It was true and it measured the wrong thing — rows in Review, not devices in the
+take-off. Measure the artefact the user receives, not an intermediate.*
+
+### 2.9 A scanned consumer-unit chart that reported nothing at all
+`examples/consumer-units/Dundee_CU-Circuit-Chart.pdf`: five pages, three of them
+circuit charts, **all typed `unknown`** → schedule walk never ran → 0 boards,
+0 rows. And because a page that is not a schedule cannot be a schedule with no
+rows, the three chart pages were reported **nowhere**. A silent zero.
+
+Two causes stacked:
+- this dialect writes **"Board Identity"** and **"No of Ways"**, never
+  "reference" or "board schedule", so the `headerBlock` signal could not see it
+  (the CU vocabulary was already documented in `domain-pack.mjs`; the classifier
+  had just never learned it);
+- the page is scanned, and OCR returned the *header* legibly while the rows came
+  back as pipes and fragments, so no row-shape signal fired either.
+
+Added a `cuHeaderBlock` signal in **all three** classifier copies. Deliberately
+tolerant of OCR damage — page 4 read "No of Ways" as *"lo of Ways"*, so the
+incomer phrase carries it. Now: pages 3–5 type `db-schedule`, page 4 is reported
+`unreadable` (0.6745 against the 0.68 floor) and pages 3 and 5 are reported
+`poorlyRead` with their scores and row counts.
+
+**Still 0 rows — and that is the honest outcome.** Those rows genuinely cannot be
+read. The change converts a silent zero into a reported one, which is the whole
+of the invariant. Regression test in `test-schedule-pages.mjs` uses the OCR text
+verbatim, damage included, asserts the cover and issue-record pages are *not*
+dragged in, and checks the copies agree; verified it bites by breaking each copy.
+
+### 2.10 Poorly-read pages not reported
 Pages that OCR'd badly *and* yielded almost nothing were invisible. Added
 `unreadablePages` and `poorlyReadPages` with `unreadable` / `poorlyread` Review
 items.
@@ -323,9 +380,15 @@ the overlap is not uniform — verified by grepping for the functions themselves
 | function | `extractor-core.js` | `index.html` | `tools/coverage/app-pipeline.cjs` |
 |---|---|---|---|
 | `parseScheduleLine` | — | ✓ | ✓ |
+| page classification | ✓ `classifyPageText` | ✓ `classifyPage` | ✓ `classifyPage` |
 | `parseMirroredChartLine` | ✓ | ✓ | — |
 | `columnBandsFromRules` | ✓ | ✓ | — |
 | `selectBestOcrCandidate` | ✓ | ✓ | — |
+
+Page classification is the worst of these — **three** copies, and §2.9 had to be
+applied to every one. Note the test suite reaches the `app-pipeline.cjs` and
+`extractor-core.js` copies but **not** `index.html`'s; that one is only covered
+by driving a real browser (the probes below).
 
 So a row-parsing change lands in `index.html` + `app-pipeline.cjs`, while a
 layout or OCR change lands in `index.html` + `extractor-core.js`. Changing one
@@ -364,3 +427,33 @@ Note `extractor-core.js` trips ripgrep's binary detection — use `grep -a` (or
   then, no claim should be made that the history is "in graphify."
 - Row counts in §4 are from specific commits on specific documents. They are
   evidence that a defect was fixed, not a guarantee of current behaviour.
+
+## 11. Running a real document (how §2.8 and §2.9 were found)
+
+Neither defect had a failing test. Both were found by putting a real document
+through the app and looking at what came out the far end. Do this before claiming
+anything works:
+
+```bash
+python3 -m http.server 8765            # required by every probe
+node tools/coverage/probe-rows.mjs   <file.pdf>   # rows per board, collisions, feeds
+node tools/coverage/probe-pages.mjs  <file.pdf>   # per page: type, OCR score, first lines
+node tools/coverage/probe-review.mjs <file.pdf>   # way conflicts, completeness, what is REPORTED
+node tools/coverage/probe-quote.mjs  <file.pdf>   # the quotation sheet as text
+```
+
+`probe-quote` is the one that matters most, because it is the only one that shows
+the artefact the estimator actually receives. `probe-rows` said 180 and
+`probe-quote` said empty, on the same document, at the same commit.
+
+**Two traps in reading probe output**, both of which cost me a wrong conclusion
+before I checked:
+- the OCR score is at **`page.ocr.qualityScore`**, not `page.ocrScore`. Reading
+  the wrong property returns `undefined`, which looks exactly like "OCR never
+  scored this page."
+- unreadable and poorly-read pages live **inside `analysis.coverage`**, not at the
+  top level of `analysis`. Looking at `analysis.unreadablePages` returns empty
+  and looks exactly like "nothing was reported."
+
+Both mistakes make the tool look more broken than it is. Check the shape of the
+object before drawing a conclusion from a zero.

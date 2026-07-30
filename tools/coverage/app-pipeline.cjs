@@ -397,6 +397,19 @@ function classifyPage(text, pageIdx, totalPages){
      The HEADER BLOCK is the stable signal: a board schedule names its board
      and states its way count. Found on a real LV SLD schedule reading
      "REFERENCE DB-1-GF ... NUMBER OF WAYS 18 WAYS ... Circuit Ref". */
+  /* A consumer-unit chart names its board and its way count in the dialect's OWN
+     words — "Board Identity: Consumer Unit (General Apartment)", "No of Ways: 3",
+     "DB Incomer Device Rating/Type: 63A Switched Disconnector" — and never writes
+     "reference" or "board schedule", so the headerBlock signal above cannot see
+     it. On a SCANNED chart that header is the only text that survives: the rows
+     come back as pipes and fragments, so every row-shape signal scores nothing
+     too. Measured on Dundee_CU-Circuit-Chart.pdf — five pages, three carrying
+     this header, all typed 'unknown', schedule walk never ran, 0 boards and
+     0 rows out of a document that states its own way count. The header alone has
+     to be enough, and it is deliberately tolerant: OCR read "No of Ways" as
+     "lo of Ways" on one page, so the incomer phrase carries it. */
+  const cuHeaderBlock = /board identity/.test(low) && /(no\.? of ways|number of ways|db incomer device)/.test(low);
+  if (cuHeaderBlock) add('db-schedule',9);
   const headerBlock = /\breference\b/.test(low) && /(number of ways|circuit ref|\bways\b)/.test(low);
   if (headerBlock && phaseRows>=3) add('db-schedule',8);
   if (headerBlock && /\b(mcb|rcbo|mccb|rcd|afdd)\b/.test(low)) add('db-schedule',6);

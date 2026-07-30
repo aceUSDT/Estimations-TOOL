@@ -36,8 +36,9 @@ const out = await page.evaluate(`(() => {
     review: rev.map(r => ({ kind: r.kind || r.type || '?', msg: (r.message || r.text || r.label || '').slice(0,150) })),
     coverage: JSON.stringify(a.coverage || {}),
     tabs: [...document.querySelectorAll('[data-tab],.tab,button')].map(e=>(e.getAttribute('data-tab')||'')+':'+e.textContent.trim().slice(0,30)).filter(Boolean).slice(0,40),
-    unreadable: (a.unreadablePages||[]).length,
-    poorlyRead: (a.poorlyReadPages||[]).length,
+    unreadable: JSON.stringify((a.coverage&&a.coverage.unreadablePages)||[]),
+    poorlyRead: JSON.stringify((a.coverage&&a.coverage.poorlyReadPages)||[]),
+    covKeys: Object.keys(a.coverage||{}).join(','),
     domReview: [...document.querySelectorAll('#anCoverage li, #anReview li, .review-item')].map(e=>e.textContent.trim().slice(0,160)),
   };
 })()`);
@@ -48,7 +49,9 @@ console.log('duplicates:', out.duplicates);
 console.log('capacityWarnings:', out.capacityWarnings);
 console.log('discrepancies:', out.discrepancies);
 out.review.forEach(r => console.log('  [' + r.kind + ']', r.msg));
-console.log('unreadable pages:', out.unreadable, ' poorly-read pages:', out.poorlyRead);
+console.log('coverage keys:', out.covKeys);
+console.log('unreadablePages:', out.unreadable);
+console.log('poorlyReadPages:', out.poorlyRead);
 
 const cov = JSON.parse(out.coverage);
 const pb = cov.perBoard || [];

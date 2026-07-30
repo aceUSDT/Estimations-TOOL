@@ -948,6 +948,20 @@
      * scores `unknown`. The HEADER BLOCK is the stable signal: a board schedule
      * names its board and states its way count. Real example this was found on:
      * "REFERENCE DB-1-GF … NUMBER OF WAYS 18 WAYS … Circuit Ref". */
+    /* A consumer-unit chart names its board and way count in the dialect's OWN
+     * words — "Board Identity: Consumer Unit (General Apartment)", "No of Ways: 3",
+     * "DB Incomer Device Rating/Type: 63A" — and never writes "reference" or
+     * "board schedule", so headerBlock below cannot see it. On a SCANNED chart
+     * that header is the only text that survives; the rows come back as pipes and
+     * fragments, so every row-shape signal scores nothing either. Measured on
+     * Dundee_CU-Circuit-Chart.pdf: five pages, three carrying this header, all
+     * typed `unknown`, so the schedule walk never ran and a document that states
+     * its own way count produced 0 boards and 0 rows. Deliberately tolerant of
+     * OCR damage — one page read "No of Ways" as "lo of Ways", so the incomer
+     * phrase carries it. */
+    const cuHeaderBlock = /board identity/.test(lower)
+      && /(no\.? of ways|number of ways|db incomer device)/.test(lower);
+    if (cuHeaderBlock) add('db-schedule', 9);
     const headerBlock = /\breference\b/.test(lower)
       && /(number of ways|circuit ref|\bway\b|\bways\b)/.test(lower);
     if (headerBlock && phaseRows >= 3) add('db-schedule', 8);

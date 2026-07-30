@@ -416,6 +416,62 @@ console.log(`PASS: ${pages.length} schedule pages → ${boards.length} boards, s
 
 /* The exit gate is LAST on purpose: it once sat mid-file, so checks appended
    after it could fail while the suite still reported green. */
+/* A SCANNED consumer-unit circuit chart, where the header survives OCR and the
+ * rows do not.
+ *
+ * Measured on examples/consumer-units/Dundee_CU-Circuit-Chart.pdf: five pages,
+ * three of them charts, and every one typed `unknown`. That switched off the
+ * schedule walk, so the document produced 0 boards, 0 rows — and, because a page
+ * that is not a schedule cannot be a schedule with no rows, it was reported
+ * NOWHERE. A silent zero is the worst outcome the product invariants name.
+ *
+ * The cause: this dialect writes "Board Identity" and "No of Ways", never
+ * "reference" or "board schedule", so the headerBlock signal could not see it,
+ * and the OCR'd rows are pipes and fragments so no row-shape signal fired either.
+ *
+ * Text below is copied from what OCR actually returned, damage included. */
+{
+  const cuClean = [
+    'Board Identity: Consumer Unit (General Apartment)',
+    'No of Ways: 3',
+    'DB Incomer Device Rating/Type: 63A Switched Disconnector',
+    'Way Phase Circuit Description CPD Rating(A) CPD Type RCD (mA) Cable Type',
+  ].join('\n');
+  check('scanned CU chart: the header alone types the page as a schedule',
+    P.classifyPage(cuClean, 2, 5).type === 'db-schedule', JSON.stringify(P.classifyPage(cuClean, 2, 5)));
+
+  /* Verbatim from page 4: OCR read "No of Ways" as "lo of Ways". The signal has
+     to survive that, or it only works on the pages that needed no help. */
+  const cuDamaged = [
+    'RYBKA',
+    'Board Identity: Consumer Unit = =',
+    'lo of Ways: 3 (At Design : Stage) (At Design ; Stage)',
+    'DB Incomer Device Rating/Type: 63A',
+    'Switched Disconnector',
+  ].join('\n');
+  check('scanned CU chart: OCR damage to the way count does not lose the page',
+    P.classifyPage(cuDamaged, 3, 5).type === 'db-schedule', JSON.stringify(P.classifyPage(cuDamaged, 3, 5)));
+
+  /* The other pages of the same PDF must NOT be dragged in with them. */
+  const cover = 'Dundee Terrace\nCircuit Chart — CU Apartment\nEDINBURGH GLASGOW INVERNESS';
+  check('scanned CU chart: the cover page is not a schedule',
+    P.classifyPage(cover, 0, 5).type !== 'db-schedule', JSON.stringify(P.classifyPage(cover, 0, 5)));
+  const issue = 'RYBKA\nIssue Record\nRevision Section No. By Checked By Date\n01 Issued for Tender KB cs 29.08.25\nJob Number 423.033.00';
+  check('scanned CU chart: the issue record is not a schedule',
+    P.classifyPage(issue, 1, 5).type !== 'db-schedule', JSON.stringify(P.classifyPage(issue, 1, 5)));
+  /* "Board identity" on its own is a phrase, not a chart. */
+  check('scanned CU chart: the phrase alone is not enough',
+    P.classifyPage('Refer to the board identity given on the schedule', 0, 1).type !== 'db-schedule');
+
+  /* The three implementations must agree. When they drifted before, tests passed
+     and the app was broken. */
+  const core = P.EstimationExtractorCore;
+  check('scanned CU chart: extractor-core agrees with the app copy',
+    core.classifyPageText(cuClean, 2, 5).type === 'db-schedule'
+    && core.classifyPageText(cuDamaged, 3, 5).type === 'db-schedule'
+    && core.classifyPageText(cover, 0, 5).type !== 'db-schedule');
+}
+
 if (fail) { console.log(`\n${fail} failure(s)`); process.exit(1); }
 console.log('PASS: descriptive board names, with codes still winning.');
 
