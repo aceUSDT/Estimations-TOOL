@@ -1707,10 +1707,21 @@ function parseScheduleLine(line, ctx){
      Amtech charts write it this way; leadM finds the way but nothing else on
      the row is recognisable, so the guard below used to drop it. */
   const spacedM = compactM ? null : line.match(new RegExp('^\\s*(\\d{1,3})\\s+(' + PHASE_CELL + ')\\b', 'i'));
+  /* And the same shape again with a SLASH — "7/L1", "12/L3". This project's own
+     domain pack documents it twice and nothing parsed it:
+       domain-pack.mjs  syntegral: ways as "CCT n" or "n/Lx"
+       domain-pack.mjs  hevacomp:  "7/L1 20 6.0 2.5 LSF Singles Fixed power ..."
+     It had never surfaced because the Hevacomp example document writes the
+     compact form and the Syntegral one is an unreadable scan — so the dialect the
+     agents are TOLD about was one the deterministic parser could not read. The
+     leading "L" is what keeps this safe: "7/12" and other date-like or fraction
+     tokens cannot match. */
+  const slashM = (compactM || spacedM) ? null
+    : line.match(new RegExp('^\\s*(\\d{1,3})\\s*/\\s*(' + PHASE_CELL + ')\\b', 'i'));
   /* All three marker forms open a row the same way: way, phase, then the
      rating column. markerM can sit mid-line, so the scan starts from where it
      actually matched. */
-  const markerHead = markerM || compactM || spacedM;
+  const markerHead = markerM || compactM || spacedM || slashM;
   const markerEnd = markerM ? markerM.index + markerM[0].length
     : markerHead ? markerHead[0].length : 0;
   const leadM = line.match(/^\s*(?:way|cct|ckt|circuit)?\s*[:#]?\s*(\d{1,3})\b(?!\s*[x\u00d7])/i);

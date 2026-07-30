@@ -244,6 +244,37 @@ it:
   lowercase `l` into an `L`, indistinguishable from the cell's own separator,
   before the fold can read it as a 1. The lowercase pass now runs *first*.
 
+### 2.12 A dialect the agents were told about, that the parser could not read
+Found by checking this round's changes against row shapes from dialects I had
+**not** been iterating on — the discipline the owner asked for, applied to my own
+work rather than to the tool.
+
+The slash marker `7/L1`, `12/L3` is documented in this repository **twice**:
+
+```
+docs/BUILD_BRIEF.md:169   Syntegral: Way "CCT n" (+ "n/Lx" for 3-phase)
+domain-pack.mjs:24        syntegral: ways as "CCT n" or "n/Lx"
+domain-pack.mjs:27        hevacomp:  "7/L1 20 6.0 2.5 LSF Singles Fixed power ..."
+```
+
+`parseScheduleLine` handled dash (`5-L1`), compact (`17L2`) and spaced (`1 L1`)
+markers — and returned **no row** for all three documented slash examples. So the
+dialect the **agents are instructed about** in `domain-pack.mjs` was one the
+deterministic parser could not read at all.
+
+It never surfaced because the Hevacomp example document writes the compact form
+and the Syntegral one is an unreadable scan. **No example PDF in the repository
+exercises this shape**, so the tests use the documented lines verbatim rather than
+a measured capture, and say so. That is a weaker kind of evidence than everything
+else in this file and is labelled as such.
+
+The leading `L` is what makes it safe: `7/12`, `3/4`, `2/3` and `Page 7/32` all
+appear on these sheets and none of them can match.
+
+*Lesson: the domain pack and the parser are two descriptions of the same
+dialects, and nothing was checking they agreed. Where the pack documents a row
+shape, the parser should read it.*
+
 ### 2.11 A damaged rating token was scanned past, producing a WRONG number
 Found because the look-alike fix surfaced a Hevacomp row that had been dropped:
 

@@ -488,6 +488,39 @@ console.log(`PASS: ${pages.length} schedule pages → ${boards.length} boards, s
       !row || row.phase == null, row ? String(row.phase) : 'no row');
   }
 
+  /* THE SLASH MARKER — "7/L1", "12/L3".
+     This project's own domain pack documents it twice and nothing parsed it:
+       domain-pack.mjs  syntegral: ways as "CCT n" or "n/Lx"
+       domain-pack.mjs  hevacomp:  "7/L1 20 6.0 2.5 LSF Singles Fixed power ..."
+     It never surfaced because the Hevacomp example writes the compact form and
+     the Syntegral one is an unreadable scan, so the dialect the AGENTS are told
+     about was one the deterministic parser could not read. NOTE: no example PDF
+     in the repository exercises this shape, so the lines below are the documented
+     ones verbatim rather than a measured capture. */
+  for (const [line, way, phase, rating] of [
+    ['7/L1 20 6.0 2.5 LSF Singles Fixed power', 7, 'L1', 20],
+    ['7/L1 20 B 30mA No 1 6.0 SWA RADIAL Landlord supply', 7, 'L1', 20],
+    ['12/L3 32 C 2.5 1.5 Ring Office', 12, 'L3', 32],
+  ]) {
+    const row = P.parseScheduleLine(line, ctx());
+    check(`slash marker: "${line.split(' ')[0]}" is a way and a phase`,
+      row && row.way === way && row.phase === phase && row.rating === rating,
+      row ? JSON.stringify({ way: row.way, phase: row.phase, rating: row.rating }) : 'no row');
+  }
+  /* The damaged-cell handling composes with it. */
+  const slashDamaged = P.parseScheduleLine('9/LiLzLs 40 4.0 Fixed power', ctx());
+  check('slash marker: carries a damaged three-phase cell too',
+    slashDamaged && slashDamaged.way === 9 && slashDamaged.phase === 'L1L2L3' && slashDamaged.rating === 40,
+    slashDamaged ? JSON.stringify({ way: slashDamaged.way, phase: slashDamaged.phase }) : 'no row');
+  /* The leading "L" is what keeps this safe. Dates, page numbers and revision
+     fractions are everywhere on these sheets and must not become circuits. */
+  for (const line of ['Issued 7/12 for tender', 'Drawing 3/4 of set',
+                      'Rev 2/3 dated 01/05/2025', 'Page 7/32']) {
+    const row = P.parseScheduleLine(line, ctx());
+    check(`slash marker: "${line}" is not a circuit`, !row || row.phase == null,
+      row ? String(row.phase) : 'no row');
+  }
+
   /* A DAMAGED RATING must not be scanned past.
      Hevacomp's "3Lz 3z2* 15 1x2corex2.5 ... Radial 13A sockets" is way 3 at 32A.
      "3z2*" is OCR of "32*"; skipping it took the next number on the row — the
