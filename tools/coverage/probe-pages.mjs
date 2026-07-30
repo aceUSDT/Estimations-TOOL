@@ -28,11 +28,13 @@ const out = await page.evaluate(`state.cur.files[0].pages.map(p => ({
   unreadable: p.ocr ? p.ocr.unreadable : null,
   floor: p.ocr ? p.ocr.readableFloor : null,
   type: p.type,
+  candidates: p.ocr && p.ocr.candidates ? p.ocr.candidates.map(c => c.id).join(',') : '',
+  nCand: p.ocr && p.ocr.candidates ? p.ocr.candidates.length : 0,
+  chosen: p.ocr ? p.ocr.selectedCandidate : null,
   lines: (p.lines||[]).length,
   sample: (p.lines||[]).slice(0, 14).map(l => (typeof l === 'string' ? l : (l.text||''))),
 }))`);
 out.forEach((p, i) => {
-  console.log('=== page', i+1, '| type', JSON.stringify(p.type), '| ocrScore', p.score, '| unreadable', p.unreadable, '| floor', p.floor, '|', p.lines, 'lines');
-  p.sample.slice(0,4).forEach(s => console.log('    ', s.slice(0,120)));
+  console.log('=== page', i+1, '| type', JSON.stringify(p.type), '| score', p.score, '|', p.nCand, 'passes ['+p.candidates+'] chose', p.chosen, '|', p.lines, 'lines');
 });
 await b.close();
