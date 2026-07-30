@@ -23,7 +23,7 @@ await page.waitForFunction('state.cur && state.cur.name === "Rowdump"');
 await page.setInputFiles('#fileInput',FILE);
 await page.waitForFunction('state.cur.files.length===1 && state.cur.files[0].status==="ready"',null,{timeout:180000});
 const WANT = Number(process.argv[3] || 1);
-await page.waitForFunction('state.cur.files[0].pages.every(p=>(p.lines||[]).length) && state.cur.analysis',null,{timeout:600000});
+await page.waitForFunction('state.cur.files[0].pages.every(p => (p.lines||[]).length || p.ocr) && state.cur.analysis',null,{timeout:600000});
 const out = await page.evaluate(`(() => {
   const pg = state.cur.files[0].pages[${'$'}{}0];
   return null;

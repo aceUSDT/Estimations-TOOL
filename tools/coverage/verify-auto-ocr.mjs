@@ -60,7 +60,7 @@ try {
   const scanned = await page.evaluate('state.cur.files[0].pages.filter(p => !(p.lines||[]).length).length');
   console.log('pages without text after ingest (pre-OCR):', scanned);
   await page.waitForFunction(
-    'state.cur.files[0].pages.every(p => (p.lines||[]).length) && state.cur.analysis',
+    'state.cur.files[0].pages.every(p => (p.lines||[]).length || p.ocr) && state.cur.analysis',
     null, { timeout: 300000 },
   );
   const res = await page.evaluate(`({

@@ -41,7 +41,7 @@ await page.click('#mOk');
 await page.waitForFunction('state.cur && state.cur.name === "Schematic probe"');
 await page.setInputFiles('#fileInput', FIXTURE);
 await page.waitForFunction('state.cur.files.length === 1 && state.cur.files[0].status === "ready"', null, { timeout: 180000 });
-await page.waitForFunction('state.cur.files[0].pages.every(p => (p.lines||[]).length) && state.cur.analysis', null, { timeout: 600000 });
+await page.waitForFunction('state.cur.files[0].pages.every(p => (p.lines||[]).length || p.ocr) && state.cur.analysis', null, { timeout: 600000 });
 
 const res = await page.evaluate(`(() => {
   const core = window.EstimationExtractorCore;
