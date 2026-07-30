@@ -244,6 +244,54 @@ it:
   lowercase `l` into an `L`, indistinguishable from the cell's own separator,
   before the fold can read it as a 1. The lowercase pass now runs *first*.
 
+### 2.13 An expected outcome thrown as an exception cost 16 of 19 pages
+`MCCB-Schedule_BowGreen.pdf` read **3 of its 19 pages** and said nothing about
+the other 16. Not slowly — it stopped.
+
+```
+page 4: "OCR completed but found no readable words on this page"
+        at ocrPdfPage (index.html:2274)
+```
+
+That is an **expected** outcome — line-work, a photo, a blank sheet — and this
+tool already has a reporting category for exactly it. Throwing was wrong twice:
+
+1. The throw sat **above** the recording block, so the page never got `pg.ocr`,
+   kept `needsOcr`, and never had `ocrUnreadable` set. It was then invisible to
+   every check in `buildCoverage`: no text ⇒ cannot look schedule-ish, no score
+   ⇒ cannot be poorly read, and `unreadable` is only ever set by a *completed*
+   pass.
+2. It propagated to `ocrScannedPages`, whose `catch` did **`break`**.
+
+So one page of line-work abandoned the sixteen behind it. Confirmed in page
+state: pages 4–9 all sat at `needsOcr: true, ocr: false, unreadable: false`.
+
+| | before | after |
+|---|---|---|
+| pages read | 3 / 19, stalled indefinitely | **17 / 19 in ~100 s** |
+| wordless pages | silently lost | reported in `unreadablePages` |
+| boards found | — | 26 |
+
+Fixes: `ocrPdfPage` records a wordless page as unreadable instead of throwing;
+`ocrScannedPages` continues past a failure, names **every** failed page, stamps
+`ocrFailed` on the page so Review outlives the toast, and stops only after three
+*consecutive* failures (a broken pipeline, not a bad page); `buildCoverage` gains
+`neverReadPages` for pages that produced no text at all.
+
+**The measurement instruments were themselves the reason I misdiagnosed this.**
+`probe-rows` and `probe-pages` both wait on `pages.every(p => p.lines.length)` —
+a condition a legitimately wordless page can *never* satisfy. That is why
+`probe-pages` died with a `TimeoutError` and `probe-rows` appeared to run for 25
+minutes, and it is why I first reported this to the owner as a **speed** problem.
+It was never speed: the document always processed in about 100 seconds. Two
+further wrong turns before the right one — page dimensions (measured identical to
+Broomfield's) and the OCR escalation ladder (real, but 2–3 passes here, not
+runaway).
+
+*Lesson: when a probe says "slow", check whether it is measuring "slow" or
+"waiting for something that will never happen". `probe-ocr-progress.mjs` samples
+progress instead of waiting for it, which is what finally showed the stall.*
+
 ### 2.12 A dialect the agents were told about, that the parser could not read
 Found by checking this round's changes against row shapes from dialects I had
 **not** been iterating on — the discipline the owner asked for, applied to my own
