@@ -416,6 +416,74 @@ console.log(`PASS: ${pages.length} schedule pages → ${boards.length} boards, s
 
 /* The exit gate is LAST on purpose: it once sat mid-file, so checks appended
    after it could fail while the suite still reported green. */
+/* A three-phase way whose phase cell arrives damaged by OCR.
+ *
+ * Amtech prints the phase column as "L1L2L3" for a three-phase way, and a scan
+ * loses the repeated L's. Verbatim from page 15 of
+ * examples/db-schedules/amtech/Broomfield-House_Circuit-Charts.pdf: "L213",
+ * "L1L213", "L123".
+ *
+ * The damage did not merely mis-read the phase, it lost the WHOLE ROW. All three
+ * way/phase marker patterns required a single L[123], so nothing matched, the
+ * positional-rating scan never ran, and the guard in parseScheduleLine saw no
+ * way, no device and no rating and returned null. On that one page it dropped
+ * ways 2, 3, 4, 5 and 8 — four carrying real devices at 16A, 32A, 16A and 25A.
+ * Across the document: 86 of 170 declared ways captured, rising to 121.
+ */
+{
+  const ctx = () => ({ board: 'DBK', sawHeader: true });
+  const damaged = [
+    ['2 L213 Load-255 16 NIA NA NA 25', 2, 16],
+    ['3 L1L213 Load-256 32 N/A NifA NA 4', 3, 32],
+    ['4 L1L213 Load-257 16 NIA NIA NA 25', 4, 16],
+    ['5 L213 Load-258 25 NIA NIA NA 4', 5, 25],
+    ['8 L123 0', 8, 0],
+  ];
+  for (const [line, way, rating] of damaged) {
+    const row = P.parseScheduleLine(line, ctx());
+    check(`damaged phase cell: "${line.split(' ')[1]}" is a three-phase way, not a dropped row`,
+      row && row.way === way && row.phase === 'L1L2L3' && row.rating === rating,
+      row ? JSON.stringify({ way: row.way, phase: row.phase, rating: row.rating }) : 'DROPPED');
+  }
+
+  /* The clean spelling must read identically, or the repair is only helping the
+     pages that were already damaged. */
+  const clean = P.parseScheduleLine('10 L1L2L3 0', ctx());
+  check('undamaged L1L2L3 reads the same way', clean && clean.way === 10 && clean.phase === 'L1L2L3');
+
+  /* Single-phase rows must be untouched by all of this. */
+  const single = P.parseScheduleLine('1 L1 Load-260 20 N/A NIA NA 4 15', ctx());
+  check('a single-phase cell is still a single phase', single && single.phase === 'L1' && single.rating === 20,
+    single ? JSON.stringify({ phase: single.phase, rating: single.rating }) : 'DROPPED');
+
+  /* A two-phase cell names TWO phases. Inflating it to three would invent a pole
+     on a device the estimator has to buy. */
+  const two = P.parseScheduleLine('6 L2L3 Load-1 20', ctx());
+  check('a two-phase cell is not inflated to three', two && two.phase === 'L2L3',
+    two ? String(two.phase) : 'DROPPED');
+
+  /* A three-phase way carries ONE multi-pole device, never three. */
+  check('a three-phase way is one device', P.parseScheduleLine('2 L213 Load-255 16', ctx()).qty === 1);
+
+  /* A cell rebuilt from damaged characters is a reading, not a fact, so it must
+     sit below the app's review threshold (conf < 0.8).
+     This has to be asserted on a row that would OTHERWISE BE CONFIDENT — way,
+     phase, device and rating all present. Asserted on a classless row it passes
+     for the wrong reason: that row is already under the threshold because it
+     names no device, so the check held while the penalty did nothing. Found by
+     deleting the penalty and watching the test still pass. */
+  const confidentButRepaired = P.parseScheduleLine('2 L213 Load-255 16 MCB Type B', ctx());
+  check('a repaired phase cell goes to Review even on an otherwise confident row',
+    confidentButRepaired && confidentButRepaired.device && confidentButRepaired.rating === 16
+    && confidentButRepaired.conf < 0.8,
+    confidentButRepaired ? JSON.stringify({ device: confidentButRepaired.device, conf: confidentButRepaired.conf }) : 'DROPPED');
+  /* And an undamaged row of the same shape must stay confident, or the cap is
+     just a blanket downgrade. */
+  const confidentClean = P.parseScheduleLine('2 L1L2L3 Load-255 16 MCB Type B', ctx());
+  check('an undamaged row of the same shape stays confident',
+    confidentClean && confidentClean.conf >= 0.8, confidentClean ? String(confidentClean.conf) : 'DROPPED');
+}
+
 /* A SCANNED consumer-unit circuit chart, where the header survives OCR and the
  * rows do not.
  *

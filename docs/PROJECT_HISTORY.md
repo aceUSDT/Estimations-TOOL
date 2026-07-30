@@ -182,7 +182,56 @@ of the invariant. Regression test in `test-schedule-pages.mjs` uses the OCR text
 verbatim, damage included, asserts the cover and issue-record pages are *not*
 dragged in, and checks the copies agree; verified it bites by breaking each copy.
 
-### 2.10 Poorly-read pages not reported
+### 2.10 A damaged phase cell lost the whole row, not just the phase
+Broomfield House again, chasing the 88-of-170 unaccounted ways. Amtech prints the
+phase column as `L1L2L3` for a three-phase way and the scan loses the repeated
+L's — verbatim from page 15: **`L213`**, **`L1L213`**, **`L123`**.
+
+The damage did not mis-read the phase. It lost the **entire row**. All three
+way/phase marker patterns required a single `L[123]`, so nothing matched; with no
+marker the positional-rating scan never ran; and the guard in `parseScheduleLine`
+then saw no way, no device and no rating and returned null. Five ways gone off
+one page, four of them carrying real devices at 16A, 32A, 16A and 25A.
+
+```
+ 21   2 L213    Load-255 16    way 2, 16A three-phase — dropped
+ 23   3 L1L213  Load-256 32    way 3, 32A            — dropped
+ 35   8 L123    0              way 8                 — dropped
+```
+
+Fix: a phase cell is `L[123](?:L?[123]){0,4}`, reduced to its **distinct** phase
+digits rather than trusting the spelling. `{0,4}` and not `{0,2}` — clean
+`L1L2L3` needs two, but damaged `L1L213` is `L1` + `L2` + `1` + `3` and matches
+nothing shorter. A two-phase cell stays two phases; inflating it to three would
+invent a pole on a device someone has to buy.
+
+Measured, whole document:
+
+| | before | after |
+|---|---|---|
+| ways captured (of 170 declared) | 86 | **121** |
+| unaccounted ways | 88 | **59** |
+| devices in the take-off | 159 | **181** |
+| quotation lines | 78 | **91** |
+| rows on page 15 (DB-K) | 7 | **13** |
+
+**A test that passed for the wrong reason.** The repaired-cell confidence penalty
+was asserted on a *classless* row — already below the review threshold because it
+names no device — so the check held while the penalty did nothing. Found by
+deleting the penalty and watching the test still pass. Worse, the original 0.05
+nudge was useless by design: a row naming its device sat at **0.92**, which
+presents as settled. A rebuilt phase cell decides the **pole count**, and a
+three-pole device priced as single-pole is a real costing error, so confidence is
+now *capped* at 0.75 and the assertion runs against a row that would otherwise be
+confident. *Mutate the code to prove the test bites — passing is not evidence.*
+
+**What still accounts for the remaining 59.** OCR digit damage the parser should
+not guess at: way 6 arrives as `[3`, and way 11 as `1` — which collides with the
+real way 1 and is correctly reported as a way conflict rather than silently
+merged. Recovering those means inferring a way number from its position in the
+sequence, which is a guess about a priced item. Flagged, not guessed.
+
+### 2.11 Poorly-read pages not reported
 Pages that OCR'd badly *and* yielded almost nothing were invisible. Added
 `unreadablePages` and `poorlyReadPages` with `unreadable` / `poorlyread` Review
 items.
