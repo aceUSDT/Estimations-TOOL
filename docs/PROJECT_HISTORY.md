@@ -142,8 +142,10 @@ point the user looks is indistinguishable from failure.**
 
 A way with a rating is a device even when the sheet won't name its class. Those
 rows now enter the take-off as `Unclassified device` with a review reason.
-Broomfield reconciles **159 devices across 78 quotation lines**; The Angel
-returns 22.
+Broomfield went from an empty export to **159 devices across 78 quotation
+lines**; The Angel returns 22. (§2.10 then raised Broomfield to 181 and 91 — the
+159 is the number this fix alone produced, kept so the two changes stay
+separable.)
 
 **Four call sites had to agree** and it took two runs to find them all:
 `includeRow` decides inclusion, `deviceSpecification` sets the family used for
@@ -278,12 +280,17 @@ were **never opened during the work**, then run before and after:
 
 | document | dialect / vendor | before | after |
 |---|---|---|---|
-| Broomfield House | Amtech | 0 rows | **180 rows** |
-| The Angel | Hevacomp | 0 rows | **25 rows** |
+| Broomfield House | Amtech | 0 rows | **180 rows** — but see §2.8: the take-off was still EMPTY. Now 181 devices. |
+| The Angel | Hevacomp | 0 rows | **25 rows**, 22 devices in the take-off |
 | Kings Road | BES/Brenbar | 1 row, **silently** | reported |
 | Ashfield | BAM/EPO | 2 rows, **silently** | reported — **needed no new code** |
 | 25057 RevC02 | Syntegral | reported | reported |
 | BC250847-E13 | scanned | reported | reported |
+
+**Read the row counts with §2.8 in mind.** "180 rows" was reported here as a
+success and it measured the wrong thing — rows in Review, not devices in the
+take-off, which was empty. Row counts are an intermediate. The artefact the
+estimator receives is the number that matters.
 
 Two things matter more than the row counts. **Ashfield improved with no code
 change** — the reporting work alone turned a silent near-miss into a visible one.
