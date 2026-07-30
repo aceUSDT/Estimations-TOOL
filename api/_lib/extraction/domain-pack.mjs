@@ -80,7 +80,8 @@ const BOARD = {
   additionalProperties: false,
   required: ['ref', 'description', 'location', 'fed_from_ref', 'serving', 'ways_total', 'ways_sp', 'ways_tp',
     'spare_capacity_pct', 'incomer_class', 'incomer_rating_a', 'incomer_poles', 'board_model', 'metering',
-    'fault_ka', 'board_type_text', 'phase_config', 'phase_config_evidence', 'continuation', 'confidence'],
+    'fault_ka', 'board_type_text', 'busbar_rating_a', 'busbar_withstand_text', 'board_cables',
+    'phase_config', 'phase_config_evidence', 'continuation', 'confidence'],
   properties: {
     ref: { type: 'string', description: 'Board reference exactly as printed' },
     phase_config: { type: 'string', enum: ['SPN', 'TPN', 'mixed', 'ambiguous', ''] },
@@ -100,6 +101,20 @@ const BOARD = {
     metering: { type: 'string', description: 'Full metering spec as printed, not a boolean; "" if none' },
     fault_ka: NUM,
     board_type_text: { type: 'string', description: 'Verbatim size/type/rating line; "" if none' },
+    /* A busbar is rated independently of its incomer — a 250A busbar routinely
+     * sits behind a smaller incoming switch — so it cannot share
+     * incomer_rating_a. Schematic order 33 asks for both. */
+    busbar_rating_a: NUM,
+    busbar_withstand_text: { type: 'string', description: 'Busbar short-circuit withstand as printed, e.g. "36 kA 1 SEC"; "" if none' },
+    /* Verbatim cable specifications listed against the BOARD rather than any one
+     * way. Schematic order 32: drawings commonly list two or three sizes once at
+     * the side, tied to ways only by which line a way touches. Held here so the
+     * sizes survive without inventing a per-way mapping the drawing never made. */
+    board_cables: {
+      type: 'array',
+      description: 'Cable specs printed at board level, verbatim, e.g. "10mm2 XLPE/SWA/LSF + 6mm2 SWA CPC"',
+      items: { type: 'string' },
+    },
     continuation: { type: 'boolean' },
     confidence: NUM,
   },
@@ -108,9 +123,9 @@ const BOARD = {
 const DEVICE = {
   type: 'object',
   additionalProperties: false,
-  required: ['board_ref', 'way', 'phase', 'description', 'device_class', 'rating_a', 'trip_curve', 'rcd_ma',
-    'afdd', 'poles', 'cable_type', 'phase_csa_mm2', 'cpc_csa_mm2', 'circuit_config', 'install_method',
-    'is_spare', 'is_spd', 'is_incomer', 'confidence'],
+  required: ['board_ref', 'way', 'phase', 'description', 'device_class', 'rating_a', 'frame_a', 'setting_a',
+    'trip_curve', 'rcd_ma', 'afdd', 'poles', 'cable_type', 'phase_csa_mm2', 'cpc_csa_mm2', 'circuit_config',
+    'install_method', 'is_spare', 'is_spd', 'is_incomer', 'drawn_greyed', 'confidence'],
   properties: {
     board_ref: STR,
     way: { type: 'string', description: 'way number as a string; "" if none' },
@@ -118,6 +133,13 @@ const DEVICE = {
     description: STR,
     device_class: { type: 'string', enum: ['MCB', 'RCBO', 'afdd_rcbo', 'MCCB', 'ACB', 'RCD', 'SPD', 'fuse', 'switch_disconnector', 'isolator', 'contactor', 'time_clock', 'photocell', 'relay', 'timer', 'starter', 'overload', 'transformer', 'dali_controller', 'meter', 'spare', 'space', 'other'] },
     rating_a: NUM,
+    /* An adjustable device has TWO ratings and they price differently: the frame
+     * is what you buy, the setting is what it trips at. Schematic order 22 —
+     * "100/125 A", or the two figures stacked — must not collapse into one
+     * number. Where only one rating is printed it goes in rating_a and these
+     * stay "". */
+    frame_a: NUM,
+    setting_a: NUM,
     trip_curve: { type: 'string', enum: ['B', 'C', 'D', ''] },
     rcd_ma: NUM,
     afdd: { type: 'boolean' },
@@ -130,6 +152,11 @@ const DEVICE = {
     is_spare: { type: 'boolean' },
     is_spd: { type: 'boolean' },
     is_incomer: { type: 'boolean' },
+    /* Schematic order 30: greying is a drawing convention meaning existing,
+     * future or by others, and the drawing frequently says so nowhere in words.
+     * Per-device rather than a flag because the reviewer needs to know WHICH way
+     * not to price. */
+    drawn_greyed: { type: 'boolean' },
     confidence: NUM,
   },
 };
@@ -217,8 +244,9 @@ export const EXTRACTION_SCHEMA = {
  * (or null). Applied in extract.mjs after JSON.parse so the client/harness
  * merge code is unchanged. */
 export const NUMERIC_FIELDS = {
-  board: ['ways_total', 'ways_sp', 'ways_tp', 'spare_capacity_pct', 'incomer_rating_a', 'incomer_poles', 'fault_ka', 'confidence'],
-  device: ['way', 'rating_a', 'rcd_ma', 'poles', 'phase_csa_mm2', 'confidence'],
+  board: ['ways_total', 'ways_sp', 'ways_tp', 'spare_capacity_pct', 'incomer_rating_a', 'incomer_poles', 'fault_ka',
+    'busbar_rating_a', 'confidence'],
+  device: ['way', 'rating_a', 'frame_a', 'setting_a', 'rcd_ma', 'poles', 'phase_csa_mm2', 'confidence'],
   feed: ['rating_a', 'poles', 'cable_csa_mm2', 'confidence'],
 };
 // numeric-or-string (mm² number, else "SWA"/"integral", else null)

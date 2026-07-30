@@ -6,6 +6,12 @@ re-deriving context or hallucinating state. Written 2026-07-26.
 "First five minutes" checks below — the container resets often and git is the
 source of truth, not this document.
 
+**Companion doc:** this file covers *where the project is* — branches, deploys,
+commerce, platform. For *why the extractor is shaped the way it is* — the defects
+found on real documents, the measurements, the dead ends, and how schematic
+reading works — read **`docs/PROJECT_HISTORY.md`**. Read it before changing
+extraction, reporting, or the agent orders.
+
 ---
 
 ## 1. The product (what we are building)

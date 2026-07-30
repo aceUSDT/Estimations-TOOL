@@ -54,6 +54,12 @@ Read the relevant code and fixture before editing. Keep changes scoped, run the 
 tests, and validate count-changing work against a real reference document. Use short-lived
 branches only; merge accepted work into `main` and remove stale integration branches.
 
+**Before touching extraction, reporting, or the agent orders, read
+`docs/PROJECT_HISTORY.md`.** It records what has already been measured on real
+documents, the bugs that were introduced while fixing them, and the approaches that
+were tried and measured as worse — including two that look obviously right. Add to it
+when you learn something a future session would otherwise re-derive.
+
 ## Commands
 
 - Browser: `npm run dev`

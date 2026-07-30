@@ -1,0 +1,73 @@
+{
+  "_source": "Estimator's annotated LV schematic: SB/4 Daltons LV panelboard, 12 outgoing MCCBs.",
+  "_why": [
+    "The SECOND annotated drawing, and it exercises what the first did not. PB1",
+    "wrote its frame/trip pair inline (\"100/125 A\"); this one STACKS the two",
+    "figures. PB1 said \"GREY BY OTHERS\" in words; this one greys items and says",
+    "nothing. PB1 drew feeds as boards; this one captions each way with the",
+    "sub-board it supplies. And this one lists its cable sizes once at the side,",
+    "tied to ways only by which line a way touches.",
+    "",
+    "A target, not a recording. No model has read this drawing in this environment.",
+    "test-schematic-fixture.mjs asserts the standing orders instruct an agent to",
+    "look for every field used here."
+  ],
+
+  "board": {
+    "ref": "SB/4",
+    "description": "SB/4- DALTONS LV PANELBOARD",
+    "rated_voltage_v": 415,
+    "frequency_hz": 50,
+    "phase_config": "3-PHASE, NEUTRAL & EARTH",
+    "busbar_rating_a": 250,
+    "busbar_short_circuit_withstand": "36 kA 1 SEC",
+    "classification": "FORM 3b, TYPE 2",
+    "ways_total": 12
+  },
+
+  "incomer": [
+    { "class": "Switch", "rating_a": 250, "role": "incoming_device",
+      "_note": "Drawn as a switch symbol labelled 250A. Simpler than PB1's chain — no meter, SPD or CT on the incomer here." }
+  ],
+
+  "board_cables": [
+    { "spec": "10mm2 XLPE/SWA/LSF", "cpc": "6mm2 SWA CPC" },
+    { "spec": "25mm2 XLPE/SWA/LSF", "cpc": "16mm2 SWA CPC" },
+    { "spec": "35mm2 XLPE/SWA/LSF", "cpc": "25mm2 SWA CPC" }
+  ],
+  "_board_cables_note": "Listed ONCE at the side and tied to ways only by which line each way touches. Held at board level deliberately: attaching a size to a way the drawing does not explicitly link would be an invention.",
+
+  "ways": [
+    { "way": 1,  "setting_a": 100, "frame_a": 100, "poles": "TP&N", "device_label": "MCCB", "metered": false, "feeds": "DB/LM/1/2", "feeds_duty": "LIGHTING & MECHANICAL" },
+    { "way": 2,  "setting_a": 100, "frame_a": 100, "poles": "TP&N", "device_label": "MCCB", "metered": true,  "feeds": "DB/P/1/2",  "feeds_duty": "POWER" },
+    { "way": 3,  "setting_a": 100, "frame_a": 100, "poles": "TP&N", "device_label": "MCCB", "metered": false, "feeds": "DB/LM/0/2", "feeds_duty": "LIGHTING & MECHANICAL" },
+    { "way": 4,  "setting_a": 100, "frame_a": 100, "poles": "TP&N", "device_label": "MCCB", "metered": true,  "feeds": "DB/P/0/2",  "feeds_duty": "POWER", "legible": false,
+      "_note": "Caption reads DB/LM/0/2 POWER in the crop; the LM/P prefix is ambiguous at this resolution." },
+    { "way": 5,  "setting_a": 100, "frame_a": 100, "poles": "TP&N", "device_label": "MCCB", "metered": true,  "feeds": "DB/P/1/KIT", "feeds_duty": "KITCHEN" },
+    { "way": 6,  "setting_a": 63,  "frame_a": 100, "poles": "TP&N", "device_label": "MCCB", "metered": true,  "feeds": "D5/", "feeds_duty": "DALTON 5",
+      "_note": "Setting stacked ABOVE frame: 63A over 100A. One device, not two." },
+    { "way": 7,  "setting_a": 63,  "frame_a": 100, "poles": "TP&N", "device_label": "MCCB", "metered": true,  "feeds": "DB/PL5", "feeds_duty": "DALTONS 4", "drawn_greyed": true,
+      "_note": "Caption drawn in grey with no wording to explain it — existing, future or by others." },
+    { "way": 8,  "setting_a": 40,  "frame_a": 100, "poles": "TP&N", "device_label": "MCCB", "metered": true,  "feeds": "LIFT", "drawn_greyed": true },
+    { "way": 9,  "setting_a": 40,  "frame_a": 100, "poles": "TP&N", "device_label": "MCCB", "metered": true,  "feeds": "FAP", "feeds_duty": "FIRE ALARM PANEL" },
+    { "way": 10, "setting_a": 100, "frame_a": 100, "poles": "TP&N", "device_label": "MCCB", "metered": true,  "legible": false },
+    { "way": 11, "setting_a": 100, "frame_a": 100, "poles": "TP&N", "device_label": "MCCB", "metered": true,  "legible": false },
+    { "way": 12, "setting_a": 100, "frame_a": 100, "poles": "TP&N", "device_label": "MCCB", "metered": true,  "legible": false }
+  ],
+  "_ways_note": "Ways 10-12 carry devices whose captions are outside the crop. Listed rather than dropped: an unread way is what the completeness check exists to surface.",
+
+  "flags": [
+    { "kind": "other", "message": "Ways 7 and 8 (DB/PL5 DALTONS 4, LIFT) are drawn greyed with no wording. Confirm whether existing, future or by others before pricing." },
+    { "kind": "uncertain", "message": "Cable sizes are listed at board level; the drawing does not label which way takes which." }
+  ],
+
+  "totals_for_review": {
+    "_note": "What deterministic code should compute from the rows above. No agent returns these.",
+    "outgoing_mccbs": 12,
+    "of_which_reduced_setting": 4,
+    "spare_ways": 0,
+    "way_meters": 10,
+    "greyed_items": 2,
+    "board_cable_types": 3
+  }
+}
