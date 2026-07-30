@@ -465,6 +465,50 @@ console.log(`PASS: ${pages.length} schedule pages → ${boards.length} boards, s
   /* A three-phase way carries ONE multi-pole device, never three. */
   check('a three-phase way is one device', P.parseScheduleLine('2 L213 Load-255 16', ctx()).qty === 1);
 
+  /* The SAME sheet, page 17, damages the cell a different way: OCR substitutes
+     the digits' look-alike letters, "L1L2L3" -> "LiLzLs" (i for 1, z for 2,
+     s for 3). That lost ways 7 and 9, carrying a 32A and a 10A device. */
+  for (const [line, way, rating] of [
+    ['7 LiLzLs Load-250 32 NIA NIA NA 4', 7, 32],
+    ['9 LiLzLs Load-252 10 NIA NIA NA 25', 9, 10],
+  ]) {
+    const row = P.parseScheduleLine(line, ctx());
+    check(`look-alike phase cell: "LiLzLs" is L1L2L3, not a dropped row`,
+      row && row.way === way && row.phase === 'L1L2L3' && row.rating === rating,
+      row ? JSON.stringify({ way: row.way, phase: row.phase, rating: row.rating }) : 'DROPPED');
+  }
+  /* Ordinary words beginning with L must not be mistaken for a phase cell now
+     that letters are accepted in it. All four appear on these very sheets. */
+  for (const line of ['5 Lighting circuit 20 MCB', '3 LIST of items',
+                      '7 Laundry Ring Main 32', '1 Isolator 20']) {
+    const row = P.parseScheduleLine(line, ctx());
+    /* Either the line is not a circuit row at all, or it is one with NO phase.
+       Anything else means an English word was read as a phase cell. */
+    check(`look-alike phase cell: "${line.split(' ')[1]}" is a word, not a phase`,
+      !row || row.phase == null, row ? String(row.phase) : 'no row');
+  }
+
+  /* A DAMAGED RATING must not be scanned past.
+     Hevacomp's "3Lz 3z2* 15 1x2corex2.5 ... Radial 13A sockets" is way 3 at 32A.
+     "3z2*" is OCR of "32*"; skipping it took the next number on the row — the
+     CABLE SIZE — and reported the circuit as 15A. Falling back to the whole-line
+     rating scan is no better: the only "A" on the row is in its description, so
+     it would report 13A. Both are wrong numbers in a quotation, which is worse
+     than an absent one, so the rating stays unknown and the row goes to Review. */
+  const damagedRating = P.parseScheduleLine('3Lz 3z2* 15 1x2corex2.5 - PVC multi R E 13A ring Office', ctx());
+  check('damaged rating: the row survives with its way and phase',
+    damagedRating && damagedRating.way === 3 && damagedRating.phase === 'L2',
+    damagedRating ? JSON.stringify({ way: damagedRating.way, phase: damagedRating.phase }) : 'DROPPED');
+  check('damaged rating: reports unknown, not the cable size and not the description',
+    damagedRating && damagedRating.rating == null, damagedRating ? String(damagedRating.rating) : 'DROPPED');
+  check('damaged rating: goes to Review', damagedRating && damagedRating.conf < 0.8);
+
+  /* "10%" is OCR of "10*" and DOES parse — a trailing annotation mark is not
+     damage. Without it that token was skipped and a 10A circuit read as 1A. */
+  const annotated = P.parseScheduleLine('11L2 10% 1 1x2corex 15 - PVC multi R E Lighting', ctx());
+  check('trailing annotation mark is not damage: "10%" is 10A, not 1A',
+    annotated && annotated.rating === 10, annotated ? String(annotated.rating) : 'DROPPED');
+
   /* A cell rebuilt from damaged characters is a reading, not a fact, so it must
      sit below the app's review threshold (conf < 0.8).
      This has to be asserted on a row that would OTHERWISE BE CONFIDENT — way,

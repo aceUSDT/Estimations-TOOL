@@ -227,7 +227,48 @@ three-pole device priced as single-pole is a real costing error, so confidence i
 now *capped* at 0.75 and the assertion runs against a row that would otherwise be
 confident. *Mutate the code to prove the test bites — passing is not evidence.*
 
-**What still accounts for the remaining 59.** OCR digit damage the parser should
+**Then page 17 damaged the same cell a different way.** OCR substitutes the
+digits' **look-alike letters**: `L1L2L3` arrives as **`LiLzLs`** — i for 1, z for
+2, s for 3 — losing ways 7 and 9 and their 32A and 10A devices. The character
+class now carries those letters, scoped to the token sitting where a phase cell
+belongs so an ordinary word cannot be caught ("Lighting" needs a word boundary
+after "Li" and has none; verified against *Lighting, LIST, Laundry, Isolator,
+Lift, Lounge*).
+
+Two details that only surfaced by probing the built pattern rather than trusting
+it:
+- I had added the **broken bar** `\u00a6` as another 1-look-alike. It never
+  matched anything. Removed — a character in a regex that cannot be shown to work
+  is speculation, and no document showed it.
+- **`Ll` matched the pattern but produced a null phase.** `toUpperCase()` turns a
+  lowercase `l` into an `L`, indistinguishable from the cell's own separator,
+  before the fold can read it as a 1. The lowercase pass now runs *first*.
+
+### 2.11 A damaged rating token was scanned past, producing a WRONG number
+Found because the look-alike fix surfaced a Hevacomp row that had been dropped:
+
+```
+3Lz  3z2*  15  1x2corex2.5 … Radial 13A sockets     way 3, really 32A
+```
+
+`3z2*` is OCR of `32*`. The positional scan skipped it as "contains a letter" and
+took the next number on the row — **the cable size** — reporting a 32A circuit as
+**15A**. Falling back to the whole-line rating scan is no better: the only "A" on
+a Hevacomp row is in its description, so it reports **13A**. A wrong rating in a
+quotation is worse than an absent one.
+
+A token *starting* with a letter is an identifier (Amtech's `Load-255`) and the
+scan continues. A token starting with a **digit** that still will not parse is
+damaged: the scan stops, the rating stays **unknown**, and the row goes to Review
+carrying its way and phase. Separately, `10%` — OCR of `10*` — now parses as 10;
+a trailing annotation mark is not damage, and without it a 10A circuit read as
+**1A** off the cable column.
+
+Broomfield, cumulative across §2.10 and §2.11: ways captured **86 → 158** of 170,
+unaccounted **88 → 27**, devices in the take-off **159 → 194**, with 18 lines
+flagged for review.
+
+**What still accounts for the remaining 27.** OCR digit damage the parser should
 not guess at: way 6 arrives as `[3`, and way 11 as `1` — which collides with the
 real way 1 and is correctly reported as a way conflict rather than silently
 merged. Recovering those means inferring a way number from its position in the
