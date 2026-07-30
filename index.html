@@ -1854,7 +1854,12 @@ function projStats(p){
   const pages=p.files.reduce((a,f)=>a+(f.pages?f.pages.length:0),0);
   const a=p.analysis;
   const boards=a?Object.keys(a.boards).length:0;
-  const devices=a?a.rows.filter(r=>r.status!=='rejected'&&!r.space&&r.device&&(r.kind!=='mention'||r.status==='confirmed')).reduce((s,r)=>s+(r.qty||1),0):0;
+  /* Mirrors includeRow() in report-core.js, including rated-but-unclassified
+     ways — dialects that never print the class (Amtech, Hevacomp) otherwise
+     showed "16 boards, 0 devices" on a document with 180 extracted rows. If one
+     of these two rules changes, change both or the badge stops matching the
+     report it is supposed to summarise. */
+  const devices=a?a.rows.filter(r=>r.status!=='rejected'&&!r.space&&(r.device||Number(r.rating)>0)&&(r.kind!=='mention'||r.status==='confirmed')).reduce((s,r)=>s+(r.qty||1),0):0;
   const review=a?a.rows.filter(r=>r.status==='pending'&&r.conf<0.8).length:0;
   return {docs,pages,boards,devices,review};
 }

@@ -48,6 +48,7 @@
 
   const NOT_SPECIFIED = "Not specified";
   const UNCLEAR = "Unclear";
+  const UNCLASSIFIED = "Unclassified device";
   const QUALIFICATIONS = {
     curve: "Tripping curve not specified in the source document. No curve has been assumed. Confirm the required tripping characteristic before procurement or final quotation.",
     breakingCapacity: "Breaking capacity not specified in the source document. No breaking capacity has been assumed. Confirm the required value before procurement or final quotation.",
@@ -172,14 +173,35 @@
   }
 
   function deviceLabel(row) {
-    const device = canonicalDevice(row);
+    /* Must agree with deviceSpecification's family, or the take-off groups a row
+       as unclassified and then labels it "Other device". */
+    const device = ratedButUnclassified(row) ? UNCLASSIFIED : canonicalDevice(row);
     const rating = formatRating(row && row.rating);
     const poles = /^(MCB|RCBO|AFDD\+RCBO|MCCB|ACB|RCD)$/i.test(device) ? poleLabel(row) : "";
     return [rating ? `${rating}A` : NOT_SPECIFIED, poles, device].filter(Boolean).join(" ");
   }
 
+  /* A way with a rating is a device even when the sheet never names its class.
+   *
+   * Measured on Broomfield House (Amtech, scanned): 180 rows extracted, 16 boards
+   * found, and the take-off came out EMPTY — every row carried device null,
+   * because that dialect prints "1 L1 Load-260 20 N/A 30mA Yes 4 15" and never
+   * the word MCB. `!row.device` discarded all 180 at the report stage, so the
+   * parser fix for those dialects delivered nothing to the estimator.
+   *
+   * Dropping a rated way from the take-off is the silent omission the product
+   * invariants forbid, so it is included and marked unclassified (see
+   * deviceSpecification) for the estimator to name. A row with neither a class
+   * nor a rating carries nothing to price and is still excluded. */
+  function ratedButUnclassified(row) {
+    if (row.device) return false;
+    const rating = Number(row.rating);
+    return Number.isFinite(rating) && rating > 0;
+  }
+
   function includeRow(row) {
-    if (!row || row.status === "rejected" || row.space || !row.device) return false;
+    if (!row || row.status === "rejected" || row.space) return false;
+    if (!row.device && !ratedButUnclassified(row)) return false;
     if (row.spare && !row.device) return false;
     if (row.kind === "mention" && row.status !== "confirmed") return false;
     return Number(row.qty || 1) > 0;
@@ -364,7 +386,10 @@
   }
 
   function deviceSpecification(row) {
-    const deviceFamily = canonicalDevice(row);
+    /* Named explicitly rather than falling through to "Other device", which
+     * reads as a class we identified. This one was never printed, and the
+     * estimator has to name it before it can be priced. */
+    const deviceFamily = ratedButUnclassified(row) ? UNCLASSIFIED : canonicalDevice(row);
     const rating = normaliseRating(row && row.rating);
     const curve = normaliseCurve(row && row.curve);
     const breakingCapacity = normaliseBreakingCapacity(row && (row.breakingCapacity ?? row.breakingCapacityKa ?? row.ka));
@@ -548,6 +573,10 @@
       if (reportRow.pole === UNCLEAR || reportRow.pole === NOT_SPECIFIED) {
         reportRow.notes.push(QUALIFICATIONS.poles);
         reportRow.reviewReasons.push("Pole configuration is unclear");
+      }
+      if (reportRow.deviceFamily === UNCLASSIFIED) {
+        reportRow.notes.push("The source sheet states a way and a rating but never names the device class. The rating and quantity are as printed; confirm the device type before pricing.");
+        reportRow.reviewReasons.push("Device class is not stated on the source sheet");
       }
       if (reportRow.confidence < 0.8) reportRow.reviewReasons.push("One or more source values have low confidence");
       if (reportRow.contributors.some((item) => item.reviewStatus !== "Approved")) reportRow.reviewReasons.push("One or more source records need review");
