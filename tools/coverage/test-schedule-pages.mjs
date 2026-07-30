@@ -143,6 +143,53 @@ check('no board exceeds ways × phases', (A.capacityWarnings || []).length === 0
     nb ? String(nb.expectedWays) : 'no board');
 }
 
+/* A page that produced NO TEXT AT ALL must be reported.
+ *
+ * Measured on MCCB-Schedule_BowGreen.pdf: page 4 is line-work, ocrPdfPage threw
+ * "OCR completed but found no readable words on this page", ocrScannedPages
+ * caught it and BROKE, and sixteen of nineteen pages were never attempted. Those
+ * pages were then invisible to every check in buildCoverage: with no text they
+ * cannot look schedule-ish, with no score they cannot be poorly read, and
+ * `unreadable` is only ever set by a COMPLETED OCR pass. The document came back
+ * small and said nothing, which is the failure the product invariants rank worst.
+ */
+{
+  const { buildCoverage } = P.EstimationExtractorCore;
+  const boards = { DB1GF: { norm: 'DB1GF', orig: 'DB-1-GF', type: 'DB', pages: [{ fileId: 'f', page: 1, primary: true }] } };
+  const read = { fileId: 'f', page: 1, type: 'db-schedule', text: 'REFERENCE DB-1-GF NUMBER OF WAYS 4 WAYS Circuit Ref 1-L1 10 MCB' };
+  const rows = [{ boardNorm: 'DB1GF', way: '1', phase: 'L1', device: 'MCB', kind: 'schedule' }];
+
+  /* Abandoned mid-run: OCR threw on it and never ran on the ones behind it. */
+  const abandoned = buildCoverage({ boards, rows, pages: [read,
+    { fileId: 'f', page: 4, type: 'unknown', text: '', needsOcr: true, ocrFailed: 'OCR completed but found no readable words on this page' },
+    { fileId: 'f', page: 5, type: 'unknown', text: '', needsOcr: true },
+  ] });
+  const never = abandoned.neverReadPages || [];
+  check('a page OCR failed on is reported', never.some((p) => p.page === 4 && /no readable words/.test(p.reason)),
+    JSON.stringify(never));
+  check('a page OCR never reached is reported', never.some((p) => p.page === 5), JSON.stringify(never));
+  check('never-read is not confused with unreadable',
+    (abandoned.unreadablePages || []).length === 0, JSON.stringify(abandoned.unreadablePages));
+
+  /* A genuinely blank sheet that nothing expected text from is NOT a finding —
+     otherwise every cover page and separator becomes an alarm, and an alarm
+     everyone ignores is worse than none (see the Didcot spare-capacity case). */
+  const blank = buildCoverage({ boards, rows, pages: [read, { fileId: 'f', page: 9, type: 'unknown', text: '' }] });
+  check('a blank page nothing expected text from is not reported',
+    (blank.neverReadPages || []).length === 0, JSON.stringify(blank.neverReadPages));
+
+  /* And a page OCR DID read, badly, stays in its own category.
+     The page has to belong to the board: buildCoverage scopes to a board's own
+     primary pages, so a loose page is skipped by design. My first version of
+     this check omitted that and failed — the fixture was wrong, not the code. */
+  const poorBoards = { DB1GF: { ...boards.DB1GF, pages: [{ fileId: 'f', page: 1, primary: true }, { fileId: 'f', page: 7, primary: true }] } };
+  const poor = buildCoverage({ boards: poorBoards, rows, pages: [read,
+    { fileId: 'f', page: 7, type: 'db-schedule', text: 'DB-1-GF NUMBER OF WAYS 4 WAYS', ocrScore: 0.71 }] });
+  check('a badly-read page is still poorly read, not never read',
+    (poor.neverReadPages || []).length === 0 && (poor.poorlyReadPages || []).length === 1,
+    JSON.stringify({ never: poor.neverReadPages, poor: poor.poorlyReadPages }));
+}
+
 /* THE WHOLE CHAIN, on the real line shape: analyse the pages, then run the
  * project's coverage model over the result exactly as the app does.
  *
