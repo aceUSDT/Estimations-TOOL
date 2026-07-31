@@ -46,6 +46,9 @@ report core, fixture suite, and Electron package.
 - `vendor/`: pinned local browser runtimes required for offline PDF and OCR handling.
 - `desktop/`: secure Electron protocol, local asset packaging, and installer configuration.
 - `netlify/functions/`: optional hosted extraction; secrets remain server-side.
+- Optional self-hosted document parser (Baidu Unlimited-OCR): `docs/UNLIMITED_OCR.md`.
+  Leads the reading chain when configured; never a dependency, because the desktop
+  build must keep working from packaged assets with no network.
 - `tools/coverage/`: deterministic tests and document fixtures.
 
 ## Workflow

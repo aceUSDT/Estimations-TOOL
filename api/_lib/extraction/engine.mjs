@@ -19,11 +19,17 @@ import {
   providerStatus, extractWithVerification, callGeminiJson, buildInstruction,
   crossCheckExtractions,
 } from './providers.mjs';
+import { unlimitedOcrConfig } from './nvidia-pool.mjs';
 
 export function engineStatus(env = process.env) {
   const nvidia = poolStatus(env);
   const gemini = providerStatus();
   const teamOn = nvidia.configured && env.AGENT_TEAM !== 'off';
+  /* Baidu Unlimited-OCR, when the operator hosts one. Reported separately from
+     `nvidia` because it is the operator's OWN endpoint, not a pooled account,
+     and because "is my document parser actually live?" is the question they
+     will ask after standing up a GPU box. */
+  const ocr = unlimitedOcrConfig(env);
   return {
     mode: teamOn ? 'agent-team' : gemini.configured ? 'gemini' : 'unconfigured',
     configured: teamOn || gemini.configured,
@@ -31,6 +37,10 @@ export function engineStatus(env = process.env) {
     nvidia: nvidia.configured,
     verify: gemini.verify,
     primary: teamOn ? 'nvidia' : gemini.primary,
+    /* The head of the reading chain when configured; the previous vision models
+       remain behind it, so an unreachable box costs latency, never the take-off. */
+    document_parser: ocr ? ocr.model : null,
+    document_parser_configured: Boolean(ocr),
   };
 }
 

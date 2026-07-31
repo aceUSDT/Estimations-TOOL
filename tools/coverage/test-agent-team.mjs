@@ -16,7 +16,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '../..');
 const load = (p) => import(pathToFileURL(path.resolve(ROOT, p)));
 
-const { createPool, poolStatus, parseModelJson, MODEL_REGISTRY, ROLE_CHAINS } = await load('api/_lib/extraction/nvidia-pool.mjs');
+const { createPool, poolStatus, parseModelJson, MODEL_REGISTRY, ROLE_CHAINS, unlimitedOcrConfig } = await load('api/_lib/extraction/nvidia-pool.mjs');
 const { runAgentTeam, MASTER_VERDICT_SCHEMA } = await load('api/_lib/extraction/agent-team.mjs');
 const { crossCheckExtractions, buildInstruction } = await load('api/_lib/extraction/providers.mjs');
 
@@ -31,14 +31,98 @@ check('parseModelJson: fenced', parseModelJson('```json\n{"a":2}\n```').a === 2)
 check('parseModelJson: prose-wrapped', parseModelJson('Sure! {"a":3} hope that helps').a === 3);
 check('parseModelJson: garbage → null', parseModelJson('no json here') === null);
 
-/* ---- production chain sanity ---- */
+/* ---- production chain sanity ----
+ *
+ * The rule is that the DEFAULT path is never led by an unproven model. A
+ * self-hosted model (Baidu Unlimited-OCR) is a new category: it cannot run for
+ * anybody who has not stood up their own GPU and set UNLIMITED_OCR_BASE_URL, so
+ * it never touches the default path — but it is unproven on these documents, and
+ * an operator who DOES configure it is leading with something this project has
+ * never measured.
+ *
+ * So the rule is encoded as its intent rather than as "index 0": the first model
+ * that can run WITHOUT operator-specific configuration must be verified, and a
+ * self-hosted model must always have such a model behind it. Left as
+ * `chain[0].verified`, adding a self-hosted leader would simply have failed;
+ * relaxed to "some model is verified", a chain could lead with anything. */
+const defaultLeader = (chain) => chain.find((m) => MODEL_REGISTRY[m] && !MODEL_REGISTRY[m].selfHosted);
 for (const [role, chain] of Object.entries(ROLE_CHAINS)) {
   check(`chain ${role}: every model registered`, chain.every((m) => MODEL_REGISTRY[m]));
-  check(`chain ${role}: has a live-verified leader`, MODEL_REGISTRY[chain[0]] && MODEL_REGISTRY[chain[0]].verified === true);
+  const leader = defaultLeader(chain);
+  check(`chain ${role}: the model that runs by default is live-verified`,
+    Boolean(leader) && MODEL_REGISTRY[leader].verified === true, String(leader));
+  /* A self-hosted entry is opt-in and unproven, so it may never be the only
+     thing standing between a page and no reading at all. */
+  check(`chain ${role}: a self-hosted model has a fallback behind it`,
+    chain.every((m, i) => !MODEL_REGISTRY[m].selfHosted || chain.slice(i + 1).some((n) => !MODEL_REGISTRY[n].selfHosted)),
+    chain.join(' > '));
 }
-check('vision_parse is led by the proven row reader', ROLE_CHAINS.vision_parse[0] === 'nvidia/llama-3.1-nemotron-nano-vl-8b-v1');
-check('layout role exists for page zoning', Array.isArray(ROLE_CHAINS.layout) && ROLE_CHAINS.layout[0] === 'nvidia/nemotron-parse');
+check('vision_parse still falls back to the proven row reader',
+  defaultLeader(ROLE_CHAINS.vision_parse) === 'nvidia/llama-3.1-nemotron-nano-vl-8b-v1');
+check('layout role exists for page zoning',
+  Array.isArray(ROLE_CHAINS.layout) && defaultLeader(ROLE_CHAINS.layout) === 'nvidia/nemotron-parse');
+/* Unlimited-OCR is unproven HERE until someone probes it on a real UK schedule.
+   Claiming otherwise in the registry would be a lie the chain logic acts on. */
+check('the self-hosted parser is not marked verified without a measurement',
+  MODEL_REGISTRY['baidu/Unlimited-OCR'] && MODEL_REGISTRY['baidu/Unlimited-OCR'].verified === false);
 check('extract + second_opinion lead with different models', ROLE_CHAINS.extract[0] !== ROLE_CHAINS.second_opinion[0]);
+
+/* ---- self-hosted document parser (Baidu Unlimited-OCR) ----
+ *
+ * A 3.3B MIT vision-language model the operator runs themselves under vLLM or
+ * SGLang, both of which expose an OpenAI-compatible /chat/completions endpoint —
+ * the shape this pool already speaks. It leads the reading chain when hosted.
+ *
+ * It can never be a hard dependency: the desktop build must work from packaged
+ * assets with no network (CLAUDE.md), which a CUDA model cannot satisfy, and most
+ * operators will never stand one up. Unconfigured, it must vanish from the chain
+ * without costing anything. */
+{
+  const seen = [];
+  const stubFetch = async (url, init) => {
+    const body = JSON.parse(init.body);
+    seen.push({ url, model: body.model, auth: init.headers.Authorization || null });
+    return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: '{"devices":[]}' } }] }) };
+  };
+
+  check('unlimitedOcrConfig: unset ⇒ null', unlimitedOcrConfig({}) === null);
+  const cfg = unlimitedOcrConfig({ UNLIMITED_OCR_BASE_URL: 'http://gpu-box:8000/v1/' });
+  check('unlimitedOcrConfig: trailing slash trimmed', cfg && cfg.baseUrl === 'http://gpu-box:8000/v1', cfg && cfg.baseUrl);
+  check('unlimitedOcrConfig: defaults to the published model id', cfg && cfg.model === 'baidu/Unlimited-OCR');
+
+  /* Hosted: the chain leads with it, calls the operator's endpoint, and sends NO
+     Authorization header — a bare vLLM server rejects "Bearer undefined". */
+  const hosted = createPool({ keys: {}, fetchImpl: stubFetch,
+    selfHosted: { baseUrl: 'http://gpu-box:8000/v1', model: 'baidu/Unlimited-OCR', apiKey: null } });
+  const r1 = await hosted.callRole('vision_parse', { prompt: 'read', imageBase64: 'AAAA' });
+  check('hosted parser leads vision_parse', r1.model === 'baidu/Unlimited-OCR', r1.model);
+  check('hosted parser is called at the operator\'s endpoint',
+    seen[0] && seen[0].url === 'http://gpu-box:8000/v1/chat/completions', seen[0] && seen[0].url);
+  check('a keyless endpoint gets no Authorization header', seen[0] && seen[0].auth === null, String(seen[0] && seen[0].auth));
+  check('the call is reported as self-hosted, not against a pooled key', r1.keyId === 'self-hosted', String(r1.keyId));
+
+  /* A key is sent when the operator set one, and a custom model id is honoured
+     (quantised builds are published under different names). */
+  seen.length = 0;
+  const keyed = createPool({ keys: {}, fetchImpl: stubFetch,
+    selfHosted: { baseUrl: 'https://ocr.internal/v1', model: 'baidu/Unlimited-OCR-AWQ', apiKey: 'secret' } });
+  await keyed.callRole('vision_parse', { prompt: 'x', imageBase64: 'AAAA' });
+  check('a configured key is sent', seen[0] && seen[0].auth === 'Bearer secret');
+  check('a custom model id is honoured', seen[0] && seen[0].model === 'baidu/Unlimited-OCR-AWQ', seen[0] && seen[0].model);
+
+  /* THE CASE THAT MATTERS MOST: not configured. Nobody who has not stood up a
+     GPU may lose a single row to this feature. */
+  seen.length = 0;
+  const plain = createPool({ keys: { 3: 'nvapi-FAKE-KEY-THREE-0000' }, fetchImpl: stubFetch, selfHosted: null });
+  const r2 = await plain.callRole('vision_parse', { prompt: 'x', imageBase64: 'AAAA' });
+  check('unconfigured ⇒ the proven reader runs instead',
+    r2.model === 'nvidia/llama-3.1-nemotron-nano-vl-8b-v1', r2.model);
+  check('unconfigured ⇒ skipped as no_endpoint, not as an error',
+    r2.attempts.some((a) => a.model === 'baidu/Unlimited-OCR' && a.skipped === 'no_endpoint'),
+    JSON.stringify(r2.attempts));
+  check('unconfigured ⇒ nothing is sent to a self-hosted URL',
+    seen.every((c) => c.url.startsWith('https://integrate.api.nvidia.com/')), JSON.stringify(seen.map((c) => c.url)));
+}
 
 /* ---- pool harness ---- */
 const KEYS = { 1: 'nvapi-FAKE-KEY-ONE-000000', 2: 'nvapi-FAKE-KEY-TWO-000000', 3: 'nvapi-FAKE-KEY-THREE-0000' };
