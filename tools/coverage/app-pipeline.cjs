@@ -299,6 +299,22 @@ function scheduleBoardFromLines(lines){
     const tail=source.slice(label.index+label[0].length).trim();
     const detected=detectBoards(tail)[0];
     if(detected) return detected;
+    /* A board named by DESCRIPTION after an explicit label — "Board Ref: Main
+       Landlord MCCB Panel board". The token guard below deliberately refuses
+       bare words so body text cannot invent boards, but a LABELLED header cell
+       naming something that calls itself a panel or a board is not body text.
+       Measured on MCCB-Schedule_BowGreen.pdf: the panel owning every outgoing
+       device on the sheet resolved to NOTHING, so all of its rows were orphaned
+       and a nineteen-page schedule of 400A and 100A MCCBs produced a take-off of
+       four devices. Cut at the next labelled field, or the board's name swallows
+       "Project: Bow Green, Phase 2" with it. */
+    const cut=tail.search(/\b(?:project|location|date|rev(?:ision)?|job|drawing|sheet|page|scale|client)\b\s*(?:no\.?)?\s*[:=]/i);
+    const described=(cut>0?tail.slice(0,cut):tail).replace(/\s{2,}.*$/,'').trim();
+    if(described.length>=4&&described.length<=48
+       &&/\b(?:panel\s?board|panelboard|panel|switch\s?board|switchboard|board|mccb|consumer\s+unit|distribution)\b/i.test(described)){
+      const desc=canonicalBoardRef(described);
+      if(desc.normalised) return {orig:desc.display,norm:desc.normalised,type:'UNK',section:desc.splitSection};
+    }
     const token=tail.match(/^([A-Z0-9][A-Z0-9._\/-]{1,30})/i)?.[1];
     if(!token||!/[\d._\/-]/.test(token)) continue;
     const canonical=canonicalBoardRef(token);
@@ -542,6 +558,25 @@ function parseScheduleLine(line, ctx){
   const device = detectDeviceIn(line);
   const rating = ratingOf(line);
   const isIncomer = /\bincomer\b|\bincoming\b|\bmain switch\b/i.test(line);
+  /* An MCCB / switchboard schedule identifies each outgoing way by the BOARD IT
+     FEEDS, not by a way number:
+
+       DB/LL/D       a5   400A ML2.2
+       DB/LL/COMMS - Comms Room LTG & PWR  G  35  186  100A ML2.2
+
+     Measured on MCCB-Schedule_BowGreen.pdf, where the way numbers are largely
+     lost to the scan: the take-off came back with FOUR devices for a 19-page
+     schedule carrying 400A and 100A MCCBs on almost every row, and no board on
+     the document declares a way count, so completeness reported nothing missing.
+     A confident, near-empty take-off is the worst failure this product has.
+
+     Deliberately tight, because these rows have no way number to anchor them:
+     a board section must be open, the line must name EXACTLY ONE board other
+     than the section's own, it must carry a rating, and it must not be the
+     incomer. Two board references means prose or a mis-split row, not a way. */
+  const outgoingBoards = (!wayM && rating != null && !isIncomer && ctx.board)
+    ? detectBoards(line).filter(b => b.norm && b.norm !== ctx.board) : [];
+  const feedsBoardNorm = outgoingBoards.length === 1 ? outgoingBoards[0].norm : null;
   /* A row stating a way and a RATING is a circuit even when it never names the
      device class. Hevacomp's chart prints way, rating, cable and description
      with no "MCB" anywhere, so requiring a device word dropped every live way
@@ -579,7 +614,7 @@ function parseScheduleLine(line, ctx){
   const positionalRating = positionalScan.value;
   const ratingDamaged = positionalScan.damaged;
   const compactRating = positionalRating;
-  if (!( (wayM && (device||spare||space||rating!=null||compactRating!=null||ratingDamaged)) || (isIncomer && device) )) return null;
+  if (!( (wayM && (device||spare||space||rating!=null||compactRating!=null||ratingDamaged)) || (isIncomer && device) || feedsBoardNorm )) return null;
   const cables = detectCables(line);
   /* In a compact-marker chart the rating is the column immediately after the
      way, written as a bare number with no "A" — "17L2  16*  1.5  1x2core...".
@@ -604,6 +639,9 @@ function parseScheduleLine(line, ctx){
     phase: markerPhase || phaseOf(line), ka: kaOf(line),
     cable: cables.length? cables[0] : null,
     spare, space, incomer: isIncomer,
+    /* Which board this outgoing device feeds, when the row is identified that
+       way rather than by a way number. Kept so the feed tree still links up. */
+    feedsBoardNorm,
     qty: device? qtyIn(line, device) : 1,
     srcText: line.trim(),
   };
@@ -617,6 +655,10 @@ function parseScheduleLine(line, ctx){
      is not a confident reading: it must sit below the review threshold rather
      than being presented as settled. */
   if (!row.device && !row.spare && !row.space) conf-=0.25;
+  /* A device located by the board it feeds, with no way number of its own, is a
+     weaker reading than one anchored to a way — it must reach the estimator as
+     something to confirm, not as settled. */
+  if (row.way === null && feedsBoardNorm) conf = Math.min(conf, 0.7);
   /* A phase cell rebuilt from damaged characters decides the POLE COUNT, and a
      three-pole device priced as single-pole is a real costing error, so the row
      must be reviewable even when everything else about it reads cleanly. Capped

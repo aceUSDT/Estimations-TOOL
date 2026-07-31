@@ -244,6 +244,53 @@ it:
   lowercase `l` into an `L`, indistinguishable from the cell's own separator,
   before the fold can read it as a 1. The lowercase pass now runs *first*.
 
+### 2.14 A panel named in words, and ways identified by what they feed
+`MCCB-Schedule_BowGreen.pdf` — 19 pages of 400A and 100A MCCBs — produced a
+take-off of **four devices**, and because no board on it declares a way count,
+completeness reported nothing missing. A confident, near-empty take-off is the
+worst artefact this product can produce.
+
+Two causes, one hidden behind the other:
+
+**The panel itself never resolved.** Its header reads `Board Ref: Main Landlord
+MCCB Panel board`. The label matches, but the value is words, and the guard after
+it requires a digit or punctuation — deliberately, so body text cannot invent
+boards. With no board, every row on every one of its pages was orphaned. The
+descriptive-name fallback that would have caught it only ran for the literal
+spelling `REFERENCE`, never for `Board Ref:`.
+
+**The rows name the board they feed, not a way.**
+
+```
+DB/LL/D       a5   400A ML2.2
+DB/LL/COMMS - Comms Room LTG & PWR  G  35  186  100A ML2.2
+```
+
+The way numbers are largely lost to the scan, and `parseScheduleLine` requires a
+way marker, so the most expensive devices on the schedule never reached the
+take-off. Now: a board section must be open, the line must name **exactly one**
+board other than the section's own, carry a rating, and not be the incomer —
+captured with `way: null`, `feedsBoardNorm` set, and confidence capped at 0.7 so
+it reaches Review rather than presenting as settled.
+
+| | before | after |
+|---|---|---|
+| BowGreen devices | 4 | **23** |
+| quotation rows | 20 | 33 |
+| Dundee boards | 0 | 1 (its device attributed rather than homeless) |
+
+Broomfield unchanged at 194, The Angel at 26, Kings Road at 1.
+
+**Three tests in this session passed for the wrong reason, and this change
+produced two of them.** The negative cases for the keyword guard were rejected
+earlier by the label pattern; the two-board case began `Note:` and was rejected
+as a note line. Both guards could be deleted with every check still green. Found
+by mutation, not by review — `Board Ref: Bow Green Phase Two` and
+`DB/LL/D and DB/LL/E 400A ML2.2` are the cases that actually reach them.
+
+*If a guard is worth writing, delete it and watch a test fail. If none does, the
+guard is untested however many checks surround it.*
+
 ### 2.13 An expected outcome thrown as an exception cost 16 of 19 pages
 `MCCB-Schedule_BowGreen.pdf` read **3 of its 19 pages** and said nothing about
 the other 16. Not slowly — it stopped.

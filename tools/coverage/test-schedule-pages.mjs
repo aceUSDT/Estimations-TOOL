@@ -664,6 +664,83 @@ console.log(`PASS: ${pages.length} schedule pages → ${boards.length} boards, s
     && core.classifyPageText(cover, 0, 5).type !== 'db-schedule');
 }
 
+/* A PANEL NAMED IN WORDS, and the outgoing ways identified by what they feed.
+ *
+ * Measured on MCCB-Schedule_BowGreen.pdf, a 19-page MCCB schedule carrying 400A
+ * and 100A devices on almost every row. Its take-off contained FOUR devices, and
+ * no board on the document declares a way count, so completeness reported nothing
+ * missing — a confident, near-empty take-off, which is the worst failure this
+ * product has. Two causes, one behind the other:
+ *
+ *   1. the panel that owns every outgoing device is headed "Board Ref: Main
+ *      Landlord MCCB Panel board". No code-shaped pattern matches it, so the
+ *      board resolved to nothing and every row on the sheet was orphaned;
+ *   2. the rows name the BOARD THEY FEED rather than a way number, and the way
+ *      numbers are largely lost to the scan, so parseScheduleLine dropped them.
+ *
+ * After both: 4 devices to 23.
+ */
+{
+  const head = [
+    'Schedule of Electrical Plant and Equipment — MCCB Schedule',
+    'Board Ref: Main Landlord MCCB Panel board Project: Bow Green, Phase 2',
+    'Location: LV Switchroom Project No: B1089% Rev: C01',
+    'Main Isolator: 2000A Date: 10.10.2025',
+  ];
+  const panel = P.scheduleBoardFromLines(head);
+  check('a panel named in words resolves from its labelled header',
+    Boolean(panel && /MAINLANDLORDMCCBPANEL/.test(panel.norm)), JSON.stringify(panel));
+  /* The name must stop at the next labelled field, or the board is called
+     "Main Landlord MCCB Panel board Project: Bow Green, Phase 2". */
+  check('the name stops at the next labelled field',
+    Boolean(panel && !/BOWGREEN|PROJECT/i.test(panel.norm)), panel ? panel.norm : 'none');
+
+  /* Guarded, or body text starts inventing boards. Every one of these appears on
+     real sheets in this corpus. */
+  for (const [line, why] of [
+    ['Board Type: Distribution', 'a different label entirely'],
+    ['All boards shall comply with BS 7671', 'specification prose'],
+    ['Drawing Reference: E-001 Rev C', 'a drawing, not a board'],
+    /* These two reach the descriptive path and must be rejected BY IT. The three
+       above are turned away earlier — by the label pattern and the drawing
+       lookbehind — so on their own they leave the keyword guard untested. Found
+       by deleting the guard and watching every check still pass. */
+    ['Board Ref: Bow Green Phase Two', 'a labelled value that names no board'],
+    ['Board Ref: Issued For Tender', 'a labelled value that is a status'],
+  ]) {
+    check(`no board invented from: ${why}`, !P.scheduleBoardFromLines([line]), line);
+  }
+  /* A code-shaped reference still wins over the descriptive path. */
+  const coded = P.scheduleBoardFromLines(['Board Ref: DB-LL-D Project: Bow Green']);
+  check('a code-shaped reference still wins', Boolean(coded && coded.norm === 'DBLLD'), JSON.stringify(coded));
+
+  /* The rows themselves: no way number, but they name one board and a rating. */
+  const ctx = () => ({ board: 'MAINLANDLORDMCCBPANELBOARD', sawHeader: true });
+  for (const [line, rating, feeds] of [
+    ['DB/LL/D a5 400A ML2.2', 400, 'DBLLD'],
+    ['DB/LL/G H 240 35 400A ML2.2', 400, 'DBLLG'],
+    ['DB/LL/COMMS — Comms Room LTG & PWR G 35 186 100A ML2.2', 100, 'DBLLCOMMS'],
+  ]) {
+    const row = P.parseScheduleLine(line, ctx());
+    check(`an outgoing way identified by the board it feeds: ${feeds}`,
+      Boolean(row && row.way === null && row.rating === rating && row.feedsBoardNorm === feeds),
+      row ? JSON.stringify({ way: row.way, rating: row.rating, feeds: row.feedsBoardNorm }) : 'DROPPED');
+    check(`${feeds}: a device with no way number of its own goes to Review`,
+      Boolean(row && row.conf < 0.8), row ? String(row.conf) : 'DROPPED');
+  }
+  /* TWO board references on a line is prose or a mis-split row, not a way.
+     Asserted WITHOUT a "Note:" prefix — that prefix makes it a note line, which
+     is rejected before the rule under test ever runs, so the original version of
+     this check passed with the rule deleted. */
+  check('two board references do not make a device',
+    !P.parseScheduleLine('DB/LL/D and DB/LL/E 400A ML2.2', ctx()));
+  check('two board references, no way number, still no device',
+    !P.parseScheduleLine('DB/LL/D to DB/LL/E 400A', ctx()));
+  /* And with no board section open there is nothing to hang it on. */
+  check('no open board section ⇒ no inferred device',
+    !P.parseScheduleLine('DB/LL/D a5 400A ML2.2', { sawHeader: true }));
+}
+
 if (fail) { console.log(`\n${fail} failure(s)`); process.exit(1); }
 console.log('PASS: descriptive board names, with codes still winning.');
 
