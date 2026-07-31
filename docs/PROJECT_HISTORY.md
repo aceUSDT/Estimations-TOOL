@@ -626,11 +626,33 @@ Note `extractor-core.js` trips ripgrep's binary detection — use `grep -a` (or
 
 ## 10. What is NOT proven (be honest about this)
 
-- **The agent path has never been exercised by a real model in this
-  environment.** There is no extraction key here. Every schematic order and both
-  fixtures are, at this moment, *specifications* — checked for internal
-  consistency and for schema fit, not for model behaviour. This is the largest
-  untested lever in the project and the first thing to run when a key exists.
+- **The agent path has never been exercised by a real model FROM THIS
+  CONTAINER**, and that is a narrower statement than it first appears. Keep the
+  two environments apart:
+  - *This container* (where the tests and probes run) has no `GEMINI_API_KEY` and
+    no `NVIDIA_API_KEY_n`. So every measurement in this file exercised the
+    **deterministic reader only**.
+  - *The Vercel deployment* has had `GEMINI_API_KEY` and `NVIDIA_API_KEY_1..7`
+    set for Production and Preview since 2026-07-27. Verified by running
+    `engineStatus()` against those exact names: the pool counts 7 keys and health
+    reports `mode: "agent-team"`, `primary: "nvidia"`.
+  - I cannot bridge the two: preview deployments are behind Vercel SSO (an
+    anonymous request 302s to `vercel.com/sso-api`), so the deployed endpoint
+    cannot be called from here.
+
+  So the schematic orders and both drawing fixtures remain *specifications* as
+  far as **this** record goes — checked for internal consistency and schema fit,
+  never against model output. They are exercised the moment a schematic is
+  uploaded to the deployed app, and that result belongs in this file when someone
+  observes it.
+
+  Two details found while verifying the wiring, both worth keeping:
+  - a key is only counted when it is **longer than 8 characters**
+    (`poolKeysFromEnv`). A short dummy value reports `nvidia: false`, which looks
+    exactly like a misconfiguration — my first wiring test made that mistake and
+    would have had me reporting a working setup as broken.
+  - `GEMINI_VERIFY_MODEL` is unset, so `verify` is false and the second-opinion
+    pass does not run. Optional, but it is a check nobody is currently getting.
 - **`graphify-out/` contains code structure only, and is not committed.** Measured
   after `graphify update .`: 730 nodes, 1178 edges, 48 communities, and **every
   single node carries `_origin: "ast"`** — not one came from prose. Two reasons,
