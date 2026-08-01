@@ -20,6 +20,7 @@ import {
   crossCheckExtractions,
 } from './providers.mjs';
 import { unlimitedOcrConfig } from './nvidia-pool.mjs';
+import { unlimitedOcrCloudConfig } from './unlimited-ocr-cloud.mjs';
 
 export function engineStatus(env = process.env) {
   const nvidia = poolStatus(env);
@@ -30,6 +31,10 @@ export function engineStatus(env = process.env) {
      and because "is my document parser actually live?" is the question they
      will ask after standing up a GPU box. */
   const ocr = unlimitedOcrConfig(env);
+  /* The hosted route (Baidu Cloud) is a different protocol and a different
+     decision: it needs no GPU, and it takes a whole 500-page PDF in one
+     submission. Reported separately so an operator can see which one they have. */
+  const ocrCloud = unlimitedOcrCloudConfig(env);
   return {
     mode: teamOn ? 'agent-team' : gemini.configured ? 'gemini' : 'unconfigured',
     configured: teamOn || gemini.configured,
@@ -41,6 +46,7 @@ export function engineStatus(env = process.env) {
        remain behind it, so an unreachable box costs latency, never the take-off. */
     document_parser: ocr ? ocr.model : null,
     document_parser_configured: Boolean(ocr),
+    document_parser_cloud: Boolean(ocrCloud),
   };
 }
 

@@ -50,6 +50,7 @@ export function handleHealth(deps) {
     mode: s.mode || (s.configured ? 'gemini' : 'unconfigured'),
     providers: { gemini: s.gemini, nvidia: Boolean(s.nvidia), document_parser: Boolean(s.document_parser_configured) },
     document_parser: s.document_parser || null,
+    document_parser_cloud: Boolean(s.document_parser_cloud),
     primary: s.primary,
     verify: s.verify,
     model: deps.GEMINI_MODEL,

@@ -24,7 +24,62 @@ DB schedule, so `MODEL_REGISTRY` marks it `verified: false` and a verified model
 always sits behind it in the chain. Do not flip that flag without a measurement —
 `test-agent-team.mjs` asserts it, and the chain logic acts on it.
 
-## Standing one up
+## Two routes, and which one you want
+
+| | Baidu Cloud (hosted) | Self-hosted (vLLM/SGLang) |
+|---|---|---|
+| hardware | **none** | NVIDIA GPU, ~6 GB weights |
+| protocol | Baidu's own async REST | OpenAI `/chat/completions` |
+| what it takes | a whole PDF, **up to 500 pages / 100 MB**, in one submission | one image per call |
+| cost | 200 free pages (individual verified), 1000 (enterprise); limited-time free | your GPU |
+| in this repo | `unlimited-ocr-cloud.mjs` | `nvidia-pool.mjs`, head of the reading chain |
+| configure | `BAIDU_OCR_API_KEY` + `BAIDU_OCR_SECRET_KEY` | `UNLIMITED_OCR_BASE_URL` |
+
+**Start with Baidu Cloud.** It needs no hardware, and its whole-document
+submission is the actual advantage of this model — the thing a per-page vision
+call throws away.
+
+## The hosted route (no GPU)
+
+Sign up at Baidu AI Cloud and create an application for the Document Parsing
+(`unlimited-ocr-parser`) service; it issues an **API Key** and a **Secret Key**.
+Docs: <https://cloud.baidu.com/doc/OCR/s/fmr1p39gb>
+
+```
+BAIDU_OCR_API_KEY=...
+BAIDU_OCR_SECRET_KEY=...
+```
+
+Confirm with `GET /api/extract/health` → `"document_parser_cloud": true`.
+
+The client is `api/_lib/extraction/unlimited-ocr-cloud.mjs`:
+
+```js
+const client = createUnlimitedOcrCloud();
+const task = await client.parseDocument({ fileBase64, fileName: 'tender.pdf' });
+const markdown = await client.fetchMarkdown(task.markdownUrl);
+```
+
+It is asynchronous by design — submit, poll, fetch — because a 500-page parse is
+not a request/response. Things it handles that are easy to get wrong:
+
+- **Rejects before uploading.** Unsupported extension or over 100 MB fails
+  locally. Discovering that after pushing 100 MB is slow and, on a metered
+  connection, not free.
+- **Quota is not a failure.** Error codes 17/18/19 return
+  `quota_or_rate_limited`. Your 200 free pages running out is an ordinary
+  Tuesday; an estimator must not read it as "the document could not be parsed".
+- **Submit is paced to 2 QPS**, the documented limit, so two documents dropped
+  together do not spend quota on rejected calls.
+- **The token is cached** and refreshed early. Baidu tokens last ~30 days, and one
+  expiring mid-poll would turn a finished 400-page parse into a failure.
+- **No credential ever reaches an error.** The key and secret travel in the
+  request URL, so a raw URL in a message or log would expose both. Asserted, and
+  verified by deliberately leaking one and watching the test fail.
+- **A parse that does not finish returns `timedOut: true` with its task id**,
+  rather than throwing — so it can be resumed instead of restarted.
+
+## The self-hosted route (your own GPU)
 
 It needs an NVIDIA GPU. Any host that exposes an OpenAI-compatible
 `/chat/completions` works — vLLM and SGLang both do, and that is the only shape
