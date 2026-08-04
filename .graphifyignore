@@ -1,0 +1,6 @@
+# Bundled third-party runtime assets are deployed, but are not maintained source.
+vendor/
+
+# Generated extraction coverage snapshots contain no code symbols.
+reports/coverage-ai.json
+reports/coverage-baseline.json
