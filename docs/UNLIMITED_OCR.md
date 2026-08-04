@@ -116,12 +116,47 @@ GET /api/extract/health
 - **Not configured** — skipped as `no_endpoint`, exactly like a model whose key is
   missing. Nothing is sent anywhere. Asserted in `test-agent-team.mjs`.
 
+## From a parsed document to board rows
+
+`api/_lib/extraction/parsed-markdown.mjs` lowers the returned markdown into the
+LINE shape the extractor already reads, rather than adding a second extraction
+path. A table row
+
+```
+| 7 | L1 | Kitchen ring | 32 | B | 30 |
+```
+
+becomes `7  L1  Kitchen ring  32  B  30`, which `parseScheduleLine` reads with
+the same four way-marker forms, damaged-phase handling and classless-dialect
+rules that were measured against real documents in `PROJECT_HISTORY.md` §2.
+
+That is deliberate. Everything valuable in this project is in what already reads
+a line; none of it should be re-derived for a new input format. It is also a
+*cleaner* input than OCR: the cell boundaries are known rather than inferred from
+pixel gaps — §2.4 measured the widest whitespace corridor on a real sheet at 1.2%
+of the page span.
+
+Two details worth keeping:
+
+- **Cells join with two spaces, not one.** A single space glues `32` and `B` into
+  a token that reads as neither a rating nor a curve.
+- **No recognisable page marker means one page, not a guess.** A wrong split puts
+  a page number on every Review item that the estimator then cannot find in the
+  document.
+
+`tableDensity()` reports how much of the result is table. A schedule parsed well
+is mostly table; a result that is nearly all prose means the parser read the
+sheet as text, and the take-off will be thin — worth surfacing before the
+workbook does (§2.8).
+
 ## What still needs doing
 
 - **Measure it.** Probe it on `EPO_Ashfield` p2 and a mirrored circuit chart, the
   way `nvidia/llama-3.1-nemotron-nano-vl-8b-v1` was probed (see its registry
   comment), and record the result in `PROJECT_HISTORY.md`. Only then is
   `verified: true` honest.
-- **Exploit one-shot parsing.** Today it is called per page like every other
-  vision model. Its actual advantage is reading a whole PDF in a single pass —
-  taking that would mean a new role, not just a new model in an existing chain.
+- **Call it from ingestion.** The client and the markdown→lines adapter both
+  exist and are tested; nothing in the app sends a document to either yet. That
+  is the last connecting piece.
+- **The self-hosted route is still called per page** like every other vision
+  model. The hosted route is what exploits one-shot parsing today.
