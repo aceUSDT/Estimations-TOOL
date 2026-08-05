@@ -1,6 +1,15 @@
 # Bundled third-party runtime assets are deployed, but are not maintained source.
 vendor/
+tools/coverage/vendor/
 
-# Generated extraction coverage snapshots contain no code symbols.
-reports/coverage-ai.json
-reports/coverage-baseline.json
+# Electrical fixture documents and UI images are test inputs or binary assets,
+# not source relationships for the repository graph.
+examples/
+assets/
+desktop/build/*.png
+
+# Generated extraction reports and dependency lock data contain no application
+# symbols and make source indexing substantially larger.
+reports/
+package-lock.json
+desktop/package-lock.json
