@@ -373,6 +373,12 @@
   .det-actions{display:flex;gap:5px;margin-left:auto;flex:0 0 auto;}
   .det-actions .btn{padding:3px 7px;font-size:10.5px;}
   .det-protection{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px;}
+  .guided-review-bar{display:flex;align-items:center;gap:9px;min-height:43px;padding:7px 12px;border-bottom:1px solid #c8d9ef;background:#eef6ff;}
+  .guided-review-bar[hidden]{display:none;}
+  .guided-review-copy{display:grid;gap:1px;min-width:0;}
+  .guided-review-copy strong{font-size:12px;overflow-wrap:anywhere;}
+  .guided-review-copy span{font-size:10.5px;color:var(--txt2);}
+  .guided-review-actions{display:flex;gap:6px;margin-left:auto;flex:0 0 auto;}
   body.viewer-fullscreen-open{overflow:hidden;}
   #pt-viewer.viewer-fullscreen,#pt-viewer:fullscreen{display:block;position:fixed;inset:0;z-index:1000;background:#eef1f5;padding:8px;}
   #pt-viewer:fullscreen::backdrop{background:#eef1f5;}
@@ -434,6 +440,7 @@
   .modal .m-body{padding:18px 20px;}
   .modal .m-foot{padding:13px 20px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:8px;}
   .modal.row-editor-modal{width:720px;}
+  .modal.report-source-modal{width:980px;}
   .row-editor-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px 14px;margin-bottom:14px;}
   .row-editor-grid .span-2{grid-column:1/-1;}
   .row-editor-grid .in,.row-editor-grid .sel{width:100%;min-width:0;}
@@ -487,6 +494,22 @@
   .report-description{margin-top:4px;color:var(--txt2);line-height:1.35;}
   .report-protection{display:flex;gap:4px;flex-wrap:wrap;}
   .report-locations,.report-sources{line-height:1.45;color:var(--txt2);}
+  .report-source-open{display:block;margin-top:6px;color:#0c5fba;font-size:10.5px;font-weight:700;text-align:left;}
+  .report-source-open:hover{text-decoration:underline;}
+  .report-source-summary{display:flex;align-items:flex-start;gap:12px;padding:11px 13px;margin-bottom:12px;border:1px solid var(--line);background:#f7f9fc;}
+  .report-source-summary strong{display:block;font-size:13px;line-height:1.35;}
+  .report-source-summary span{display:block;margin-top:3px;font-size:11px;color:var(--txt2);}
+  .report-source-list{display:grid;gap:9px;}
+  .report-source-item{border:1px solid var(--line);background:#fff;}
+  .report-source-item-head{display:flex;align-items:center;gap:7px;padding:9px 11px;border-bottom:1px solid var(--line);background:#fafbfd;}
+  .report-source-item-head strong{font-size:12px;overflow-wrap:anywhere;}
+  .report-source-item-head .chip:first-of-type{margin-left:auto;}
+  .report-source-fields{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:9px 12px;padding:11px;}
+  .report-source-field{min-width:0;}
+  .report-source-field dt{font-size:9px;color:var(--txt3);text-transform:uppercase;font-weight:700;}
+  .report-source-field dd{margin-top:2px;font-size:11.5px;font-weight:600;overflow-wrap:anywhere;}
+  .report-source-text{margin:0 11px 11px;padding:8px 9px;background:#f3f5f8;color:var(--txt2);font-family:var(--mono);font-size:10.5px;line-height:1.45;overflow-wrap:anywhere;}
+  .report-source-actions{display:flex;justify-content:flex-end;gap:6px;padding:0 11px 11px;}
   table.report-matrix{border-collapse:separate;border-spacing:0;min-width:max-content;width:100%;font-size:11px;}
   .report-matrix th,.report-matrix td{height:28px;padding:5px 7px;border-right:1px solid #d5d9de;border-bottom:1px solid #d5d9de;text-align:center;background:#fff;}
   .report-matrix thead th{position:sticky;z-index:6;font-weight:700;}
@@ -534,6 +557,7 @@
     .report-matrix .report-category{width:120px;min-width:120px;}
     .report-matrix .report-device{left:120px;width:190px;min-width:190px;}
     .report-matrix .report-row-project .report-device,.report-matrix .report-row-title .report-device{left:0;width:auto;min-width:0;}
+    .report-source-fields{grid-template-columns:repeat(2,minmax(0,1fr));}
   }
   @media(max-width:540px){
     .appbar{padding:0 12px;gap:8px;}
@@ -558,6 +582,13 @@
     .report-viewbar{padding:8px 10px;}
     .report-mode{display:grid;grid-template-columns:1fr 1fr;width:100%;}
     .report-mode button{white-space:normal;line-height:1.2;}
+    .guided-review-bar{align-items:flex-start;flex-wrap:wrap;}
+    .guided-review-copy{width:calc(100% - 112px);}
+    .guided-review-actions{width:100%;margin-left:0;}
+    .guided-review-actions .btn{flex:1;}
+    .report-source-fields{grid-template-columns:1fr;}
+    .report-source-item-head{align-items:flex-start;flex-wrap:wrap;}
+    .report-source-item-head .chip:first-of-type{margin-left:0;}
     .row-editor-grid{grid-template-columns:minmax(0,1fr);}
     .row-editor-grid .span-2{grid-column:auto;}
     .viewer-layout{grid-template-columns:minmax(0,1fr);}
@@ -721,6 +752,7 @@
             </select>
             <select class="sel" id="vBoardHl" title="Open the primary document page for a board"><option value="">Go to board…</option></select>
             <div class="vsep"></div>
+            <button class="btn sm" id="vReviewStart" title="Start or resume guided row review">Start review</button>
             <button class="btn sm" id="vAssistMode" title="Select one device row and find the same protection device on this board">Find similar</button>
             <button class="btn sm" id="vOcrBtn" title="Read a scanned page with OCR">OCR page</button>
             <button class="btn sm" id="vDark" title="Dark / light canvas">◐</button>
@@ -737,6 +769,11 @@
             <span class="chip purple" id="vAssistCount">0 matches</span>
             <button class="btn sm" id="vAssistClear">Clear</button>
             <span class="ocr-progress" id="vOcrStatus"></span>
+          </div>
+          <div class="guided-review-bar" id="vReviewBar" hidden>
+            <span class="chip blue">Guided review</span>
+            <div class="guided-review-copy"><strong id="vReviewTitle">Current row</strong><span id="vReviewProgress"></span></div>
+            <div class="guided-review-actions"><button class="btn sm" id="vReviewFocus">Show current</button><button class="btn sm ghost" id="vReviewStop">Stop</button></div>
           </div>
           <div style="padding:7px 12px;border-bottom:1px solid var(--line);display:flex;gap:8px;align-items:center;flex-wrap:wrap" id="vMetaRow"></div>
           <div class="v-stage" id="vStage"><div class="empty">Select a document to view.</div></div>
@@ -806,7 +843,8 @@
             <div style="display:flex;gap:8px;align-items:center;padding:11px 18px;flex-wrap:wrap">
               <span style="font-weight:800;font-size:13px">Take-off</span>
               <span class="sub" style="margin-left:2px">roll-up across all boards — select a board to drill in</span>
-              <button class="btn sm" id="bulkApproveBtn" style="margin-left:auto">Approve high-confidence rows</button>
+              <button class="btn sm" id="guidedReviewBtn" style="margin-left:auto">Start guided review</button>
+              <button class="btn sm" id="bulkApproveBtn">Approve high-confidence rows</button>
               <button class="btn sm" id="addManualBtn">Add device</button>
               <button class="btn sm primary" id="openReportBtn">Open report</button>
             </div>
@@ -998,12 +1036,13 @@ const confChip = (c,status)=>{
 /* generic modal */
 let modalOk=null;
 function openModal(title, bodyHtml, onOk, okLabel='Save'){
-  $('#modalBk .modal')?.classList.remove('row-editor-modal');
+  $('#modalBk .modal')?.classList.remove('row-editor-modal','report-source-modal');
+  $('#mCancel').hidden=false;
   $('#mHead').textContent=title; $('#mBody').innerHTML=bodyHtml;
   $('#mOk').textContent=okLabel; modalOk=onOk;
   $('#modalBk').classList.add('show');
 }
-function closeModal(){ $('#modalBk').classList.remove('show');$('#modalBk .modal')?.classList.remove('row-editor-modal');modalOk=null; }
+function closeModal(){ $('#modalBk').classList.remove('show');$('#modalBk .modal')?.classList.remove('row-editor-modal','report-source-modal');$('#mCancel').hidden=false;modalOk=null; }
 $('#mCancel').addEventListener('click', closeModal);
 $('#modalBk').addEventListener('click', e=>{ if(e.target===$('#modalBk')) closeModal(); });
 $('#mOk').addEventListener('click', ()=>{ if(modalOk && modalOk()===false) return; closeModal(); });
@@ -1022,8 +1061,9 @@ const state = {
   viewer: {fileId:null, page:1, zoom:1, rot:0, dark:false, fullscreen:false, boardHl:null, evidenceId:null, pdfDocs:{}, panels:{leftOpen:true,rightOpen:true,leftWidth:132,rightWidth:320}, assist:{enabled:false,boardNorm:null,seed:null,results:[]}},
   selectedBoard: null,  // §5.4 — board selected in the merged Boards & Devices page ('__none__' = unassigned rows), null = roll-up
   reportMode: 'board',
+  reviewFlow: {active:false,currentRowId:null,initialCount:0,moving:false},
 };
-const ANALYSIS_VERSION=6;
+const ANALYSIS_VERSION=7;
 const uid = () => 'x'+(state.nextId++)+'_'+Math.random().toString(36).slice(2,6);
 
 /* ====================== PERSISTENCE (IndexedDB) ====================== */
@@ -1560,7 +1600,7 @@ function setTab(name){
   return null;
 }
 $$('.ptab').forEach(t=>t.addEventListener('click',()=>setTab(t.dataset.pt)));
-$('#backBtn').addEventListener('click', ()=>{ state.cur=null;if(!analysisBusy)hideProcessing();renderProjects(); show('home'); });
+$('#backBtn').addEventListener('click', ()=>{ stopGuidedReview(false);state.cur=null;if(!analysisBusy)hideProcessing();renderProjects(); show('home'); });
 $('#backupProjectBtn').addEventListener('click',()=>backupProject(state.cur));
 $('#restoreProjectBtn').addEventListener('click',()=>$('#restoreProjectInput').click());
 $('#restoreProjectInput').addEventListener('change',async event=>{
@@ -1710,6 +1750,7 @@ function renderProjects(){
   g.appendChild(add);
 }
 function openProject(id){
+  stopGuidedReview(false);
   state.cur = state.projects.find(p=>p.id===id);
   if (!state.cur) return;
   if(!analysisBusy)hideProcessing();
@@ -2666,6 +2707,7 @@ function sourceTrace(row,line,pg,fileName){
 
 async function runAnalysis(opts){
   const p=state.cur; if(!p) return;
+  stopGuidedReview(false);
   const auto=opts&&opts.auto;
   const f = auto ? {fileIds:p.files.filter(x=>x.status==='ready').map(x=>x.id), pages:'', boards:[], devices:[], ignore:[], exclSpare:true} : gatherFilters();
   if (!f.fileIds.length){ toast('No readable documents selected');finishProcessing('No readable documents were selected','failed',4000);return; }
@@ -3027,6 +3069,139 @@ function approveRows(rows,surface,note=''){
   });
   return count;
 }
+function reviewDecisionPending(row){
+  return Boolean(row)&&row.status!=='confirmed'&&row.status!=='rejected';
+}
+function guidedBoardName(key){return key==='__none__'?'Unassigned rows':boardLabel(key);}
+function reviewSourceTuple(row){
+  const p=state.cur,files=p?.files||[];
+  const fileIndex=Math.max(0,files.findIndex(file=>file.id===row.fileId));
+  const bbox=row.highlightBbox||row.bbox||row.sourceCell?.bbox||null;
+  const phaseRank={L1:1,L2:2,L3:3,'3PH':4}[String(row.phase||'').toUpperCase()]||9;
+  return [
+    files.some(file=>file.id===row.fileId)?fileIndex:Number.MAX_SAFE_INTEGER,
+    Number(row.page)||Number.MAX_SAFE_INTEGER,
+    Array.isArray(bbox)&&Number.isFinite(Number(bbox[1]))?Number(bbox[1]):Number.MAX_SAFE_INTEGER,
+    Array.isArray(bbox)&&Number.isFinite(Number(bbox[0]))?Number(bbox[0]):Number.MAX_SAFE_INTEGER,
+    Number.isFinite(Number(row.line))?Number(row.line):Number.MAX_SAFE_INTEGER,
+    Number.isFinite(Number(row.way))?Number(row.way):Number.MAX_SAFE_INTEGER,
+    phaseRank,
+    String(row.id||''),
+  ];
+}
+function compareReviewTuple(left,right){
+  for(let index=0;index<Math.max(left.length,right.length);index++){
+    const a=left[index],b=right[index];
+    if(a===b)continue;
+    if(typeof a==='number'&&typeof b==='number')return a-b;
+    return String(a??'').localeCompare(String(b??''),undefined,{numeric:true,sensitivity:'base'});
+  }
+  return 0;
+}
+function orderedPendingReviewRows(){
+  const rows=state.cur?.analysis?.rows||[];
+  const pending=rows.filter(reviewDecisionPending);
+  if(!pending.length)return [];
+  const boardFirst=new Map();
+  rows.slice().sort((a,b)=>compareReviewTuple(reviewSourceTuple(a),reviewSourceTuple(b))).forEach(row=>{
+    const key=row.boardNorm||'__none__';
+    if(!boardFirst.has(key))boardFirst.set(key,reviewSourceTuple(row));
+  });
+  const boardKeys=[...new Set(pending.map(row=>row.boardNorm||'__none__'))].sort((a,b)=>{
+    const position=compareReviewTuple(boardFirst.get(a)||[Number.MAX_SAFE_INTEGER],boardFirst.get(b)||[Number.MAX_SAFE_INTEGER]);
+    return position||guidedBoardName(a).localeCompare(guidedBoardName(b),undefined,{numeric:true,sensitivity:'base'});
+  });
+  const boardRank=new Map(boardKeys.map((key,index)=>[key,index]));
+  return pending.slice().sort((a,b)=>{
+    const boardDifference=boardRank.get(a.boardNorm||'__none__')-boardRank.get(b.boardNorm||'__none__');
+    return boardDifference||compareReviewTuple(reviewSourceTuple(a),reviewSourceTuple(b));
+  });
+}
+function guidedReviewCurrentRow(){
+  return state.cur?.analysis?.rows?.find(row=>row.id===state.reviewFlow.currentRowId)||null;
+}
+function guidedReviewRowTitle(row){
+  if(!row)return 'Current row';
+  const board=row.boardNorm?boardLabel(row.boardNorm):'No board reference';
+  const detail=[row.way!=null?'Way '+row.way:null,row.phase,row.device||row.spare&&'Spare'||row.space&&'Space'||'Unclassified'].filter(Boolean).join(' · ');
+  return board+(detail?' · '+detail:'');
+}
+function renderGuidedReviewControls(){
+  const queue=orderedPendingReviewRows(),flow=state.reviewFlow;
+  const current=guidedReviewCurrentRow();
+  const analysisButton=$('#guidedReviewBtn'),viewerButton=$('#vReviewStart'),bar=$('#vReviewBar');
+  [analysisButton,viewerButton].filter(Boolean).forEach(button=>{
+    button.disabled=!flow.active&&!queue.length;
+    button.textContent=flow.active?(button===analysisButton?'Continue guided review':'Current review'):(button===analysisButton?'Start guided review':'Start review');
+    button.title=queue.length?`${queue.length} row${queue.length===1?'':'s'} awaiting a decision`:'No rows are awaiting a decision';
+  });
+  if(!bar)return;
+  bar.hidden=!flow.active;
+  if(!flow.active)return;
+  const activeCurrent=current&&reviewDecisionPending(current)?current:queue[0];
+  const total=Math.max(flow.initialCount,queue.length),completed=Math.max(0,total-queue.length);
+  const boardKey=activeCurrent?.boardNorm||'__none__';
+  const boardRemaining=queue.filter(row=>(row.boardNorm||'__none__')===boardKey).length;
+  $('#vReviewTitle').textContent=guidedReviewRowTitle(activeCurrent);
+  $('#vReviewProgress').textContent=queue.length
+    ? `Item ${Math.min(total,completed+1)} of ${total} · ${boardRemaining} remaining on this board · ${queue.length} overall`
+    : `All ${total} review decisions completed`;
+}
+async function showGuidedReviewRow(row){
+  if(!row)return;
+  state.reviewFlow.currentRowId=row.id;
+  if(row.boardNorm)state.selectedBoard=row.boardNorm;
+  renderGuidedReviewControls();
+  if(row.fileId){
+    ensureViewerPanels().rightOpen=true;
+    await jumpToEvidence(row);
+    return;
+  }
+  setTab('analysis');
+  toast('This row has no printed source location; it is open in its board review instead');
+}
+async function startGuidedReview(){
+  const queue=orderedPendingReviewRows();
+  if(!queue.length){toast('Every extracted row already has a decision');renderGuidedReviewControls();return;}
+  state.reviewFlow={active:true,currentRowId:queue[0].id,initialCount:queue.length,moving:false};
+  await showGuidedReviewRow(queue[0]);
+}
+async function focusGuidedReview(){
+  const queue=orderedPendingReviewRows();
+  if(!state.reviewFlow.active)return startGuidedReview();
+  const current=guidedReviewCurrentRow();
+  const row=current&&reviewDecisionPending(current)?current:queue[0];
+  if(!row){stopGuidedReview(false);toast('Guided review is complete');return;}
+  await showGuidedReviewRow(row);
+}
+function stopGuidedReview(showToast=true){
+  if(!state.reviewFlow)return;
+  const wasActive=state.reviewFlow.active;
+  state.reviewFlow={active:false,currentRowId:null,initialCount:0,moving:false};
+  renderGuidedReviewControls();
+  if(showToast&&wasActive)toast('Guided review stopped');
+}
+async function advanceGuidedReview(completedRow,action='decision saved'){
+  const flow=state.reviewFlow;
+  if(!flow.active||flow.moving||!completedRow||flow.currentRowId!==completedRow.id)return;
+  flow.moving=true;
+  const previousBoard=completedRow.boardNorm||'__none__';
+  const queue=orderedPendingReviewRows();
+  if(!queue.length){
+    const total=flow.initialCount;
+    stopGuidedReview(false);
+    renderViewer();
+    toast(`Guided review complete · ${total} decision${total===1?'':'s'} saved`);
+    return;
+  }
+  const next=queue[0],nextBoard=next.boardNorm||'__none__';
+  flow.currentRowId=next.id;flow.moving=false;
+  await showGuidedReviewRow(next);
+  toast(previousBoard===nextBoard?`${action} · moved to the next row`:`${guidedBoardName(previousBoard)} complete · moved to ${guidedBoardName(nextBoard)}`);
+}
+function scheduleGuidedAdvance(row,action){
+  if(state.reviewFlow.active&&state.reviewFlow.currentRowId===row?.id)setTimeout(()=>advanceGuidedReview(row,action),0);
+}
 /* Colour-coding per counted device type (design doc: estimator-style "dot off" colours).
    Deterministic hash → fixed palette, so MCB 32A is the same colour everywhere in the app. */
 const DEVICE_PALETTE=['#1668e3','#0f9960','#c87d0e','#7b5cd6','#d33c43','#0aa2c0','#b0328f','#5b7a1e','#8a5a2c','#2f6f8f'];
@@ -3249,6 +3424,7 @@ function renderTakeoff(){
   renderBoards();
   renderResults();
   renderBoardDetail();
+  renderGuidedReviewControls();
 }
 /* SmartScreen addendum — state-aware health panel. Silent when the analysis
    is complete; loud (with reasons + recovery actions) when it is not. */
@@ -3345,6 +3521,7 @@ function bindEvActions(container, rows){
       if (a==='no'){ setRowDecision(r,'rejected','Boards & Devices'); }
       if (a==='edit'){ openRowEditor(r); return; }
       renderTakeoff(); renderProjHeader(); saveProject(p);
+      scheduleGuidedAdvance(r,a==='ok'?'Approval saved':'Rejection saved');
     }));
   });
 }
@@ -3426,15 +3603,18 @@ function openRowEditor(r, isNew, surface='Boards & Devices'){
     renderTakeoff();renderReport();renderProjHeader();saveProject(p);
     if(surface==='Viewer')renderViewer();
     toast(isNew?'Device added':changedFields.length?'Row corrected and confirmed':'Row reviewed and confirmed');
+    if(!isNew)scheduleGuidedAdvance(r,changedFields.length?'Correction saved':'Review saved');
   });
   $('#modalBk .modal')?.classList.add('row-editor-modal');
 }
 $('#bulkApproveBtn').addEventListener('click', ()=>{
   const p=state.cur; if(!p||!p.analysis) return;
+  const guided=guidedReviewCurrentRow();
   const eligible=p.analysis.rows.filter(r=>r.status==='pending'&&!r.requiresReview&&r.conf>=0.8);
   const n=approveRows(eligible,'Boards & Devices','High-confidence batch approval');
   renderTakeoff(); renderProjHeader(); saveProject(p);
   toast(n+' high-confidence rows approved');
+  if(guided&&!reviewDecisionPending(guided))scheduleGuidedAdvance(guided,'Approval saved');
 });
 $('#addManualBtn').addEventListener('click', ()=>{
   const p=state.cur; if(!p) return;
@@ -3461,6 +3641,62 @@ function currentReportModel(){
     files:p.files,
     coverage:A.coverage,
     generatedAt:new Date(),
+  });
+}
+function reportRowsForScope(model,scope){
+  const root=scope==='associated'?model?.associated:model;
+  return (root?.groups||[]).flatMap(group=>group.rows||[]);
+}
+function reportSourceButton(row,scope,boardNorm=null){
+  const contributors=boardNorm?(row.contributors||[]).filter(item=>item.boardNorm===boardNorm):(row.contributors||[]);
+  const count=contributors.length;
+  return `<button class="report-source-open" data-report-source-key="${encodeURIComponent(row.key)}" data-report-source-scope="${scope}"${boardNorm?` data-report-source-board="${encodeURIComponent(boardNorm)}"`:''}>Review source${count===1?'':'s'} (${count})</button>`;
+}
+function reportSourceValue(label,value){
+  const shown=value===null||value===undefined||value===''?'Not specified':value;
+  return `<div class="report-source-field"><dt>${esc(label)}</dt><dd>${esc(shown)}</dd></div>`;
+}
+function openReportSources(scope,key,boardNorm=null){
+  const model=currentReportModel();
+  const reportRow=reportRowsForScope(model,scope).find(row=>row.key===key);
+  if(!reportRow){toast('That report line is no longer available');return;}
+  const contributors=(reportRow.contributors||[]).filter(item=>!boardNorm||item.boardNorm===boardNorm);
+  const sourceRows=new Map((state.cur?.analysis?.rows||[]).map(row=>[String(row.id||''),row]));
+  const rcdLabel=item=>item.rcdProtected===true?(item.rcdSensitivity!=null?`Yes · ${item.rcdSensitivity}mA`:'Yes'):item.rcdProtected===false?'No':'Not specified';
+  const afddLabel=item=>item.afdd===true?'Yes':item.afdd===false?'No':'Not specified';
+  const body=`<div class="report-source-summary"><div><strong>${esc(reportRow.label||reportRow.deviceFamily)}</strong><span>${esc(boardNorm?(contributors[0]?.board||boardNorm):'All boards')} · ${contributors.length} contributing extracted row${contributors.length===1?'':'s'} · quantity ${contributors.reduce((sum,item)=>sum+(Number(item.quantity)||1),0)}</span></div></div>
+    <div class="report-source-list">${contributors.map((item,index)=>{
+      const sourceRow=sourceRows.get(String(item.sourceId||''));
+      const sourceId=encodeURIComponent(String(item.sourceId||''));
+      const corrections=Array.isArray(sourceRow?.corrections)?sourceRow.corrections:(item.corrections||[]);
+      const sourceLocation=`${item.sourceDocument||'Document'} · page ${item.page??'Not specified'}`;
+      const wayPhase=[item.way==null?null:'Way '+item.way,item.phase].filter(Boolean).join(' · ')||'Not specified';
+      const capacity=item.breakingCapacity==null?'Not specified':item.breakingCapacity;
+      return `<article class="report-source-item" data-report-source-id="${sourceId}"><div class="report-source-item-head"><strong>${index+1}. ${esc(sourceLocation)}</strong><span class="chip ${item.reviewStatus==='Approved'?'green':'amber'}">${esc(item.reviewStatus)}</span>${corrections.length?`<span class="chip blue">${corrections.length} correction${corrections.length===1?'':'s'}</span>`:''}</div>
+        <dl class="report-source-fields">${[
+          reportSourceValue('Board',item.board),reportSourceValue('Circuit / phase',wayPhase),reportSourceValue('Device',item.deviceFamily),reportSourceValue('Rating',item.rating==null?'Not specified':item.rating+'A'),reportSourceValue('Poles',item.pole),
+          reportSourceValue('Curve',item.curve),reportSourceValue('Breaking capacity',capacity),reportSourceValue('Protection standard',item.protectionStandard),reportSourceValue('Trip unit',item.tripUnit),reportSourceValue('RCD protection',rcdLabel(item)),
+          reportSourceValue('AFDD protection',afddLabel(item)),reportSourceValue('Description',item.description),reportSourceValue('Confidence',Math.round((Number(item.confidence)||0)*100)+'%'),reportSourceValue('Extraction method',item.extractionMethod),reportSourceValue('Purpose',item.purpose),
+        ].join('')}</dl>
+        <div class="report-source-text">${esc(item.sourceText||item.originalOcrText||'No source text was retained for this row.')}</div>
+        <div class="report-source-actions"><button class="btn sm" data-report-source-action="view" ${item.fileId?'':'disabled'}>View source</button><button class="btn sm primary" data-report-source-action="edit" ${sourceRow?'':'disabled'}>Correct row</button></div></article>`;
+    }).join('')||'<div class="empty">No contributing source rows are available.</div>'}</div>`;
+  openModal('Report source evidence',body,null,'Close');
+  $('#modalBk .modal')?.classList.add('report-source-modal');
+  $('#mCancel').hidden=true;
+  $('#mBody').querySelectorAll('[data-report-source-id]').forEach(item=>{
+    const sourceId=decodeURIComponent(item.dataset.reportSourceId||'');
+    const contributor=contributors.find(source=>String(source.sourceId||'')===sourceId);
+    const sourceRow=sourceRows.get(sourceId);
+    item.querySelector('[data-report-source-action="view"]')?.addEventListener('click',()=>{
+      closeModal();
+      ensureViewerPanels().rightOpen=true;
+      jumpToEvidence(sourceRow||{id:sourceId,fileId:contributor?.fileId,page:contributor?.page,highlightBbox:contributor?.highlightBbox,bbox:contributor?.bbox});
+    });
+    item.querySelector('[data-report-source-action="edit"]')?.addEventListener('click',()=>{
+      if(!sourceRow)return;
+      closeModal();openRowEditor(sourceRow,false,'Report');
+    });
   });
 }
 function shortReviewReason(reason){
@@ -3530,7 +3766,7 @@ function renderReport(){
     values.push(`<span class="chip ${afdd==='Not specified'?'grey':row.afdd===true?'purple':'grey'}">${esc(afdd)}</span>`);
     return `<div class="report-protection">${values.join('')}</div>`;
   };
-  const boardView=(sections,title='')=>{
+  const boardView=(sections,title='',scope='main')=>{
     const available=(sections||[]).filter(board=>board.families?.length);
     if(!available.length)return '';
     let html=title?`<div class="report-subhead"><h3>${esc(title)}</h3></div>`:'';
@@ -3550,7 +3786,7 @@ function renderReport(){
           const reviewDetail=[...(row.reviewReasons||[]),...(row.notes||[])].join(' ');
           html+=`<tr><td><div class="report-techline">${techChips(row)}</div>${description?`<div class="report-description">${esc(description)}</div>`:''}</td>
             <td>${row.quantity}</td><td>${protectionHtml(row)}</td><td class="report-locations">${esc(locationText||'Not specified')}</td>
-            <td class="report-sources">${esc((row.sourcePages||[]).join('; '))}</td><td><span class="chip ${row.reviewStatus==='Ready'?'green':'amber'}" title="${esc(reviewDetail)}">${esc(row.reviewStatus)}</span></td></tr>`;
+            <td class="report-sources">${esc((row.sourcePages||[]).join('; '))}${reportSourceButton(row,scope,board.norm)}</td><td><span class="chip ${row.reviewStatus==='Ready'?'green':'amber'}" title="${esc(reviewDetail)}">${esc(row.reviewStatus)}</span></td></tr>`;
         });
       });
       html+='</tbody></table></section>';
@@ -3558,7 +3794,7 @@ function renderReport(){
     return html+'</div>';
   };
   const colSpan=model.boards.length+13;
-  const matrix=(groups,title,totalLabel,boardTotals,grandTotal)=>{
+  const matrix=(groups,title,totalLabel,boardTotals,grandTotal,scope='main')=>{
     let table='<table class="report-matrix"><thead>'+
       `<tr class="report-row-project"><th class="report-device" colspan="${colSpan}">${esc(model.projectName)}</th></tr>`+
       `<tr class="report-row-title"><th class="report-device" colspan="${colSpan}">${esc(title)}</th></tr>`+
@@ -3572,7 +3808,7 @@ function renderReport(){
         table+=`<tr class="report-data"><td class="report-category">${esc(group.name)}</td><td class="report-device"><b>${esc(row.label)}</b>${compactReasons.length?`<div class="hint" style="margin:3px 0 0" title="${esc(reviewDetail)}">${esc(compactReasons.join(' · '))}</div>`:''}</td>`+
           `<td>${row.rating??'Not specified'}</td><td>${esc(row.pole)}</td><td>${esc(row.curve)}</td><td>${esc(row.breakingCapacity)}</td><td>${esc(rcdLabel(row))}</td><td>${esc(afddLabel(row))}</td>`+
           row.quantities.map((qty,index)=>`<td>${qty?`<button class="report-qty" data-report-board="${esc(model.boards[index].norm)}" title="Open ${esc(model.boards[index].label)}">${qty}</button>`:''}</td>`).join('')+
-          `<td class="report-total">${row.total}</td><td class="report-purpose">${esc(row.purposes.join(', '))}</td><td class="report-source">${esc(row.sourcePages.join('; '))}</td><td>${Math.round(row.confidence*100)}%</td><td class="report-review"><span class="chip ${row.reviewStatus==='Ready'?'green':'amber'}">${esc(row.reviewStatus)}</span></td></tr>`;
+          `<td class="report-total">${row.total}</td><td class="report-purpose">${esc(row.purposes.join(', '))}</td><td class="report-source">${esc(row.sourcePages.join('; '))}${reportSourceButton(row,scope)}</td><td>${Math.round(row.confidence*100)}%</td><td class="report-review"><span class="chip ${row.reviewStatus==='Ready'?'green':'amber'}">${esc(row.reviewStatus)}</span></td></tr>`;
       });
     });
     return table+`<tr class="report-final"><td class="report-category">${esc(totalLabel)}</td><td class="report-device"></td><td></td><td></td><td></td><td></td><td></td><td></td>${boardTotals.map(v=>`<td>${v||''}</td>`).join('')}<td class="report-total">${grandTotal}</td><td></td><td></td><td></td><td></td></tr></tbody></table>`;
@@ -3580,11 +3816,11 @@ function renderReport(){
   let html='';
   if(mode==='board'){
     html=boardView(model.boardSections);
-    if(model.associated&&model.associated.grandTotal)html+=boardView(model.associated.boardSections,'Control & associated equipment');
+    if(model.associated&&model.associated.grandTotal)html+=boardView(model.associated.boardSections,'Control & associated equipment','associated');
   }else{
-    html=matrix(model.groups,'Consolidated Device Take-Off','Grand Total',model.boardTotals,model.grandTotal);
+    html=matrix(model.groups,'Consolidated Device Take-Off','Grand Total',model.boardTotals,model.grandTotal,'main');
     if(model.associated&&model.associated.grandTotal){
-      html+='<div class="report-subhead"><h3>Control &amp; associated equipment</h3></div>'+matrix(model.associated.groups,'Control & Associated Equipment','Associated Equipment Total',model.associated.boardTotals,model.associated.grandTotal);
+      html+='<div class="report-subhead"><h3>Control &amp; associated equipment</h3></div>'+matrix(model.associated.groups,'Control & Associated Equipment','Associated Equipment Total',model.associated.boardTotals,model.associated.grandTotal,'associated');
     }
   }
   host.innerHTML=html;
@@ -3592,11 +3828,18 @@ function renderReport(){
     state.selectedBoard=control.dataset.reportBoard;
     setTab('analysis');
   }));
+  host.querySelectorAll('[data-report-source-key]').forEach(control=>control.addEventListener('click',()=>{
+    openReportSources(control.dataset.reportSourceScope,decodeURIComponent(control.dataset.reportSourceKey||''),control.dataset.reportSourceBoard?decodeURIComponent(control.dataset.reportSourceBoard):null);
+  }));
 }
 $('#reportModeBar').addEventListener('click',event=>{
   const button=event.target.closest('[data-report-mode]');if(!button)return;
   state.reportMode=button.dataset.reportMode;renderReport();
 });
+$('#guidedReviewBtn').addEventListener('click',()=>focusGuidedReview());
+$('#vReviewStart').addEventListener('click',()=>focusGuidedReview());
+$('#vReviewFocus').addEventListener('click',()=>focusGuidedReview());
+$('#vReviewStop').addEventListener('click',()=>stopGuidedReview());
 function reportFileName(ext){
   const d=new Date();
   const stamp=[String(d.getDate()).padStart(2,'0'),String(d.getMonth()+1).padStart(2,'0'),String(d.getFullYear()).slice(-2)].join('.');
@@ -3892,6 +4135,7 @@ function renderReview(){
         if (a==='edit') return openRowEditor(r);
         setRowDecision(r,a==='ok'?'confirmed':'rejected','Review');
         renderReview(); renderTakeoff(); renderProjHeader(); saveProject(p);
+        scheduleGuidedAdvance(r,a==='ok'?'Approval saved':'Rejection saved');
       }));
     } else if (it.kind==='scan'){
       div.innerHTML=`<div class="ric" style="background:var(--red-soft)">!</div>
@@ -4113,6 +4357,7 @@ function setViewerPanel(side,open){
 }
 async function renderViewer(){
   syncViewerLayout();
+  renderGuidedReviewControls();
   const p=state.cur; if(!p) return;
   const f=viewerFile();
   const ready=p.files.filter(x=>x.status==='ready');
@@ -4303,7 +4548,7 @@ async function renderViewer(){
       el.querySelectorAll('[data-action]').forEach(button=>button.addEventListener('click',event=>{
         event.stopPropagation();
         if(button.dataset.action==='approve'){
-          setRowDecision(d.r,'confirmed','Viewer');saveProject(p);renderProjHeader();renderViewer();toast(d.label+' approved');
+          setRowDecision(d.r,'confirmed','Viewer');saveProject(p);renderProjHeader();renderViewer();toast(d.label+' approved');scheduleGuidedAdvance(d.r,'Approval saved');
         }else if(button.dataset.action==='edit'){
           openRowEditor(d.r,false,'Viewer');
         }else if(button.dataset.action==='board'){
