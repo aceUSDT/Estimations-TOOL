@@ -143,6 +143,13 @@ const families = groupedRows([
 ]);
 assert.equal(families.length, 2, "device family is procurement-relevant");
 
+const rcdProtection = groupedRows([
+  row("rcd1", "DB02", 1, { rcdProtected: true, sens: 30, afdd: false }),
+  row("rcd2", "DB02", 1, { rcdProtected: false, sens: null, afdd: false }),
+]);
+assert.equal(rcdProtection.length, 2, "RCD-protected and unprotected MCBs must remain separate procurement specifications");
+assert.deepEqual(Array.from(rcdProtection, (item) => item.rcdProtected).sort(), [false, true]);
+
 const reconciliation = Report.validateModel(riverside);
 assert.equal(reconciliation.valid, true);
 assert.equal(reconciliation.sourceTotal, 21);
@@ -187,7 +194,15 @@ const corrected = Report.buildModel({
       original: "O",
       corrected: "C",
       reason: "Electrical OCR context correction",
+    }, {
+      field: "RCD Protection",
+      original: "Not specified",
+      corrected: "Yes",
+      reason: "User correction in Viewer",
     }],
+    rcdProtected: true,
+    sens: 30,
+    afdd: false,
   })],
 });
 assert.ok(corrected.groups[0].rows[0].reviewReasons.includes("An automatic OCR correction needs confirmation"));
@@ -198,6 +213,10 @@ const curveAudit = auditValues.find((values) => values.includes("Tripping Curve"
 assert.ok(curveAudit, "corrected curve must appear in the extraction audit");
 assert.ok(curveAudit.includes("C"));
 assert.ok(curveAudit.includes("Electrical OCR context correction"));
+const rcdAudit = auditValues.find((values) => values.includes("RCD Protection"));
+assert.ok(rcdAudit, "RCD correction must appear in the extraction audit");
+assert.ok(rcdAudit.includes("RCD 30mA"));
+assert.ok(rcdAudit.includes("User correction in Viewer"));
 
 const tampered = Report.buildModel({ boards, rows: riversideRows });
 tampered.groups[0].rows[0].total = 20;
