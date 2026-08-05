@@ -653,6 +653,85 @@
     return definitions.find(([, pattern]) => pattern.test(source))?.[0] || null;
   }
 
+  const PROTECTION_STANDARDS = {
+    '60898': { label: 'BS EN 60898', device: 'MCB', combinedRcd: false },
+    '61009': { label: 'BS EN 61009', device: 'RCBO', combinedRcd: true },
+    '61008': { label: 'BS EN 61008', device: 'RCD', combinedRcd: true },
+    '60947-2': { label: 'BS EN 60947-2', device: 'MCCB', combinedRcd: false },
+    '60947-3': { label: 'BS EN 60947-3', device: 'Isolator', combinedRcd: false },
+  };
+
+  function indicatorState(value) {
+    const token = String(value || '').trim();
+    if (/^(?:YES|Y|TRUE|1|CHECKED|TICK|[✓✔☑])$/i.test(token)) return true;
+    if (/^(?:NO|N|FALSE|0|X|[-–—]|[×✕✖□☐])$/i.test(token)) return false;
+    return null;
+  }
+
+  /**
+   * Read the ordered overcurrent-protection columns used by UK board schedules.
+   * Once a BS standard is found, curve/rating/kA are taken from the immediately
+   * following columns. This prevents later cable values such as "6 A" from
+   * replacing a 32 A protective-device rating.
+   */
+  function parseProtectionStandardSequence(value) {
+    const source = String(value || '').replace(/\s+/g, ' ').trim();
+    const standardMatch = source.match(/\b(?:BS\s*(?:EN\s*)?)?(61009(?:-1)?|60898(?:-1)?|61008(?:-1)?|60947\s*[-/]\s*[23])\b/i);
+    if (!standardMatch) return null;
+
+    const rawCode = standardMatch[1].replace(/\s*[/]\s*/, '-').replace(/-(?:1)$/i, '');
+    const standardCode = /^60947/i.test(rawCode) ? rawCode.replace(/\s+/g, '') : rawCode.slice(0, 5);
+    const standard = PROTECTION_STANDARDS[standardCode];
+    if (!standard) return null;
+
+    const tail = source.slice(standardMatch.index + standardMatch[0].length).trim();
+    const protection = tail.match(/^(?:TYPE\s*)?([BCDKZ])\s+(\d{1,4}(?:\.\d+)?)\s+(\d{1,3}(?:\.\d+)?)(?=\s|$)/i);
+    if (!protection) return null;
+
+    const rating = Number(protection[2]);
+    const breakingCapacityKa = Number(protection[3]);
+    if (!Number.isFinite(rating) || rating <= 0 || rating > 6300
+      || !Number.isFinite(breakingCapacityKa) || breakingCapacityKa <= 0 || breakingCapacityKa > 150) return null;
+
+    const remainder = tail.slice(protection[0].length).trim();
+    const tokens = remainder ? remainder.split(/\s+/) : [];
+    const indicators = [];
+    while (tokens.length && indicators.length < 2) {
+      const state = indicatorState(tokens[0]);
+      if (state == null) break;
+      indicators.push(state);
+      tokens.shift();
+    }
+
+    const afdd = indicators[0] === true;
+    const rcdColumn = indicators[1] === true;
+    let sensitivityMa = null;
+    const possibleSensitivity = Number(tokens[0]);
+    if ((standard.combinedRcd || rcdColumn) && [10, 30, 100, 300, 500].includes(possibleSensitivity)) {
+      sensitivityMa = possibleSensitivity;
+      tokens.shift();
+    }
+
+    let device = standard.device;
+    if (afdd && device === 'RCBO') device = 'AFDD+RCBO';
+    return {
+      standard: standard.label,
+      standardCode,
+      device,
+      curve: protection[1].toUpperCase(),
+      rating,
+      breakingCapacityKa,
+      afdd,
+      rcdProtected: standard.combinedRcd || rcdColumn,
+      rcdCombined: standard.combinedRcd,
+      sensitivityMa,
+      description: tokens.join(' ').trim(),
+      indicatorsCaptured: indicators.length,
+      confidence: 0.97,
+      source: 'ordered_protection_columns',
+    };
+  }
+
   /**
    * Guarded fallback for flattened protection tables. It only infers a device
    * when a numbered circuit row contains protection evidence and the nearby
@@ -668,16 +747,18 @@
     const protectionHeader = /\b(?:PROTECTION|PROTECTIVE|DEVICE|RATING|AMPS?|CURVE|TRIP|RCD|RCBO|MCB|BREAKING|kA|POLES?)\b/i.test(header);
     const spare = /\bSPARE\b/i.test(text);
     const space = /\b(?:SPACE|FITTED\s+BLANK|BLANK\s+WAY)\b/i.test(text);
+    const standardSequence = parseProtectionStandardSequence(text);
     const explicitDevice = explicitProtectionDevice(text);
     const explicitRating = text.match(/\b(\d+(?:\.\d+)?)\s*A(?:MPS?)?\b/i);
     const ratingCurve = text.match(/(?:^|\s)(\d{1,3}(?:\.\d+)?)\s+([BCDKZ])(?=\s|$|[,;])/i);
     const curveEvidence = extractTrippingCurve(text, { deviceContext: protectionHeader || Boolean(explicitDevice) });
-    const rating = explicitRating ? Number(explicitRating[1])
-      : (curveEvidence?.rating ?? (ratingCurve ? Number(ratingCurve[1]) : null));
-    const curve = curveEvidence?.value || (ratingCurve ? ratingCurve[2].toUpperCase() : null);
-    const sensitivity = Number(text.match(/\b(\d{1,4})\s*mA\b/i)?.[1]) || null;
-    const rcdConfirmed = sensitivity != null || (/(?:^|\s)YES(?:\s|$)/i.test(text) && /\bRCD\b/i.test(header));
-    let device = explicitDevice;
+    const rating = standardSequence?.rating ?? (explicitRating ? Number(explicitRating[1])
+      : (curveEvidence?.rating ?? (ratingCurve ? Number(ratingCurve[1]) : null)));
+    const curve = standardSequence?.curve || curveEvidence?.value || (ratingCurve ? ratingCurve[2].toUpperCase() : null);
+    const sensitivity = standardSequence?.sensitivityMa ?? (Number(text.match(/\b(\d{1,4})\s*mA\b/i)?.[1]) || null);
+    const rcdConfirmed = Boolean(standardSequence?.rcdProtected) || sensitivity != null
+      || (/(?:^|\s)YES(?:\s|$)/i.test(text) && /\bRCD\b/i.test(header));
+    let device = standardSequence?.device || explicitDevice;
     let inferredDevice = false;
     if (!device && curve && rating != null && protectionHeader) {
       device = rcdConfirmed ? 'RCBO' : 'MCB';
@@ -688,13 +769,15 @@
       inferredDevice = true;
     }
     if (!device && !spare && !space) return null;
-    if (!protectionHeader && !explicitDevice && !spare && !space) return null;
+    if (!protectionHeader && !standardSequence && !explicitDevice && !spare && !space) return null;
 
     const poleMatch = text.match(/\b([1-4])\s*P(?:OLE)?\b/i);
     const phase = (wayMatch[2] || text.match(/\b(L[123])\b/i)?.[1] || '').toUpperCase() || null;
-    const breaking = extractBreakingCapacity(text);
+    const breaking = standardSequence
+      ? { value: standardSequence.breakingCapacityKa, original: `${standardSequence.breakingCapacityKa}kA`, confidence: standardSequence.confidence }
+      : extractBreakingCapacity(text);
     const incomer = /\b(?:INCOMER|INCOMING|MAIN\s+SWITCH)\b/i.test(text);
-    const confidence = inferredDevice ? 0.68 : (explicitDevice ? 0.88 : 0.72);
+    const confidence = standardSequence?.confidence ?? (inferredDevice ? 0.68 : (explicitDevice ? 0.88 : 0.72));
     return {
       way: Number(wayMatch[1]),
       phase,
@@ -702,17 +785,29 @@
       device,
       curve,
       sens: sensitivity,
+      afdd: Boolean(standardSequence?.afdd),
+      rcdProtected: rcdConfirmed,
+      protectionStandard: standardSequence?.standard || null,
       poles: poleMatch ? Number(poleMatch[1]) : null,
       ka: breaking?.value ?? null,
       cable: null,
-      desc: text.slice(wayMatch[0].length).trim(),
+      desc: standardSequence?.description || text.slice(wayMatch[0].length).trim(),
       spare,
       space,
       incomer,
       qty: space ? 0 : (device ? 1 : 0),
       inferredDevice,
-      requiresReview: inferredDevice || (!spare && !space && (rating == null || !device)),
-      resolutionSource: inferredDevice ? 'protection_table_inference' : 'protection_table_evidence',
+      requiresReview: inferredDevice || (!spare && !space && (rating == null || !device
+        || ((device === 'RCBO' || device === 'AFDD+RCBO') && sensitivity == null))),
+      resolutionSource: standardSequence?.source || (inferredDevice ? 'protection_table_inference' : 'protection_table_evidence'),
+      columnEvidence: standardSequence ? {
+        standard: standardSequence.standard,
+        curve: standardSequence.curve,
+        rating: standardSequence.rating,
+        breakingCapacityKa: standardSequence.breakingCapacityKa,
+        rcdProtected: standardSequence.rcdProtected,
+        sensitivityMa: standardSequence.sensitivityMa,
+      } : null,
       srcText: text,
       conf: confidence,
     };
@@ -1553,6 +1648,7 @@
     parseTbaProtectionLine,
     parseTbaSchedulePage,
     parseKnownScheduleLine,
+    parseProtectionStandardSequence,
     parseProtectionTableLine,
     extractAssociatedEquipment,
     aggregateDevices,

@@ -276,9 +276,22 @@
   .tree .cable-lbl{font-size:11px;color:var(--cyan);font-family:var(--mono);overflow-wrap:anywhere;}
 
   /* viewer */
-  .viewer-layout{display:grid;grid-template-columns:120px minmax(0,1fr) 300px;gap:12px;align-items:start;}
-  @media(max-width:1080px){.viewer-layout{grid-template-columns:100px 1fr;}.v-info{display:none;}}
-  .thumbs{max-height:72vh;overflow-y:auto;display:flex;flex-direction:column;gap:8px;padding:8px;}
+  .viewer-layout{--viewer-left:132px;--viewer-right:320px;display:grid;
+    grid-template-columns:var(--viewer-left) 6px minmax(0,1fr) 6px var(--viewer-right);gap:0;
+    align-items:stretch;height:calc(100vh - 250px);min-height:560px;}
+  .viewer-layout.left-closed{grid-template-columns:0 0 minmax(0,1fr) 6px var(--viewer-right);}
+  .viewer-layout.right-closed{grid-template-columns:var(--viewer-left) 6px minmax(0,1fr) 0 0;}
+  .viewer-layout.left-closed.right-closed{grid-template-columns:0 0 minmax(0,1fr) 0 0;}
+  .viewer-side{min-width:0;min-height:0;overflow:hidden;display:flex;flex-direction:column;background:#fff;}
+  .viewer-side.is-closed{visibility:hidden;pointer-events:none;}
+  .viewer-side-head{height:42px;flex:0 0 42px;padding:0 8px 0 12px;border-bottom:1px solid var(--line);
+    display:flex;align-items:center;justify-content:space-between;font-size:12px;font-weight:800;}
+  .viewer-side-head .btn{width:28px;height:28px;padding:0;display:grid;place-items:center;}
+  .viewer-resizer{position:relative;min-width:6px;cursor:col-resize;touch-action:none;outline:none;}
+  .viewer-resizer::after{content:"";position:absolute;left:2px;top:12px;bottom:12px;width:2px;border-radius:2px;background:#c9d1dc;}
+  .viewer-resizer:hover::after,.viewer-resizer:focus-visible::after,.viewer-resizer.is-resizing::after{background:var(--blue);width:3px;left:1px;}
+  .viewer-layout.left-closed .viewer-resizer-left,.viewer-layout.right-closed .viewer-resizer-right{visibility:hidden;pointer-events:none;}
+  .thumbs{min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:8px;padding:8px;}
   .thumb-it{border:2px solid var(--line);border-radius:6px;background:#fff;cursor:pointer;overflow:hidden;position:relative;}
   .thumb-it.sel{border-color:var(--blue);}
   .thumb-it .tn{position:absolute;bottom:2px;right:4px;background:rgba(14,26,43,.75);color:#fff;
@@ -298,11 +311,11 @@
     overflow:hidden;text-overflow:ellipsis;}
   .v-doctab.act{background:#fafbfd;color:var(--txt);border-color:var(--line);position:relative;top:1px;}
   /* full-flexibility document stage — fills the viewport instead of a small fixed box */
-  .v-stage{position:relative;overflow:auto;height:calc(100vh - 330px);min-height:440px;background:#e7ebf1;
+  .viewer-document{height:100%;display:flex;min-width:0;min-height:0;flex-direction:column;overflow:hidden;}
+  .v-stage{position:relative;overflow:auto;height:auto;min-height:0;flex:1;background:#e7ebf1;
     border-radius:0 0 12px 12px;display:block;padding:16px;cursor:grab;overscroll-behavior:contain;}
   .v-stage.is-panning{cursor:grabbing;user-select:none;}
   .v-zoom-input{width:64px!important;min-width:64px;padding:5px 6px!important;text-align:right;font-size:11px!important;}
-  .thumbs{max-height:calc(100vh - 300px)!important;}
   /* §5.2 dark canvas mode */
   .v-stage.v-dark{background:#141a22;}
   .v-stage.v-dark .v-pagewrap canvas,.v-stage.v-dark .v-textpage{filter:invert(.93) hue-rotate(180deg);}
@@ -348,7 +361,8 @@
   .assist-summary .count{font-size:24px;font-weight:900;color:var(--purple);line-height:1;}
   .hl.purple{background:var(--purple-soft);outline:2px solid var(--purple);}
   .ocr-progress{min-width:120px;font-size:11px;color:var(--txt2);font-weight:700;}
-  .v-info{max-height:72vh;overflow-y:auto;}
+  .v-info{min-height:0;overflow:hidden;}
+  .v-info #vDetList{min-height:0;overflow-y:auto;flex:1;}
   .v-info .det{padding:9px 12px;border-bottom:1px solid #edf0f5;font-size:12px;color:var(--txt2);cursor:pointer;}
   .v-info .det:hover{background:#f7f9fc;}
   .v-info .det b{color:var(--txt);}
@@ -357,12 +371,22 @@
   .det-actions{display:flex;gap:5px;margin-left:auto;flex:0 0 auto;}
   .det-actions .btn{padding:3px 7px;font-size:10.5px;}
   body.viewer-fullscreen-open{overflow:hidden;}
-  #pt-viewer.viewer-fullscreen{display:block;position:fixed;inset:54px 0 0;z-index:70;background:#eef1f5;padding:8px;}
-  .viewer-fullscreen .viewer-layout{height:100%;grid-template-columns:140px minmax(0,1fr) 320px;align-items:stretch;}
-  .viewer-fullscreen .viewer-document{height:100%;display:flex;min-height:0;flex-direction:column;}
-  .viewer-fullscreen .v-stage{height:auto;min-height:0;flex:1;border-radius:0;}
-  .viewer-fullscreen .thumbs,.viewer-fullscreen .v-info{height:100%;max-height:none;}
-  @media(max-width:1080px){.viewer-fullscreen .viewer-layout{grid-template-columns:100px minmax(0,1fr);}.viewer-fullscreen .v-info{display:none;}}
+  #pt-viewer.viewer-fullscreen,#pt-viewer:fullscreen{display:block;position:fixed;inset:0;z-index:1000;background:#eef1f5;padding:8px;}
+  #pt-viewer:fullscreen::backdrop{background:#eef1f5;}
+  .viewer-fullscreen .viewer-layout,#pt-viewer:fullscreen .viewer-layout{height:100%;min-height:0;align-items:stretch;}
+  .viewer-fullscreen .v-stage,#pt-viewer:fullscreen .v-stage{border-radius:0;}
+  .viewer-fullscreen .viewer-side,#pt-viewer:fullscreen .viewer-side{height:100%;max-height:none;}
+  @media(max-width:900px){
+    .viewer-layout,.viewer-layout.left-closed,.viewer-layout.right-closed,.viewer-layout.left-closed.right-closed{
+      display:block;position:relative;height:calc(100vh - 210px);min-height:480px;}
+    .viewer-document{height:100%;}
+    .viewer-side{position:absolute;top:0;bottom:0;z-index:12;height:100%;box-shadow:0 8px 30px rgba(15,28,44,.2);}
+    .viewer-side.is-closed{display:none;}
+    #vThumbPanel{left:0;width:min(44vw,190px);}
+    #vInfoPanel{right:0;width:min(82vw,360px);}
+    .viewer-resizer{display:none;}
+    #pt-viewer:fullscreen .viewer-layout,.viewer-fullscreen .viewer-layout{height:100%;}
+  }
 
   /* review */
   .rev-item{display:flex;gap:12px;align-items:flex-start;padding:13px 18px;border-bottom:1px solid var(--line);}
@@ -621,11 +645,18 @@
 
     <!-- ==== VIEWER ==== -->
     <div class="subview" id="pt-viewer">
-      <div class="viewer-layout">
-        <div class="panel thumbs" id="vThumbs"></div>
+      <div class="viewer-layout" id="vLayout">
+        <aside class="panel viewer-side viewer-thumbnails" id="vThumbPanel" aria-label="Page thumbnails">
+          <div class="viewer-side-head"><span>Pages</span><button class="btn sm" id="vThumbClose" title="Hide page thumbnails" aria-label="Hide page thumbnails">×</button></div>
+          <div class="thumbs" id="vThumbs"></div>
+        </aside>
+        <div class="viewer-resizer viewer-resizer-left" id="vResizeLeft" role="separator" tabindex="0" aria-label="Resize page thumbnails" aria-orientation="vertical" aria-valuemin="92" aria-valuemax="320"></div>
         <div class="panel viewer-document" id="vDocumentPanel" style="overflow:hidden">
           <div class="v-doctabs" id="vDocTabs"></div>
           <div class="v-toolbar">
+            <button class="btn sm" id="vThumbToggle" title="Show or hide page thumbnails" aria-label="Show or hide page thumbnails" aria-controls="vThumbPanel" aria-pressed="true">▤</button>
+            <button class="btn sm" id="vInfoToggle" title="Show or hide page detections" aria-label="Show or hide page detections" aria-controls="vInfoPanel" aria-pressed="true">☷</button>
+            <div class="vsep"></div>
             <button class="btn sm" id="vPrev" title="Previous page (←)">‹</button>
             <span style="font-size:12px;color:var(--txt2)"><span id="vPageNo">1</span> / <span id="vPageCt">1</span></span>
             <button class="btn sm" id="vNext" title="Next page (→)">›</button>
@@ -666,10 +697,11 @@
           <div style="padding:7px 12px;border-bottom:1px solid var(--line);display:flex;gap:8px;align-items:center;flex-wrap:wrap" id="vMetaRow"></div>
           <div class="v-stage" id="vStage"><div class="empty">Select a document to view.</div></div>
         </div>
-        <div class="panel v-info">
-          <div class="p-head">On this page</div>
+        <div class="viewer-resizer viewer-resizer-right" id="vResizeRight" role="separator" tabindex="0" aria-label="Resize page detections" aria-orientation="vertical" aria-valuemin="260" aria-valuemax="520"></div>
+        <aside class="panel viewer-side v-info" id="vInfoPanel" aria-label="Page detections">
+          <div class="viewer-side-head"><span>On this page</span><button class="btn sm" id="vInfoClose" title="Hide page detections" aria-label="Hide page detections">×</button></div>
           <div id="vDetList"><div class="empty">No detections.</div></div>
-        </div>
+        </aside>
       </div>
     </div>
 
@@ -935,10 +967,10 @@ const state = {
   projects: [],
   cur: null,           // current project
   nextId: 1,
-  viewer: {fileId:null, page:1, zoom:1, rot:0, dark:false, fullscreen:false, boardHl:null, evidenceId:null, pdfDocs:{}, assist:{enabled:false,boardNorm:null,seed:null,results:[]}},
+  viewer: {fileId:null, page:1, zoom:1, rot:0, dark:false, fullscreen:false, boardHl:null, evidenceId:null, pdfDocs:{}, panels:{leftOpen:true,rightOpen:true,leftWidth:132,rightWidth:320}, assist:{enabled:false,boardNorm:null,seed:null,results:[]}},
   selectedBoard: null,  // §5.4 — board selected in the merged Boards & Devices page ('__none__' = unassigned rows), null = roll-up
 };
-const ANALYSIS_VERSION=3;
+const ANALYSIS_VERSION=4;
 const uid = () => 'x'+(state.nextId++)+'_'+Math.random().toString(36).slice(2,6);
 
 /* ====================== PERSISTENCE (IndexedDB) ====================== */
@@ -1631,7 +1663,7 @@ function openProject(id){
   ensureProjectState(state.cur);
   show('proj');
   $('#projTitle').textContent=state.cur.name;
-  state.viewer={fileId:null,page:1,zoom:1,rot:0,dark:state.viewer.dark,fullscreen:false,boardHl:null,evidenceId:null,pdfDocs:state.viewer.pdfDocs,assist:{enabled:false,boardNorm:null,seed:null,results:[]}};
+  state.viewer={fileId:null,page:1,zoom:1,rot:0,dark:state.viewer.dark,fullscreen:false,boardHl:null,evidenceId:null,pdfDocs:state.viewer.pdfDocs,panels:state.viewer.panels,assist:{enabled:false,boardNorm:null,seed:null,results:[]}};
   setViewerFullscreen(false);
   state.selectedBoard=null;
   renderProjHeader(); renderDocs(); renderPgclass(); renderAnalysisControls(); renderResults();
@@ -3745,7 +3777,44 @@ async function ensureThumbs(f){
   }catch(e){ /* thumbs are cosmetic — never break the viewer */ }
   finally{ vThumbBusy=null; }
 }
+function ensureViewerPanels(){
+  const V=state.viewer;
+  V.panels=V.panels||{leftOpen:true,rightOpen:true,leftWidth:132,rightWidth:320};
+  V.panels.leftOpen=V.panels.leftOpen!==false;
+  V.panels.rightOpen=V.panels.rightOpen!==false;
+  V.panels.leftWidth=Math.max(92,Math.min(320,Number(V.panels.leftWidth)||132));
+  V.panels.rightWidth=Math.max(260,Math.min(520,Number(V.panels.rightWidth)||320));
+  return V.panels;
+}
+function syncViewerLayout(){
+  const layout=$('#vLayout');if(!layout)return;
+  const panels=ensureViewerPanels();
+  const compact=window.matchMedia&&window.matchMedia('(max-width: 900px)').matches;
+  if(compact&&!panels.compactMode){panels.leftOpen=false;panels.rightOpen=false;}
+  panels.compactMode=compact;
+  layout.style.setProperty('--viewer-left',panels.leftWidth+'px');
+  layout.style.setProperty('--viewer-right',panels.rightWidth+'px');
+  layout.classList.toggle('left-closed',!panels.leftOpen);
+  layout.classList.toggle('right-closed',!panels.rightOpen);
+  $('#vThumbPanel').classList.toggle('is-closed',!panels.leftOpen);
+  $('#vInfoPanel').classList.toggle('is-closed',!panels.rightOpen);
+  $('#vThumbPanel').setAttribute('aria-hidden',String(!panels.leftOpen));
+  $('#vInfoPanel').setAttribute('aria-hidden',String(!panels.rightOpen));
+  $('#vThumbToggle').setAttribute('aria-pressed',String(panels.leftOpen));
+  $('#vInfoToggle').setAttribute('aria-pressed',String(panels.rightOpen));
+  $('#vThumbToggle').classList.toggle('primary',panels.leftOpen);
+  $('#vInfoToggle').classList.toggle('primary',panels.rightOpen);
+  $('#vResizeLeft').setAttribute('aria-valuenow',String(Math.round(panels.leftWidth)));
+  $('#vResizeRight').setAttribute('aria-valuenow',String(Math.round(panels.rightWidth)));
+}
+function setViewerPanel(side,open){
+  const panels=ensureViewerPanels();
+  panels[side==='left'?'leftOpen':'rightOpen']=Boolean(open);
+  if(open&&panels.compactMode)panels[side==='left'?'rightOpen':'leftOpen']=false;
+  syncViewerLayout();
+}
 async function renderViewer(){
+  syncViewerLayout();
   const p=state.cur; if(!p) return;
   const f=viewerFile();
   const ready=p.files.filter(x=>x.status==='ready');
@@ -3960,6 +4029,47 @@ async function jumpToEvidence(r){
   const target=$('#vStage .attention')||document.getElementById('vline-'+r.line);
   target?.scrollIntoView?.({block:'center',inline:'center'});
 }
+$('#vThumbToggle').addEventListener('click',()=>setViewerPanel('left',!ensureViewerPanels().leftOpen));
+$('#vInfoToggle').addEventListener('click',()=>setViewerPanel('right',!ensureViewerPanels().rightOpen));
+$('#vThumbClose').addEventListener('click',()=>setViewerPanel('left',false));
+$('#vInfoClose').addEventListener('click',()=>setViewerPanel('right',false));
+function bindViewerResizer(id,side){
+  const handle=$(id),widthKey=side==='left'?'leftWidth':'rightWidth';
+  const min=side==='left'?92:260,max=side==='left'?320:520;
+  let resize=null;
+  handle.addEventListener('pointerdown',event=>{
+    if(event.button!==0)return;
+    const panels=ensureViewerPanels();
+    resize={id:event.pointerId,x:event.clientX,width:panels[widthKey]};
+    handle.classList.add('is-resizing');handle.setPointerCapture(event.pointerId);event.preventDefault();
+  });
+  handle.addEventListener('pointermove',event=>{
+    if(!resize||resize.id!==event.pointerId)return;
+    const delta=(event.clientX-resize.x)*(side==='left'?1:-1);
+    ensureViewerPanels()[widthKey]=Math.max(min,Math.min(max,resize.width+delta));
+    syncViewerLayout();
+  });
+  const stop=event=>{
+    if(!resize||resize.id!==event.pointerId)return;
+    handle.classList.remove('is-resizing');
+    if(handle.hasPointerCapture(event.pointerId))handle.releasePointerCapture(event.pointerId);
+    resize=null;
+  };
+  handle.addEventListener('pointerup',stop);handle.addEventListener('pointercancel',stop);
+  handle.addEventListener('keydown',event=>{
+    const panels=ensureViewerPanels();let width=panels[widthKey];
+    if(event.key==='Home')width=min;
+    else if(event.key==='End')width=max;
+    else if(event.key==='ArrowLeft')width+=side==='left'?-12:12;
+    else if(event.key==='ArrowRight')width+=side==='left'?12:-12;
+    else return;
+    panels[widthKey]=Math.max(min,Math.min(max,width));syncViewerLayout();event.preventDefault();event.stopPropagation();
+  });
+}
+bindViewerResizer('#vResizeLeft','left');
+bindViewerResizer('#vResizeRight','right');
+syncViewerLayout();
+window.addEventListener('resize',syncViewerLayout);
 $('#vPrev').addEventListener('click', ()=>{ state.viewer.page--; renderViewer(); });
 $('#vNext').addEventListener('click', ()=>{ state.viewer.page++; renderViewer(); });
 const clampViewerZoom=value=>Math.max(.25,Math.min(10,Number(value)||1));
@@ -3999,12 +4109,28 @@ $('#vBoardHl').addEventListener('change', e=>{
   if(!norm){state.viewer.boardHl=null;state.viewer.assist.boardNorm=null;renderViewer();return;}
   openBoardInViewer(norm);
 });
-function setViewerFullscreen(enabled){
+function applyViewerFullscreen(enabled){
   const on=Boolean(enabled),host=$('#pt-viewer'),button=$('#vFullscreen');
   state.viewer.fullscreen=on;host.classList.toggle('viewer-fullscreen',on);document.body.classList.toggle('viewer-fullscreen-open',on);
   button.setAttribute('aria-pressed',String(on));button.classList.toggle('primary',on);button.title=on?'Exit full screen document viewer':'Full screen document viewer';
+  syncViewerLayout();
+}
+async function setViewerFullscreen(enabled){
+  const on=Boolean(enabled),host=$('#pt-viewer');
+  if(on){
+    try{if(host.requestFullscreen&&document.fullscreenElement!==host)await host.requestFullscreen();}catch(error){}
+    applyViewerFullscreen(true);
+    return;
+  }
+  try{if(document.fullscreenElement===host&&document.exitFullscreen)await document.exitFullscreen();}catch(error){}
+  applyViewerFullscreen(false);
 }
 $('#vFullscreen').addEventListener('click',()=>setViewerFullscreen(!state.viewer.fullscreen));
+document.addEventListener('fullscreenchange',()=>{
+  const host=$('#pt-viewer');
+  if(document.fullscreenElement===host)applyViewerFullscreen(true);
+  else if(state.viewer.fullscreen)applyViewerFullscreen(false);
+});
 $('#vDark').addEventListener('click', ()=>{ state.viewer.dark=!state.viewer.dark; renderViewer(); });
 $('#vPrint').addEventListener('click', ()=>{
   const cv=$('#vStage canvas'), tp=$('#vStage .v-textpage');

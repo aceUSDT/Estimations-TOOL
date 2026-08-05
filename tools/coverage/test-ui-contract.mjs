@@ -4,6 +4,10 @@ import fs from 'node:fs';
 const html = fs.readFileSync(new URL('../../index.html', import.meta.url), 'utf8');
 const required = [
   'id="vFullscreen"',
+  'id="vThumbToggle"',
+  'id="vInfoToggle"',
+  'id="vResizeLeft"',
+  'id="vResizeRight"',
   'id="boardListSearch"',
   'id="processingPosition"',
   'function recordRowDecision(',
@@ -11,6 +15,10 @@ const required = [
   'function boardApprovalLogHtml(',
   'Enhanced extraction',
   'Protection fields',
+  'host.requestFullscreen',
+  "document.addEventListener('fullscreenchange'",
+  'function syncViewerLayout()',
+  'const ANALYSIS_VERSION=4;',
 ];
 required.forEach((value) => assert.ok(html.includes(value), `missing UI contract: ${value}`));
 assert.ok(!html.includes('id="vAssistBoard"'), 'viewer must not contain a duplicate board selector');
