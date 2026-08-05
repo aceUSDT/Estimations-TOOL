@@ -18,7 +18,7 @@ const required = [
   'host.requestFullscreen',
   "document.addEventListener('fullscreenchange'",
   'function syncViewerLayout()',
-  'const ANALYSIS_VERSION=4;',
+  'const ANALYSIS_VERSION=5;',
 ];
 required.forEach((value) => assert.ok(html.includes(value), `missing UI contract: ${value}`));
 assert.ok(!html.includes('id="vAssistBoard"'), 'viewer must not contain a duplicate board selector');

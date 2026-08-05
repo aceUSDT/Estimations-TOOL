@@ -19,9 +19,13 @@ export function providerStatus() {
   return { gemini, configured: gemini, primary: gemini ? 'gemini' : null };
 }
 
-export function buildInstruction({ filename, pageNumber, hints, textLines }) {
+export function buildInstruction({ filename, pageNumber, hints, textLines, layoutHint }) {
   let instruction = `Extract this page into the schema. Document: ${filename || 'unknown'}, page ${pageNumber || '?'}.`;
   if (hints && hints.type) instruction += ` Classifier hint (may be wrong): ${hints.type}${hints.sub_format ? ' / ' + hints.sub_format : ''}.`;
+  if (layoutHint && typeof layoutHint === 'object') {
+    const compact = JSON.stringify(layoutHint).slice(0, 50000);
+    instruction += `\n\nDeterministic spatial pre-pass (candidate table roles and source regions; verify every value against the image and do not count from this hint):\n${compact}`;
+  }
   if (Array.isArray(textLines) && textLines.length) {
     instruction += `\n\nOCR/native text lines from the same page (may contain OCR errors — the image is authoritative where they disagree):\n`
       + textLines.slice(0, 400).map((l) => String(l)).join('\n');

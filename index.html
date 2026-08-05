@@ -207,10 +207,12 @@
   .bd-explorer{display:grid;grid-template-columns:minmax(300px,390px) minmax(0,1fr);gap:14px;align-items:start;}
   .bd-explorer>.panel{position:sticky;top:64px;max-height:calc(100vh - 84px);overflow-y:auto;}
   .bd-explorer .tree .trow{padding:4px 10px;font-size:12.5px;}
-  @media(max-width:1200px){.bd-explorer{grid-template-columns:minmax(0,1fr);}.bd-explorer>.panel{position:static;max-height:none;}}
+  @media(max-width:1200px){.bd-explorer{grid-template-columns:minmax(0,1fr);}.bd-explorer>.panel{position:static;max-height:none;}.bd-explorer>.panel:last-child{order:-1;}}
   .bd-hdr{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;padding:14px 18px;border-bottom:1px solid var(--line);}
   .bd-hdr .k{font-size:10.5px;letter-spacing:0;text-transform:uppercase;color:var(--txt3);font-weight:700;}
-  .bd-hdr .v{font-size:13px;font-weight:600;margin-top:2px;}
+  .bd-hdr .v{font-size:13px;font-weight:600;margin-top:2px;min-width:0;overflow-wrap:anywhere;}
+  .bd-hdr>div.wide{grid-column:span 2;}
+  @media(max-width:520px){.bd-hdr>div.wide{grid-column:span 1;}}
   .tree .trow.sel{outline:2px solid var(--blue);}
   #boardBody tr.sel td{background:var(--blue-soft,#eaf2ff);}
   .board-picker-tools{padding:10px 12px;border-bottom:1px solid var(--line);background:#fafbfd;}
@@ -877,6 +879,7 @@
 <script src="./vendor/exceljs.min.js"></script>
 <script src="./report-core.js"></script>
 <script src="./extractor-core.js"></script>
+<script src="./spatial-schedule-core.js"></script>
 <script>
 'use strict';
 /* Estimation Tools - specialist electrical document reading tool.
@@ -970,7 +973,7 @@ const state = {
   viewer: {fileId:null, page:1, zoom:1, rot:0, dark:false, fullscreen:false, boardHl:null, evidenceId:null, pdfDocs:{}, panels:{leftOpen:true,rightOpen:true,leftWidth:132,rightWidth:320}, assist:{enabled:false,boardNorm:null,seed:null,results:[]}},
   selectedBoard: null,  // §5.4 — board selected in the merged Boards & Devices page ('__none__' = unassigned rows), null = roll-up
 };
-const ANALYSIS_VERSION=4;
+const ANALYSIS_VERSION=5;
 const uid = () => 'x'+(state.nextId++)+'_'+Math.random().toString(36).slice(2,6);
 
 /* ====================== PERSISTENCE (IndexedDB) ====================== */
@@ -1900,7 +1903,7 @@ async function ocrPdfPage(f,pageNo,{reanalyze=true,quiet=false}={}){
     if(!lines.length) throw new Error('OCR completed but found no readable words on this page');
     const pg=f.pages[pageNo-1];
     pg.lines=lines;pg.w=base.width;pg.h=base.height;
-    const pageWords=(chosen.mappedWords||[]).map(word=>{const box=word.bbox;return {...word,bbox:{x0:box.x0*base.width/cv.width,y0:box.y0*base.height/cv.height,x1:box.x1*base.width/cv.width,y1:box.y1*base.height/cv.height}};});
+    const pageWords=core.collectSpatialWords?core.collectSpatialWords({lines}):[];
     pg.tableRows=core.reconstructSpatialRows(pageWords);
     pg.textQuality=chosen.scoring.textQuality;pg.needsOcr=false;
     pg.ocr={status:'done',confidence:chosen.confidence??null,qualityScore:chosen.score,selectedCandidate:chosen.id,
@@ -2002,10 +2005,14 @@ async function aiExtractPage(f,pageNo,pg){
   // A full extraction of a dense page runs 30–45s — past Netlify's sync limit —
   // so we go through the BACKGROUND function (202 immediately) and poll for the
   // result written to the blob store. No 30s ceiling; the key stays server-side.
+  const core=window.EstimationExtractorCore;
+  const spatial=core?.parseSpatialSchedulePage?core.parseSpatialSchedulePage({lines:pg.lines||[],tableRows:pg.tableRows||[],
+    pageWidth:pg.w,pageHeight:pg.h,pageType:pg.type}):null;
+  const layoutHint=spatial?.matched&&core?.buildSpatialLayoutHint?core.buildSpatialLayoutHint(spatial):null;
   const jobId=uid()+'_'+Date.now();
   const r=await fetch(AI_BG_ENDPOINT,{method:'POST',headers:{'content-type':'application/json'},
     body:JSON.stringify({job_id:jobId, filename:f.name, page_number:pageNo, image_base64, media_type:'image/jpeg',
-      text_lines:(pg.lines||[]).map(l=>l.text).slice(0,400), hints:{type:pg.type}})});
+      text_lines:(pg.lines||[]).map(l=>l.text).slice(0,400), layout_hint:layoutHint,hints:{type:pg.type}})});
   if(!r.ok && r.status!==202){ const err=await r.json().catch(()=>({})); throw new Error(err.error||('HTTP '+r.status)); }
   for(let i=0;i<70;i++){                                   // poll up to ~3 min
     await new Promise(res=>setTimeout(res,2500));
@@ -2047,9 +2054,12 @@ function mergeAiResult(A,out,fileId,pageNo){
         if(device&&(!existing.device||existing.inferredDevice))existing.device=device;
         if(existing.rating==null&&d.rating_a!=null)existing.rating=d.rating_a;
         if(!existing.curve&&d.trip_curve)existing.curve=d.trip_curve;
+        if(!existing.tripUnit&&d.trip_unit)existing.tripUnit=d.trip_unit;
+        if(!existing.protectionStandard&&d.protection_standard)existing.protectionStandard=d.protection_standard;
         if(existing.sens==null&&d.rcd_ma!=null)existing.sens=d.rcd_ma;
         if(existing.poles==null&&d.poles!=null)existing.poles=d.poles;
         if(existing.ka==null&&d.breaking_capacity_ka!=null)existing.ka=d.breaking_capacity_ka;
+        if(!existing.circuitReference&&d.circuit_reference)existing.circuitReference=d.circuit_reference;
         if(!existing.desc&&d.description)existing.desc=d.description;
         existing.inferredDevice=false;existing.aiEnriched=true;
         existing.conf=Math.max(existing.conf||0,Math.min(0.95,Number(d.confidence)||0.6));
@@ -2061,7 +2071,8 @@ function mergeAiResult(A,out,fileId,pageNo){
     const aiRow={id:uid(), boardNorm:bn, fileId, page:pageNo, line:null, status:'pending', kind:'ai',
       way:d.way??null, phase:d.phase&&d.phase!=='L1L2L3'?d.phase:(d.phase==='L1L2L3'?'3PH':null),
       desc:d.description||'', device, rating:d.rating_a??null, poles:d.poles??null, poleConfiguration:d.pole_configuration||null,
-      curve:d.trip_curve||null, sens:d.rcd_ma??null, afdd:!!d.afdd, ka:d.breaking_capacity_ka??null,
+      curve:d.trip_curve||null, tripUnit:d.trip_unit||null, protectionStandard:d.protection_standard||null,
+      circuitReference:d.circuit_reference||null, sens:d.rcd_ma??null, afdd:!!d.afdd, ka:d.breaking_capacity_ka??null,
       cable:(d.phase_csa_mm2!=null||d.cable_type)?{orig:[d.phase_csa_mm2?d.phase_csa_mm2+'mm²':null,d.cable_type].filter(Boolean).join(' '),
         size:d.phase_csa_mm2??null, cpc:typeof d.cpc_csa_mm2==='number'?d.cpc_csa_mm2:null, cores:null,
         construction:typeof d.cpc_csa_mm2==='string'?d.cpc_csa_mm2:null, typeCode:d.cable_type||null, installMethod:d.install_method||null}:null,
@@ -2115,9 +2126,14 @@ async function runAiExtraction(A,f,p,pageSet){
 
 /* reconstruct lines (text + bbox) from a pdf.js text content object */
 function linesFromTextContent(tc, vp){
-  const items = tc.items.map(it=>{
+  const items = tc.items.map((it,index)=>{
     const tx = window.pdfjsLib.Util.transform(vp.transform, it.transform);
-    return {str:it.str, x:tx[4], y:tx[5], w:it.width*vp.scale, h:Math.hypot(tx[2],tx[3])||10};
+    const w=Math.max(1,Math.abs(it.width*vp.scale)),h=Math.max(1,Math.hypot(tx[2],tx[3])||10);
+    const angle=Math.atan2(tx[1],tx[0]),ux=Math.cos(angle)*w,uy=Math.sin(angle)*w,nx=-Math.sin(angle)*h,ny=Math.cos(angle)*h;
+    const corners=[[tx[4],tx[5]],[tx[4]+ux,tx[5]+uy],[tx[4]-nx,tx[5]-ny],[tx[4]+ux-nx,tx[5]+uy-ny]];
+    const xs=corners.map(point=>point[0]),ys=corners.map(point=>point[1]),x0=Math.min(...xs),y0=Math.min(...ys),x1=Math.max(...xs),y1=Math.max(...ys);
+    return {str:it.str, x:tx[4], y:tx[5], w, h, word:{id:`pdf-word-${index}`,text:it.str,
+      bbox:[x0,y0,x1-x0,y1-y0],confidence:1,rotation:Number((angle*180/Math.PI).toFixed(2))}};
   }).filter(i=>i.str.trim());
   items.sort((a,b)=> Math.abs(a.y-b.y)>5 ? a.y-b.y : a.x-b.x);
   const lines=[];
@@ -2127,9 +2143,10 @@ function linesFromTextContent(tc, vp){
       const gap = it.x-(last.x+last.w);
       last.text += (gap>8?'  ':' ')+it.str;
       last.w = (it.x+it.w)-last.x;
-    } else lines.push({text:it.str, x:it.x, y:it.y, w:it.w, h:it.h});
+      last.words.push(it.word);
+    } else lines.push({text:it.str, x:it.x, y:it.y, w:it.w, h:it.h,words:[it.word]});
   });
-  return lines.map(l=>({text:l.text, bbox:[l.x, l.y-l.h, l.w, l.h*1.4]}));
+  return lines.map(l=>({text:l.text, bbox:[l.x, l.y-l.h, l.w, l.h*1.4],confidence:1,words:l.words}));
 }
 function splitTextPages(txt){
   const parts = txt.includes('\f') ? txt.split('\f') : [txt];
@@ -2533,6 +2550,16 @@ function sourceTrace(row,line,pg,fileName){
   if(!line)return {fileName,extractionMethod:pg?.source==='ocr'?'OCR':'Embedded text / deterministic parser'};
   const confidence=Number.isFinite(Number(line.confidence))?Number(line.confidence):Math.max(0,Math.min(1,Number(pg?.ocr?.confidence||100)/100));
   const corrections=Array.isArray(line.corrections)?line.corrections:[];
+  const fieldSource=field=>{
+    const sources=row?.fieldSources||{};
+    if(field==='Device Family')return sources.device||line;
+    if(field==='Current Rating')return sources.rating||line;
+    if(field==='Pole Configuration')return sources.poles||line;
+    if(field==='Tripping Curve')return sources.curve||line;
+    if(field==='Breaking Capacity')return sources.breakingCapacity||line;
+    if(field==='Circuit Reference')return sources.circuitReference||line;
+    return line;
+  };
   const correctionFor=(field)=>corrections.find(item=>{
     const value=`${item.original||''} ${item.corrected||''}`;
     if(field==='Device Family')return /MCB|MCCB|RCBO|RCD|AFDD|SPD/i.test(value);
@@ -2543,9 +2570,10 @@ function sourceTrace(row,line,pg,fileName){
     return false;
   });
   const evidence=(field,normalised)=>{
+    const source=fieldSource(field),sourceConfidence=Number.isFinite(Number(source?.confidence))?Number(source.confidence):confidence;
     const correction=correctionFor(field);
-    return {originalText:line.originalText||line.text,normalisedValue:normalised??'Not specified',bbox:line.bbox||null,confidence,
-      method:line.extractionMethod||(pg?.source==='ocr'?'OCR':'Embedded text / deterministic parser'),
+    return {originalText:source?.originalText||source?.text||line.originalText||line.text,normalisedValue:normalised??'Not specified',bbox:source?.bbox||line.bbox||null,confidence:sourceConfidence,
+      method:source?.extractionMethod||line.extractionMethod||(pg?.source==='ocr'?'OCR':'Embedded text / deterministic parser'),
       correction:correction?.corrected||null,correctionReason:correction?.reason||null,reviewStatus:correction?'Review required':'Pending'};
   };
   return {fileName,bbox:line.bbox||null,originalOcrText:line.originalText||line.text,corrections,
@@ -2556,6 +2584,7 @@ function sourceTrace(row,line,pg,fileName){
       'Pole Configuration':evidence('Pole Configuration',row.poleConfiguration||row.poles||'Unclear'),
       'Tripping Curve':evidence('Tripping Curve',row.curve||'Not specified'),
       'Breaking Capacity':evidence('Breaking Capacity',row.ka==null?'Not specified':row.ka+'kA'),
+      'Circuit Reference':evidence('Circuit Reference',row.circuitReference||'Not specified'),
     },lineConfidence:confidence};
 }
 
@@ -2596,6 +2625,7 @@ async function runAnalysis(opts){
       if(b.section) pageRef.section=b.section;
       if(primary) pageRef.primary=true;
     }
+    if(primary&&b.type&&b.type!=='UNK')e.type=b.type;
     if (String(b.orig||'').length>String(e.orig||'').length) e.orig=b.orig;
   };
 
@@ -2604,40 +2634,77 @@ async function runAnalysis(opts){
   for (const id of f.fileIds){
     const fl=p.files.find(x=>x.id===id); if(!fl||fl.status!=='ready') continue;
     let prevBoard=null;
+    let prevSpatialSchema=null;
     fl.pages.forEach((pg,pi)=>{
       const pageNo=pi+1;
       if (pageSet && !pageSet.has(pageNo)) return;
       const lines=(pg.lines||[]).map(l=>l.text);
+      const core=window.EstimationExtractorCore;
       const pageBoards=[];
       lines.forEach(t=>detectBoards(t).forEach(b=>{ if(!pageBoards.some(x=>x.norm===b.norm)) pageBoards.push(b); }));
-      pageBoards.forEach(b=>regBoard(b,id,pageNo));
       // Multi-signal schedule candidacy: a page qualifies by what is ON it,
       // never by a single classifier label (SmartScreen addendum).
-      const schedCandidate=window.EstimationExtractorCore&&window.EstimationExtractorCore.scoreScheduleCandidate
-        ? window.EstimationExtractorCore.scoreScheduleCandidate(lines) : {score:0,signals:[]};
-      const isSched=pg.type!=='cable-schedule'
+      const schedCandidate=core&&core.scoreScheduleCandidate
+        ? core.scoreScheduleCandidate(lines) : {score:0,signals:[]};
+      const regularSchedule=pg.type!=='cable-schedule'
         && (SCHEDULE_TYPES.has(pg.type) || (schedCandidate.score>=0.45&&schedCandidate.signals.length>=2));
+      let spatial=regularSchedule&&core?.parseSpatialSchedulePage
+        ? core.parseSpatialSchedulePage({lines:pg.lines||[],tableRows:pg.tableRows||[],pageWidth:pg.w,pageHeight:pg.h,pageType:pg.type}) : null;
+      let spatialContinuation=false;
+      if(!regularSchedule&&prevBoard&&prevSpatialSchema&&core?.parseSpatialSchedulePage){
+        const continuation=core.parseSpatialSchedulePage({lines:pg.lines||[],tableRows:pg.tableRows||[],pageWidth:pg.w,pageHeight:pg.h,
+          pageType:'db-schedule-continuation',schemaHint:prevSpatialSchema,allowSingleWay:true,materializeMissingWays:false});
+        spatialContinuation=Boolean(continuation?.matched&&continuation.rows?.length&&continuation.schema?.continuation);
+        if(spatialContinuation)spatial=continuation;
+      }
+      const isSched=regularSchedule||spatialContinuation;
+      const contextualRefs=core?.extractContextualBoardReferences
+        ? core.extractContextualBoardReferences(pg.lines||lines,{pageType:pg.type,isSchedule:isSched}) : [];
       pageDiag.push({fileId:id, page:pageNo, type:pg.type, textLines:lines.filter(t=>t.trim()).length,
         needsOcr:Boolean(pg.needsOcr), source:pg.source||null,
         textQualityUnreliable:Boolean(pg.textQuality&&pg.textQuality.reliable===false&&!pg.ocr),
-        scheduleScore:schedCandidate.score, scheduleSignals:schedCandidate.signals, rowsParsed:0});
+        scheduleScore:schedCandidate.score, scheduleSignals:schedCandidate.signals, rowsParsed:0,
+        spatialContinuation,
+        spatialConfidence:spatial?.confidence??null, spatialColumns:spatial?.schema?.columns?.map(column=>column.role)||[],
+        spatialWarnings:spatial?.warnings||[]});
       let ctxBoard=null;
       if (isSched){
-        ctxBoard=scheduleBoardFromLines(lines);
+        if(spatial?.board?.ref){
+          const canonical=canonicalBoardRef(spatial.board.ref);
+          ctxBoard={norm:canonical.normalised,orig:spatial.board.ref,type:spatial.board.type||'UNK',section:canonical.splitSection||null};
+        }else ctxBoard=scheduleBoardFromLines(lines);
         const hasBoardHeader=hasScheduleBoardHeader(lines);
         if (!ctxBoard && !hasBoardHeader && prevBoard) ctxBoard=prevBoard; // continuation page
-        if (ctxBoard){ regBoard(ctxBoard,id,pageNo,true); prevBoard=ctxBoard; }
-        else if(hasBoardHeader) prevBoard=null;
-      } else prevBoard=null;
-      if(isSched&&ctxBoard&&window.EstimationExtractorCore?.extractBoardHeader){
-        const localHeader=window.EstimationExtractorCore.extractBoardHeader(lines);
+        if (ctxBoard){ regBoard(ctxBoard,id,pageNo,true); prevBoard=ctxBoard; if(spatial?.schema)prevSpatialSchema=spatial.schema; }
+        else if(hasBoardHeader){ prevBoard=null;prevSpatialSchema=null; }
+        contextualRefs.filter(reference=>reference.role==='index_board').forEach(reference=>{
+          const detected=detectBoards(reference.original)[0],canonical=canonicalBoardRef(reference.original);
+          if(canonical.normalised)regBoard(detected||{norm:canonical.normalised,orig:reference.original,type:'UNK'},id,pageNo,false);
+        });
+      } else {
+        prevBoard=null;
+        prevSpatialSchema=null;
+        if(pg.type==='sld'||pg.type==='schematic')pageBoards.forEach(b=>regBoard(b,id,pageNo));
+      }
+      if(isSched&&ctxBoard&&core?.extractBoardHeader){
+        const localHeader=spatial?.board
+          ? {header:spatial.board.header||{},evidence:spatial.board.evidence||{}}
+          : core.extractBoardHeader(lines);
         const board=A.boards[ctxBoard.norm];
         if(board&&localHeader){
           board.header=Object.assign(board.header||{},localHeader.header||{});
           board.headerEvidence=localHeader.evidence||{};
+          if(spatial?.board?.classification){
+            board.family=spatial.board.classification.family;
+            board.familyConfidence=spatial.board.classification.confidence;
+            board.familyReasons=spatial.board.classification.reasons;
+            board.familyPolicy=spatial.board.classification.policyId;
+            board.familyReview=spatial.board.classification.requiresReview;
+            board.type=spatial.board.type||board.type;
+          }
           const fed=localHeader.header?.fed_from_ref;
           if(fed&&!board.manual){
-            const detected=detectBoards(fed)[0],parent=detected?.norm||canonicalBoardRef(fed).normalised;
+            const detected=detectBoards(fed)[0],parent=detected?.norm||null;
             if(parent&&parent!==board.norm&&0.7>(board.parentConf||0)){board.parent=parent;board.parentConf=0.7;}
           }
         }
@@ -2650,14 +2717,27 @@ async function runAnalysis(opts){
       const codedPage=isSched&&window.EstimationExtractorCore&&window.EstimationExtractorCore.parseTbaSchedulePage
         ? window.EstimationExtractorCore.parseTbaSchedulePage(lines,ctx)
         : {matched:false,rows:[]};
+      const spatialMatched=!codedPage.matched&&Boolean(spatial?.matched&&spatial.rows?.length);
       const addScheduleRow=(row,line)=>{
         if (boardFilter && (!ctx.board || !boardFilter.has(ctx.board))) return;
         if (devFilter && row.device && !devFilter.has(row.device.toUpperCase()) && !row.spare && !row.space && !row.incomer) return;
-        const trace=sourceTrace(row,Number.isInteger(line)?pg.lines[line]:null,pg,fl.name);
+        const evidenceLine=row.sourceCell||(Number.isInteger(line)?pg.lines[line]:null);
+        const trace=sourceTrace(row,evidenceLine,pg,fl.name);
         const confidence=trace.lineConfidence?Math.min(Number(row.conf??1),trace.lineConfidence):row.conf;
         A.rows.push({id:uid(), boardNorm:ctx.board, boardSection:ctx.boardSection, fileId:id, page:pageNo, line, status:'pending', kind:'schedule', ...row,...trace,conf:confidence});
       };
       if(codedPage.matched) codedPage.rows.forEach(row=>addScheduleRow(row,row.line));
+      else if(spatialMatched){
+        spatial.rows.forEach(row=>addScheduleRow(row,null));
+        spatial.feeds.forEach(feed=>{
+          const from=canonicalBoardRef(feed.fromRef).normalised,to=canonicalBoardRef(feed.toRef).normalised;
+          if(!to)return;
+          A.feeders.push({id:uid(),fileId:id,page:pageNo,line:null,from,to,cable:feed.cable||null,
+            way:feed.way??null,device:feed.device||null,rating:feed.rating??null,poles:feed.poles??null,
+            srcText:`Feed ${feed.fromRef} to ${feed.toRef} (way ${feed.way})`,bbox:feed.sourceCell?.bbox||null,
+            conf:feed.confidence||0.7,sourceRole:'circuit_reference',spatial:true});
+        });
+      }
       lines.forEach((t,li)=>{
         const lower=t.toLowerCase();
         if (f.ignore.length && f.ignore.some(w=>lower.includes(w))) return;
@@ -2666,11 +2746,11 @@ async function runAnalysis(opts){
             conf: (isSched||pg.type==='cable-schedule')?0.85:0.7, status:'pending', ...c});
         });
         if (isSched){
-          const row=codedPage.matched?null:parseScheduleLine(t, ctx);
+          const row=(codedPage.matched||spatialMatched)?null:parseScheduleLine(t, ctx);
           if (row){
             addScheduleRow(row,li);
           }
-          parseFeeders(t, pageBoards, ctx.board).forEach(fd=>A.feeders.push({id:uid(),fileId:id,page:pageNo,line:li,...fd}));
+          if(!spatialMatched)parseFeeders(t, pageBoards, ctx.board).forEach(fd=>A.feeders.push({id:uid(),fileId:id,page:pageNo,line:li,...fd}));
         } else if (pg.type==='sld'||pg.type==='schematic'||pg.type==='notes'){
           const mainCtx = pageBoards.find(b=>b.type==='MAIN') || pageBoards.find(b=>b.type==='SMDB'||b.type==='MDB');
           parseFeeders(t, pageBoards, mainCtx?mainCtx.norm:null).forEach(fd=>A.feeders.push({id:uid(),fileId:id,page:pageNo,line:li,...fd}));
@@ -2693,7 +2773,7 @@ async function runAnalysis(opts){
           }
         }
       });
-      if (isSched && !codedPage.matched && window.EstimationExtractorCore){
+      if (isSched && !codedPage.matched && !spatialMatched && window.EstimationExtractorCore){
         window.EstimationExtractorCore.finalizeScheduleContext(ctx);
       }
     });
@@ -2706,10 +2786,18 @@ async function runAnalysis(opts){
     try{ await runAiExtraction(A, f, p, pageSet); }catch(e){ console.warn('AI extraction unavailable:', e.message); }
   }
   if(window.EstimationExtractorCore?.deduplicateExtractionRows){
+    const observedSlots=new Set(A.rows.filter(row=>!row.inferredWay&&row.boardNorm&&row.way!=null)
+      .map(row=>[row.boardNorm,row.boardSection||'',row.way].join('|')));
+    A.rows=A.rows.filter(row=>row.resolutionSource!=='header_way_reconciliation'
+      ||!observedSlots.has([row.boardNorm,row.boardSection||'',row.way].join('|')));
     const deduplicated=window.EstimationExtractorCore.deduplicateExtractionRows(A.rows);
     A.rows=deduplicated.rows;A.duplicates=deduplicated.duplicates;
   }
-  await showAnalysisStage(5,`${A.feeders.length} feeder relationship${A.feeders.length===1?'':'s'}`);
+  if(window.EstimationExtractorCore?.deduplicateFeederRelationships){
+    const deduplicated=window.EstimationExtractorCore.deduplicateFeederRelationships(A.feeders);
+    A.feeders=deduplicated.feeders;A.feederDuplicates=deduplicated.duplicates;
+  }
+  await showAnalysisStage(5,`${A.feeders.length} distinct feeder relationship${A.feeders.length===1?'':'s'}`);
   A.feeders.forEach(fd=>{
     if (!fd.to) return;
     const child=A.boards[fd.to];
@@ -2950,12 +3038,24 @@ function boardHeaderCard(b){
   const h=b.header||{};
   const val=v=>(v===undefined||v===null||v===''?'—':v);
   const pc=boardPhaseConfig(b.norm);
+  const familyLabels={panelboard:'Panelboard',distribution_board:'Distribution board',consumer_unit:'Consumer unit',switchboard:'Switchboard',unknown:'Unresolved'};
+  const family=b.family?familyLabels[b.family]||b.family:(BOARD_TYPES[b.type]||val(h.board_type_text));
+  const familyConfidence=b.familyConfidence!=null?`${Math.round(Number(b.familyConfidence)*100)}%${b.familyReview?' · review':''}`:'—';
   const fields=[
+    ['Equipment family', family],
+    ['Classification confidence', familyConfidence],
+    ['Classification basis', (b.familyReasons||[]).join('; ')||'—', true],
     ['Phase config', pc? (pc.v==='TPN'?'TPN — 3-phase':pc.v==='SPN'?'SPN — single-phase':pc.v)+(pc.src!=='extracted'?' ('+pc.src+')':'') : '—'],
-    ['Board type', BOARD_TYPES[b.type]||val(h.board_type_text)],
-    ['Fed from', b.parent?boardLabel(b.parent):val(h.fed_from_ref)],
+    ['Board size', val(h.size_text||h.board_type_text)],
+    ['Board rating', h.board_rating_a!=null&&h.board_rating_a!==''?h.board_rating_a+'A':'—'],
+    ['Voltage', h.voltage_v!=null&&h.voltage_v!==''?h.voltage_v+'V':'—'],
+    ['Purpose', val(h.purpose||h.description)],
     ['Serving', val(h.serving)],
     ['Location', val(h.location)],
+    ['Supplied from', b.parent?boardLabel(b.parent):val(h.fed_from_ref||h.supplied_from_text), true],
+    ['Supply cable', val(h.supply_cable_details), true],
+    ['Supply CPD', val(h.supply_cpd_details), true],
+    ['Internal isolator', val(h.internal_isolator_details)],
     ['Ways total', val(h.ways_total)],
     ['Ways SP / TP', (h.ways_sp!=null&&h.ways_sp!=='')||(h.ways_tp!=null&&h.ways_tp!=='')?`${val(h.ways_sp)} / ${val(h.ways_tp)}`:'—'],
     ['Spare capacity', h.spare_capacity_pct!=null&&h.spare_capacity_pct!==''?h.spare_capacity_pct+'%':'—'],
@@ -2964,7 +3064,7 @@ function boardHeaderCard(b){
     ['Fault rating', h.fault_ka!=null&&h.fault_ka!==''?h.fault_ka+'kA':'—'],
     ['Metering', val(h.metering)],
   ];
-  return `<div class="bd-hdr">${fields.map(([k,v])=>`<div><div class="k">${esc(k)}</div><div class="v">${esc(String(v))}</div></div>`).join('')}</div>`;
+  return `<div class="bd-hdr">${fields.map(([k,v,wide])=>`<div${wide?' class="wide"':''}><div class="k">${esc(k)}</div><div class="v">${esc(String(v))}</div></div>`).join('')}</div>`;
 }
 function boardEvidenceLocation(norm){
   const p=state.cur,A=p&&p.analysis,b=A&&A.boards[norm];if(!p||!A||!b)return null;
@@ -3012,6 +3112,9 @@ function boardApprovalLogHtml(norm){
 function selectBoard(norm){
   state.selectedBoard = state.selectedBoard===norm ? null : norm;
   renderTakeoff();
+  if(window.matchMedia('(max-width:1200px)').matches){
+    requestAnimationFrame(()=>$('#bdDetailHead')?.scrollIntoView({behavior:'smooth',block:'start'}));
+  }
 }
 function renderBoardDetail(){
   const p=state.cur; if(!p) return;
