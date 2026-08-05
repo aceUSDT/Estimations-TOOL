@@ -638,6 +638,86 @@
     return null;
   }
 
+  function explicitProtectionDevice(text) {
+    const source = String(text || '');
+    const definitions = [
+      ['AFDD+RCBO', /\b(?:AFDD|AFFD)\s*(?:\+|\/|AND)?\s*RCBO\b/i],
+      ['RCBO', /\bRCBO\b/i],
+      ['MCCB', /\bMCCB\b/i],
+      ['MCB', /\bMCB\b/i],
+      ['ACB', /\bACB\b/i],
+      ['RCD', /\bRCD\b/i],
+      ['Fuse', /\b(?:HRC\s+)?FUSE\b/i],
+      ['Isolator', /\b(?:ISOLATOR|SWITCH\s+DISCONNECTOR)\b/i],
+    ];
+    return definitions.find(([, pattern]) => pattern.test(source))?.[0] || null;
+  }
+
+  /**
+   * Guarded fallback for flattened protection tables. It only infers a device
+   * when a numbered circuit row contains protection evidence and the nearby
+   * table header names protection columns. Inferred rows stay reviewable.
+   */
+  function parseProtectionTableLine(line, context = {}) {
+    const text = String(line || '').replace(/\s+/g, ' ').trim();
+    if (!text) return null;
+    const wayMatch = text.match(/^\s*(?:(?:WAY|CCT|CKT|CIRCUIT)\s*[:#-]?\s*)?(\d{1,3})(?:\s*[\/-]\s*(L[123]))?\b/i);
+    if (!wayMatch) return null;
+
+    const header = String(context.headerText || '');
+    const protectionHeader = /\b(?:PROTECTION|PROTECTIVE|DEVICE|RATING|AMPS?|CURVE|TRIP|RCD|RCBO|MCB|BREAKING|kA|POLES?)\b/i.test(header);
+    const spare = /\bSPARE\b/i.test(text);
+    const space = /\b(?:SPACE|FITTED\s+BLANK|BLANK\s+WAY)\b/i.test(text);
+    const explicitDevice = explicitProtectionDevice(text);
+    const explicitRating = text.match(/\b(\d+(?:\.\d+)?)\s*A(?:MPS?)?\b/i);
+    const ratingCurve = text.match(/(?:^|\s)(\d{1,3}(?:\.\d+)?)\s+([BCDKZ])(?=\s|$|[,;])/i);
+    const curveEvidence = extractTrippingCurve(text, { deviceContext: protectionHeader || Boolean(explicitDevice) });
+    const rating = explicitRating ? Number(explicitRating[1])
+      : (curveEvidence?.rating ?? (ratingCurve ? Number(ratingCurve[1]) : null));
+    const curve = curveEvidence?.value || (ratingCurve ? ratingCurve[2].toUpperCase() : null);
+    const sensitivity = Number(text.match(/\b(\d{1,4})\s*mA\b/i)?.[1]) || null;
+    const rcdConfirmed = sensitivity != null || (/(?:^|\s)YES(?:\s|$)/i.test(text) && /\bRCD\b/i.test(header));
+    let device = explicitDevice;
+    let inferredDevice = false;
+    if (!device && curve && rating != null && protectionHeader) {
+      device = rcdConfirmed ? 'RCBO' : 'MCB';
+      inferredDevice = true;
+    } else if (!device && rating != null && protectionHeader
+      && (extractBreakingCapacity(text) || /\b[1-4]\s*P(?:OLE)?\b/i.test(text))) {
+      device = 'Protective device';
+      inferredDevice = true;
+    }
+    if (!device && !spare && !space) return null;
+    if (!protectionHeader && !explicitDevice && !spare && !space) return null;
+
+    const poleMatch = text.match(/\b([1-4])\s*P(?:OLE)?\b/i);
+    const phase = (wayMatch[2] || text.match(/\b(L[123])\b/i)?.[1] || '').toUpperCase() || null;
+    const breaking = extractBreakingCapacity(text);
+    const incomer = /\b(?:INCOMER|INCOMING|MAIN\s+SWITCH)\b/i.test(text);
+    const confidence = inferredDevice ? 0.68 : (explicitDevice ? 0.88 : 0.72);
+    return {
+      way: Number(wayMatch[1]),
+      phase,
+      rating: Number.isFinite(rating) ? rating : null,
+      device,
+      curve,
+      sens: sensitivity,
+      poles: poleMatch ? Number(poleMatch[1]) : null,
+      ka: breaking?.value ?? null,
+      cable: null,
+      desc: text.slice(wayMatch[0].length).trim(),
+      spare,
+      space,
+      incomer,
+      qty: space ? 0 : (device ? 1 : 0),
+      inferredDevice,
+      requiresReview: inferredDevice || (!spare && !space && (rating == null || !device)),
+      resolutionSource: inferredDevice ? 'protection_table_inference' : 'protection_table_evidence',
+      srcText: text,
+      conf: confidence,
+    };
+  }
+
   function aggregateDevices(rows) {
     const totals = new Map();
     for (const row of rows || []) {
@@ -1085,6 +1165,68 @@
     return null;
   }
 
+  function cleanHeaderValue(value) {
+    return String(value || '')
+      .split(/\s*[|;]\s*/)[0]
+      .split(/\s+\b(?:LOCATION|SERVING|SERVED\s+BY|FED\s+FROM|WAYS?|INCOMER|MAIN\s+SWITCH|FAULT|METERING|MODEL)\b\s*[:=]/i)[0]
+      .replace(/^[\s:=\-]+|[\s,]+$/g, '')
+      .trim()
+      .slice(0, 100);
+  }
+
+  function extractBoardHeader(lines) {
+    const sourceLines = (lines || []).map((line) => String(line?.text ?? line ?? '').replace(/\s+/g, ' ').trim()).filter(Boolean);
+    const header = {};
+    const evidence = {};
+    const set = (field, value, line) => {
+      if (value === undefined || value === null || value === '') return;
+      header[field] = value;
+      evidence[field] = line;
+    };
+    const labelled = (field, pattern) => {
+      for (const line of sourceLines) {
+        const match = line.match(pattern);
+        if (!match) continue;
+        const value = cleanHeaderValue(match[1]);
+        if (value) { set(field, value, line); return; }
+      }
+    };
+
+    const combined = sourceLines.join('\n');
+    const ways = expectedWaysFromText(combined);
+    if (ways) set('ways_total', ways.ways, ways.evidence);
+    labelled('description', /\b(?:BOARD\s+DESCRIPTION|DESCRIPTION)\b\s*[:=\-]?\s*(.+)$/i);
+    labelled('location', /\bLOCATION\b\s*[:=\-]?\s*(.+)$/i);
+    labelled('fed_from_ref', /\b(?:DB\s+FED\s+FROM|FED\s+FROM|SERVED\s+BY|SUPPLIED\s+FROM)\b\s*[:=\-]?\s*(.+)$/i);
+    labelled('serving', /\bSERVING\b\s*[:=\-]?\s*(.+)$/i);
+    labelled('board_model', /\b(?:BOARD\s+MODEL|MODEL|CAT(?:ALOGUE)?\.?\s*(?:NO|NUMBER)?)\b\s*[:=\-]?\s*(.+)$/i);
+    labelled('metering', /\bMETERING\b\s*[:=\-]?\s*(.+)$/i);
+
+    for (const line of sourceLines) {
+      const spareCapacity = line.match(/\bSPARE\s+CAPACITY\b\s*[:=\-]?\s*(\d+(?:\.\d+)?)\s*%/i);
+      if (spareCapacity) set('spare_capacity_pct', Number(spareCapacity[1]), line);
+      if (/\b(?:INCOMER|INCOMING\s+(?:DEVICE|SUPPLY)|MAIN\s+SWITCH)\b/i.test(line)) {
+        const device = explicitProtectionDevice(line)
+          || line.match(/\b(?:SWITCH\s+DISCONNECTOR|ISOLATOR|CIRCUIT\s+BREAKER)\b/i)?.[0];
+        const rating = line.match(/\b(\d+(?:\.\d+)?)\s*A(?:MPS?)?\b/i);
+        const poles = line.match(/\b([1-4])\s*P(?:OLE)?\b/i)
+          || line.match(/\b(SPN|DPN|TPN|TP&N)\b/i);
+        if (device) set('incomer_class', device, line);
+        if (rating) set('incomer_rating_a', Number(rating[1]), line);
+        if (poles) {
+          const poleValue = /^\d/.test(poles[1]) ? Number(poles[1]) : ({ SPN: 1, DPN: 2, TPN: 4, 'TP&N': 4 }[poles[1].toUpperCase()] || null);
+          set('incomer_poles', poleValue, line);
+        }
+      }
+      if (/\b(?:FAULT|BREAKING|SHORT\s+CIRCUIT)\b/i.test(line)) {
+        const breaking = extractBreakingCapacity(line);
+        if (breaking) set('fault_ka', breaking.value, line);
+      }
+    }
+    const completenessFields = ['ways_total', 'description', 'location', 'fed_from_ref', 'serving', 'incomer_class', 'incomer_rating_a', 'incomer_poles', 'fault_ka', 'board_model', 'metering'];
+    return { header, evidence, completeness: completenessFields.filter((field) => header[field] !== undefined).length };
+  }
+
   function pageLooksTabular(text) {
     const lines = String(text || '').split(/\r?\n/);
     let hits = 0;
@@ -1139,6 +1281,8 @@
       }
       const boardRows = scheduleRows.filter((r) => r.boardNorm === board.norm);
       const ways = new Set(boardRows.filter((r) => r.way != null).map((r) => `${r.boardSection || ''}:${r.way}`));
+      const protectionRows = boardRows.filter((r) => !r.space && !r.spare);
+      const incompleteProtectionRows = protectionRows.filter((r) => !r.device || r.rating == null).length;
       const unaccounted = expected != null ? Math.max(0, expected - ways.size) : null;
       const upstreamType = /^(?:MAIN|MDB|SMDB|MCC|SB|PB)$/.test(String(board.type || '').toUpperCase());
       const upstreamReference = /^(?:MAIN|MSB|SWB|SMDB|MDB|PB|MCC|MCP|GENERATOR)/i.test(String(board.orig || '').replace(/[\s._/\\-]+/g, ''));
@@ -1147,6 +1291,8 @@
         norm: board.norm, orig: board.orig,
         expectedWays: expected, evidence,
         capturedWays: ways.size, rowsCaptured: boardRows.length,
+        protectionRows: protectionRows.length,
+        incompleteProtectionRows,
         unaccountedWays: unaccounted, inScope,
       });
     }
@@ -1191,6 +1337,8 @@
         capturedWays: capturedTotal,
         pctComplete: expectedTotal ? Math.round((100 * capturedTotal) / expectedTotal) : null,
         unaccountedBoards: scopedBoards.filter((b) => (b.unaccountedWays || 0) > 0).length,
+        incompleteProtectionRows: scopedBoards.reduce((sum, board) => sum + board.incompleteProtectionRows, 0),
+        boardsWithProtectionGaps: scopedBoards.filter((board) => board.incompleteProtectionRows > 0 || board.protectionRows === 0).length,
       },
     };
   }
@@ -1385,6 +1533,7 @@
 
   global.EstimationExtractorCore = {
     expectedWaysFromText,
+    extractBoardHeader,
     pageLooksTabular,
     buildCoverage,
     HEALTH_REASONS,
@@ -1404,6 +1553,7 @@
     parseTbaProtectionLine,
     parseTbaSchedulePage,
     parseKnownScheduleLine,
+    parseProtectionTableLine,
     extractAssociatedEquipment,
     aggregateDevices,
     finalizeScheduleContext,

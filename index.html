@@ -109,7 +109,7 @@
     box-shadow:0 5px 14px rgba(15,31,51,.08);}
   .processing-dock[hidden]{display:none;}
   .processing-dock-inner{max-width:1600px;margin:0 auto;padding:9px 22px;display:grid;
-    grid-template-columns:minmax(280px,auto) minmax(180px,1fr) auto;align-items:center;gap:14px;}
+    grid-template-columns:minmax(300px,auto) minmax(180px,1fr) auto;align-items:center;gap:14px;}
   .processing-summary{display:flex;align-items:center;gap:10px;min-width:0;}
   .processing-spinner{width:16px;height:16px;border:2px solid #b9c7d6;border-top-color:var(--brand);
     border-radius:50%;flex:0 0 auto;animation:processing-spin .8s linear infinite;}
@@ -119,10 +119,11 @@
   .processing-copy small{grid-column:2;font-size:11px;color:var(--txt2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .processing-track{height:6px;background:#e5ebf1;overflow:hidden;}
   .processing-fill{display:block;width:0;height:100%;background:var(--brand);transition:width .2s ease;}
-  .processing-steps{display:flex;align-items:center;gap:7px;}
-  .processing-step{width:9px;height:9px;border-radius:50%;border:2px solid #b9c7d6;background:#fff;}
+  .processing-position{min-width:72px;text-align:right;font-size:11px;font-weight:800;color:var(--txt2);white-space:nowrap;}
+  .processing-steps{display:flex;align-items:center;gap:4px;}
+  .processing-step{width:22px;height:5px;border:0;background:#d7e0e9;}
   .processing-step.done{border-color:var(--green);background:var(--green);}
-  .processing-step.run{border-color:var(--brand);background:var(--brand);box-shadow:0 0 0 3px rgba(0,158,226,.14);}
+  .processing-step.run{border-color:var(--brand);background:var(--brand);box-shadow:0 0 0 2px rgba(0,158,226,.14);}
   .processing-dock.complete .processing-spinner{animation:none;border-color:var(--green);background:var(--green);}
   .processing-dock.failed .processing-spinner{animation:none;border-color:var(--red);background:var(--red);}
   @keyframes processing-spin{to{transform:rotate(360deg);}}
@@ -185,10 +186,25 @@
   .pgclass-file{margin:14px 0 8px;}
 
   /* analysis tab */
-  .an-layout{display:grid;grid-template-columns:minmax(0,330px) minmax(0,1fr);gap:16px;align-items:start;}
+  .an-layout{display:grid;grid-template-columns:minmax(0,1fr);gap:16px;align-items:start;}
   .an-layout>*,.bd-explorer>*{min-width:0;}
-  @media(max-width:980px){.an-layout{grid-template-columns:minmax(0,1fr);}}
-  .bd-explorer{display:grid;grid-template-columns:minmax(260px,320px) minmax(0,1fr);gap:14px;align-items:start;}
+  .analysis-setup{display:grid;grid-template-columns:minmax(0,1fr) minmax(270px,340px);gap:14px;align-items:stretch;}
+  .analysis-setup>.panel{margin:0!important;}
+  .scope-grid{display:grid;grid-template-columns:minmax(240px,1.25fr) minmax(180px,.75fr);gap:12px 16px;align-items:start;}
+  .scope-grid .fgroup{margin:0;}
+  .scope-files{max-height:92px;overflow:auto;border:1px solid var(--line);padding:6px 8px;background:#fbfcfe;}
+  .scope-advanced{grid-column:1/-1;border-top:1px solid var(--line);padding-top:10px;}
+  .scope-advanced>summary,.board-secondary>summary{cursor:pointer;font-size:12px;font-weight:800;color:var(--txt2);list-style-position:inside;}
+  .scope-advanced-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-top:12px;}
+  .scope-actions{grid-column:1/-1;display:flex;align-items:center;gap:12px;padding-top:10px;border-top:1px solid var(--line);}
+  .scope-actions .btn{margin-left:auto;min-width:170px;}
+  .analysis-progress .p-body{padding-top:10px;}
+  .stagelist li{align-items:flex-start;padding:6px 0;}
+  .stagelist li>span:last-child{display:grid;gap:1px;}
+  .stagelist li b{font-size:12px;}
+  .stagelist li small{font-size:10.5px;color:var(--txt3);font-weight:500;}
+  @media(max-width:980px){.analysis-setup{grid-template-columns:minmax(0,1fr);}.scope-advanced-grid{grid-template-columns:minmax(0,1fr);}}
+  .bd-explorer{display:grid;grid-template-columns:minmax(300px,390px) minmax(0,1fr);gap:14px;align-items:start;}
   .bd-explorer>.panel{position:sticky;top:64px;max-height:calc(100vh - 84px);overflow-y:auto;}
   .bd-explorer .tree .trow{padding:4px 10px;font-size:12.5px;}
   @media(max-width:1200px){.bd-explorer{grid-template-columns:minmax(0,1fr);}.bd-explorer>.panel{position:static;max-height:none;}}
@@ -197,6 +213,17 @@
   .bd-hdr .v{font-size:13px;font-weight:600;margin-top:2px;}
   .tree .trow.sel{outline:2px solid var(--blue);}
   #boardBody tr.sel td{background:var(--blue-soft,#eaf2ff);}
+  .board-picker-tools{padding:10px 12px;border-bottom:1px solid var(--line);background:#fafbfd;}
+  .board-secondary{border-top:1px solid var(--line);padding:10px 14px;}
+  .board-secondary[open]>summary{color:var(--txt);margin-bottom:8px;}
+  .bd-health{display:flex;align-items:flex-start;gap:10px;padding:11px 18px;border-bottom:1px solid var(--line);font-size:12px;}
+  .bd-health.ok{background:var(--green-soft);color:#176c48;}
+  .bd-health.warn{background:var(--amber-soft);color:#87570b;}
+  .bd-health.bad{background:var(--red-soft);color:#a52d35;}
+  .approval-log{border-top:1px solid var(--line);}
+  .approval-entry{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:3px 12px;padding:9px 18px;border-top:1px solid #edf0f5;font-size:11.5px;}
+  .approval-entry:first-child{border-top:0;}
+  .approval-entry .meta{color:var(--txt3);font-size:10.5px;}
   .fgroup{margin-bottom:16px;}
   .fgroup:last-child{margin-bottom:0;}
   .check-row{display:flex;align-items:center;gap:8px;padding:4px 1px;font-size:12.5px;cursor:pointer;color:var(--txt2);min-width:0;overflow-wrap:anywhere;}
@@ -249,7 +276,7 @@
   .tree .cable-lbl{font-size:11px;color:var(--cyan);font-family:var(--mono);overflow-wrap:anywhere;}
 
   /* viewer */
-  .viewer-layout{display:grid;grid-template-columns:120px 1fr 280px;gap:12px;align-items:start;}
+  .viewer-layout{display:grid;grid-template-columns:120px minmax(0,1fr) 300px;gap:12px;align-items:start;}
   @media(max-width:1080px){.viewer-layout{grid-template-columns:100px 1fr;}.v-info{display:none;}}
   .thumbs{max-height:72vh;overflow-y:auto;display:flex;flex-direction:column;gap:8px;padding:8px;}
   .thumb-it{border:2px solid var(--line);border-radius:6px;background:#fff;cursor:pointer;overflow:hidden;position:relative;}
@@ -294,6 +321,7 @@
   .hl.red{background:var(--red-soft);outline:1px solid #f2c2c5;}
   .hl.cyan{background:var(--cyan-soft);outline:1px solid #b6e2ec;}
   .hl.blue{background:var(--blue-soft);outline:2px solid var(--blue);}
+  .hl.attention{background:var(--red-soft);outline:3px solid var(--red);}
   .hl.boardhl{background:rgba(22,104,227,.22);outline:3px solid var(--blue);}
   .devdot{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:7px;vertical-align:-1px;}
   .ovl{position:absolute;border-radius:2px;pointer-events:none;}
@@ -302,6 +330,7 @@
   .ovl.red{background:rgba(211,60,67,.14);outline:1.5px solid rgba(211,60,67,.7);}
   .ovl.cyan{background:rgba(10,162,192,.14);outline:1.5px solid rgba(10,162,192,.7);}
   .ovl.blue{background:rgba(22,104,227,.15);outline:2px solid var(--blue);}
+  .ovl.attention{outline:4px solid #d33c43!important;background:rgba(211,60,67,.2)!important;z-index:7;}
   .ovl.assisted{background:rgba(123,92,214,.2);outline:2px solid var(--purple);z-index:4;}
   .markup-note{position:absolute;z-index:5;background:var(--purple);color:#fff;border-radius:5px;padding:2px 6px;
     font-size:10px;font-weight:800;line-height:1.4;box-shadow:0 2px 6px rgba(45,30,90,.25);pointer-events:none;}
@@ -320,9 +349,20 @@
   .hl.purple{background:var(--purple-soft);outline:2px solid var(--purple);}
   .ocr-progress{min-width:120px;font-size:11px;color:var(--txt2);font-weight:700;}
   .v-info{max-height:72vh;overflow-y:auto;}
-  .v-info .det{padding:7px 14px;border-bottom:1px solid #edf0f5;font-size:12px;color:var(--txt2);cursor:pointer;}
+  .v-info .det{padding:9px 12px;border-bottom:1px solid #edf0f5;font-size:12px;color:var(--txt2);cursor:pointer;}
   .v-info .det:hover{background:#f7f9fc;}
   .v-info .det b{color:var(--txt);}
+  .det-head{display:flex;align-items:center;gap:6px;min-width:0;}
+  .det-head b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .det-actions{display:flex;gap:5px;margin-left:auto;flex:0 0 auto;}
+  .det-actions .btn{padding:3px 7px;font-size:10.5px;}
+  body.viewer-fullscreen-open{overflow:hidden;}
+  #pt-viewer.viewer-fullscreen{display:block;position:fixed;inset:54px 0 0;z-index:70;background:#eef1f5;padding:8px;}
+  .viewer-fullscreen .viewer-layout{height:100%;grid-template-columns:140px minmax(0,1fr) 320px;align-items:stretch;}
+  .viewer-fullscreen .viewer-document{height:100%;display:flex;min-height:0;flex-direction:column;}
+  .viewer-fullscreen .v-stage{height:auto;min-height:0;flex:1;border-radius:0;}
+  .viewer-fullscreen .thumbs,.viewer-fullscreen .v-info{height:100%;max-height:none;}
+  @media(max-width:1080px){.viewer-fullscreen .viewer-layout{grid-template-columns:100px minmax(0,1fr);}.viewer-fullscreen .v-info{display:none;}}
 
   /* review */
   .rev-item{display:flex;gap:12px;align-items:flex-start;padding:13px 18px;border-bottom:1px solid var(--line);}
@@ -496,7 +536,10 @@
         </div>
       </div>
       <div class="processing-track" aria-hidden="true"><span class="processing-fill" id="processingFill"></span></div>
-      <div class="processing-steps" id="processingSteps" aria-hidden="true"></div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <div class="processing-steps" id="processingSteps" aria-hidden="true"></div>
+        <span class="processing-position" id="processingPosition">Step 1 of 7</span>
+      </div>
     </div>
   </div>
 
@@ -568,7 +611,7 @@
         </div>
         <div style="overflow-x:auto"><table class="t">
           <thead><tr><th>Board</th><th class="num">Expected ways</th><th class="num">Captured ways</th>
-          <th class="num">Unaccounted</th><th class="num">Rows</th><th>Header evidence</th></tr></thead>
+          <th class="num">Unaccounted</th><th class="num">Rows</th><th>Protection fields</th><th>Header evidence</th></tr></thead>
           <tbody id="covBody"></tbody>
         </table></div>
         <div id="covPages" style="padding:10px 18px"></div>
@@ -580,7 +623,7 @@
     <div class="subview" id="pt-viewer">
       <div class="viewer-layout">
         <div class="panel thumbs" id="vThumbs"></div>
-        <div class="panel" style="overflow:hidden">
+        <div class="panel viewer-document" id="vDocumentPanel" style="overflow:hidden">
           <div class="v-doctabs" id="vDocTabs"></div>
           <div class="v-toolbar">
             <button class="btn sm" id="vPrev" title="Previous page (←)">‹</button>
@@ -601,24 +644,23 @@
               <option value="cable">Cables</option>
               <option value="board">Boards</option>
             </select>
-            <select class="sel" id="vBoardHl" title="Smart-highlight every mention of a board reference"><option value="">Highlight board…</option></select>
+            <select class="sel" id="vBoardHl" title="Open the primary document page for a board"><option value="">Go to board…</option></select>
             <div class="vsep"></div>
-            <button class="btn sm" id="vAssistMode" title="Find matching devices on the selected board">Match rows</button>
+            <button class="btn sm" id="vAssistMode" title="Select one device row and find the same protection device on this board">Find similar</button>
             <button class="btn sm" id="vOcrBtn" title="Read a scanned page with OCR">OCR page</button>
             <button class="btn sm" id="vDark" title="Dark / light canvas">◐</button>
             <button class="btn sm" id="vPrint" title="Print current page">⎙</button>
             <button class="btn sm" id="vDownload" title="Download original document">⤓</button>
+            <button class="btn sm" id="vFullscreen" title="Full screen document viewer" aria-pressed="false">⛶</button>
             <input class="in" id="vSearch" placeholder="Search in document…" style="width:150px;margin-left:auto">
             <span style="font-size:11px;color:var(--txt2);white-space:nowrap" id="vSearchInfo"></span>
             <button class="btn sm" id="vSearchNext" title="Jump to next page with a match" style="display:none">↓</button>
           </div>
           <div class="assist-bar" id="vAssistBar" hidden>
-            <span class="step">Board</span>
-            <select class="sel" id="vAssistBoard"></select>
-            <span class="step">Device</span>
+            <span class="step">Find similar</span>
             <span class="chip purple" id="vAssistSeed">None selected</span>
             <span class="chip purple" id="vAssistCount">0 matches</span>
-            <button class="btn sm" id="vAssistClear">Clear markup</button>
+            <button class="btn sm" id="vAssistClear">Clear</button>
             <span class="ocr-progress" id="vOcrStatus"></span>
           </div>
           <div style="padding:7px 12px;border-bottom:1px solid var(--line);display:flex;gap:8px;align-items:center;flex-wrap:wrap" id="vMetaRow"></div>
@@ -634,40 +676,49 @@
     <!-- ==== DEVICES / ANALYSIS ==== -->
     <div class="subview" id="pt-analysis">
       <div class="an-layout">
-        <div>
-          <div class="panel" style="margin-bottom:14px">
-            <div class="p-head">Scope</div>
-            <div class="p-body">
-              <div class="fgroup"><label class="lbl">Documents</label><div id="anFiles"></div></div>
+        <div class="analysis-setup">
+          <div class="panel">
+            <div class="p-head">Analysis setup <span class="sub">all boards and protection devices are included unless you add an optional filter</span></div>
+            <div class="p-body scope-grid">
+              <div class="fgroup"><label class="lbl">Documents to analyse</label><div class="scope-files" id="anFiles"></div></div>
               <div class="fgroup">
-                <label class="lbl">Pages</label>
-                <input class="in" id="anPages" placeholder="e.g. 2-5, 8, 12-15 (blank = all)">
+                <label class="lbl">Page range</label>
+                <input class="in" id="anPages" placeholder="All pages">
+                <div class="hint">Use 2-5, 8 only when you need a narrower run.</div>
               </div>
-              <div class="fgroup">
-                <label class="lbl">Boards</label>
-                <input class="in" id="anBoardSearch" placeholder="Search detected boards…">
-                <div id="anBoards" style="margin-top:7px;max-height:130px;overflow-y:auto"></div>
+              <details class="scope-advanced">
+                <summary>Optional filters</summary>
+                <div class="scope-advanced-grid">
+                  <div class="fgroup">
+                    <label class="lbl">Boards</label>
+                    <input class="in" id="anBoardSearch" placeholder="Search detected boards">
+                    <div id="anBoards" style="margin-top:7px;max-height:130px;overflow-y:auto"></div>
+                  </div>
+                  <div class="fgroup">
+                    <label class="lbl">Device types</label>
+                    <div class="qchips" id="anDevChips"></div>
+                    <input class="in" id="anDevCustom" placeholder="Additional device type" style="margin-top:8px">
+                    <div class="hint">No selection means every detected device type.</div>
+                  </div>
+                  <div class="fgroup">
+                    <label class="lbl">Ignore rows containing</label>
+                    <input class="in" id="anIgnore" placeholder="e.g. existing, remove">
+                    <label class="check-row"><input type="checkbox" id="anExclSpare" checked> Exclude unpopulated spare and space ways</label>
+                    <button class="btn sm ghost" id="anPreviewBtn" style="margin-top:4px">Preview exclusions</button>
+                  </div>
+                </div>
+              </details>
+              <div class="scope-actions">
+                <div>
+                  <label class="check-row" title="When enabled, page images and detected text are sent to the configured extraction service."><input type="checkbox" id="anOnlineExtraction"> Enhanced extraction</label>
+                  <div class="hint" id="onlineExtractionHint">Off keeps document reading on this computer.</div>
+                </div>
+                <button class="btn primary" id="anRunBtn">Analyse documents</button>
               </div>
-              <div class="fgroup">
-                <label class="lbl">Device types</label>
-                <div class="qchips" id="anDevChips"></div>
-                <input class="in" id="anDevCustom" placeholder="Add custom device type…" style="margin-top:8px">
-              </div>
-              <div class="fgroup">
-                <label class="lbl">Ignore rows containing</label>
-                <input class="in" id="anIgnore" placeholder="e.g. existing, remove">
-                <label class="check-row"><input type="checkbox" id="anExclSpare" checked> Exclude only unpopulated spare &amp; space ways</label>
-                <button class="btn sm ghost" id="anPreviewBtn" style="margin-top:4px">Preview excluded rows</button>
-              </div>
-              <div class="fgroup">
-                <label class="check-row" title="When enabled, page images and detected text are sent to the configured extraction service."><input type="checkbox" id="anOnlineExtraction"> Use online extraction</label>
-                <div class="hint" id="onlineExtractionHint">Off keeps document reading on this computer. On sends pages to the configured extraction service.</div>
-              </div>
-              <button class="btn primary" id="anRunBtn" style="width:100%">Count devices</button>
             </div>
           </div>
-          <div class="panel">
-            <div class="p-head">Processing</div>
+          <div class="panel analysis-progress">
+            <div class="p-head">Analysis progress</div>
             <div class="p-body"><ul class="stagelist" id="stageList"></ul></div>
           </div>
         </div>
@@ -679,7 +730,7 @@
             <div style="display:flex;gap:8px;align-items:center;padding:11px 18px;flex-wrap:wrap">
               <span style="font-weight:800;font-size:13px">Take-off</span>
               <span class="sub" style="margin-left:2px">roll-up across all boards — select a board to drill in</span>
-              <button class="btn sm" id="bulkApproveBtn" style="margin-left:auto">Approve checked rows</button>
+              <button class="btn sm" id="bulkApproveBtn" style="margin-left:auto">Approve high-confidence rows</button>
               <button class="btn sm" id="addManualBtn">Add device</button>
               <button class="btn sm primary" id="openReportBtn">Open report</button>
             </div>
@@ -687,27 +738,29 @@
 
           <div class="bd-explorer">
             <!-- LEFT: board list + feed hierarchy -->
-            <div>
-              <div class="panel" style="margin-bottom:14px">
-                <div class="p-head">Boards &amp; feed hierarchy <span class="sub">supply relationships from schematics — select a board</span></div>
-                <div class="p-body"><div class="tree" id="boardTree"><div class="empty">Run analysis to map board relationships.</div></div></div>
-                <div style="overflow-x:auto;border-top:1px solid var(--line)"><table class="t">
-                  <thead><tr><th>Board</th><th>Type</th><th>Supplied from</th><th class="num">Devices</th><th>Conf.</th></tr></thead>
-                  <tbody id="boardBody"></tbody>
-                </table></div>
-                <div class="empty" id="boardEmpty">No boards detected yet.</div>
-              </div>
               <div class="panel">
-                <div class="p-head">Possible duplicate boards <span class="sub">never merged automatically</span></div>
-                <div id="dupeList"><div class="empty">No possible duplicates found.</div></div>
+                  <div class="p-head">Boards <span class="sub">select one to review its header, devices, evidence, and decisions</span></div>
+                  <div class="board-picker-tools"><input class="in" id="boardListSearch" placeholder="Search boards" aria-label="Search boards"></div>
+                  <div style="overflow-x:auto;border-top:1px solid var(--line)"><table class="t">
+                    <thead><tr><th>Board</th><th class="num">Devices</th><th class="num">Pending</th></tr></thead>
+                    <tbody id="boardBody"></tbody>
+                  </table></div>
+                  <div class="empty" id="boardEmpty">No boards detected yet.</div>
+                  <details class="board-secondary">
+                    <summary>Supply hierarchy</summary>
+                    <div class="tree" id="boardTree"><div class="empty">Run analysis to map board relationships.</div></div>
+                  </details>
+                  <details class="board-secondary">
+                    <summary>Possible duplicate boards <span class="chip grey" id="dupeCount">0</span></summary>
+                    <div id="dupeList"><div class="empty">No possible duplicates found.</div></div>
+                  </details>
               </div>
-            </div>
 
             <!-- RIGHT: roll-up (default) OR selected board's header + device table -->
             <div class="panel">
-              <div class="p-head" id="bdDetailHead">Device totals by board <span class="sub">all boards — select one on the left to drill in</span></div>
+              <div class="p-head" id="bdDetailHead">Protection totals <span class="sub">all boards — select one on the left to review its details</span></div>
               <div id="boardDetail" style="display:none"></div>
-              <div id="resBoards"><div class="empty"><div class="ico">▦</div>No results yet — press <b>Count devices</b>.</div></div>
+              <div id="resBoards"><div class="empty"><div class="ico">▦</div>No results yet — press <b>Analyse documents</b>.</div></div>
             </div>
           </div>
         </div>
@@ -882,10 +935,10 @@ const state = {
   projects: [],
   cur: null,           // current project
   nextId: 1,
-  viewer: {fileId:null, page:1, zoom:1, rot:0, dark:false, boardHl:null, evidenceId:null, pdfDocs:{}, assist:{enabled:false,boardNorm:null,seed:null,results:[]}},
+  viewer: {fileId:null, page:1, zoom:1, rot:0, dark:false, fullscreen:false, boardHl:null, evidenceId:null, pdfDocs:{}, assist:{enabled:false,boardNorm:null,seed:null,results:[]}},
   selectedBoard: null,  // §5.4 — board selected in the merged Boards & Devices page ('__none__' = unassigned rows), null = roll-up
 };
-const ANALYSIS_VERSION=2;
+const ANALYSIS_VERSION=3;
 const uid = () => 'x'+(state.nextId++)+'_'+Math.random().toString(36).slice(2,6);
 
 /* ====================== PERSISTENCE (IndexedDB) ====================== */
@@ -1325,11 +1378,15 @@ function parseScheduleLine(line, ctx){
   if (isSeparator(line) || !line.trim()) return null;
   if (isNoteLine(line)) { ctx.inNotes=true; return null; }
   if (ctx.inNotes) return null;
+  const startsWithWay=/^\s*(?:way|cct|ckt|circuit)?\s*[:#]?\s*\d{1,3}\b/i.test(line);
+  if (!startsWithWay&&HEADER_WORDS.test(line)) ctx.headerText=((ctx.headerText||'')+' '+line).trim().slice(-600);
   if (isHeaderLine(line)) { ctx.sawHeader=true; return null; }
   const structured = window.EstimationExtractorCore && window.EstimationExtractorCore.parseBamScheduleLine(line, ctx);
   if (structured) return structured;
   const dialect = window.EstimationExtractorCore && window.EstimationExtractorCore.parseKnownScheduleLine(line, ctx);
   if (dialect) return dialect;
+  const protection = window.EstimationExtractorCore && window.EstimationExtractorCore.parseProtectionTableLine(line, ctx);
+  if (protection) return protection;
   const wayM = line.match(/^\s*(?:way|cct|ckt|circuit)?\s*[:#]?\s*(\d{1,3})\b/i);
   const spare = /\bspare\b/i.test(line);
   const space = /\bspace\b/i.test(line);
@@ -1407,13 +1464,15 @@ function show(view){
 }
 function setTab(name){
   if (name==='boards') name='analysis';   // §5.4 — Boards merged into the Boards & Devices page
+  if(name!=='viewer'&&state.viewer.fullscreen)setViewerFullscreen(false);
   $$('.ptab').forEach(t=>t.classList.toggle('active', t.dataset.pt===name));
   $$('#projView .subview').forEach(p=>p.classList.toggle('active', p.id==='pt-'+name));
-  if (name==='viewer') renderViewer();
-  if (name==='analysis') renderTakeoff();
-  if (name==='reports') renderReport();
-  if (name==='review') renderReview();
-  if (name==='compare') renderCompareSel();
+  if (name==='viewer') return renderViewer();
+  if (name==='analysis') return renderTakeoff();
+  if (name==='reports') return renderReport();
+  if (name==='review') return renderReview();
+  if (name==='compare') return renderCompareSel();
+  return null;
 }
 $$('.ptab').forEach(t=>t.addEventListener('click',()=>setTab(t.dataset.pt)));
 $('#backBtn').addEventListener('click', ()=>{ state.cur=null;if(!analysisBusy)hideProcessing();renderProjects(); show('home'); });
@@ -1427,7 +1486,7 @@ $('#restoreProjectInput').addEventListener('change',async event=>{
 /* ============================ PROJECT MODEL ============================ */
 function newProject(name){
   return { id:uid(), name, created:todayStr(), updated:todayStr(), status:'Not analysed',
-    files:[], analysis:null, assistedMarkups:[] };
+    files:[], analysis:null, assistedMarkups:[], approvalLog:[] };
 }
 function bufferToBase64(buffer){
   const bytes=new Uint8Array(buffer);let binary='';
@@ -1483,13 +1542,19 @@ function ensureAssistedState(p){
   if (!state.viewer.assist) state.viewer.assist={enabled:false,boardNorm:null,seed:null,results:[]};
   return p ? p.assistedMarkups : [];
 }
+function ensureProjectState(p){
+  if(!p)return p;
+  ensureAssistedState(p);
+  if(!Array.isArray(p.approvalLog))p.approvalLog=[];
+  return p;
+}
 function projStats(p){
   const docs=p.files.length;
   const pages=p.files.reduce((a,f)=>a+(f.pages?f.pages.length:0),0);
   const a=p.analysis;
   const boards=a?Object.keys(a.boards).length:0;
   const devices=a?a.rows.filter(r=>r.status!=='rejected'&&!r.space&&r.device&&(r.kind!=='mention'||r.status==='confirmed')).reduce((s,r)=>s+(r.qty||1),0):0;
-  const review=a?a.rows.filter(r=>r.status==='pending'&&r.conf<0.8).length:0;
+  const review=a?a.rows.filter(r=>r.status==='pending'&&(r.requiresReview||r.conf<0.8)).length:0;
   return {docs,pages,boards,devices,review};
 }
 /* ============================ HOME / PROJECT CARDS ============================ */
@@ -1563,10 +1628,11 @@ function openProject(id){
   state.cur = state.projects.find(p=>p.id===id);
   if (!state.cur) return;
   if(!analysisBusy)hideProcessing();
-  ensureAssistedState(state.cur);
+  ensureProjectState(state.cur);
   show('proj');
   $('#projTitle').textContent=state.cur.name;
-  state.viewer={fileId:null,page:1,zoom:1,rot:0,dark:state.viewer.dark,boardHl:null,evidenceId:null,pdfDocs:state.viewer.pdfDocs,assist:{enabled:false,boardNorm:null,seed:null,results:[]}};
+  state.viewer={fileId:null,page:1,zoom:1,rot:0,dark:state.viewer.dark,fullscreen:false,boardHl:null,evidenceId:null,pdfDocs:state.viewer.pdfDocs,assist:{enabled:false,boardNorm:null,seed:null,results:[]}};
+  setViewerFullscreen(false);
   state.selectedBoard=null;
   renderProjHeader(); renderDocs(); renderPgclass(); renderAnalysisControls(); renderResults();
   setTab('docs');
@@ -1936,13 +2002,30 @@ function mergeAiResult(A,out,fileId,pageNo){
   });
   (out.devices||[]).forEach(d=>{
     const bn=d.board_ref?canonicalBoardRef(d.board_ref).normalised:null;
-    // regex rows win: skip AI rows for slots the schedule parser already filled
-    const dup=A.rows.some(r=>r.kind==='schedule'&&r.boardNorm===bn&&r.way===d.way
-      &&(!r.phase||!d.phase||r.phase===d.phase||d.phase==='L1L2L3'));
-    if (dup) return;
     const space=d.device_class==='space';
     const spare=d.is_spare||d.device_class==='spare';
     const device=(d.afdd&&d.device_class==='RCBO')?'AFDD+RCBO':(AI_DEVICE_MAP[d.device_class]|| (d.is_spd?'SPD':null));
+    // Complete deterministic rows win. Incomplete or inferred rows are enriched
+    // field-by-field so a local fallback never blocks better table evidence.
+    const existing=A.rows.find(r=>r.kind==='schedule'&&r.boardNorm===bn&&r.way===d.way
+      &&(!r.phase||!d.phase||r.phase===d.phase||d.phase==='L1L2L3'));
+    if(existing){
+      const incomplete=existing.inferredDevice||existing.requiresReview||!existing.device||existing.rating==null;
+      if(incomplete){
+        if(device&&(!existing.device||existing.inferredDevice))existing.device=device;
+        if(existing.rating==null&&d.rating_a!=null)existing.rating=d.rating_a;
+        if(!existing.curve&&d.trip_curve)existing.curve=d.trip_curve;
+        if(existing.sens==null&&d.rcd_ma!=null)existing.sens=d.rcd_ma;
+        if(existing.poles==null&&d.poles!=null)existing.poles=d.poles;
+        if(existing.ka==null&&d.breaking_capacity_ka!=null)existing.ka=d.breaking_capacity_ka;
+        if(!existing.desc&&d.description)existing.desc=d.description;
+        existing.inferredDevice=false;existing.aiEnriched=true;
+        existing.conf=Math.max(existing.conf||0,Math.min(0.95,Number(d.confidence)||0.6));
+        existing.requiresReview=!existing.device||existing.rating==null||existing.conf<0.8;
+        existing.extractionMethod=(existing.extractionMethod||'Deterministic parser')+' + AI field check';
+      }
+      return;
+    }
     const aiRow={id:uid(), boardNorm:bn, fileId, page:pageNo, line:null, status:'pending', kind:'ai',
       way:d.way??null, phase:d.phase&&d.phase!=='L1L2L3'?d.phase:(d.phase==='L1L2L3'?'3PH':null),
       desc:d.description||'', device, rating:d.rating_a??null, poles:d.poles??null, poleConfiguration:d.pole_configuration||null,
@@ -2266,12 +2349,17 @@ function renderCoverage(){
     return `<tr><td class="strong">${esc(b.orig||b.norm)}</td>
       <td class="num">${b.expectedWays??'—'}</td><td class="num">${b.capturedWays}</td>
       <td class="num">${unCell}</td><td class="num">${b.rowsCaptured}</td>
+      <td>${b.incompleteProtectionRows?`<span class="chip amber">${b.incompleteProtectionRows} incomplete</span>`:`<span class="chip ${b.protectionRows?'green':'red'}">${b.protectionRows?b.protectionRows+' complete':'none captured'}</span>`}</td>
       <td>${b.evidence?esc(b.evidence.text)+' <span class="hint" style="display:inline;margin:0">p'+b.evidence.page+'</span>':'—'}</td></tr>`;
-  }).join('') || '<tr><td colspan="6" style="color:var(--txt3)">No boards detected yet.</td></tr>';
+  }).join('') || '<tr><td colspan="7" style="color:var(--txt3)">No boards detected yet.</td></tr>';
   const ai=appSettings.onlineExtraction?(window.__aiStatus||'checking'):'local only';
   const aiCls = ai.startsWith('active')?'green': ai.startsWith('not configured')?'amber':'grey';
   const aiStats = appSettings.onlineExtraction&&p.analysis&&p.analysis.aiPages!=null ? ` · ${p.analysis.aiPages} page(s) read${p.analysis.aiErrors?', '+p.analysis.aiErrors+' failed':''}` : '';
-  pagesEl.innerHTML = `<div style="margin-bottom:7px"><span class="chip ${aiCls}">Extraction service: ${esc(ai)}${esc(aiStats)}</span></div>`
+  const xc=p.analysis&&p.analysis.xcheck;
+   const xcChip = xc&&xc.pages ? `<span class="chip ${xc.mismatches?'amber':'green'}" title="A second AI model re-read every page; disagreements are in the Review queue">Cross-check (${esc(xc.provider||'gemini')}): ${xc.pages} page(s)${xc.mismatches?', '+xc.mismatches+' disagreement(s) → Review':' — models agree'}</span> ` : '';
+   const protectionGaps=s.boardsWithProtectionGaps||0;
+   const protectionChip=`<span class="chip ${protectionGaps?'amber':'green'}">Protection data: ${protectionGaps?protectionGaps+' board(s) need review':'complete on captured rows'}</span>`;
+   pagesEl.innerHTML = `<div style="margin-bottom:7px"><span class="chip ${aiCls}">Extraction service: ${esc(ai)}${esc(aiStats)}</span> ${xcChip}${protectionChip}</div>`
     + (cov.zeroRowSchedulePages.length
     ? '<span class="chip amber">Check '+cov.zeroRowSchedulePages.length+' schedule page(s) with no rows:</span> '
       + cov.zeroRowSchedulePages.slice(0,30).map(z=>{
@@ -2305,7 +2393,7 @@ function renderAnalysisControls(){
   $('#anFiles').innerHTML = ready.map(f=>`<label class="check-row"><input type="checkbox" class="an-file" value="${f.id}" ${kept.has(f.id)?'':'checked'}> ${esc(f.name)}</label>`).join('') || '<div class="hint">No readable documents yet.</div>';
   const box=$('#anDevChips');
   if (!box.dataset.built){
-    box.innerHTML = QUICK_DEVICES.map(d=>`<span class="qchip on" data-d="${d}">${d}</span>`).join('');
+    box.innerHTML = QUICK_DEVICES.map(d=>`<span class="qchip" data-d="${d}">${d}</span>`).join('');
     box.querySelectorAll('.qchip').forEach(c=>c.addEventListener('click',()=>c.classList.toggle('on')));
     box.dataset.built='1';
   }
@@ -2370,7 +2458,8 @@ $('#anPreviewBtn').addEventListener('click', ()=>{
 });
 
 /* ============================ ANALYSIS PIPELINE ============================ */
-const STAGES=['Reading documents','Classifying pages','Identifying boards','Reading schedules','Extracting cables & feeders','Mapping board relationships','Compiling results'];
+const STAGES=['Preparing documents','Checking page types','Finding board references','Reading board schedules','Reading protection devices','Linking supply relationships','Checking completeness'];
+const STAGE_DETAILS=['Confirming readable source pages','Separating schedules, schematics, and specifications','Locating board identities and header evidence','Reconstructing ways and table rows','Capturing incomers, ratings, curves, RCD, and poles','Mapping supplied-from and feeder evidence','Reconciling ways, rows, and review items'];
 let processingHideTimer=null,analysisBusy=false;
 function setProcessingDock(stage,detail,progress,activeIdx=0,stateName='running'){
   const dock=$('#processingDock');if(!dock)return;
@@ -2379,6 +2468,7 @@ function setProcessingDock(stage,detail,progress,activeIdx=0,stateName='running'
   $('#processingStage').textContent=stage||'Processing';
   $('#processingDetail').textContent=detail||'';
   $('#processingFill').style.width=Math.max(0,Math.min(100,Number(progress)||0))+'%';
+  const pos=$('#processingPosition');if(pos)pos.textContent=stateName==='complete'?'Complete':stateName==='failed'?'Stopped':`Step ${Math.min(activeIdx+1,STAGES.length)} of ${STAGES.length}`;
   $('#processingSteps').innerHTML=STAGES.map((label,index)=>{
     const cls=stateName==='complete'||index<activeIdx?'done':index===activeIdx?'run':'';
     return `<span class="processing-step ${cls}" title="${esc(label)}"></span>`;
@@ -2396,7 +2486,7 @@ const paintProcessing=()=>new Promise(resolve=>requestAnimationFrame(()=>setTime
 function renderStages(activeIdx, doneAll, detail=''){
   $('#stageList').innerHTML=STAGES.map((s,i)=>{
     const cls = doneAll||i<activeIdx?'done': i===activeIdx?'run':'';
-    return `<li class="${cls}"><span class="dot"></span>${s}</li>`;
+    return `<li class="${cls}"><span class="dot"></span><span><b>${s}</b><small>${STAGE_DETAILS[i]}</small></span></li>`;
   }).join('');
   if(activeIdx>=0||doneAll){
     const index=doneAll?STAGES.length:Math.min(activeIdx,STAGES.length-1);
@@ -2507,10 +2597,23 @@ async function runAnalysis(opts){
         if (ctxBoard){ regBoard(ctxBoard,id,pageNo,true); prevBoard=ctxBoard; }
         else if(hasBoardHeader) prevBoard=null;
       } else prevBoard=null;
+      if(isSched&&ctxBoard&&window.EstimationExtractorCore?.extractBoardHeader){
+        const localHeader=window.EstimationExtractorCore.extractBoardHeader(lines);
+        const board=A.boards[ctxBoard.norm];
+        if(board&&localHeader){
+          board.header=Object.assign(board.header||{},localHeader.header||{});
+          board.headerEvidence=localHeader.evidence||{};
+          const fed=localHeader.header?.fed_from_ref;
+          if(fed&&!board.manual){
+            const detected=detectBoards(fed)[0],parent=detected?.norm||canonicalBoardRef(fed).normalised;
+            if(parent&&parent!==board.norm&&0.7>(board.parentConf||0)){board.parent=parent;board.parentConf=0.7;}
+          }
+        }
+      }
       const parsedLegend=window.EstimationExtractorCore
         ? window.EstimationExtractorCore.parseProtectionLegend(lines.join('\n'))
         : {legend:null};
-      const ctx={board:ctxBoard?ctxBoard.norm:null, boardOrig:ctxBoard?ctxBoard.orig:null, boardSection:ctxBoard?ctxBoard.section||null:null, sawHeader:false, inNotes:false,
+      const ctx={board:ctxBoard?ctxBoard.norm:null, boardOrig:ctxBoard?ctxBoard.orig:null, boardSection:ctxBoard?ctxBoard.section||null:null, sawHeader:false, headerText:'', inNotes:false,
         lastWay:null, lastPhase:null, pendingRows:[], protectionLegend:parsedLegend.legend};
       const codedPage=isSched&&window.EstimationExtractorCore&&window.EstimationExtractorCore.parseTbaSchedulePage
         ? window.EstimationExtractorCore.parseTbaSchedulePage(lines,ctx)
@@ -2625,8 +2728,8 @@ async function runAnalysis(opts){
       if(state.viewer.assist?.markupId===m.id)state.viewer.assist.results=matched.rows;
     });
   }
-  const rev=A.rows.filter(r=>r.status==='pending'&&r.conf<0.8).length;
-  const health=A.health||{state:'complete',reasons:[]};
+  const rev=A.rows.filter(r=>r.status==='pending'&&(r.requiresReview||r.conf<0.8)).length;
+   const health=A.health||{state:'complete',reasons:[]};
   // "Analysed" is EARNED: a run that misses evidence must say so (never a
   // green badge over 7 boards / 0 devices again).
   p.status = health.state==='failed' ? 'Analysis failed'
@@ -2686,6 +2789,33 @@ function deviceTotals(rows, exclSpare){
   return by;
 }
 const countable = k => !k.startsWith('(');
+function rowDecisionSummary(row){
+  const device=row.device||(row.spare?'Spare':row.space?'Space':'Unclassified row');
+  return [row.way!=null?'Way '+row.way:null,row.phase,device,row.rating!=null?row.rating+'A':null].filter(Boolean).join(' · ');
+}
+function recordRowDecision(row,action,surface,note=''){
+  const p=ensureProjectState(state.cur);if(!p||!row)return;
+  p.approvalLog.unshift({
+    id:uid(),rowId:row.id||null,boardNorm:row.boardNorm||null,action,surface,
+    summary:rowDecisionSummary(row),note,fileId:row.fileId||null,page:row.page??null,
+    sourceText:String(row.srcText||'').slice(0,240),createdAt:new Date().toISOString(),
+  });
+  if(p.approvalLog.length>2500)p.approvalLog.length=2500;
+}
+function setRowDecision(row,status,surface,note=''){
+  if(!row)return;
+  row.status=status;
+  recordRowDecision(row,status==='confirmed'?'Approved':'Rejected',surface,note);
+}
+function approveRows(rows,surface,note=''){
+  let count=0;
+  (rows||[]).forEach(candidate=>{
+    const row=state.cur?.analysis?.rows?.find(item=>item.id===candidate.id)||candidate;
+    if(!row)return;
+    setRowDecision(row,'confirmed',surface,note);count++;
+  });
+  return count;
+}
 /* Colour-coding per counted device type (design doc: estimator-style "dot off" colours).
    Deterministic hash → fixed palette, so MCB 32A is the same colour everywhere in the app. */
 const DEVICE_PALETTE=['#1668e3','#0f9960','#c87d0e','#7b5cd6','#d33c43','#0aa2c0','#b0328f','#5b7a1e','#8a5a2c','#2f6f8f'];
@@ -2718,7 +2848,7 @@ function buildDeviceTable(devs, approveLabel){
     evtd.innerHTML=`<table class="t" style="background:#f7fafd;border-left:4px solid ${countable(dev)?deviceColor(dev):'var(--line)'}">${rec.rows.map(r=>evRowHtml(r)).join('')}</table>`;
     tr.addEventListener('click', e=>{
       if (e.target.dataset&&e.target.dataset.a==='ok'){
-        rec.rows.forEach(r=>{ const live=A.rows.find(x=>x.id===r.id); if(live) live.status='confirmed'; });
+        approveRows(rec.rows,'Boards & Devices','Approved device group'+(approveLabel?' for '+approveLabel:''));
         renderTakeoff(); saveProject(p); toast(dev+' approved'+(approveLabel?' for '+approveLabel:'')); return;
       }
       evtr.style.display = evtr.style.display==='none'?'':'none';
@@ -2736,45 +2866,30 @@ function renderResults(){
   const sum=$('#anSummary');
   if (!A || !A.rows.length){
     sum.innerHTML='';
-    host.innerHTML='<div class="empty"><div class="ico">▦</div>No results yet — press <b>Count devices</b>.</div>';
+    host.innerHTML='<div class="empty"><div class="ico">▦</div>No results yet — press <b>Analyse documents</b>.</div>';
     return;
   }
-  const exclSpare = A.filters? A.filters.exclSpare!==false : true;
   const rows=activeRows();
   const by=deviceTotals(rows);
   const totDev=rows.filter(r=>r.device&&!r.space&&(r.kind!=='mention'||r.status==='confirmed')).reduce((s,r)=>s+(r.qty||1),0);
-  const totSpare=rows.filter(r=>r.spare||r.space).length;
-  const rev=A.rows.filter(r=>r.status==='pending'&&r.conf<0.8).length;
+  const rev=A.rows.filter(r=>r.status==='pending').length;
   const confd=A.rows.filter(r=>r.status==='confirmed').length;
+  const coverage=A.coverage?.summary?.pctComplete;
+  const decisions=ensureProjectState(p).approvalLog.length;
   sum.innerHTML=[
     ['Devices found', totDev],['Boards', Object.keys(A.boards).length],
-    ['Spare / space ways', totSpare+(exclSpare?' (excluded)':'')],
-    ['Confirmed', confd],['Needs review', rev],
-    ['Cables', A.cables.length],
+    ['Confirmed', confd],['Pending approval', rev],
+    ['Coverage', coverage==null?'Not measured':coverage+'%'],['Decisions logged',decisions],
   ].map(([k,v])=>`<div class="sumchip"><div class="v">${v}</div><div class="k">${k}</div></div>`).join('');
 
   host.innerHTML='';
-  const boardsSorted=Object.keys(by).sort((a,b)=> a==='__none__'?1: b==='__none__'?-1: a<b?-1:1);
-  boardsSorted.forEach(bn=>{
-    const devs=by[bn];
-    const total=Object.entries(devs).filter(([k])=>countable(k)).reduce((s,[,v])=>s+v.qty,0);
-    const grp=document.createElement('div'); grp.className='boardgrp';
-    const bnLabel = bn==='__none__' ? 'No board reference (plans / general text)' : boardLabel(bn);
-    const btype = bn!=='__none__' && A.boards[bn] ? BOARD_TYPES[A.boards[bn].type]||'' : '';
-    grp.innerHTML=`<div class="bg-head"><span class="car">▶</span>
-      <span class="bname">${esc(bnLabel)}</span>
-      ${btype?`<span class="chip grey">${esc(btype)}</span>`:''}
-      <span class="btot">${total} device${total===1?'':'s'}</span>
-      ${bn!=='__none__'?'<button class="btn sm ghost" data-a="drill" style="margin-left:8px">Open board ›</button>':''}</div>
-      <div class="bg-body"></div>`;
-    const body=grp.querySelector('.bg-body');
-    body.appendChild(buildDeviceTable(devs, bnLabel));
-    grp.querySelector('.bg-head').addEventListener('click', e=>{
-      if (e.target.dataset&&e.target.dataset.a==='drill'){ e.stopPropagation(); selectBoard(bn); return; }
-      grp.classList.toggle('open');
-    });
-    host.appendChild(grp);
-  });
+  const rollup={};
+  Object.values(by).forEach(devices=>Object.entries(devices).forEach(([device,record])=>{
+    const target=rollup[device]=rollup[device]||{qty:0,rows:[]};
+    target.qty+=record.qty;target.rows.push(...record.rows);
+  }));
+  if(Object.keys(rollup).length)host.appendChild(buildDeviceTable(rollup,'all boards'));
+  else host.innerHTML='<div class="empty">No protection devices captured yet.</div>';
 }
 /* ============================ §5.4 — MERGED BOARD DETAIL ============================ */
 /* SPN/TPN phase configuration (design doc + AI_Guide_SPN_vs_TPN):
@@ -2819,6 +2934,49 @@ function boardHeaderCard(b){
   ];
   return `<div class="bd-hdr">${fields.map(([k,v])=>`<div><div class="k">${esc(k)}</div><div class="v">${esc(String(v))}</div></div>`).join('')}</div>`;
 }
+function boardEvidenceLocation(norm){
+  const p=state.cur,A=p&&p.analysis,b=A&&A.boards[norm];if(!p||!A||!b)return null;
+  const candidates=[];
+  (b.pages||[]).forEach(ref=>{
+    const file=p.files.find(item=>item.id===ref.fileId),page=file?.pages?.[ref.page-1];if(!file||!page)return;
+    const score=(ref.primary?100:0)+(pageThreeType(page)==='db_schedule'?40:0)+(hasScheduleBoardHeader((page.lines||[]).map(line=>line.text))?20:0);
+    candidates.push({fileId:file.id,page:ref.page,score});
+  });
+  A.rows.filter(row=>row.boardNorm===norm&&row.fileId&&row.page!=null).forEach(row=>{
+    if(!candidates.some(item=>item.fileId===row.fileId&&item.page===row.page))candidates.push({fileId:row.fileId,page:row.page,score:30});
+  });
+  return candidates.sort((left,right)=>right.score-left.score||left.page-right.page)[0]||null;
+}
+function openBoardInViewer(norm){
+  const location=boardEvidenceLocation(norm);
+  if(!location){toast('No source page is linked to this board yet');return;}
+  state.viewer.fileId=location.fileId;state.viewer.page=location.page;state.viewer.boardHl=norm;state.viewer.evidenceId=null;
+  state.viewer.assist.boardNorm=norm;state.selectedBoard=norm;setTab('viewer');
+}
+function boardHealthHtml(norm,rows,b){
+  const A=state.cur.analysis,coverage=A.coverage?.perBoard?.find(item=>item.norm===norm);
+  const active=rows.filter(row=>!row.space&&!row.spare);
+  const incomplete=coverage?.incompleteProtectionRows??active.filter(row=>!row.device||row.rating==null).length;
+  const missingWays=coverage?.unaccountedWays||0;
+  const header=b?.header||{},headerFields=['ways_total','fed_from_ref','location','incomer_class','incomer_rating_a','fault_ka'];
+  const headerKnown=headerFields.filter(key=>header[key]!==undefined&&header[key]!==null&&header[key]!=='').length;
+  const issues=[];
+  if(missingWays)issues.push(`${missingWays} way${missingWays===1?'':'s'} not accounted for`);
+  if(!active.length)issues.push('no protection devices captured');
+  else if(incomplete)issues.push(`${incomplete} protection row${incomplete===1?'':'s'} missing device or rating`);
+  if(headerKnown<2)issues.push('board header needs review');
+  const cls=!active.length||missingWays?'bad':issues.length?'warn':'ok';
+  const title=cls==='ok'?'Protection data complete enough to review':'Check extraction before approving';
+  const detail=issues.length?issues.join(' · '):`${active.length} protection row${active.length===1?'':'s'} captured · ${headerKnown} key header fields read`;
+  return `<div class="bd-health ${cls}"><b>${esc(title)}</b><span>${esc(detail)}</span></div>`;
+}
+function boardApprovalLogHtml(norm){
+  const entries=ensureProjectState(state.cur).approvalLog.filter(item=>(item.boardNorm||'__none__')===norm).slice(0,30);
+  return `<div class="approval-log"><div style="padding:11px 18px;font-weight:800;font-size:13px">Decision history <span class="chip grey" style="margin-left:6px">${entries.length}</span></div>${entries.length?entries.map(item=>{
+    const when=new Date(item.createdAt);const stamp=Number.isNaN(when.getTime())?item.createdAt:when.toLocaleString('en-GB',{dateStyle:'medium',timeStyle:'short'});
+    return `<div class="approval-entry"><b>${esc(item.action)} · ${esc(item.summary||'Evidence row')}</b><span class="chip ${/Reject/i.test(item.action)?'red':'green'}">${esc(item.surface||'App')}</span><div class="meta">${esc(stamp)}${item.note?' · '+esc(item.note):''}</div><div class="meta">${item.page!=null?'Page '+item.page:''}</div></div>`;
+  }).join(''):'<div class="empty">No decisions logged for this board yet.</div>'}</div>`;
+}
 function selectBoard(norm){
   state.selectedBoard = state.selectedBoard===norm ? null : norm;
   renderTakeoff();
@@ -2833,22 +2991,25 @@ function renderBoardDetail(){
   if (!norm || !A){
     detail.style.display='none'; detail.innerHTML='';
     rollup.style.display='';
-    head.innerHTML='Device totals by board <span class="sub">all boards — select one on the left to drill in</span>';
+    head.innerHTML='Protection totals <span class="sub">all boards — select one on the left to review its details</span>';
     return;
   }
   rollup.style.display='none';
   detail.style.display='';
   const b = norm==='__none__'?null:A.boards[norm];
   const label = norm==='__none__'?'No board reference (plans / general text)':boardLabel(norm);
-  head.innerHTML=`<button class="btn sm ghost" id="bdBack">‹ All boards</button> <b style="margin-left:6px">${esc(label)}</b>`;
+  const location=b&&boardEvidenceLocation(norm);
+  head.innerHTML=`<button class="btn sm ghost" id="bdBack">‹ All boards</button> <b style="margin-left:6px">${esc(label)}</b>${location?'<button class="btn sm" id="bdViewSource" style="margin-left:auto">View source</button>':''}`;
   $('#bdBack').addEventListener('click', ()=>{ state.selectedBoard=null; renderTakeoff(); });
+  $('#bdViewSource')?.addEventListener('click',()=>openBoardInViewer(norm));
   const rows=activeRows().filter(r=>(r.boardNorm||'__none__')===norm);
   const devs=deviceTotals(rows)[norm]||{};
   const total=Object.entries(devs).filter(([k])=>countable(k)).reduce((s,[,v])=>s+v.qty,0);
-  detail.innerHTML = (b? boardHeaderCard(b) : '<div class="p-body"><span class="hint">Rows with no detected board reference.</span></div>')
+  detail.innerHTML = (b? boardHealthHtml(norm,rows,b)+boardHeaderCard(b) : '<div class="p-body"><span class="hint">Rows with no detected board reference.</span></div>')
     + `<div style="padding:11px 18px;font-weight:800;font-size:13px;border-top:1px solid var(--line)">Devices on this board <span class="chip grey" style="margin-left:8px">${total} device${total===1?'':'s'}</span></div>`;
   if (Object.keys(devs).length) detail.appendChild(buildDeviceTable(devs, label));
   else detail.insertAdjacentHTML('beforeend','<div class="empty">No devices captured on this board yet.</div>');
+  detail.insertAdjacentHTML('beforeend',boardApprovalLogHtml(norm));
 }
 function renderTakeoff(){
   renderHealthBanner();
@@ -2944,8 +3105,8 @@ function bindEvActions(container, rows){
       e.stopPropagation();
       const a=btn.dataset.ev;
       if (a==='jump'){ jumpToEvidence(r); return; }
-      if (a==='ok'){ r.status='confirmed'; }
-      if (a==='no'){ r.status='rejected'; }
+      if (a==='ok'){ setRowDecision(r,'confirmed','Boards & Devices'); }
+      if (a==='no'){ setRowDecision(r,'rejected','Boards & Devices'); }
       if (a==='edit'){ openRowEditor(r); return; }
       renderTakeoff(); renderProjHeader(); saveProject(p);
     }));
@@ -2993,14 +3154,15 @@ function openRowEditor(r, isNew){
     });
     r.status='confirmed'; r.edited=true;
     if (isNew) A.rows.push(r);
+    recordRowDecision(r,isNew?'Added and approved':'Corrected and approved','Boards & Devices');
     renderTakeoff(); renderProjHeader(); saveProject(p);
     toast(isNew?'Device added':'Row corrected and confirmed');
   });
 }
 $('#bulkApproveBtn').addEventListener('click', ()=>{
   const p=state.cur; if(!p||!p.analysis) return;
-  let n=0;
-  p.analysis.rows.forEach(r=>{ if(r.status==='pending'&&r.conf>=0.8){r.status='confirmed';n++;} });
+  const eligible=p.analysis.rows.filter(r=>r.status==='pending'&&!r.requiresReview&&r.conf>=0.8);
+  const n=approveRows(eligible,'Boards & Devices','High-confidence batch approval');
   renderTakeoff(); renderProjHeader(); saveProject(p);
   toast(n+' high-confidence rows approved');
 });
@@ -3152,6 +3314,9 @@ $('#reportXlsxBtn').addEventListener('click',async()=>{
 function boardDeviceCount(norm){
   return activeRows().filter(r=>r.boardNorm===norm&&r.device&&!r.space&&(r.kind!=='mention'||r.status==='confirmed')).reduce((s,r)=>s+(r.qty||1),0);
 }
+function boardReviewCount(norm){
+  return state.cur?.analysis?.rows?.filter(row=>row.boardNorm===norm&&row.status==='pending').length||0;
+}
 function renderBoards(){
   const p=state.cur; if(!p) return;
   const A=p.analysis;
@@ -3166,16 +3331,18 @@ function renderBoards(){
   }
   $('#boardEmpty').style.display='none';
   const boards=Object.values(A.boards).sort((a,b)=>a.norm<b.norm?-1:1);
-  boards.forEach(b=>{
+  const boardQuery=($('#boardListSearch')?.value||'').trim().toUpperCase();
+  const visibleBoards=boards.filter(board=>!boardQuery||board.norm.includes(normBoard(boardQuery))||String(board.orig||'').toUpperCase().includes(boardQuery));
+  visibleBoards.forEach(b=>{
     const tr=document.createElement('tr');
     tr.className='board-row'+(state.selectedBoard===b.norm?' sel':'');
     tr.style.cursor='pointer';
-    tr.innerHTML=`<td class="strong">${esc(b.orig)}</td>
-      <td>${phaseConfigChip(b.norm)||esc(BOARD_TYPES[b.type]||'')}</td>
-      <td>${b.parent?esc(boardLabel(b.parent))+(b.manual?' <span class="chip blue">manual</span>':''):'<span class="chip grey">unknown</span>'}
-        <button class="btn sm ghost" data-a="parent">✎</button></td>
+    const reviewCount=boardReviewCount(b.norm);
+    const suppliedFrom=b.parent?esc(boardLabel(b.parent))+(b.manual?' <span class="chip blue">manual</span>':''):'<span class="chip grey">unknown supply</span>';
+    tr.innerHTML=`<td class="strong">${esc(b.orig)}<div style="margin-top:3px">${phaseConfigChip(b.norm)||`<span class="chip grey">${esc(BOARD_TYPES[b.type]||'Board')}</span>`}</div>
+      <div class="hint" style="margin-top:4px">From ${suppliedFrom} <button class="btn sm ghost" data-a="parent" title="Edit supplied from">✎</button></div></td>
       <td class="num">${boardDeviceCount(b.norm)}</td>
-      <td>${b.manual?'<span class="chip blue">Manually set</span>':b.parent?confChip(b.parentConf||0.6):confChip(0.5)}</td>`;
+      <td class="num">${reviewCount?`<span class="chip amber">${reviewCount}</span>`:'<span class="chip green">0</span>'}</td>`;
     tr.querySelector('[data-a=parent]').addEventListener('click', e=>{
       e.stopPropagation();
       const opts=['MAINLVPANEL','TRANSFORMER','GENERATOR','ATS',...boards.map(x=>x.norm).filter(n=>n!==b.norm)];
@@ -3193,6 +3360,7 @@ function renderBoards(){
     tr.addEventListener('click', ()=>selectBoard(b.norm));
     tb.appendChild(tr);
   });
+  if(!visibleBoards.length)tb.innerHTML='<tr><td colspan="3" style="color:var(--txt3)">No boards match this search.</td></tr>';
   // hierarchy tree
   const known=new Set(Object.keys(A.boards));
   const roots=new Map(); // rootName -> children built later
@@ -3231,6 +3399,7 @@ function renderBoards(){
     const strip=n=>n.replace(/0+(\d)/g,'$1');
     if (a.norm!==b.norm && strip(a.norm)===strip(b.norm)) dupes.push([a,b]);
   }
+  $('#dupeCount').textContent=dupes.length;
   dl.innerHTML = dupes.length? dupes.map(([a,b])=>
     `<div class="rev-item"><div class="ric" style="background:var(--amber-soft)">!</div>
      <div><h4>${esc(a.orig)} and ${esc(b.orig)} may be the same board</h4>
@@ -3241,12 +3410,14 @@ function renderBoards(){
     const [keep,drop]=btn.dataset.m.split('|');
     A.rows.forEach(r=>{ if(r.boardNorm===drop) r.boardNorm=keep; });
     A.cables.forEach(c=>{ if(c.boardNorm===drop) c.boardNorm=keep; });
+    ensureProjectState(p).approvalLog.forEach(item=>{if(item.boardNorm===drop)item.boardNorm=keep;});
     if (A.boards[drop]){ A.boards[keep].pages.push(...A.boards[drop].pages); delete A.boards[drop]; }
     Object.values(A.boards).forEach(b=>{ if(b.parent===drop) b.parent=keep; });
     if (state.selectedBoard===drop) state.selectedBoard=keep;
     renderTakeoff(); renderProjHeader(); saveProject(p); toast('Boards merged');
   }));
 }
+$('#boardListSearch').addEventListener('input',renderBoards);
 
 /* ============================ §5.3 — SCHEMATIC ↔ SCHEDULE CROSS-REFERENCE ============================ */
 /* Deterministic code, not the model ("AI extracts, code computes"). Links a board named in a
@@ -3360,7 +3531,7 @@ function renderReview(){
   const A=p.analysis;
   if (!A){ host.innerHTML='<div class="empty"><div class="ico">✓</div>Nothing to review.</div>'; return; }
   const items=[];
-  A.rows.filter(r=>r.status==='pending'&&r.conf<0.8).forEach(r=>items.push({kind:'row',r,conf:r.conf}));
+  A.rows.filter(r=>r.status==='pending'&&(r.requiresReview||r.conf<0.8)).forEach(r=>items.push({kind:'row',r,conf:r.conf}));
   p.files.filter(f=>f.status==='ready'&&!f.native&&f.pages.some(pg=>!(pg.lines||[]).length)).forEach(f=>items.push({kind:'scan',f}));
   Object.values(A.boards).filter(b=>!b.parent&&!b.manual&&b.type!=='MAIN').forEach(b=>items.push({kind:'orphan',b}));
   if (A.coverage){
@@ -3379,7 +3550,7 @@ function renderReview(){
         <div style="flex:1"><h4>${r.qty>1?r.qty+' × ':''}${esc(r.device||'Unclassified row')}${r.boardNorm?' on '+esc(boardLabel(r.boardNorm)):''}
           ${confChip(r.conf)}</h4>
         <div class="rsrc">${esc(f?f.name:'?')} · page ${r.page} — ${esc(r.srcText)}</div>
-        <div class="hint">${r.kind==='mention'?'Found as a mention on a plan/text page (not a structured schedule row) — please confirm.':!r.boardNorm?'No board reference could be attached to this row.':'Low-confidence extraction — please check against the document.'}</div></div>
+         <div class="hint">${r.xcheck?'⚠ '+esc(r.xcheck)+' — please check against the document.':r.inferredDevice?'Device class was inferred from rating and curve columns — confirm it against the schedule.':r.kind==='mention'?'Found as a mention on a plan/text page (not a structured schedule row) — please confirm.':!r.boardNorm?'No board reference could be attached to this row.':'Low-confidence extraction — please check against the document.'}</div></div>
         <div class="racts">
           <button class="btn sm" data-a="jump">View</button>
           <button class="btn sm" data-a="edit">Correct</button>
@@ -3389,7 +3560,7 @@ function renderReview(){
         const a=b.dataset.a;
         if (a==='jump') return jumpToEvidence(r);
         if (a==='edit') return openRowEditor(r);
-        r.status = a==='ok'?'confirmed':'rejected';
+        setRowDecision(r,a==='ok'?'confirmed':'rejected','Review');
         renderReview(); renderTakeoff(); renderProjHeader(); saveProject(p);
       }));
     } else if (it.kind==='scan'){
@@ -3429,13 +3600,13 @@ function renderReview(){
 function renderAssistControls(f){
   const p=state.cur,V=state.viewer,A=p&&p.analysis,as=V.assist;
   ensureAssistedState(p);
-  const bar=$('#vAssistBar'),mode=$('#vAssistMode'),sel=$('#vAssistBoard');
+  const bar=$('#vAssistBar'),mode=$('#vAssistMode');
   bar.hidden=!as.enabled;mode.classList.toggle('assist-on',as.enabled);
   const boards=A?Object.values(A.boards):[];
   const pageBoards=A&&f?[...new Set(A.rows.filter(r=>r.fileId===f.id&&r.page===V.page&&r.boardNorm).map(r=>r.boardNorm))]:[];
+  if(!as.boardNorm&&V.boardHl)as.boardNorm=V.boardHl;
   if(!as.boardNorm&&pageBoards.length===1) as.boardNorm=pageBoards[0];
   if(as.boardNorm&&!boards.some(b=>b.norm===as.boardNorm))as.boardNorm=null;
-  sel.innerHTML='<option value="">Choose a board…</option>'+boards.map(b=>`<option value="${b.norm}" ${b.norm===as.boardNorm?'selected':''}>${esc(b.orig)}</option>`).join('');
   $('#vAssistSeed').textContent=as.seed?as.seed.label:'None selected';
   const qty=(as.results||[]).reduce((sum,r)=>sum+(Number(r.qty)||1),0);
   $('#vAssistCount').textContent=qty+' match'+(qty===1?'':'es');
@@ -3445,7 +3616,7 @@ function applyAssistedSeed(text,row,evidence={}){
   if(!A||!core){toast('Run device analysis before using assisted canvas');return;}
   const seed=core.assistedSeedFromText(text,row);
   if(!seed){toast('Select a line containing both a device and rating, such as 16A RCBO');return;}
-  const boardNorm=row?.boardNorm||$('#vAssistBoard').value||V.assist.boardNorm;
+  const boardNorm=row?.boardNorm||V.boardHl||V.assist.boardNorm;
   const fileId=evidence.fileId||row?.fileId||V.assist.seed?.fileId||viewerFile()?.id||null;
   if(!boardNorm){toast('Choose the current board first');return;}
   const matched=core.matchAssistedRows(A.rows,seed,{boardNorm,fileId});
@@ -3511,7 +3682,7 @@ function pageDetections(f, pageNo){
     A.cables.forEach(c=>{ if(c.fileId===f.id&&c.page===pageNo) out.push({kind:'cable', r:c, line:c.line, color:'cyan', label:'Cable '+c.orig}); });
   }
   (f.pages[pageNo-1].lines||[]).forEach((l,li)=>{
-    detectBoards(l.text).forEach(b=>out.push({kind:'board', line:li, color:'blue', label:'Board '+b.orig, r:{srcText:l.text}}));
+    detectBoards(l.text).forEach(b=>out.push({kind:'board', line:li, color:'blue', label:'Board '+b.orig, r:{srcText:l.text,boardNorm:b.norm}}));
   });
   (p.assistedMarkups||[]).forEach(m=>m.matches?.forEach(match=>{
     if(match.fileId===f.id&&match.page===pageNo){
@@ -3526,7 +3697,7 @@ function ovlVisible(d){
   if (d.kind==='boardhl') return true;   // §5.2 smart-highlight is independent of the overlay filter
   if (mode==='all') return true;
   if (mode==='confirmed') return d.kind==='row'&&d.r.status==='confirmed';
-  if (mode==='review') return d.kind==='row'&&d.r.status==='pending'&&d.r.conf<0.8;
+  if (mode==='review') return d.kind==='row'&&d.r.status==='pending'&&(d.r.requiresReview||d.r.conf<0.8);
   if (mode==='cable') return d.kind==='cable';
   if (mode==='board') return d.kind==='board';
   if (d.kind==='assisted') return mode==='all';
@@ -3600,7 +3771,7 @@ async function renderViewer(){
   // §5.2 smart-highlight board select
   const bsel=$('#vBoardHl'); const A=p.analysis;
   const bkeep=V.boardHl||'';
-  bsel.innerHTML='<option value="">Highlight board…</option>'+(A?Object.values(A.boards).sort((a,b)=>a.norm<b.norm?-1:1)
+  bsel.innerHTML='<option value="">Go to board…</option>'+(A?Object.values(A.boards).sort((a,b)=>a.norm<b.norm?-1:1)
     .map(b=>`<option value="${b.norm}" ${b.norm===bkeep?'selected':''}>${esc(b.orig)}</option>`).join(''):'');
   if (A&&bkeep&&!A.boards[bkeep]) V.boardHl=null;
   // search state (across the whole document)
@@ -3621,6 +3792,7 @@ async function renderViewer(){
       if (hit) dets.push({kind:'boardhl', line:li, color:'boardhl', label:'Board '+boardLabel(V.boardHl), r:{srcText:l.text}});
     });
   }
+  dets.forEach((d,index)=>{d.viewerKey='det-'+index;});
   // meta row (+ board page map when highlighting)
   const hlPages = V.boardHl? boardPagesIn(f,V.boardHl) : [];
   const nDets=dets.filter(d=>d.kind!=='boardhl').length;
@@ -3672,7 +3844,8 @@ async function renderViewer(){
       if (pg.lines){
         if (showOvl) dets.forEach(d=>{
           const ln=pg.lines[d.line],bbox=d.bbox||ln?.bbox; if(!bbox) return;
-          const o=document.createElement('div'); o.className='ovl '+d.color+(d.kind==='assisted'?' assisted':''); o.title=d.label;
+          const focused=V.evidenceId&&d.r?.id===V.evidenceId;
+          const o=document.createElement('div'); o.className='ovl '+d.color+(d.kind==='assisted'?' assisted':'')+(focused?' attention':''); o.title=d.label;o.dataset.detKey=d.viewerKey;
           o.style.left=(bbox[0]*sc-2)+'px'; o.style.top=(bbox[1]*sc-1)+'px';
           o.style.width=(bbox[2]*sc+4)+'px'; o.style.height=(bbox[3]*sc+2)+'px';
           wrap.appendChild(o);
@@ -3707,7 +3880,8 @@ async function renderViewer(){
     img.onload=()=>URL.revokeObjectURL(imageUrl);img.src=imageUrl;wrap.appendChild(img);
     if(showOvl&&pg.lines) dets.forEach(d=>{
       const line=pg.lines[d.line],bbox=d.bbox||line?.bbox;if(!bbox)return;
-      const overlay=document.createElement('div');overlay.className='ovl '+d.color;overlay.title=d.label;
+      const focused=V.evidenceId&&d.r?.id===V.evidenceId;
+      const overlay=document.createElement('div');overlay.className='ovl '+d.color+(focused?' attention':'');overlay.title=d.label;overlay.dataset.detKey=d.viewerKey;
       overlay.style.left=(bbox[0]*scale-2)+'px';overlay.style.top=(bbox[1]*scale-1)+'px';
       overlay.style.width=(bbox[2]*scale+4)+'px';overlay.style.height=(bbox[3]*scale+2)+'px';wrap.appendChild(overlay);
     });
@@ -3724,7 +3898,7 @@ async function renderViewer(){
       if (q && l.text.toLowerCase().includes(q))
         t=t.replace(new RegExp('('+q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')','gi'),'<span class="hl blue">$1</span>');
       const ds=byLine[li];
-      if (ds && !q){ const top=ds.find(x=>x.kind==='assisted')||ds.find(x=>x.kind==='boardhl')||ds[0]; t=`<span class="hl ${top.color}" data-line="${li}" title="${esc(ds.map(x=>x.label).join(' · '))}">${t}</span>`; }
+      if (ds && !q){ const top=ds.find(x=>x.kind==='assisted')||ds.find(x=>x.kind==='boardhl')||ds[0]; const focused=V.evidenceId&&ds.some(item=>item.r?.id===V.evidenceId); t=`<span class="hl ${top.color}${focused?' attention':''}" data-line="${li}" title="${esc(ds.map(x=>x.label).join(' · '))}">${t}</span>`; }
       return `<span id="vline-${li}" data-line="${li}">${t}</span>`;
     }).join('\n');
     const sizer=document.createElement('div');sizer.className='v-textsizer';sizer.appendChild(div);
@@ -3749,25 +3923,42 @@ async function renderViewer(){
   } else {
     const listDets=dets.filter(d=>d.kind!=='boardhl');
     dl.innerHTML = listDets.length? listDets.map((d,i)=>`<div class="det" data-i="${i}">
-      <span class="chip ${d.color}">${d.kind}</span> <b>${esc(d.label)}</b>
+      <div class="det-head"><span class="chip ${d.color}">${d.kind}</span><b>${esc(d.label)}</b><span class="det-actions">
+        ${d.r?.boardNorm?'<button class="btn sm ghost" data-action="board">Board</button>':''}
+        ${d.kind==='row'&&d.r.status!=='confirmed'?'<button class="btn sm primary" data-action="approve">Approve</button>':d.kind==='row'?'<span class="chip green">Approved</span>':''}
+      </span></div>
       <div class="hint" style="margin-top:2px">${esc((d.r.srcText||'').slice(0,90))}</div></div>`).join('')
     : '<div class="empty">No detections on this page.</div>';
-    dl.querySelectorAll('.det').forEach(el=>el.addEventListener('click',()=>{
+    dl.querySelectorAll('.det').forEach(el=>{
       const d=listDets[+el.dataset.i];
-      if(V.assist.enabled&&d.kind==='row')return applyAssistedSeed(d.r.srcText,d.r,{fileId:f.id,page:V.page,line:d.line});
-      const tgt=document.getElementById('vline-'+d.line);
-      if (tgt&&tgt.scrollIntoView) tgt.scrollIntoView({block:'center',behavior:'smooth'});
-    }));
+      el.querySelectorAll('[data-action]').forEach(button=>button.addEventListener('click',event=>{
+        event.stopPropagation();
+        if(button.dataset.action==='approve'){
+          setRowDecision(d.r,'confirmed','Viewer');saveProject(p);renderProjHeader();renderViewer();toast(d.label+' approved');
+        }else if(button.dataset.action==='board'){
+          state.selectedBoard=d.r.boardNorm;setTab('analysis');
+        }
+      }));
+      el.addEventListener('click',()=>{
+        if(V.assist.enabled&&d.kind==='row')return applyAssistedSeed(d.r.srcText,d.r,{fileId:f.id,page:V.page,line:d.line});
+        focusViewerDetection(d);
+      });
+    });
   }
 }
-function jumpToEvidence(r){
+function focusViewerDetection(d){
+  const V=state.viewer;V.evidenceId=d.r?.id||null;
+  $$('#vStage .attention').forEach(element=>element.classList.remove('attention'));
+  const line=document.getElementById('vline-'+d.line);
+  const target=document.querySelector(`#vStage [data-det-key="${d.viewerKey}"]`)||line?.querySelector('.hl')||line;
+  if(target){target.classList.add('attention');if(target.matches('.hl'))target.classList.add('hl');target.scrollIntoView?.({block:'center',inline:'center',behavior:'smooth'});}
+}
+async function jumpToEvidence(r){
   if (!r.fileId){ toast('Manually-added rows have no source document'); return; }
   state.viewer.fileId=r.fileId; state.viewer.page=r.page||1;state.viewer.evidenceId=r.id;
-  setTab('viewer');
-  setTimeout(()=>{
-    const tgt=document.getElementById('vline-'+r.line);
-    if (tgt){ if(tgt.scrollIntoView) tgt.scrollIntoView({block:'center'}); tgt.classList.add('hl','blue'); }
-  }, 60);
+  await setTab('viewer');
+  const target=$('#vStage .attention')||document.getElementById('vline-'+r.line);
+  target?.scrollIntoView?.({block:'center',inline:'center'});
 }
 $('#vPrev').addEventListener('click', ()=>{ state.viewer.page--; renderViewer(); });
 $('#vNext').addEventListener('click', ()=>{ state.viewer.page++; renderViewer(); });
@@ -3803,7 +3994,17 @@ $('#vFit').addEventListener('click', async ()=>{
 $('#vRotate').addEventListener('click', ()=>{ state.viewer.rot=(state.viewer.rot+90)%360; renderViewer(); });
 $('#vOvl').addEventListener('change', renderViewer);
 $('#vOvlFilter').addEventListener('change', renderViewer);
-$('#vBoardHl').addEventListener('change', e=>{ state.viewer.boardHl=e.target.value||null; renderViewer(); });
+$('#vBoardHl').addEventListener('change', e=>{
+  const norm=e.target.value||null;
+  if(!norm){state.viewer.boardHl=null;state.viewer.assist.boardNorm=null;renderViewer();return;}
+  openBoardInViewer(norm);
+});
+function setViewerFullscreen(enabled){
+  const on=Boolean(enabled),host=$('#pt-viewer'),button=$('#vFullscreen');
+  state.viewer.fullscreen=on;host.classList.toggle('viewer-fullscreen',on);document.body.classList.toggle('viewer-fullscreen-open',on);
+  button.setAttribute('aria-pressed',String(on));button.classList.toggle('primary',on);button.title=on?'Exit full screen document viewer':'Full screen document viewer';
+}
+$('#vFullscreen').addEventListener('click',()=>setViewerFullscreen(!state.viewer.fullscreen));
 $('#vDark').addEventListener('click', ()=>{ state.viewer.dark=!state.viewer.dark; renderViewer(); });
 $('#vPrint').addEventListener('click', ()=>{
   const cv=$('#vStage canvas'), tp=$('#vStage .v-textpage');
@@ -3861,6 +4062,7 @@ $('#vStage').addEventListener('pointerup',stopViewerPan);
 $('#vStage').addEventListener('pointercancel',stopViewerPan);
 document.addEventListener('keydown', e=>{
   if (!$('#pt-viewer').classList.contains('active')) return;
+  if(e.key==='Escape'&&state.viewer.fullscreen){setViewerFullscreen(false);return;}
   if (e.target.matches('input,select,textarea')) return;
   if (e.key==='ArrowLeft'){ state.viewer.page--; renderViewer(); }
   else if (e.key==='ArrowRight'){ state.viewer.page++; renderViewer(); }
@@ -3871,11 +4073,6 @@ $('#vAssistMode').addEventListener('click',()=>{
   const V=state.viewer;V.assist.enabled=!V.assist.enabled;
   if(V.assist.enabled){V.rot=0;$('#vOvl').checked=true;}
   renderViewer();
-});
-$('#vAssistBoard').addEventListener('change',e=>{
-  const V=state.viewer;V.assist.boardNorm=e.target.value||null;
-  if(V.assist.seed) applyAssistedSeed(V.assist.seed.source,null,V.assist.seed);
-  else renderViewer();
 });
 $('#vAssistClear').addEventListener('click',clearAssistedMarkup);
 $('#vOcrBtn').addEventListener('click',()=>{

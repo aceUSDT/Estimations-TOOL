@@ -67,4 +67,33 @@ assert.equal(active.length, 8);
 assert.ok(active.every((row) => row.boardNorm === 'DBX01'));
 assert.equal(analysis.boards.DBX01.orig, 'DB-X-01');
 
+const genericProtection = Core.parseProtectionTableLine(
+  '7 Classroom sockets 32 C 10kA 1P',
+  { headerText: 'Way Description Protective device rating Curve Breaking capacity Poles Cable' },
+);
+assert.equal(genericProtection.way, 7);
+assert.equal(genericProtection.device, 'MCB');
+assert.equal(genericProtection.rating, 32);
+assert.equal(genericProtection.curve, 'C');
+assert.equal(genericProtection.ka, 10);
+assert.equal(genericProtection.inferredDevice, true);
+assert.equal(genericProtection.requiresReview, true);
+assert.equal(Core.parseProtectionTableLine('7 Classroom sockets 32 C 10kA 1P'), null);
+
+const localHeader = Core.extractBoardHeader([
+  'DB REFERENCE: DB-L2-07',
+  'LOCATION: Level 2 riser',
+  'FED FROM: SMDB-2',
+  '18 WAY TP&N',
+  'INCOMER: 125A 4P MCCB',
+  'FAULT RATING: 10kA',
+]);
+assert.equal(localHeader.header.ways_total, 18);
+assert.equal(localHeader.header.location, 'Level 2 riser');
+assert.equal(localHeader.header.fed_from_ref, 'SMDB-2');
+assert.equal(localHeader.header.incomer_class, 'MCCB');
+assert.equal(localHeader.header.incomer_rating_a, 125);
+assert.equal(localHeader.header.incomer_poles, 4);
+assert.equal(localHeader.header.fault_ka, 10);
+
 console.log('TBA coded-schedule regression tests passed.');
