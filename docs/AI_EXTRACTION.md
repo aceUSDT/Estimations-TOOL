@@ -24,8 +24,9 @@ win when an online result refers to the same circuit slot.
 
 ## Server configuration
 
-Set `ANTHROPIC_API_KEY` in the Netlify site's server-side environment. Optionally set
-`EXTRACTION_MODEL`. Never put a key in `index.html`, a committed `.env`, the desktop bundle,
+Set `GEMINI_API_KEY` in the Netlify site's server-side environment (Google Gemini is the
+only runtime AI provider). Optionally set `GEMINI_MODEL` — it defaults to an exact pinned
+model id. Never put a key in `index.html`, a committed `.env`, the desktop bundle,
 or any other browser-downloadable file.
 
 For local hosted-function development, use `netlify dev` with an untracked `.env`. Running

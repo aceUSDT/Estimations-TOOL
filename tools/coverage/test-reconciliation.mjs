@@ -41,6 +41,8 @@ check('zero-row page 12 flagged', cov.zeroRowSchedulePages.some((z) => z.page ==
   JSON.stringify(cov.zeroRowSchedulePages));
 check('page 11 not flagged (has rows)', !cov.zeroRowSchedulePages.some((z) => z.page === 11));
 check('summary pct', cov.summary.pctComplete === Math.round((8 / 18) * 100), `got ${cov.summary.pctComplete}`);
+check('missing protection fields are surfaced', mech.incompleteProtectionRows === 8, `got ${mech.incompleteProtectionRows}`);
+check('board protection gap is summarized', cov.summary.boardsWithProtectionGaps === 1, `got ${cov.summary.boardsWithProtectionGaps}`);
 
 /* board with no header — no phantom expectation */
 const cov2 = core.buildCoverage({
@@ -91,6 +93,18 @@ const upstreamCoverage = core.buildCoverage({
 });
 check('upstream switchboard excluded from DB take-off coverage', upstreamCoverage.summary.boards === 0);
 check('upstream switchboard does not create a zero-row warning', upstreamCoverage.zeroRowSchedulePages.length === 0);
+
+const protectionCoverage = core.buildCoverage({
+  boards: { DBC: { norm: 'DBC', orig: 'DB-C', pages: [{ fileId: 'f5', page: 1, primary: true }] } },
+  rows: [
+    { boardNorm: 'DBC', way: 1, page: 1, fileId: 'f5', kind: 'schedule', device: 'MCB', rating: 16 },
+    { boardNorm: 'DBC', way: 2, page: 1, fileId: 'f5', kind: 'schedule', device: 'MCB', rating: null },
+    { boardNorm: 'DBC', way: 3, page: 1, fileId: 'f5', kind: 'schedule', spare: true, device: null, rating: null },
+  ],
+  pages: [{ fileId: 'f5', page: 1, text: 'DB REFERENCE DB-C\n3 Way\n1 16A MCB\n2 MCB\n3 Spare', type: 'db-schedule' }],
+});
+check('spares do not count as incomplete protection rows', protectionCoverage.perBoard[0].incompleteProtectionRows === 1);
+check('protection row count excludes spare ways', protectionCoverage.perBoard[0].protectionRows === 2);
 
 if (fail) { console.log(`\n${fail} failure(s)`); process.exit(1); }
 console.log('PASS: expectedWaysFromText, pageLooksTabular, buildCoverage (header-vs-rows, zero-row pages, no-header case)');

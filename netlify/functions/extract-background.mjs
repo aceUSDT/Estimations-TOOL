@@ -6,13 +6,10 @@
  * continues, and the result is written to a Netlify Blobs store keyed by
  * job_id. The client then polls `extract-status?id=<job_id>`.
  *
- * Providers: Claude primary (ANTHROPIC_API_KEY), Gemini free tier as second
- * opinion or primary fallback (GEMINI_API_KEY). Disagreements between the two
- * are computed by deterministic code and routed to the human Review queue.
- * Keys stay server-side only.
+ * Provider: Google Gemini only (GEMINI_API_KEY). The key stays server-side.
  */
 import { getStore } from '@netlify/blobs';
-import { buildInstruction, extractWithVerification } from './lib/providers.mjs';
+import { buildInstruction, extractPage } from './lib/providers.mjs';
 
 export default async function handler(req) {
   let body = {};
@@ -28,7 +25,7 @@ export default async function handler(req) {
       return new Response(null, { status: 202 });
     }
     const instruction = buildInstruction({ filename, pageNumber, hints, textLines });
-    const out = await extractWithVerification({ imageBase64, mediaType, instruction, maxTokens: 16000 });
+    const out = await extractPage({ imageBase64, mediaType, instruction, maxTokens: 16000 });
     await store.setJSON(jobId, { status: 'done', ...out });
   } catch (err) {
     const msg = err && err.message ? err.message : String(err);

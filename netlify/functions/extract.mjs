@@ -1,24 +1,18 @@
 /* AI extraction endpoint — the "AI extracts" half of the architecture.
  *
- * The browser posts one page (rendered image and/or text lines); this function
- * runs the primary extractor (Claude when ANTHROPIC_API_KEY is set, else the
- * Gemini free tier when GEMINI_API_KEY is set) and, when BOTH providers are
- * configured, a second-opinion pass whose disagreements are computed by
- * deterministic code and surfaced for human review — never auto-resolved.
- * Keys live ONLY in Netlify env vars — never in the repo or browser (CLAUDE.md §8).
+ * The browser posts one page (rendered image and/or text lines) — only after
+ * the user has explicitly enabled online extraction — and this function runs
+ * the Gemini extractor. Gemini is the ONLY runtime AI provider; the key lives
+ * ONLY in a Netlify env var — never in the repo or browser.
  *
  * Env vars:
- *   ANTHROPIC_API_KEY   Claude — primary extractor
- *   GEMINI_API_KEY      Gemini free tier (https://aistudio.google.com/apikey) —
- *                       second opinion, or primary fallback if no Anthropic key
- *   EXTRACTION_MODEL    optional Claude model override (default claude-sonnet-5)
- *   GEMINI_MODEL        optional Gemini model override (default gemini-2.5-flash)
+ *   GEMINI_API_KEY   required — https://aistudio.google.com/apikey
+ *   GEMINI_MODEL     optional exact-model override (pinned default in providers)
  *
- * Note on timeouts: Netlify synchronous functions cap at ~26s; the second
- * opinion runs in PARALLEL with the primary so verification adds no latency
- * beyond max(primary, second). The background function has no such ceiling.
+ * Note on timeouts: Netlify synchronous functions cap at ~26s; dense pages
+ * go through the background function instead (no such ceiling).
  */
-import { buildInstruction, extractWithVerification, providerStatus, CLAUDE_MODEL, GEMINI_MODEL } from './lib/providers.mjs';
+import { buildInstruction, extractPage, providerStatus, GEMINI_MODEL } from './lib/providers.mjs';
 
 const json = (status, body) => new Response(JSON.stringify(body), {
   status,
@@ -32,15 +26,14 @@ export default async function handler(req) {
     return json(200, {
       status: 'ok',
       configured: status.configured,
-      providers: { anthropic: status.anthropic, gemini: status.gemini },
+      providers: { gemini: status.gemini },
       primary: status.primary,
-      verify: status.verify,
-      model: status.primary === 'gemini' ? GEMINI_MODEL : CLAUDE_MODEL,
+      model: GEMINI_MODEL,
     });
   }
   if (req.method !== 'POST') return json(405, { error: 'POST only' });
   if (!providerStatus().configured) {
-    return json(503, { error: 'AI extraction is not configured: set ANTHROPIC_API_KEY (or GEMINI_API_KEY) in the Netlify environment.' });
+    return json(503, { error: 'AI extraction is not configured: set GEMINI_API_KEY in the Netlify environment.' });
   }
 
   let body;
@@ -56,7 +49,7 @@ export default async function handler(req) {
 
   const instruction = buildInstruction({ filename, pageNumber, hints, textLines });
   try {
-    const out = await extractWithVerification({ imageBase64, mediaType, instruction, maxTokens: 12000 });
+    const out = await extractPage({ imageBase64, mediaType, instruction, maxTokens: 12000 });
     return json(200, out);
   } catch (err) {
     if (err && err.http) return json(err.http, { error: err.message });

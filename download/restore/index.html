@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Restore purchase — Estimation Tools</title>
+<meta name="robots" content="noindex">
+<link rel="stylesheet" href="../store.css">
+</head>
+<body data-page="restore">
+
+<div class="topbar">
+  <div class="in">
+    <a class="brand" href="../">Estimation Tools</a>
+    <nav><a href="../">Store</a><a href="../legal/">Legal</a></nav>
+  </div>
+</div>
+
+<div class="card-page">
+  <h1>Restore your purchase</h1>
+  <p class="sub">Enter the email you used at checkout and we'll send a fresh download link.
+    The link works once and expires after 15 minutes.</p>
+
+  <div id="restoreError" class="note red hidden">That link has expired or was already used —
+    request a new one below.</div>
+
+  <form id="restoreForm">
+    <div class="field">
+      <label for="email">Purchase email</label>
+      <input id="email" type="email" required autocomplete="email" placeholder="you@company.com">
+    </div>
+    <button class="btn" type="submit">Email my download link</button>
+  </form>
+
+  <div id="restoreDone" class="note green hidden">If that email bought a licence, a download link is
+    on its way. Check your inbox (and spam folder) in the next minute or two.</div>
+</div>
+
+<footer><div class="in"><span>© <span data-seller>the seller</span></span><a href="../legal/">Terms, refunds &amp; privacy</a></div></footer>
+<script src="../store.js"></script>
+</body>
+</html>

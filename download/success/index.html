@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Your downloads — Estimation Tools</title>
+<meta name="robots" content="noindex">
+<link rel="stylesheet" href="../store.css">
+</head>
+<body data-page="success">
+
+<div class="topbar">
+  <div class="in">
+    <a class="brand" href="../">Estimation Tools</a>
+    <nav><a href="../restore/">Restore purchase</a><a href="../legal/">Legal</a></nav>
+  </div>
+</div>
+
+<div class="wrap">
+  <div id="waitState" class="card-page">
+    <h1><span class="spin"></span>Confirming your payment…</h1>
+    <p class="sub">This usually takes a few seconds. Don't close this page.</p>
+  </div>
+
+  <div id="failState" class="card-page hidden">
+    <h1>We couldn't confirm this purchase</h1>
+    <p class="sub">If you completed payment, your confirmation may still be in flight — refresh in a
+      minute, or <a href="../restore/">restore your purchase by email</a>. Nothing is charged for a
+      cancelled checkout.</p>
+  </div>
+
+  <div id="readyState" class="hidden">
+    <section class="section" style="border-top:none">
+      <div class="note green">Payment confirmed — thank you! Your download links are ready. Each link
+        is valid for 5 minutes; you can come back any time via <a href="../restore/">restore purchase</a>.</div>
+      <h2>Download Estimation Tools</h2>
+      <div class="dl-grid">
+        <div class="dl-card" data-platform="windows" data-arch="x64">
+          <h3>Windows</h3><div class="os">Windows 10/11, 64-bit (x64)</div>
+          <button class="btn" data-download>Download .exe</button>
+          <div class="meta"></div>
+        </div>
+        <div class="dl-card" data-platform="windows" data-arch="arm64">
+          <h3>Windows on ARM</h3><div class="os">Windows 11 ARM64</div>
+          <button class="btn" data-download>Download .exe</button>
+          <div class="meta"></div>
+        </div>
+        <div class="dl-card" data-platform="macos" data-arch="arm64">
+          <h3>macOS</h3><div class="os">Apple Silicon (M-series), macOS 11+</div>
+          <button class="btn" data-download>Download .dmg</button>
+          <div class="meta"></div>
+        </div>
+        <div class="dl-card" data-platform="macos" data-arch="x64">
+          <h3>macOS (Intel)</h3><div class="os">Intel Macs, macOS 11+</div>
+          <button class="btn" data-download>Download .dmg</button>
+          <div class="meta"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>Verify your download (optional)</h2>
+      <p class="sub" style="color:var(--txt2)">After downloading, you can check the file's SHA-256
+        fingerprint against the one shown on its card:</p>
+      <div class="feature" style="margin-top:10px">
+        <p style="font-family:var(--mono);font-size:12.5px">
+          Windows&nbsp;(PowerShell): <b>Get-FileHash .\Estimation-Tools-*.exe</b><br>
+          macOS&nbsp;(Terminal): <b>shasum -a 256 ~/Downloads/Estimation-Tools-*.dmg</b></p>
+      </div>
+    </section>
+  </div>
+</div>
+
+<footer><div class="in"><span>© <span data-seller>the seller</span></span><a href="../legal/">Terms, refunds &amp; privacy</a></div></footer>
+<script src="../store.js"></script>
+</body>
+</html>

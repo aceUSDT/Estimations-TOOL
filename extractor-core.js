@@ -638,6 +638,181 @@
     return null;
   }
 
+  function explicitProtectionDevice(text) {
+    const source = String(text || '');
+    const definitions = [
+      ['AFDD+RCBO', /\b(?:AFDD|AFFD)\s*(?:\+|\/|AND)?\s*RCBO\b/i],
+      ['RCBO', /\bRCBO\b/i],
+      ['MCCB', /\bMCCB\b/i],
+      ['MCB', /\bMCB\b/i],
+      ['ACB', /\bACB\b/i],
+      ['RCD', /\bRCD\b/i],
+      ['Fuse', /\b(?:HRC\s+)?FUSE\b/i],
+      ['Isolator', /\b(?:ISOLATOR|SWITCH\s+DISCONNECTOR)\b/i],
+    ];
+    return definitions.find(([, pattern]) => pattern.test(source))?.[0] || null;
+  }
+
+  const PROTECTION_STANDARDS = {
+    '60898': { label: 'BS EN 60898', device: 'MCB', combinedRcd: false },
+    '61009': { label: 'BS EN 61009', device: 'RCBO', combinedRcd: true },
+    '61008': { label: 'BS EN 61008', device: 'RCD', combinedRcd: true },
+    '60947-2': { label: 'BS EN 60947-2', device: 'MCCB', combinedRcd: false },
+    '60947-3': { label: 'BS EN 60947-3', device: 'Isolator', combinedRcd: false },
+  };
+
+  function indicatorState(value) {
+    const token = String(value || '').trim();
+    if (/^(?:YES|Y|TRUE|1|CHECKED|TICK|[✓✔☑])$/i.test(token)) return true;
+    if (/^(?:NO|N|FALSE|0|X|[-–—]|[×✕✖□☐])$/i.test(token)) return false;
+    return null;
+  }
+
+  /**
+   * Read the ordered overcurrent-protection columns used by UK board schedules.
+   * Once a BS standard is found, curve/rating/kA are taken from the immediately
+   * following columns. This prevents later cable values such as "6 A" from
+   * replacing a 32 A protective-device rating.
+   */
+  function parseProtectionStandardSequence(value) {
+    const source = String(value || '').replace(/\s+/g, ' ').trim();
+    const standardMatch = source.match(/\b(?:BS\s*(?:EN\s*)?)?(61009(?:-1)?|60898(?:-1)?|61008(?:-1)?|60947\s*[-/]\s*[23])\b/i);
+    if (!standardMatch) return null;
+
+    const rawCode = standardMatch[1].replace(/\s*[/]\s*/, '-').replace(/-(?:1)$/i, '');
+    const standardCode = /^60947/i.test(rawCode) ? rawCode.replace(/\s+/g, '') : rawCode.slice(0, 5);
+    const standard = PROTECTION_STANDARDS[standardCode];
+    if (!standard) return null;
+
+    const tail = source.slice(standardMatch.index + standardMatch[0].length).trim();
+    const protection = tail.match(/^(?:TYPE\s*)?([BCDKZ])\s+(\d{1,4}(?:\.\d+)?)\s+(\d{1,3}(?:\.\d+)?)(?=\s|$)/i);
+    if (!protection) return null;
+
+    const rating = Number(protection[2]);
+    const breakingCapacityKa = Number(protection[3]);
+    if (!Number.isFinite(rating) || rating <= 0 || rating > 6300
+      || !Number.isFinite(breakingCapacityKa) || breakingCapacityKa <= 0 || breakingCapacityKa > 150) return null;
+
+    const remainder = tail.slice(protection[0].length).trim();
+    const tokens = remainder ? remainder.split(/\s+/) : [];
+    const indicators = [];
+    while (tokens.length && indicators.length < 2) {
+      const state = indicatorState(tokens[0]);
+      if (state == null) break;
+      indicators.push(state);
+      tokens.shift();
+    }
+
+    const afdd = indicators[0] === true;
+    const rcdColumn = indicators[1] === true;
+    let sensitivityMa = null;
+    const possibleSensitivity = Number(tokens[0]);
+    if ((standard.combinedRcd || rcdColumn) && [10, 30, 100, 300, 500].includes(possibleSensitivity)) {
+      sensitivityMa = possibleSensitivity;
+      tokens.shift();
+    }
+
+    let device = standard.device;
+    if (afdd && device === 'RCBO') device = 'AFDD+RCBO';
+    return {
+      standard: standard.label,
+      standardCode,
+      device,
+      curve: protection[1].toUpperCase(),
+      rating,
+      breakingCapacityKa,
+      afdd,
+      rcdProtected: standard.combinedRcd || rcdColumn,
+      rcdCombined: standard.combinedRcd,
+      sensitivityMa,
+      description: tokens.join(' ').trim(),
+      indicatorsCaptured: indicators.length,
+      confidence: 0.97,
+      source: 'ordered_protection_columns',
+    };
+  }
+
+  /**
+   * Guarded fallback for flattened protection tables. It only infers a device
+   * when a numbered circuit row contains protection evidence and the nearby
+   * table header names protection columns. Inferred rows stay reviewable.
+   */
+  function parseProtectionTableLine(line, context = {}) {
+    const text = String(line || '').replace(/\s+/g, ' ').trim();
+    if (!text) return null;
+    const wayMatch = text.match(/^\s*(?:(?:WAY|CCT|CKT|CIRCUIT)\s*[:#-]?\s*)?(\d{1,3})(?:\s*[\/-]\s*(L[123]))?\b/i);
+    if (!wayMatch) return null;
+
+    const header = String(context.headerText || '');
+    const protectionHeader = /\b(?:PROTECTION|PROTECTIVE|DEVICE|RATING|AMPS?|CURVE|TRIP|RCD|RCBO|MCB|BREAKING|kA|POLES?)\b/i.test(header);
+    const spare = /\bSPARE\b/i.test(text);
+    const space = /\b(?:SPACE|FITTED\s+BLANK|BLANK\s+WAY)\b/i.test(text);
+    const standardSequence = parseProtectionStandardSequence(text);
+    const explicitDevice = explicitProtectionDevice(text);
+    const explicitRating = text.match(/\b(\d+(?:\.\d+)?)\s*A(?:MPS?)?\b/i);
+    const ratingCurve = text.match(/(?:^|\s)(\d{1,3}(?:\.\d+)?)\s+([BCDKZ])(?=\s|$|[,;])/i);
+    const curveEvidence = extractTrippingCurve(text, { deviceContext: protectionHeader || Boolean(explicitDevice) });
+    const rating = standardSequence?.rating ?? (explicitRating ? Number(explicitRating[1])
+      : (curveEvidence?.rating ?? (ratingCurve ? Number(ratingCurve[1]) : null)));
+    const curve = standardSequence?.curve || curveEvidence?.value || (ratingCurve ? ratingCurve[2].toUpperCase() : null);
+    const sensitivity = standardSequence?.sensitivityMa ?? (Number(text.match(/\b(\d{1,4})\s*mA\b/i)?.[1]) || null);
+    const rcdConfirmed = Boolean(standardSequence?.rcdProtected) || sensitivity != null
+      || (/(?:^|\s)YES(?:\s|$)/i.test(text) && /\bRCD\b/i.test(header));
+    let device = standardSequence?.device || explicitDevice;
+    let inferredDevice = false;
+    if (!device && curve && rating != null && protectionHeader) {
+      device = rcdConfirmed ? 'RCBO' : 'MCB';
+      inferredDevice = true;
+    } else if (!device && rating != null && protectionHeader
+      && (extractBreakingCapacity(text) || /\b[1-4]\s*P(?:OLE)?\b/i.test(text))) {
+      device = 'Protective device';
+      inferredDevice = true;
+    }
+    if (!device && !spare && !space) return null;
+    if (!protectionHeader && !standardSequence && !explicitDevice && !spare && !space) return null;
+
+    const poleMatch = text.match(/\b([1-4])\s*P(?:OLE)?\b/i);
+    const phase = (wayMatch[2] || text.match(/\b(L[123])\b/i)?.[1] || '').toUpperCase() || null;
+    const breaking = standardSequence
+      ? { value: standardSequence.breakingCapacityKa, original: `${standardSequence.breakingCapacityKa}kA`, confidence: standardSequence.confidence }
+      : extractBreakingCapacity(text);
+    const incomer = /\b(?:INCOMER|INCOMING|MAIN\s+SWITCH)\b/i.test(text);
+    const confidence = standardSequence?.confidence ?? (inferredDevice ? 0.68 : (explicitDevice ? 0.88 : 0.72));
+    return {
+      way: Number(wayMatch[1]),
+      phase,
+      rating: Number.isFinite(rating) ? rating : null,
+      device,
+      curve,
+      sens: sensitivity,
+      afdd: Boolean(standardSequence?.afdd),
+      rcdProtected: rcdConfirmed,
+      protectionStandard: standardSequence?.standard || null,
+      poles: poleMatch ? Number(poleMatch[1]) : null,
+      ka: breaking?.value ?? null,
+      cable: null,
+      desc: standardSequence?.description || text.slice(wayMatch[0].length).trim(),
+      spare,
+      space,
+      incomer,
+      qty: space ? 0 : (device ? 1 : 0),
+      inferredDevice,
+      requiresReview: inferredDevice || (!spare && !space && (rating == null || !device
+        || ((device === 'RCBO' || device === 'AFDD+RCBO') && sensitivity == null))),
+      resolutionSource: standardSequence?.source || (inferredDevice ? 'protection_table_inference' : 'protection_table_evidence'),
+      columnEvidence: standardSequence ? {
+        standard: standardSequence.standard,
+        curve: standardSequence.curve,
+        rating: standardSequence.rating,
+        breakingCapacityKa: standardSequence.breakingCapacityKa,
+        rcdProtected: standardSequence.rcdProtected,
+        sensitivityMa: standardSequence.sensitivityMa,
+      } : null,
+      srcText: text,
+      conf: confidence,
+    };
+  }
+
   function aggregateDevices(rows) {
     const totals = new Map();
     for (const row of rows || []) {
@@ -1085,6 +1260,68 @@
     return null;
   }
 
+  function cleanHeaderValue(value) {
+    return String(value || '')
+      .split(/\s*[|;]\s*/)[0]
+      .split(/\s+\b(?:LOCATION|SERVING|SERVED\s+BY|FED\s+FROM|WAYS?|INCOMER|MAIN\s+SWITCH|FAULT|METERING|MODEL)\b\s*[:=]/i)[0]
+      .replace(/^[\s:=\-]+|[\s,]+$/g, '')
+      .trim()
+      .slice(0, 100);
+  }
+
+  function extractBoardHeader(lines) {
+    const sourceLines = (lines || []).map((line) => String(line?.text ?? line ?? '').replace(/\s+/g, ' ').trim()).filter(Boolean);
+    const header = {};
+    const evidence = {};
+    const set = (field, value, line) => {
+      if (value === undefined || value === null || value === '') return;
+      header[field] = value;
+      evidence[field] = line;
+    };
+    const labelled = (field, pattern) => {
+      for (const line of sourceLines) {
+        const match = line.match(pattern);
+        if (!match) continue;
+        const value = cleanHeaderValue(match[1]);
+        if (value) { set(field, value, line); return; }
+      }
+    };
+
+    const combined = sourceLines.join('\n');
+    const ways = expectedWaysFromText(combined);
+    if (ways) set('ways_total', ways.ways, ways.evidence);
+    labelled('description', /\b(?:BOARD\s+DESCRIPTION|DESCRIPTION)\b\s*[:=\-]?\s*(.+)$/i);
+    labelled('location', /\bLOCATION\b\s*[:=\-]?\s*(.+)$/i);
+    labelled('fed_from_ref', /\b(?:DB\s+FED\s+FROM|FED\s+FROM|SERVED\s+BY|SUPPLIED\s+FROM)\b\s*[:=\-]?\s*(.+)$/i);
+    labelled('serving', /\bSERVING\b\s*[:=\-]?\s*(.+)$/i);
+    labelled('board_model', /\b(?:BOARD\s+MODEL|MODEL|CAT(?:ALOGUE)?\.?\s*(?:NO|NUMBER)?)\b\s*[:=\-]?\s*(.+)$/i);
+    labelled('metering', /\bMETERING\b\s*[:=\-]?\s*(.+)$/i);
+
+    for (const line of sourceLines) {
+      const spareCapacity = line.match(/\bSPARE\s+CAPACITY\b\s*[:=\-]?\s*(\d+(?:\.\d+)?)\s*%/i);
+      if (spareCapacity) set('spare_capacity_pct', Number(spareCapacity[1]), line);
+      if (/\b(?:INCOMER|INCOMING\s+(?:DEVICE|SUPPLY)|MAIN\s+SWITCH)\b/i.test(line)) {
+        const device = explicitProtectionDevice(line)
+          || line.match(/\b(?:SWITCH\s+DISCONNECTOR|ISOLATOR|CIRCUIT\s+BREAKER)\b/i)?.[0];
+        const rating = line.match(/\b(\d+(?:\.\d+)?)\s*A(?:MPS?)?\b/i);
+        const poles = line.match(/\b([1-4])\s*P(?:OLE)?\b/i)
+          || line.match(/\b(SPN|DPN|TPN|TP&N)\b/i);
+        if (device) set('incomer_class', device, line);
+        if (rating) set('incomer_rating_a', Number(rating[1]), line);
+        if (poles) {
+          const poleValue = /^\d/.test(poles[1]) ? Number(poles[1]) : ({ SPN: 1, DPN: 2, TPN: 4, 'TP&N': 4 }[poles[1].toUpperCase()] || null);
+          set('incomer_poles', poleValue, line);
+        }
+      }
+      if (/\b(?:FAULT|BREAKING|SHORT\s+CIRCUIT)\b/i.test(line)) {
+        const breaking = extractBreakingCapacity(line);
+        if (breaking) set('fault_ka', breaking.value, line);
+      }
+    }
+    const completenessFields = ['ways_total', 'description', 'location', 'fed_from_ref', 'serving', 'incomer_class', 'incomer_rating_a', 'incomer_poles', 'fault_ka', 'board_model', 'metering'];
+    return { header, evidence, completeness: completenessFields.filter((field) => header[field] !== undefined).length };
+  }
+
   function pageLooksTabular(text) {
     const lines = String(text || '').split(/\r?\n/);
     let hits = 0;
@@ -1139,6 +1376,8 @@
       }
       const boardRows = scheduleRows.filter((r) => r.boardNorm === board.norm);
       const ways = new Set(boardRows.filter((r) => r.way != null).map((r) => `${r.boardSection || ''}:${r.way}`));
+      const protectionRows = boardRows.filter((r) => !r.space && !r.spare);
+      const incompleteProtectionRows = protectionRows.filter((r) => !r.device || r.rating == null).length;
       const unaccounted = expected != null ? Math.max(0, expected - ways.size) : null;
       const upstreamType = /^(?:MAIN|MDB|SMDB|MCC|SB|PB)$/.test(String(board.type || '').toUpperCase());
       const upstreamReference = /^(?:MAIN|MSB|SWB|SMDB|MDB|PB|MCC|MCP|GENERATOR)/i.test(String(board.orig || '').replace(/[\s._/\\-]+/g, ''));
@@ -1147,6 +1386,8 @@
         norm: board.norm, orig: board.orig,
         expectedWays: expected, evidence,
         capturedWays: ways.size, rowsCaptured: boardRows.length,
+        protectionRows: protectionRows.length,
+        incompleteProtectionRows,
         unaccountedWays: unaccounted, inScope,
       });
     }
@@ -1191,6 +1432,8 @@
         capturedWays: capturedTotal,
         pctComplete: expectedTotal ? Math.round((100 * capturedTotal) / expectedTotal) : null,
         unaccountedBoards: scopedBoards.filter((b) => (b.unaccountedWays || 0) > 0).length,
+        incompleteProtectionRows: scopedBoards.reduce((sum, board) => sum + board.incompleteProtectionRows, 0),
+        boardsWithProtectionGaps: scopedBoards.filter((board) => board.incompleteProtectionRows > 0 || board.protectionRows === 0).length,
       },
     };
   }
@@ -1217,10 +1460,181 @@
     return LEGACY_TO_THREE[key] || 'other';
   }
 
+  /* ===== Analysis health — honest completeness states =====
+   * An analysis may only present itself as "Analysed" when these invariants
+   * hold. Anything else is 'incomplete' (some evidence was not captured) or
+   * 'failed' (the result is unusable), each with STABLE reason codes the UI,
+   * diagnostics export, and tests all share. This exists because a real
+   * project once showed "7 boards / 0 devices" as a successful analysis. */
+  const HEALTH_REASONS = {
+    ZERO_DEVICES_WITH_BOARDS: 'Boards were identified but no device rows were captured anywhere',
+    BOARD_ROWS_MISSING: 'Board has schedule evidence but zero captured device rows',
+    WAYS_UNACCOUNTED: 'Board header promises more ways than were captured',
+    SCHEDULE_PAGE_UNPARSED: 'Page looks like a schedule but produced no rows',
+    SCHEDULE_DOC_NO_BOARDS: 'Schedule-type pages exist but no board reference was identified',
+    PAGE_TEXT_UNRELIABLE: 'Page text is unreliable and OCR has not replaced it',
+    OCR_PENDING: 'Page is still waiting for OCR',
+    DOCUMENT_UNREADABLE: 'Document could not be read',
+    NO_CONTENT: 'No readable pages were available to analyse',
+  };
+
+  /* Multi-signal schedule-candidate score. A page is a candidate because of
+   * what is ON it, never because a single classifier label said so. Returns
+   * {score 0..1, signals[]} — callers treat score ≥ 0.45 with ≥ 2 signal
+   * families as a candidate. */
+  function scoreScheduleCandidate(lines) {
+    const texts = (lines || []).map((l) => (typeof l === 'string' ? l : (l && l.text) || ''));
+    const all = texts.join('\n');
+    const signals = [];
+    let wayLines = 0;
+    for (const t of texts) {
+      if (/^\s*\d{1,3}\s*[\/ ]\s*L[123]\b/i.test(t) || /^\s*(?:way|cct|ckt|circuit)\s*\d{1,3}\b/i.test(t)
+        || /^\s*\d{1,3}\s{2,}\S/.test(t)) wayLines += 1;
+    }
+    if (wayLines >= 4) signals.push('way-sequence');
+    const deviceHits = (all.match(/\b(?:MCB|MCCB|RCBO|RCC?B|ACB|SPD|AFDD|RCD|isolator|contactor|switch\s*fuse|fuse\s*switch|time\s*clock|photocell|relay|meter)\b/gi) || []).length;
+    if (deviceHits >= 3) signals.push('device-tokens');
+    const ratingHits = (all.match(/\b\d{1,4}\s*A(?:mps?)?\b/gi) || []).length;
+    if (ratingHits >= 4) signals.push('rating-tokens');
+    if (/\b(?:type\s*[BCD]\b|[BCD]\d{2,3}\b)/i.test(all) && /\bL[123]\b|\bTP&?N\b|\bSP&?N\b|\b[13]PH?\b/i.test(all)) signals.push('curve-phase');
+    if (texts.some((t) => (t.match(/\b(?:way|cct|circuit|description|device|rating|poles?|curve|phase|protective|breaking)\b/gi) || []).length >= 3)) {
+      signals.push('column-header');
+    }
+    if (/\bDB\s*REFERENCE\b|\b(?:DISTRIBUTION\s+)?BOARD\s*(?:REFERENCE|REF|IDENTITY)\b/i.test(all)) signals.push('board-header');
+    if (expectedWaysFromText(all)) signals.push('way-count-header');
+    const score = Math.min(1, signals.length * 0.2 + (wayLines >= 8 ? 0.15 : 0) + (deviceHits >= 8 ? 0.1 : 0));
+    return { score: Number(score.toFixed(2)), signals };
+  }
+
+  /**
+   * Compute the honest health of one analysis run.
+   * @param coverage output of buildCoverage (may be null)
+   * @param boards   analysis boards map
+   * @param rows     analysis rows
+   * @param pages    [{fileId, page, type, textLines, needsOcr, source, scheduleScore, rowsParsed}]
+   * @param files    [{id, name, status}] all files that were in scope
+   * @returns {state:'complete'|'incomplete'|'failed', reasons:[{code,message,count,refs}], counters}
+   */
+  function buildAnalysisHealth({ coverage, boards, rows, pages, files }) {
+    const reasons = new Map();
+    const addReason = (code, ref) => {
+      if (!reasons.has(code)) reasons.set(code, { code, message: HEALTH_REASONS[code] || code, count: 0, refs: [] });
+      const entry = reasons.get(code);
+      entry.count += 1;
+      if (ref && entry.refs.length < 25) entry.refs.push(ref);
+    };
+
+    const allRows = (rows || []).filter((r) => r && r.status !== 'rejected');
+    const deviceRows = allRows.filter((r) => r.device && !r.space);
+    const deviceCount = deviceRows.reduce((sum, r) => sum + (Number(r.qty) || 1), 0);
+    const boardCount = Object.keys(boards || {}).length;
+    const pageList = pages || [];
+    const schedulePages = pageList.filter((pg) => (pg.scheduleScore || 0) >= 0.45 || COVERAGE_SCHEDULE_TYPES.has(pg.type));
+
+    for (const file of files || []) {
+      if (file.status === 'error') addReason('DOCUMENT_UNREADABLE', { fileId: file.id });
+    }
+    for (const pg of pageList) {
+      if (pg.source === 'ocr_pending' || (pg.needsOcr && pg.source !== 'ocr')) {
+        addReason('OCR_PENDING', { fileId: pg.fileId, page: pg.page });
+      } else if (pg.textQualityUnreliable) {
+        addReason('PAGE_TEXT_UNRELIABLE', { fileId: pg.fileId, page: pg.page });
+      }
+    }
+    for (const pg of schedulePages) {
+      if ((pg.rowsParsed || 0) === 0 && (pg.textLines || 0) > 0) {
+        addReason('SCHEDULE_PAGE_UNPARSED', { fileId: pg.fileId, page: pg.page, score: pg.scheduleScore || null });
+      }
+    }
+    if (coverage) {
+      for (const board of coverage.perBoard || []) {
+        if (!board.inScope) continue;
+        if (board.rowsCaptured === 0) addReason('BOARD_ROWS_MISSING', { board: board.norm });
+        else if ((board.unaccountedWays || 0) > 0) {
+          addReason('WAYS_UNACCOUNTED', { board: board.norm, expected: board.expectedWays, captured: board.capturedWays });
+        }
+      }
+    }
+    if (boardCount === 0 && schedulePages.length > 0) addReason('SCHEDULE_DOC_NO_BOARDS', null);
+    if (pageList.length === 0) addReason('NO_CONTENT', null);
+    if (boardCount > 0 && deviceCount === 0) addReason('ZERO_DEVICES_WITH_BOARDS', null);
+
+    let state = 'complete';
+    if (reasons.size > 0) state = 'incomplete';
+    if (reasons.has('ZERO_DEVICES_WITH_BOARDS') || reasons.has('NO_CONTENT')
+      || (deviceCount === 0 && schedulePages.length > 0)) state = 'failed';
+
+    return {
+      state,
+      reasons: Array.from(reasons.values()),
+      counters: {
+        pagesAnalysed: pageList.length,
+        schedulePages: schedulePages.length,
+        schedulePagesParsed: schedulePages.filter((pg) => (pg.rowsParsed || 0) > 0).length,
+        boards: boardCount,
+        boardsWithRows: coverage ? (coverage.perBoard || []).filter((b) => b.rowsCaptured > 0).length : null,
+        deviceCount,
+        expectedWays: coverage ? coverage.summary.expectedWays : null,
+        capturedWays: coverage ? coverage.summary.capturedWays : null,
+      },
+    };
+  }
+
+  /* Private-safe diagnostic export: counters, reason codes and page shapes
+   * only — NEVER document text, board names, file names, or any customer
+   * content. Safe to email to support. */
+  function buildDiagnosticExport({ health, coverage, files, pages, appVersion }) {
+    const anon = new Map();
+    const fileTag = (id) => {
+      if (!anon.has(id)) anon.set(id, `doc-${anon.size + 1}`);
+      return anon.get(id);
+    };
+    return {
+      diagnosticVersion: 1,
+      appVersion: appVersion || null,
+      generatedAt: new Date().toISOString(),
+      health: health ? {
+        state: health.state,
+        counters: health.counters,
+        reasons: (health.reasons || []).map((r) => ({
+          code: r.code,
+          count: r.count,
+          refs: (r.refs || []).map((ref) => ({
+            ...(ref && ref.fileId ? { file: fileTag(ref.fileId) } : {}),
+            ...(ref && ref.page ? { page: ref.page } : {}),
+            ...(ref && ref.expected != null ? { expected: ref.expected, captured: ref.captured } : {}),
+          })),
+        })),
+      } : null,
+      coverageSummary: coverage ? coverage.summary : null,
+      files: (files || []).map((f) => ({
+        file: fileTag(f.id),
+        ext: f.ext || null,
+        status: f.status || null,
+        pages: (f.pages || []).length,
+      })),
+      pages: (pages || []).map((pg) => ({
+        file: fileTag(pg.fileId),
+        page: pg.page,
+        type: pg.type || null,
+        textLines: pg.textLines || 0,
+        source: pg.source || null,
+        scheduleScore: pg.scheduleScore ?? null,
+        scheduleSignals: pg.scheduleSignals || [],
+        rowsParsed: pg.rowsParsed || 0,
+      })),
+    };
+  }
+
   global.EstimationExtractorCore = {
     expectedWaysFromText,
+    extractBoardHeader,
     pageLooksTabular,
     buildCoverage,
+    HEALTH_REASONS,
+    scoreScheduleCandidate,
+    buildAnalysisHealth,
+    buildDiagnosticExport,
     THREE_TYPES,
     toThreeType,
     DEFAULT_PROTECTION_LEGEND,
@@ -1234,6 +1648,8 @@
     parseTbaProtectionLine,
     parseTbaSchedulePage,
     parseKnownScheduleLine,
+    parseProtectionStandardSequence,
+    parseProtectionTableLine,
     extractAssociatedEquipment,
     aggregateDevices,
     finalizeScheduleContext,
