@@ -149,6 +149,57 @@
     return Number.isFinite(rating) && rating > 0 ? rating : null;
   }
 
+  function normaliseBoolean(value) {
+    if (value === true || value === false) return value;
+    const source = text(value).toUpperCase();
+    if (/^(?:YES|Y|TRUE|1|CHECKED|TICK)$/.test(source)) return true;
+    if (/^(?:NO|N|FALSE|0|X)$/.test(source)) return false;
+    return null;
+  }
+
+  function normaliseSensitivity(value) {
+    if (value == null || text(value) === '') return null;
+    const match = text(value).replace(/,/g, '.').match(/\d+(?:\.\d+)?/);
+    const sensitivity = match ? Number(match[0]) : Number(value);
+    return Number.isFinite(sensitivity) && sensitivity > 0 && sensitivity <= 1000 ? sensitivity : null;
+  }
+
+  function normaliseProtectionStandard(value) {
+    const source = text(value).toUpperCase().replace(/\s+/g, ' ');
+    if (!source) return NOT_SPECIFIED;
+    const match = source.match(/\b(60898(?:-1)?|61009(?:-1)?|61008(?:-1)?|60947(?:\s*[-/]\s*[23])?)\b/);
+    if (!match) return source;
+    const code = match[1].replace(/\s+/g, '').replace('/', '-').replace(/-(?:1)$/, '');
+    return `BS EN ${code}`;
+  }
+
+  function protectionSpecification(row) {
+    const rcdSensitivity = normaliseSensitivity(row && (row.rcdSensitivity ?? row.sens));
+    const explicitRcd = normaliseBoolean(row && row.rcdProtected);
+    const rcdProtected = explicitRcd == null && rcdSensitivity != null ? true : explicitRcd;
+    const hasAfddIndicator = Boolean(row && Object.prototype.hasOwnProperty.call(row, 'afddIndicated'));
+    const afdd = hasAfddIndicator ? normaliseBoolean(row.afddIndicated) : normaliseBoolean(row && row.afdd);
+    return {
+      protectionStandard: normaliseProtectionStandard(row && (row.protectionStandard || row.standard)),
+      tripUnit: text(row && row.tripUnit) || NOT_SPECIFIED,
+      rcdProtected,
+      rcdSensitivity,
+      afdd,
+    };
+  }
+
+  function rcdProtectionLabel(value, sensitivity) {
+    if (value === true) return sensitivity == null ? 'RCD protected' : `RCD ${formatRating(sensitivity)}mA`;
+    if (value === false) return 'No RCD';
+    return NOT_SPECIFIED;
+  }
+
+  function afddProtectionLabel(value) {
+    if (value === true) return 'AFDD';
+    if (value === false) return 'No AFDD';
+    return NOT_SPECIFIED;
+  }
+
   function disciplineLabel(row) {
     const explicit = text((row && (row.discipline || row.service)) || "").toLowerCase();
     const description = text((row && (row.desc || row.description)) || "").toLowerCase();
@@ -365,9 +416,16 @@
     const curve = normaliseCurve(row && row.curve);
     const breakingCapacity = normaliseBreakingCapacity(row && (row.breakingCapacity ?? row.breakingCapacityKa ?? row.ka));
     const pole = poleLabel(row);
-    const key = [deviceFamily.toUpperCase(), rating == null ? NOT_SPECIFIED : formatRating(rating), curve, breakingCapacity, pole]
+    const protection = protectionSpecification(row);
+    const key = [
+      deviceFamily.toUpperCase(), rating == null ? NOT_SPECIFIED : formatRating(rating), curve, breakingCapacity, pole,
+      protection.protectionStandard, protection.tripUnit,
+      protection.rcdProtected == null ? NOT_SPECIFIED : protection.rcdProtected ? 'RCD' : 'NO RCD',
+      protection.rcdSensitivity == null ? NOT_SPECIFIED : `${formatRating(protection.rcdSensitivity)}mA`,
+      protection.afdd == null ? NOT_SPECIFIED : protection.afdd ? 'AFDD' : 'NO AFDD',
+    ]
       .join("|");
-    return { key, deviceFamily, rating, curve, breakingCapacity, pole };
+    return { key, deviceFamily, rating, curve, breakingCapacity, pole, ...protection };
   }
 
   function markSpecificationConflicts(reportRows) {
@@ -423,12 +481,17 @@
       : row && row.correction
         ? [row.correction]
         : [];
+    const printedCircuitReference = text(row && (row.circuitReference ?? row.circuitRef));
+    const way = row && row.way != null ? row.way : null;
     return {
       groupKey: specification.key,
       sourceId: text(row && row.id) || sourceFingerprint(row),
-      boardNorm: text(row && row.boardNorm),
+      boardNorm: board ? board.norm : text(row && row.boardNorm),
       board: board ? board.label : text(row && row.boardNorm) || NOT_SPECIFIED,
-      circuitReference: text(row && (row.circuitReference ?? row.circuitRef ?? row.way)) || NOT_SPECIFIED,
+      circuitReference: printedCircuitReference || (way == null ? NOT_SPECIFIED : `Way ${way}`),
+      printedCircuitReference: printedCircuitReference || null,
+      way,
+      phase: text(row && row.phase) || null,
       description: text(row && (row.desc || row.description)) || NOT_SPECIFIED,
       purpose: disciplineLabel(row),
       role: row && row.incomer ? "Incomer" : "Outgoing",
@@ -438,10 +501,16 @@
       pole: specification.pole,
       curve: specification.curve,
       breakingCapacity: specification.breakingCapacity,
+      protectionStandard: specification.protectionStandard,
+      tripUnit: specification.tripUnit,
+      rcdProtected: specification.rcdProtected,
+      rcdSensitivity: specification.rcdSensitivity,
+      afdd: specification.afdd,
       sourceDocument,
       fileId: text(row && row.fileId),
       page: row && row.page != null ? row.page : NOT_SPECIFIED,
       bbox,
+      highlightBbox: Array.isArray(row && row.highlightBbox) ? Array.from(row.highlightBbox) : bbox,
       sourceText: text(row && row.srcText),
       originalOcrText: text(row && (row.originalOcrText || row.ocrText || row.srcText)),
       confidence,
@@ -450,6 +519,54 @@
       reviewStatus: row && row.status === "confirmed" ? "Approved" : "Review required",
       fieldEvidence: row && row.fieldEvidence ? row.fieldEvidence : null,
     };
+  }
+
+  function circuitLocators(contributors) {
+    return Array.from(new Set((contributors || []).map((item) => {
+      const location = [item.way == null ? null : `Way ${item.way}`, item.phase].filter(Boolean).join(' ');
+      const reference = item.printedCircuitReference;
+      return [location || null, reference || null].filter(Boolean).join(' - ') || NOT_SPECIFIED;
+    }))).sort(naturalCompare);
+  }
+
+  function buildBoardSections(boards, groups, boardTotals) {
+    const reportRows = (groups || []).flatMap((group) => group.rows || []);
+    return (boards || []).map((board, boardIndex) => {
+      const familyMap = new Map();
+      reportRows.forEach((reportRow) => {
+        const contributors = (reportRow.contributors || []).filter((item) => item.boardNorm === board.norm);
+        const quantity = Number(reportRow.quantities?.[boardIndex]) || 0;
+        if (!quantity || !contributors.length) return;
+        const familyKey = reportRow.deviceFamily;
+        if (!familyMap.has(familyKey)) familyMap.set(familyKey, {
+          name: reportRow.deviceFamily,
+          category: reportRow.group,
+          total: 0,
+          rows: [],
+        });
+        const family = familyMap.get(familyKey);
+        family.total += quantity;
+        family.rows.push({
+          ...reportRow,
+          quantity,
+          contributors,
+          circuitLocators: circuitLocators(contributors),
+          descriptions: Array.from(new Set(contributors.map((item) => item.description).filter((value) => value !== NOT_SPECIFIED))).sort(naturalCompare),
+          sourcePages: summariseSourcePages(contributors),
+          reviewStatus: reportRow.reviewReasons.length || contributors.some((item) => item.reviewStatus !== 'Approved') ? 'Review required' : 'Ready',
+          rcdLabel: rcdProtectionLabel(reportRow.rcdProtected, reportRow.rcdSensitivity),
+          afddLabel: afddProtectionLabel(reportRow.afdd),
+        });
+      });
+      const families = Array.from(familyMap.values()).sort((left, right) =>
+        groupIndex(left.category) - groupIndex(right.category) || naturalCompare(left.name, right.name));
+      return {
+        ...board,
+        total: Number(boardTotals?.[boardIndex]) || 0,
+        reviewCount: families.flatMap((family) => family.rows).filter((row) => row.reviewStatus !== 'Ready').length,
+        families,
+      };
+    });
   }
 
   function buildModel(options) {
@@ -505,6 +622,11 @@
           pole: specification.pole,
           curve: specification.curve,
           breakingCapacity: specification.breakingCapacity,
+          protectionStandard: specification.protectionStandard,
+          tripUnit: specification.tripUnit,
+          rcdProtected: specification.rcdProtected,
+          rcdSensitivity: specification.rcdSensitivity,
+          afdd: specification.afdd,
           quantities: Array(boards.length).fill(0),
           rowIdsByBoard: Array.from({ length: boards.length }, () => []),
           contributors: [],
@@ -601,6 +723,7 @@
     const grandTotal = boardTotals.reduce((sum, value) => sum + value, 0);
     const deviceLineCount = groups.reduce((sum, group) => sum + group.rows.length, 0);
     const associated = buildAssociatedModel(included, boards, boardOrder, resolveBoard, fileNames);
+    associated.boardSections = buildBoardSections(boards, associated.groups, associated.boardTotals);
     const procurementRows = groups.flatMap((group) => group.rows);
     const reviewCount = procurementRows.filter((row) => row.reviewStatus === "Review required").length;
     const sourceTotal = included.reduce((sum, row) => {
@@ -612,6 +735,7 @@
       generatedAt: options && options.generatedAt ? new Date(options.generatedAt) : new Date(),
       boards,
       groups,
+      boardSections: buildBoardSections(boards, groups, boardTotals),
       boardTotals,
       grandTotal,
       deviceLineCount,
@@ -699,14 +823,15 @@
     }
     const rows = [[
       "Device Category", "Device Description", "Current Rating (A)", "Pole Configuration", "Tripping Curve", "Breaking Capacity",
-      ...model.boards.map((board) => board.label), "Total Quantity", "Included Applications", "Source Pages", "Confidence", "Review Status", "Notes",
+      ...model.boards.map((board) => board.label), "Total Quantity", "Included Applications", "Source Pages", "Confidence", "Review Status",
+      "RCD Protection", "AFDD Protection", "Notes",
     ]];
     groups.forEach((group) => group.rows.forEach((row) => rows.push([
       group.name, row.label, row.rating == null ? NOT_SPECIFIED : row.rating, row.pole, row.curve, row.breakingCapacity,
       ...row.quantities.map((quantity) => quantity || null), row.total, row.purposes.join(", "), row.sourcePages.join("; "), row.confidence,
-      row.reviewStatus, row.notes.join(" "),
+      row.reviewStatus, rcdProtectionLabel(row.rcdProtected, row.rcdSensitivity), afddProtectionLabel(row.afdd), row.notes.join(" "),
     ])));
-    rows.push(["Grand Total", null, null, null, null, null, ...boardTotals, grandTotal, null, null, null, null, null]);
+    rows.push(["Grand Total", null, null, null, null, null, ...boardTotals, grandTotal, null, null, null, null, null, null, null]);
     return rows;
   }
 
@@ -889,6 +1014,79 @@
     });
   }
 
+  function createBoardTakeOffWorksheet(workbook, model) {
+    const lastColumn = 13;
+    const sheet = workbook.addWorksheet('Board Take-Off', {
+      views: [{ state: 'frozen', ySplit: 3, activeCell: 'A4' }],
+      pageSetup: {
+        paperSize: 9,
+        orientation: 'landscape',
+        fitToPage: true,
+        fitToWidth: 1,
+        fitToHeight: 0,
+        margins: { left: 0.25, right: 0.25, top: 0.4, bottom: 0.4, header: 0.15, footer: 0.15 },
+      },
+    });
+    addTitleRows(sheet, model, 'Board-by-board device take-off', lastColumn);
+    const headers = [
+      'Circuit Description', 'Quantity', 'Current Rating (A)', 'Pole Configuration', 'Tripping Curve', 'Trip Unit',
+      'Breaking Capacity', 'Protection Standard', 'RCD Protection', 'AFDD Protection', 'Circuit / Way', 'Source Pages', 'Review Status',
+    ];
+    headers.forEach((value, index) => { sheet.getCell(3, index + 1).value = value; });
+    styleHeaderRow(sheet, 3, lastColumn);
+
+    let rowNumber = 4;
+    (model.boardSections || []).forEach((board) => {
+      sheet.mergeCells(rowNumber, 1, rowNumber, lastColumn);
+      const boardCell = sheet.getCell(rowNumber, 1);
+      boardCell.value = `${board.label} | ${board.total} device${board.total === 1 ? '' : 's'} | ${board.reviewCount} specification${board.reviewCount === 1 ? '' : 's'} to review`;
+      boardCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: XLSX_COLORS.black } };
+      boardCell.font = { name: 'Montserrat', size: 11, bold: true, color: { argb: XLSX_COLORS.white } };
+      boardCell.alignment = { vertical: 'middle', horizontal: 'left' };
+      sheet.getRow(rowNumber).height = 28;
+      rowNumber += 1;
+      board.families.forEach((family) => {
+        sheet.mergeCells(rowNumber, 1, rowNumber, lastColumn);
+        const familyCell = sheet.getCell(rowNumber, 1);
+        familyCell.value = `${family.name} | ${family.total}`;
+        familyCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: XLSX_COLORS.grey } };
+        familyCell.font = { name: 'Montserrat', size: 9, bold: true, color: { argb: 'FF000000' } };
+        familyCell.alignment = { vertical: 'middle', horizontal: 'left' };
+        familyCell.border = borderStyle();
+        sheet.getRow(rowNumber).height = 22;
+        rowNumber += 1;
+        family.rows.forEach((item) => {
+          const values = [
+            item.descriptions.join('; ') || item.label,
+            item.quantity,
+            item.rating == null ? NOT_SPECIFIED : item.rating,
+            item.pole,
+            item.curve,
+            item.tripUnit,
+            item.breakingCapacity,
+            item.protectionStandard,
+            item.rcdLabel,
+            item.afddLabel,
+            item.circuitLocators.join('; '),
+            item.sourcePages.join('; '),
+            item.reviewStatus,
+          ];
+          values.forEach((value, columnIndex) => { sheet.getCell(rowNumber, columnIndex + 1).value = value; });
+          styleDataRange(sheet, rowNumber, rowNumber, lastColumn);
+          sheet.getCell(rowNumber, 13).fill = {
+            type: 'pattern', pattern: 'solid', fgColor: { argb: item.reviewStatus === 'Ready' ? XLSX_COLORS.green : XLSX_COLORS.red },
+          };
+          rowNumber += 1;
+        });
+      });
+    });
+    const widths = [36, 10, 14, 15, 14, 14, 16, 20, 18, 17, 28, 32, 17];
+    widths.forEach((width, index) => { sheet.getColumn(index + 1).width = width; });
+    sheet.pageSetup.printArea = `A1:${columnName(lastColumn)}${Math.max(3, rowNumber - 1)}`;
+    sheet.pageSetup.printTitlesRow = '1:3';
+    return sheet;
+  }
+
   function createTakeOffWorksheet(workbook, model) {
     const sheet = workbook.addWorksheet("Device Take-Off", {
       views: [{ state: "frozen", xSplit: 6, ySplit: 3, activeCell: "G4" }],
@@ -907,7 +1105,9 @@
     const sourceColumn = totalColumn + 2;
     const confidenceColumn = totalColumn + 3;
     const reviewColumn = totalColumn + 4;
-    const notesColumn = totalColumn + 5;
+    const rcdColumn = totalColumn + 5;
+    const afddColumn = totalColumn + 6;
+    const notesColumn = totalColumn + 7;
     const lastColumn = notesColumn;
     addTitleRows(sheet, model, "Consolidated procurement take-off", lastColumn);
     const headers = [
@@ -923,6 +1123,8 @@
       "Source Pages",
       "Confidence",
       "Review Status",
+      "RCD Protection",
+      "AFDD Protection",
       "Missing Information / Notes",
     ];
     headers.forEach((value, index) => { sheet.getCell(3, index + 1).value = value; });
@@ -944,6 +1146,8 @@
         reportRow.sourcePages.join("; "),
         reportRow.confidence,
         reportRow.reviewStatus,
+        rcdProtectionLabel(reportRow.rcdProtected, reportRow.rcdSensitivity),
+        afddProtectionLabel(reportRow.afdd),
         reportRow.notes.join(" "),
       ];
       values.forEach((value, columnIndex) => { sheet.getCell(rowNumber, columnIndex + 1).value = value; });
@@ -1000,6 +1204,8 @@
     sheet.getColumn(sourceColumn).width = 34;
     sheet.getColumn(confidenceColumn).width = 12;
     sheet.getColumn(reviewColumn).width = 16;
+    sheet.getColumn(rcdColumn).width = 18;
+    sheet.getColumn(afddColumn).width = 17;
     sheet.getColumn(notesColumn).width = 56;
     sheet.pageSetup.printArea = `A1:${columnName(lastColumn)}${totalRow}`;
     sheet.pageSetup.printTitlesRow = "1:3";
@@ -1039,6 +1245,11 @@
       item.pole,
       item.curve,
       item.breakingCapacity,
+      item.protectionStandard,
+      item.tripUnit,
+      rcdProtectionLabel(item.rcdProtected, item.rcdSensitivity),
+      item.rcdSensitivity == null ? NOT_SPECIFIED : item.rcdSensitivity,
+      afddProtectionLabel(item.afdd),
       item.role,
       item.sourceDocument,
       item.page,
@@ -1123,6 +1334,15 @@
         ["Pole Configuration", item.pole],
         ["Tripping Curve", item.curve],
         ["Breaking Capacity", item.breakingCapacity],
+        ["Protection Standard", item.protectionStandard],
+        ["Trip Unit", item.tripUnit],
+        ["RCD Protection", rcdProtectionLabel(item.rcdProtected, item.rcdSensitivity)],
+        ["RCD Sensitivity", item.rcdSensitivity == null ? NOT_SPECIFIED : `${formatRating(item.rcdSensitivity)}mA`],
+        ["AFDD Protection", afddProtectionLabel(item.afdd)],
+        ["Circuit Reference", item.circuitReference],
+        ["Description", item.description],
+        ["Phase", item.phase || NOT_SPECIFIED],
+        ["Way", item.way == null ? NOT_SPECIFIED : item.way],
       ];
       fields.forEach(([field, normalised]) => {
         const key = field.toLowerCase().replace(/\s+/g, "");
@@ -1163,12 +1383,14 @@
     workbook.modified = model.generatedAt;
     workbook.calcProperties.fullCalcOnLoad = true;
 
+    createBoardTakeOffWorksheet(workbook, model);
     createTakeOffWorksheet(workbook, model);
     createFlatSheet(workbook, "Device Detail", [
       "Consolidated Group ID", "Device Description", "Board", "Circuit / Way", "Quantity", "Current Rating (A)",
-      "Application / Purpose", "Circuit Description", "Pole Configuration", "Tripping Curve", "Breaking Capacity", "Role",
+      "Application / Purpose", "Circuit Description", "Pole Configuration", "Tripping Curve", "Breaking Capacity",
+      "Protection Standard", "Trip Unit", "RCD Protection", "RCD Sensitivity (mA)", "AFDD Protection", "Role",
       "Source Document", "Page", "Source Region", "Source Text", "Confidence", "Extraction Method", "Review Status",
-    ], detailRows(model), [34, 28, 14, 14, 10, 14, 20, 36, 15, 14, 16, 12, 28, 9, 24, 48, 12, 25, 16]);
+    ], detailRows(model), [34, 28, 14, 14, 10, 14, 20, 36, 15, 14, 16, 20, 14, 18, 18, 17, 12, 28, 9, 24, 48, 12, 25, 16]);
     createFlatSheet(workbook, "Review Required", [
       "Scope", "Group / Source ID", "Device", "Field", "Issue", "Required Action", "Source Pages", "Confidence", "Status",
     ], reviewRows(model), [20, 34, 28, 18, 36, 55, 36, 12, 18]);

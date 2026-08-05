@@ -100,6 +100,18 @@ assert.equal(result.rows[7].requiresReview, true);
 assert.equal(result.feeds.length, 7);
 assert.ok(result.rows[0].fieldSources.rating.bbox);
 assert.notDeepEqual(result.rows[0].fieldSources.rating.bbox, result.rows[0].fieldSources.circuitReference.bbox);
+assert.ok(result.rows[0].fieldSources.rcdProtection.bbox);
+assert.ok(result.rows[0].fieldSources.afdd.bbox);
+assert.equal(result.rows[0].rcdProtected, false);
+assert.equal(result.rows[0].afdd, false);
+assert.ok(result.rows[0].highlightBbox[3] >= 18, 'a genuine merged three-phase row may span all phase lanes');
+
+for (const token of ['YES', 'Y', '1', '✓', '✔', '☑', '\uF0FC']) {
+  assert.equal(Core.parseProtectionIndicator(token), true, `${token} must be recognised as a protection tick`);
+}
+for (const token of ['NO', 'N', '0', 'X', '×', '✕', '✖', '☐', '\uF0FB']) {
+  assert.equal(Core.parseProtectionIndicator(token), false, `${token} must be recognised as a negative indicator`);
+}
 
 const roles = result.references.reduce((counts, reference) => {
   counts[reference.role] = (counts[reference.role] || 0) + 1;
@@ -133,6 +145,8 @@ const compact = Core.parseSpatialSchedulePage({
 });
 assert.equal(compact.matched, true);
 assert.deepEqual(compact.rows.filter((row) => !row.inferredWay).map((row) => [row.device, row.rating, row.curve]), [['MCB', 16, 'B'], ['RCBO', 32, 'C']]);
+assert.equal(compact.rows.find((row) => row.way === 2).rcdProtected, true, 'a valid RCD sensitivity corroborates protection when the tick glyph is absent');
+assert.equal(compact.rows.find((row) => row.way === 2).sens, 30);
 assert.deepEqual(compact.rows.filter((row) => row.inferredWay).map((row) => row.way), [3, 4, 5, 6]);
 assert.equal(compact.board.classification.family, 'distribution_board');
 
@@ -178,6 +192,12 @@ assert.deepEqual(perPhase.rows.map((row) => [row.way, row.phase, row.device, row
 assert.ok(perPhase.rows.slice(0, 4).every((row) => row.poles === 1));
 assert.ok(perPhase.rows.slice(0, 4).every((row) => row.ka === 10));
 assert.ok(perPhase.rows.slice(4).every((row) => row.spare));
+const wayOneHighlights = perPhase.rows.filter((row) => row.way === 1).map((row) => row.highlightBbox);
+for (let index = 1; index < wayOneHighlights.length; index += 1) {
+  const prior = wayOneHighlights[index - 1];
+  const current = wayOneHighlights[index];
+  assert.ok(prior[1] + prior[3] <= current[1], 'single-phase review highlights must not overlap adjacent rows');
+}
 
 const correctedStandard = Core.resolveProtectionDevice({ standard: '60974', tripUnit: 'TMD' });
 assert.equal(correctedStandard.device, 'MCCB');

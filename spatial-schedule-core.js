@@ -370,18 +370,29 @@
     return Object.fromEntries(Object.entries(assigned).map(([role, list]) => [role, sourceCell(list, role)]));
   }
 
-  function numberValue(cell, { max = Infinity } = {}) {
+  function numberValue(cell, { min = -Infinity, max = Infinity } = {}) {
     const match = String(cell?.text || '').match(/-?\d+(?:\.\d+)?/);
     const value = match ? Number(match[0]) : null;
-    return Number.isFinite(value) && Math.abs(value) <= max ? value : null;
+    return Number.isFinite(value) && value >= min && Math.abs(value) <= max ? value : null;
   }
 
   function indicatorValue(cell) {
-    const token = String(cell?.text || '').trim();
+    const token = String(typeof cell === 'object' ? cell?.text || '' : cell ?? '').trim();
     if (!token) return null;
     if (/^(?:YES|Y|TRUE|1|CHECKED|TICK)$/i.test(token) || /[\u2713\u2714\u2611\uF0FC]/.test(token)) return true;
     if (/^(?:NO|N|FALSE|0|X|-|--)$/i.test(token) || /[\u00D7\u2715\u2716\u2610\uF0FB]/.test(token)) return false;
     return null;
+  }
+
+  function highlightBox(source, context = {}) {
+    if (!source?.bbox) return null;
+    const [x, y, width, height] = source.bbox.map(Number);
+    if (!context.phaseLane || !Number.isFinite(context.laneTop) || !Number.isFinite(context.laneBottom)) {
+      return [x, y, width, height];
+    }
+    const top = Math.max(y, context.laneTop);
+    const bottom = Math.min(y + height, context.laneBottom);
+    return bottom > top ? [x, top, width, bottom - top] : [x, y, width, height];
   }
 
   function protectionStandard(value) {
@@ -556,9 +567,10 @@
       ? 3
       : (uniquePhases.length === 1 && hasDeviceEvidence ? 1 : null);
     const phase = poles === 3 ? '3PH' : (uniquePhases.length === 1 ? uniquePhases[0] : null);
-    const rcdMa = numberValue(cells.rcd_ma, { max: 1000 });
-    const rcdProtected = indicatorValue(cells.rcd);
-    const afdd = indicatorValue(cells.afdd);
+    const rcdMa = numberValue(cells.rcd_ma, { min: 1, max: 1000 });
+    const rcdIndicator = indicatorValue(cells.rcd);
+    const rcdProtected = rcdIndicator === true || rcdMa != null ? true : rcdIndicator;
+    const afddIndicator = indicatorValue(cells.afdd);
     const circuitTypeRaw = cellText(cells, 'circuit_type').toUpperCase();
     const circuitConfig = /^(?:RD|RAD|RADIAL)$/.test(circuitTypeRaw) ? 'RADIAL' : (/^(?:RG|RING)$/.test(circuitTypeRaw) ? 'RING' : null);
     const liveCsa = numberValue(cells.line_csa, { max: 1000 });
@@ -567,11 +579,19 @@
     const confidence = Math.min(resolution.confidence || 0.55, schemaConfidence || 0.55,
       ...Object.values(cells).filter(Boolean).map((cell) => Number(cell.confidence) || 0.6));
     const requiresReview = space || (!spare && (!resolution.device || rating == null)) || confidence < 0.78;
-    const source = sourceCell(Object.values(cells).filter(Boolean).flatMap((cell) => cell.words || []), 'row');
+    const rowCells = Object.entries(cells)
+      .filter(([role, cell]) => Boolean(cell) && !(context.phaseLane && role === 'way'))
+      .map(([, cell]) => cell);
+    const source = sourceCell(rowCells.flatMap((cell) => cell.words || []), 'row');
+    const protectionReasons = [];
+    if (rcdIndicator === true) protectionReasons.push('Explicit RCD protection indicator');
+    if (rcdMa != null) protectionReasons.push('RCD operating-current value present');
+    if (rcdIndicator === false && rcdMa == null) protectionReasons.push('Explicit no-RCD indicator');
+    if (afddIndicator === true) protectionReasons.push('Explicit AFDD indicator');
     return {
       way, phase, rating, device: resolution.device, curve, tripUnit,
       protectionStandard: resolution.protectionStandard, protectionStandardCode: resolution.standardCode,
-      sens: rcdMa, rcdProtected, afdd: afdd === true, poles, ka,
+      sens: rcdMa, rcdProtected, afdd: afddIndicator === true, afddIndicated: afddIndicator, poles, ka,
       desc: description, circuitReference, circuitReferenceText: circuitText || null, circuitConfig,
       cable: (liveCsa != null || cpcCsa != null || cableType) ? {
         orig: [liveCsa != null ? `${liveCsa}mm2` : null, cpcCsa != null ? `CPC ${cpcCsa}mm2` : null, cableType].filter(Boolean).join(' '),
@@ -581,16 +601,25 @@
       inferredDevice: resolution.confidence < 0.9,
       requiresReview,
       resolutionSource: 'spatial_column_schema',
-      resolutionReasons: resolution.reasons,
+      resolutionReasons: [...resolution.reasons, ...protectionReasons],
       srcText: source?.text || allText,
       sourceCell: source,
+      highlightBbox: highlightBox(source, context),
       fieldSources: {
+        way: cells.way || source,
+        phase: cells.phase || source,
         device: cells.device_class || cells.device_standard || source,
+        protectionStandard: cells.device_standard || source,
+        tripUnit: cells.trip_unit || source,
         rating: cells.rating || source,
         curve: cells.trip_curve || cells.trip_unit || source,
         breakingCapacity: cells.breaking_capacity || source,
         poles: cells.phase || cells.way || source,
+        rcdProtection: cells.rcd || cells.rcd_ma || source,
+        rcdSensitivity: cells.rcd_ma || cells.rcd || source,
+        afdd: cells.afdd || source,
         circuitReference: cells.circuit_reference || cells.description || source,
+        description: cells.description || cells.circuit_reference || source,
       },
       conf: confidence,
     };
@@ -618,7 +647,7 @@
       const cells = columnCells(laneWords, schema);
       cells.way = sourceCell([wayAnchor], 'way');
       cells.phase = sourceCell([item.word], 'phase');
-      return parseSpatialRow(cells, schema.confidence, context);
+      return parseSpatialRow(cells, schema.confidence, { ...context, phaseLane: true, laneTop, laneBottom });
     }).filter(Boolean);
     const meaningful = phaseRows.filter((row) => !row.space || row.spare);
     const technical = phaseRows.filter((row) => row.device || row.rating != null || row.protectionStandard
@@ -823,8 +852,9 @@
         rows: (result.rows || []).slice(0, maxRows).map((row) => ({
           way: row.way, phase: row.phase, device: row.device, standard: row.protectionStandard,
           trip_unit: row.tripUnit, rating_a: row.rating, breaking_capacity_ka: row.ka,
+          rcd_protected: row.rcdProtected, rcd_ma: row.sens, afdd: row.afdd,
           circuit_reference: row.circuitReference, confidence: row.conf,
-          source_region: row.sourceCell?.bbox || null,
+          source_region: row.highlightBbox || row.sourceCell?.bbox || null,
         })),
       },
       board: result.board ? {
@@ -910,5 +940,6 @@
     parseSpatialSchedulePage,
     buildSpatialLayoutHint,
     deduplicateFeederRelationships,
+    parseProtectionIndicator: indicatorValue,
   });
 })(globalThis);

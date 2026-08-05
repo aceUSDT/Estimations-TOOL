@@ -372,6 +372,7 @@
   .det-head b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   .det-actions{display:flex;gap:5px;margin-left:auto;flex:0 0 auto;}
   .det-actions .btn{padding:3px 7px;font-size:10.5px;}
+  .det-protection{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px;}
   body.viewer-fullscreen-open{overflow:hidden;}
   #pt-viewer.viewer-fullscreen,#pt-viewer:fullscreen{display:block;position:fixed;inset:0;z-index:1000;background:#eef1f5;padding:8px;}
   #pt-viewer:fullscreen::backdrop{background:#eef1f5;}
@@ -432,6 +433,10 @@
   .modal .m-head{padding:15px 20px;border-bottom:1px solid var(--line);font-weight:800;font-size:14px;}
   .modal .m-body{padding:18px 20px;}
   .modal .m-foot{padding:13px 20px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:8px;}
+  .modal.row-editor-modal{width:720px;}
+  .row-editor-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px 14px;margin-bottom:14px;}
+  .row-editor-grid .span-2{grid-column:1/-1;}
+  .row-editor-grid .in,.row-editor-grid .sel{width:100%;min-width:0;}
   #toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(14px);background:var(--nav);
     color:#fff;padding:10px 20px;border-radius:9px;font-size:12.5px;font-weight:600;opacity:0;
     pointer-events:none;transition:.22s;z-index:99;box-shadow:0 10px 30px rgba(0,0,0,.3);}
@@ -452,7 +457,36 @@
   .report-status.ok{background:#f2faf6;color:#176c48;}
   .report-status.warn{background:#fff8eb;color:#87570b;}
   .report-status.bad{background:#fff1f2;color:#a52d35;}
+  .report-viewbar{display:flex;align-items:center;justify-content:flex-start;padding:9px 18px;border-bottom:1px solid var(--line);background:#fafbfd;}
+  .report-mode{display:inline-flex;border:1px solid var(--line2);border-radius:5px;overflow:hidden;background:#fff;}
+  .report-mode button{min-height:30px;padding:5px 11px;border-right:1px solid var(--line2);font-size:11.5px;font-weight:700;color:var(--txt2);}
+  .report-mode button:last-child{border-right:0;}
+  .report-mode button.active{background:var(--nav);color:#fff;}
   .report-matrix-scroll{max-height:calc(100vh - 275px);min-height:430px;overflow:auto;background:#fff;}
+  .report-board-list{min-width:880px;}
+  .report-board-section{border-bottom:5px solid #e7ebf0;background:#fff;}
+  .report-board-head{display:flex;align-items:center;gap:14px;min-height:50px;padding:9px 14px;background:#181a1d;color:#fff;position:sticky;top:0;z-index:5;}
+  .report-board-open{display:flex;align-items:center;gap:10px;min-width:0;color:#fff;text-align:left;}
+  .report-board-open strong{font-size:14px;line-height:1.25;overflow-wrap:anywhere;}
+  .report-board-open span{font-size:11px;color:#c9d0d8;}
+  .report-board-metrics{display:flex;align-items:center;gap:7px;margin-left:auto;flex:0 0 auto;}
+  .report-board-metrics .metric{min-width:72px;text-align:right;}
+  .report-board-metrics b{display:block;font-size:14px;}
+  .report-board-metrics span{font-size:9px;text-transform:uppercase;color:#c9d0d8;font-weight:700;}
+  .report-board-table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:11.5px;}
+  .report-board-table th,.report-board-table td{padding:7px 9px;border-right:1px solid #e0e4e9;border-bottom:1px solid #e0e4e9;vertical-align:top;text-align:left;overflow-wrap:anywhere;}
+  .report-board-table th{height:34px;background:#f7e0d1;font-size:10px;text-transform:uppercase;color:#454a50;}
+  .report-board-table th:nth-child(1){width:36%;}.report-board-table th:nth-child(2){width:7%;text-align:center;}
+  .report-board-table th:nth-child(3){width:15%;}.report-board-table th:nth-child(4){width:17%;}
+  .report-board-table th:nth-child(5){width:15%;}.report-board-table th:nth-child(6){width:10%;}
+  .report-board-table td:nth-child(2){text-align:center;font-size:14px;font-weight:800;}
+  .report-family-row td{padding:7px 10px;background:#e8edf2;font-weight:800;color:#252a30;}
+  .report-family-row .devdot{margin-left:2px;}
+  .report-family-total{float:right;color:var(--txt2);font-weight:700;}
+  .report-techline{display:flex;align-items:center;gap:4px;flex-wrap:wrap;}
+  .report-description{margin-top:4px;color:var(--txt2);line-height:1.35;}
+  .report-protection{display:flex;gap:4px;flex-wrap:wrap;}
+  .report-locations,.report-sources{line-height:1.45;color:var(--txt2);}
   table.report-matrix{border-collapse:separate;border-spacing:0;min-width:max-content;width:100%;font-size:11px;}
   .report-matrix th,.report-matrix td{height:28px;padding:5px 7px;border-right:1px solid #d5d9de;border-bottom:1px solid #d5d9de;text-align:center;background:#fff;}
   .report-matrix thead th{position:sticky;z-index:6;font-weight:700;}
@@ -505,6 +539,9 @@
     .appbar{padding:0 12px;gap:8px;}
     .appbar .brand .bt{white-space:nowrap;}
     .appbar .crumb{display:none;}
+    .appbar .storage-state,.appbar #lockBtn{display:none;}
+    .appbar .right{gap:2px;min-width:0;}
+    .appbar .link-btn{padding:6px;font-size:11.5px;}
     .processing-dock-inner{padding:9px 22px;grid-template-columns:minmax(0,1fr);gap:7px;}
     .processing-steps{display:none;}
     .processing-copy{grid-template-columns:auto minmax(0,1fr);}
@@ -518,6 +555,11 @@
     .report-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px 18px;overflow:visible;}
     .report-fact{min-width:0;}
     .report-fact dt{line-height:1.25;white-space:normal;}
+    .report-viewbar{padding:8px 10px;}
+    .report-mode{display:grid;grid-template-columns:1fr 1fr;width:100%;}
+    .report-mode button{white-space:normal;line-height:1.2;}
+    .row-editor-grid{grid-template-columns:minmax(0,1fr);}
+    .row-editor-grid .span-2{grid-column:auto;}
     .viewer-layout{grid-template-columns:minmax(0,1fr);}
     .viewer-layout>.thumbs{display:none;}
     .v-stage{height:calc(100vh - 300px);min-height:440px;}
@@ -816,6 +858,12 @@
           </div>
         </div>
         <div class="report-status" id="reportStatus"></div>
+        <div class="report-viewbar" id="reportModeBar" role="tablist" aria-label="Report view">
+          <div class="report-mode">
+            <button type="button" data-report-mode="board" role="tab">By board</button>
+            <button type="button" data-report-mode="matrix" role="tab">Procurement matrix</button>
+          </div>
+        </div>
         <div class="report-matrix-scroll" id="reportMatrixHost">
           <div class="report-empty">Analyse documents to build the take-off.</div>
         </div>
@@ -950,11 +998,12 @@ const confChip = (c,status)=>{
 /* generic modal */
 let modalOk=null;
 function openModal(title, bodyHtml, onOk, okLabel='Save'){
+  $('#modalBk .modal')?.classList.remove('row-editor-modal');
   $('#mHead').textContent=title; $('#mBody').innerHTML=bodyHtml;
   $('#mOk').textContent=okLabel; modalOk=onOk;
   $('#modalBk').classList.add('show');
 }
-function closeModal(){ $('#modalBk').classList.remove('show'); modalOk=null; }
+function closeModal(){ $('#modalBk').classList.remove('show');$('#modalBk .modal')?.classList.remove('row-editor-modal');modalOk=null; }
 $('#mCancel').addEventListener('click', closeModal);
 $('#modalBk').addEventListener('click', e=>{ if(e.target===$('#modalBk')) closeModal(); });
 $('#mOk').addEventListener('click', ()=>{ if(modalOk && modalOk()===false) return; closeModal(); });
@@ -972,8 +1021,9 @@ const state = {
   nextId: 1,
   viewer: {fileId:null, page:1, zoom:1, rot:0, dark:false, fullscreen:false, boardHl:null, evidenceId:null, pdfDocs:{}, panels:{leftOpen:true,rightOpen:true,leftWidth:132,rightWidth:320}, assist:{enabled:false,boardNorm:null,seed:null,results:[]}},
   selectedBoard: null,  // §5.4 — board selected in the merged Boards & Devices page ('__none__' = unassigned rows), null = roll-up
+  reportMode: 'board',
 };
-const ANALYSIS_VERSION=5;
+const ANALYSIS_VERSION=6;
 const uid = () => 'x'+(state.nextId++)+'_'+Math.random().toString(36).slice(2,6);
 
 /* ====================== PERSISTENCE (IndexedDB) ====================== */
@@ -2066,13 +2116,16 @@ function mergeAiResult(A,out,fileId,pageNo){
         existing.requiresReview=!existing.device||existing.rating==null||existing.conf<0.8;
         existing.extractionMethod=(existing.extractionMethod||'Deterministic parser')+' + AI field check';
       }
+      if(d.rcd_ma!=null){existing.sens=d.rcd_ma;existing.rcdProtected=true;}
+      if(d.afdd===true){existing.afdd=true;existing.afddIndicated=true;}
       return;
     }
     const aiRow={id:uid(), boardNorm:bn, fileId, page:pageNo, line:null, status:'pending', kind:'ai',
       way:d.way??null, phase:d.phase&&d.phase!=='L1L2L3'?d.phase:(d.phase==='L1L2L3'?'3PH':null),
       desc:d.description||'', device, rating:d.rating_a??null, poles:d.poles??null, poleConfiguration:d.pole_configuration||null,
       curve:d.trip_curve||null, tripUnit:d.trip_unit||null, protectionStandard:d.protection_standard||null,
-      circuitReference:d.circuit_reference||null, sens:d.rcd_ma??null, afdd:!!d.afdd, ka:d.breaking_capacity_ka??null,
+      circuitReference:d.circuit_reference||null, sens:d.rcd_ma??null, rcdProtected:d.rcd_protected===false?false:(d.rcd_protected===true||d.rcd_ma!=null?true:null),
+      afdd:typeof d.afdd==='boolean'?d.afdd:null, afddIndicated:typeof d.afdd==='boolean'?d.afdd:null, ka:d.breaking_capacity_ka??null,
       cable:(d.phase_csa_mm2!=null||d.cable_type)?{orig:[d.phase_csa_mm2?d.phase_csa_mm2+'mm²':null,d.cable_type].filter(Boolean).join(' '),
         size:d.phase_csa_mm2??null, cpc:typeof d.cpc_csa_mm2==='number'?d.cpc_csa_mm2:null, cores:null,
         construction:typeof d.cpc_csa_mm2==='string'?d.cpc_csa_mm2:null, typeCode:d.cable_type||null, installMethod:d.install_method||null}:null,
@@ -2082,7 +2135,8 @@ function mergeAiResult(A,out,fileId,pageNo){
     const fl=state.cur?.files?.find(file=>file.id===fileId),bbox=Array.isArray(d.bbox||d.source_region)?(d.bbox||d.source_region):null;
     const trace=sourceTrace(aiRow,{text:d.source_text||aiRow.srcText,originalText:d.source_text||aiRow.srcText,bbox,confidence:aiRow.conf,corrections:[],extractionMethod:'AI-assisted extraction'},
       {source:'ai',ocr:{confidence:aiRow.conf*100}},fl?.name||fileId);
-    A.rows.push({...aiRow,...trace,extractionMethod:'AI-assisted extraction'});
+    const record={...aiRow,...trace,extractionMethod:'AI-assisted extraction'};
+    record.sourceKey=stableRowSourceKey(record);A.rows.push(record);
   });
   (out.feeds||[]).forEach(fd=>{
     if(!fd.to_ref) return;
@@ -2546,6 +2600,11 @@ function renderStages(activeIdx, doneAll, detail=''){
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const SCHEDULE_TYPES=new Set(['db-schedule','main-schedule','equipment-schedule','cable-schedule']);
 const MENTION_TYPES=new Set(['lighting-plan','power-plan','fire-plan','containment-plan','unknown','spec']);
+function stableRowSourceKey(row){
+  if(row?.sourceKey)return row.sourceKey;
+  const bbox=row?.highlightBbox||row?.bbox||row?.sourceCell?.bbox||null;
+  return [row?.fileId||'',row?.page??'',Array.isArray(bbox)?bbox.map(value=>Number(value).toFixed(2)).join(','):'',row?.line??'',row?.srcText||''].join('|');
+}
 function sourceTrace(row,line,pg,fileName){
   if(!line)return {fileName,extractionMethod:pg?.source==='ocr'?'OCR':'Embedded text / deterministic parser'};
   const confidence=Number.isFinite(Number(line.confidence))?Number(line.confidence):Math.max(0,Math.min(1,Number(pg?.ocr?.confidence||100)/100));
@@ -2557,10 +2616,19 @@ function sourceTrace(row,line,pg,fileName){
     if(field==='Pole Configuration')return sources.poles||line;
     if(field==='Tripping Curve')return sources.curve||line;
     if(field==='Breaking Capacity')return sources.breakingCapacity||line;
+    if(field==='Protection Standard')return sources.protectionStandard||sources.device||line;
+    if(field==='Trip Unit')return sources.tripUnit||line;
+    if(field==='RCD Protection')return sources.rcdProtection||sources.rcdSensitivity||line;
+    if(field==='RCD Sensitivity')return sources.rcdSensitivity||sources.rcdProtection||line;
+    if(field==='AFDD Protection')return sources.afdd||line;
     if(field==='Circuit Reference')return sources.circuitReference||line;
+    if(field==='Description')return sources.description||sources.circuitReference||line;
+    if(field==='Phase')return sources.phase||line;
+    if(field==='Way')return sources.way||line;
     return line;
   };
   const correctionFor=(field)=>corrections.find(item=>{
+    if(String(item.field||'').toLowerCase()===field.toLowerCase())return true;
     const value=`${item.original||''} ${item.corrected||''}`;
     if(field==='Device Family')return /MCB|MCCB|RCBO|RCD|AFDD|SPD/i.test(value);
     if(field==='Current Rating')return /\d+\s*A\b/i.test(value);
@@ -2584,7 +2652,15 @@ function sourceTrace(row,line,pg,fileName){
       'Pole Configuration':evidence('Pole Configuration',row.poleConfiguration||row.poles||'Unclear'),
       'Tripping Curve':evidence('Tripping Curve',row.curve||'Not specified'),
       'Breaking Capacity':evidence('Breaking Capacity',row.ka==null?'Not specified':row.ka+'kA'),
+      'Protection Standard':evidence('Protection Standard',row.protectionStandard||'Not specified'),
+      'Trip Unit':evidence('Trip Unit',row.tripUnit||'Not specified'),
+      'RCD Protection':evidence('RCD Protection',row.rcdProtected==null?'Not specified':row.rcdProtected?'Yes':'No'),
+      'RCD Sensitivity':evidence('RCD Sensitivity',row.sens==null?'Not specified':row.sens+'mA'),
+      'AFDD Protection':evidence('AFDD Protection',row.afdd==null?'Not specified':row.afdd?'Yes':'No'),
       'Circuit Reference':evidence('Circuit Reference',row.circuitReference||'Not specified'),
+      'Description':evidence('Description',row.desc||'Not specified'),
+      'Phase':evidence('Phase',row.phase||'Not specified'),
+      'Way':evidence('Way',row.way==null?'Not specified':row.way),
     },lineConfidence:confidence};
 }
 
@@ -2719,12 +2795,15 @@ async function runAnalysis(opts){
         : {matched:false,rows:[]};
       const spatialMatched=!codedPage.matched&&Boolean(spatial?.matched&&spatial.rows?.length);
       const addScheduleRow=(row,line)=>{
+        if(row.sens!=null)row.rcdProtected=true;
+        if(/AFDD/i.test(String(row.device||''))){row.afdd=true;row.afddIndicated=true;}
         if (boardFilter && (!ctx.board || !boardFilter.has(ctx.board))) return;
         if (devFilter && row.device && !devFilter.has(row.device.toUpperCase()) && !row.spare && !row.space && !row.incomer) return;
         const evidenceLine=row.sourceCell||(Number.isInteger(line)?pg.lines[line]:null);
         const trace=sourceTrace(row,evidenceLine,pg,fl.name);
         const confidence=trace.lineConfidence?Math.min(Number(row.conf??1),trace.lineConfidence):row.conf;
-        A.rows.push({id:uid(), boardNorm:ctx.board, boardSection:ctx.boardSection, fileId:id, page:pageNo, line, status:'pending', kind:'schedule', ...row,...trace,conf:confidence});
+        const record={id:uid(), boardNorm:ctx.board, boardSection:ctx.boardSection, fileId:id, page:pageNo, line, status:'pending', kind:'schedule', ...row,...trace,conf:confidence};
+        record.sourceKey=stableRowSourceKey(record);A.rows.push(record);
       };
       if(codedPage.matched) codedPage.rows.forEach(row=>addScheduleRow(row,row.line));
       else if(spatialMatched){
@@ -2764,12 +2843,14 @@ async function runAnalysis(opts){
             const bs=detectBoards(t);
             const bn=bs.length?bs[0].norm:null;
             if (boardFilter && (!bn||!boardFilter.has(bn))) return;
+            const sensitivity=sensOf(t);
             const mention={way:null, desc:t.trim(), device:dev, rating:ratingOf(t), poles:polesOf(t), poleConfiguration:poleConfigOf(t), curve:curveOf(t),
-              sens:sensOf(t), phase:phaseOf(t), ka:kaOf(t), cable:detectCables(t)[0]||null,
+              sens:sensitivity, rcdProtected:sensitivity!=null?true:null, afdd:/AFDD/i.test(dev), phase:phaseOf(t), ka:kaOf(t), cable:detectCables(t)[0]||null,
               spare:false, space:false, incomer:false, qty:qtyIn(t,dev), srcText:t.trim(), conf:0.55};
             const trace=sourceTrace(mention,pg.lines[li],pg,fl.name);
-            A.rows.push({id:uid(), boardNorm:bn, fileId:id, page:pageNo, line:li, status:'pending', kind:'mention',
-              ...mention,...trace,conf:trace.lineConfidence?Math.min(mention.conf,trace.lineConfidence):mention.conf});
+            const record={id:uid(), boardNorm:bn, fileId:id, page:pageNo, line:li, status:'pending', kind:'mention',
+              ...mention,...trace,conf:trace.lineConfidence?Math.min(mention.conf,trace.lineConfidence):mention.conf};
+            record.sourceKey=stableRowSourceKey(record);A.rows.push(record);
           }
         }
       });
@@ -2806,11 +2887,21 @@ async function runAnalysis(opts){
     }
   });
   await showAnalysisStage(6,'Checking totals, coverage, and review items');
-  // carry over prior manual decisions
+  // Carry forward approvals and user corrections against stable source evidence.
   if (prev){
-    const key=r=>[r.boardNorm,r.way,r.device,r.srcText].join('|');
+    const key=r=>stableRowSourceKey(r);
     const prevMap={}; prev.rows.forEach(r=>{ if(r.kind!=='manual') prevMap[key(r)]=r; });
-    A.rows.forEach(r=>{ const o=prevMap[key(r)]; if(o&&o.status!=='pending') r.status=o.status; });
+    const correctedFields=['boardNorm','way','phase','device','qty','rating','curve','poleConfiguration','poles','protectionStandard','tripUnit','ka','rcdProtected','sens','afdd','afddIndicated','circuitReference','desc'];
+    A.rows.forEach(r=>{
+      const o=prevMap[key(r)];if(!o)return;
+      if(o.status!=='pending')r.status=o.status;
+      if(o.edited){
+        correctedFields.forEach(field=>{if(Object.prototype.hasOwnProperty.call(o,field))r[field]=o[field];});
+        r.corrections=Array.isArray(o.corrections)?o.corrections.map(item=>({...item})):[];
+        r.fieldEvidence=o.fieldEvidence?JSON.parse(JSON.stringify(o.fieldEvidence)):r.fieldEvidence;
+        r.edited=true;
+      }
+    });
     prev.rows.filter(r=>r.kind==='manual').forEach(r=>A.rows.push(r));
     Object.values(prev.boards).forEach(b=>{ if(b.manual){ if(!A.boards[b.norm]) A.boards[b.norm]=b; A.boards[b.norm].parent=b.parent; A.boards[b.norm].manual=true; } });
   }
@@ -2948,7 +3039,7 @@ function deviceColor(name){
 function buildDeviceTable(devs, approveLabel){
   const p=state.cur, A=p.analysis;
   const tbl=document.createElement('table'); tbl.className='t';
-  tbl.innerHTML='<thead><tr><th style="width:26px"></th><th>Device</th><th class="num">Qty</th><th>Ratings seen</th><th>Status</th><th></th></tr></thead><tbody></tbody>';
+  tbl.innerHTML='<thead><tr><th style="width:26px"></th><th>Device</th><th class="num">Qty</th><th>Ratings seen</th><th>Protection</th><th>Status</th><th></th></tr></thead><tbody></tbody>';
   const tb=tbl.querySelector('tbody');
   Object.entries(devs).sort((a,b)=>b[1].qty-a[1].qty).forEach(([dev,rec])=>{
     const tr=document.createElement('tr');
@@ -2956,14 +3047,21 @@ function buildDeviceTable(devs, approveLabel){
     const minConf=Math.min(...rec.rows.map(r=>r.status==='confirmed'?1:r.conf));
     const allConf=rec.rows.every(r=>r.status==='confirmed');
     const isCount=countable(dev);
+    const rcdRows=rec.rows.filter(r=>r.rcdProtected===true),afddRows=rec.rows.filter(r=>r.afdd===true);
+    const sensitivities=[...new Set(rcdRows.map(r=>r.sens).filter(value=>value!=null))].sort((a,b)=>a-b);
+    const protection=[];
+    if(rcdRows.length)protection.push(`${rcdRows.reduce((sum,row)=>sum+(row.qty||1),0)} RCD${sensitivities.length?' · '+sensitivities.map(value=>value+'mA').join(', '):''}`);
+    if(afddRows.length)protection.push(`${afddRows.reduce((sum,row)=>sum+(row.qty||1),0)} AFDD`);
+    if(!protection.length&&rec.rows.every(row=>row.rcdProtected===false))protection.push('No RCD');
     tr.innerHTML=`<td><span class="car" style="color:var(--txt3);font-size:10px">▶</span></td>
       <td class="strong">${isCount?`<span class="devdot" style="background:${deviceColor(dev)}"></span>`:''}${esc(dev)}${isCount?'':' <span class="hint" style="display:inline;margin:0">not counted as devices</span>'}</td>
       <td class="num"><b style="font-size:14px;color:${isCount?deviceColor(dev):'var(--txt3)'}">${rec.qty}</b></td>
       <td>${ratings.map(r=>`<span class="chip grey">${r}A</span>`).join(' ')||'—'}</td>
+      <td>${protection.map(value=>`<span class="chip cyan">${esc(value)}</span>`).join(' ')||'<span class="hint" style="margin:0">Not stated</span>'}</td>
       <td>${allConf?'<span class="chip green">Confirmed</span>':confChip(minConf)}</td>
       <td><button class="btn sm ghost" data-a="ok" title="Approve all evidence rows">✓ Approve</button></td>`;
     const evtr=document.createElement('tr'); evtr.style.display='none';
-    const evtd=document.createElement('td'); evtd.colSpan=6; evtd.style.padding='0';
+    const evtd=document.createElement('td'); evtd.colSpan=7; evtd.style.padding='0';
     evtr.appendChild(evtd); evtr.className='evwrap';
     evtd.innerHTML=`<table class="t" style="background:#f7fafd;border-left:4px solid ${countable(dev)?deviceColor(dev):'var(--line)'}">${rec.rows.map(r=>evRowHtml(r)).join('')}</table>`;
     tr.addEventListener('click', e=>{
@@ -3210,8 +3308,11 @@ function evRowHtml(r){
   if (r.protectionCode) bits.push(r.protectionCode);
   if (r.curve) bits.push('Type '+r.curve);
   if (r.rcdType) bits.push('RCD Type '+r.rcdType);
+  if (r.rcdProtected===true) bits.push('RCD protected');
+  if (r.rcdProtected===false) bits.push('No RCD');
   if (r.poles) bits.push(r.poles+'P');
   if (r.sens) bits.push(r.sens+'mA');
+  if (r.afdd===true) bits.push('AFDD');
   if (r.phase) bits.push(r.phase);
   if (r.cable) bits.push(r.cable.orig);
   if (r.qty>1) bits.push('×'+r.qty);
@@ -3252,47 +3353,81 @@ function deviceOptions(sel){
   if (sel && !names.includes(sel)) names.unshift(sel);
   return names.map(n=>`<option ${n===sel?'selected':''}>${n}</option>`).join('')+`<option value="" ${!sel?'selected':''}>— none —</option>`;
 }
-function openRowEditor(r, isNew){
+function openRowEditor(r, isNew, surface='Boards & Devices'){
   const p=state.cur, A=p.analysis;
   const boards=Object.values(A.boards);
+  const poleValue=r.poleConfiguration||(r.poles===1?'SPN':r.poles===2?'DPN':r.poles===3?'TPN':r.poles===4?'4P':'');
+  const rcdValue=r.rcdProtected===true?'yes':r.rcdProtected===false?'no':'';
+  const afddSource=Object.prototype.hasOwnProperty.call(r,'afddIndicated')?r.afddIndicated:r.afdd;
+  const afddValue=afddSource===true?'yes':afddSource===false?'no':'';
   openModal(isNew?'Add device manually':'Correct this row', `
-    <div class="fgroup"><label class="lbl">Board</label>
-      <select class="sel" id="eBoard" style="width:100%">${boards.map(b=>`<option value="${b.norm}" ${r.boardNorm===b.norm?'selected':''}>${esc(b.orig)}</option>`).join('')}<option value="" ${!r.boardNorm?'selected':''}>— none —</option></select></div>
-    <div class="fgroup" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-      <div><label class="lbl">Device type</label><select class="sel" id="eDev" style="width:100%">${deviceOptions(r.device)}</select></div>
-      <div><label class="lbl">Quantity</label><input class="in" id="eQty" type="number" min="1" value="${r.qty||1}"></div></div>
-    <div class="fgroup" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px">
-      <div><label class="lbl">Rating (A)</label><input class="in" id="eRat" value="${r.rating??''}"></div>
-      <div><label class="lbl">Curve</label><select class="sel" id="eCur" style="width:100%"><option ${!r.curve?'selected':''} value="">Not specified</option>${['B','C','D','K','Z'].map(value=>`<option ${r.curve===value?'selected':''}>${value}</option>`).join('')}</select></div>
-      <div><label class="lbl">Pole configuration</label><select class="sel" id="ePol" style="width:100%"><option value="" ${!r.poleConfiguration&&!r.poles?'selected':''}>Unclear</option>${['SP','SPN','DP','DPN','TP','TPN','4P'].map(value=>`<option ${value===(r.poleConfiguration||(r.poles===1?'SPN':r.poles===2?'DPN':r.poles===3?'TPN':r.poles===4?'4P':''))?'selected':''}>${value}</option>`).join('')}</select></div>
-      <div><label class="lbl">Breaking capacity (kA)</label><input class="in" id="eKa" inputmode="decimal" value="${r.ka??''}" placeholder="Not specified"></div></div>
-    <div class="fgroup"><label class="lbl">Description / note</label><input class="in" id="eDesc" value="${esc(r.desc||'')}"></div>
+    <div class="row-editor-grid">
+      <div class="span-2"><label class="lbl">Board</label><select class="sel" id="eBoard">${boards.map(b=>`<option value="${esc(b.norm)}" ${r.boardNorm===b.norm?'selected':''}>${esc(b.orig)}</option>`).join('')}<option value="" ${!r.boardNorm?'selected':''}>- none -</option></select></div>
+      <div><label class="lbl">Way</label><input class="in" id="eWay" type="number" min="1" value="${r.way??''}" placeholder="Not specified"></div>
+      <div><label class="lbl">Phase</label><select class="sel" id="ePhase"><option value="" ${!r.phase?'selected':''}>Not specified</option>${['L1','L2','L3','3PH'].map(value=>`<option ${r.phase===value?'selected':''}>${value}</option>`).join('')}</select></div>
+      <div><label class="lbl">Device type</label><select class="sel" id="eDev">${deviceOptions(r.device)}</select></div>
+      <div><label class="lbl">Quantity</label><input class="in" id="eQty" type="number" min="1" value="${r.qty||1}"></div>
+      <div><label class="lbl">Rating (A)</label><input class="in" id="eRat" inputmode="decimal" value="${r.rating??''}" placeholder="Not specified"></div>
+      <div><label class="lbl">Curve</label><select class="sel" id="eCur"><option ${!r.curve?'selected':''} value="">Not specified</option>${['B','C','D','K','Z'].map(value=>`<option ${r.curve===value?'selected':''}>${value}</option>`).join('')}</select></div>
+      <div><label class="lbl">Pole configuration</label><select class="sel" id="ePol"><option value="" ${!poleValue?'selected':''}>Unclear</option>${['SP','SPN','DP','DPN','TP','TPN','4P'].map(value=>`<option ${value===poleValue?'selected':''}>${value}</option>`).join('')}</select></div>
+      <div><label class="lbl">Breaking capacity (kA)</label><input class="in" id="eKa" inputmode="decimal" value="${r.ka??''}" placeholder="Not specified"></div>
+      <div><label class="lbl">Protection standard</label><input class="in" id="eStandard" value="${esc(r.protectionStandard||'')}" placeholder="Not specified"></div>
+      <div><label class="lbl">Trip unit</label><input class="in" id="eTrip" value="${esc(r.tripUnit||'')}" placeholder="Not specified"></div>
+      <div><label class="lbl">RCD protection</label><select class="sel" id="eRcd"><option value="" ${!rcdValue?'selected':''}>Not specified</option><option value="yes" ${rcdValue==='yes'?'selected':''}>Yes</option><option value="no" ${rcdValue==='no'?'selected':''}>No</option></select></div>
+      <div><label class="lbl">RCD sensitivity (mA)</label><input class="in" id="eSens" inputmode="decimal" value="${r.sens??''}" placeholder="Not specified"></div>
+      <div><label class="lbl">AFDD protection</label><select class="sel" id="eAfdd"><option value="" ${!afddValue?'selected':''}>Not specified</option><option value="yes" ${afddValue==='yes'?'selected':''}>Yes</option><option value="no" ${afddValue==='no'?'selected':''}>No</option></select></div>
+      <div><label class="lbl">Circuit reference</label><input class="in" id="eCircuit" value="${esc(r.circuitReference||'')}" placeholder="Not specified"></div>
+      <div class="span-2"><label class="lbl">Description / note</label><input class="in" id="eDesc" value="${esc(r.desc||'')}"></div>
+    </div>
     ${isNew?'':`<div class="hint">Original text: <span class="mono">${esc(r.srcText)}</span></div>`}
   `, ()=>{
-    const before={rating:r.rating??null,curve:r.curve||null,poleConfiguration:r.poleConfiguration||null,ka:r.ka??null,device:r.device||null};
+    const before={boardNorm:r.boardNorm||null,way:r.way??null,phase:r.phase||null,device:r.device||null,qty:r.qty??1,rating:r.rating??null,curve:r.curve||null,
+      poleConfiguration:r.poleConfiguration||poleValue||null,ka:r.ka??null,protectionStandard:r.protectionStandard||null,tripUnit:r.tripUnit||null,
+      rcdProtected:r.rcdProtected??null,sens:r.sens??null,afdd:afddSource??null,circuitReference:r.circuitReference||null,desc:r.desc||null};
+    const numberOrNull=id=>{const raw=$(id).value.trim(),value=Number(raw);return raw===''||!Number.isFinite(value)?null:value;};
+    const nextRcd=$('#eRcd').value,nextSens=numberOrNull('#eSens');
+    if(nextSens!=null&&nextRcd==='no'){toast('RCD sensitivity cannot be set when RCD protection is No');return false;}
     r.boardNorm=$('#eBoard').value||null;
+    r.way=numberOrNull('#eWay');
+    r.phase=$('#ePhase').value||null;
     r.device=$('#eDev').value||null;
     r.qty=Math.max(1,parseInt($('#eQty').value,10)||1);
-    r.rating=$('#eRat').value?parseFloat($('#eRat').value):null;
+    r.rating=numberOrNull('#eRat');
     r.curve=$('#eCur').value||null;
     r.poleConfiguration=$('#ePol').value||null;
     r.poles={SP:1,SPN:1,DP:2,DPN:2,TP:3,TPN:3,'4P':4}[r.poleConfiguration]||null;
-    r.ka=$('#eKa').value?parseFloat($('#eKa').value):null;
+    r.ka=numberOrNull('#eKa');
+    r.protectionStandard=$('#eStandard').value.trim()||null;
+    r.tripUnit=$('#eTrip').value.trim()||null;
+    r.rcdProtected=nextRcd===''?null:nextRcd==='yes';
+    r.sens=nextSens;
+    if(r.sens!=null&&r.rcdProtected==null)r.rcdProtected=true;
+    const afdd=$('#eAfdd').value;r.afddIndicated=afdd===''?null:afdd==='yes';r.afdd=r.afddIndicated;
+    r.circuitReference=$('#eCircuit').value.trim()||null;
     r.desc=$('#eDesc').value;
-    const changed=[['Device Family','device'],['Current Rating','rating'],['Tripping Curve','curve'],['Pole Configuration','poleConfiguration'],['Breaking Capacity','ka']];
+    const changed=[['Board Reference','boardNorm'],['Way','way'],['Phase','phase'],['Device Family','device'],['Quantity','qty'],['Current Rating','rating'],
+      ['Tripping Curve','curve'],['Pole Configuration','poleConfiguration'],['Breaking Capacity','ka'],['Protection Standard','protectionStandard'],['Trip Unit','tripUnit'],
+      ['RCD Protection','rcdProtected'],['RCD Sensitivity','sens'],['AFDD Protection','afdd'],['Circuit Reference','circuitReference'],['Description','desc']];
     r.corrections=Array.isArray(r.corrections)?r.corrections:[];r.fieldEvidence=r.fieldEvidence||{};
+    const changedFields=[];
     changed.forEach(([field,key])=>{
       const prior=before[key],next=r[key]??null;if(String(prior??'')===String(next??''))return;
-      const correction={field,original:prior==null?'Not specified':String(prior),corrected:next==null?'Not specified':String(next),reason:'User correction in review interface'};
-      r.corrections.push(correction);r.fieldEvidence[field]={...(r.fieldEvidence[field]||{}),originalText:r.originalOcrText||r.srcText,
-        normalisedValue:correction.corrected,correction:correction.corrected,correctionReason:correction.reason,reviewStatus:'Approved'};
+      const display=value=>value==null?'Not specified':typeof value==='boolean'?(value?'Yes':'No'):String(value);
+      const correction={field,original:display(prior),corrected:display(next),reason:'User correction in '+surface};
+      const existing=r.fieldEvidence[field]||{};
+      r.corrections.push(correction);r.fieldEvidence[field]={...existing,originalText:existing.originalText||r.originalOcrText||r.srcText,
+        normalisedValue:correction.corrected,correction:correction.corrected,correctionReason:correction.reason,reviewStatus:'Approved',method:'User correction'};
+      changedFields.push(field);
     });
     r.status='confirmed'; r.edited=true;
     if (isNew) A.rows.push(r);
-    recordRowDecision(r,isNew?'Added and approved':'Corrected and approved','Boards & Devices');
-    renderTakeoff(); renderProjHeader(); saveProject(p);
-    toast(isNew?'Device added':'Row corrected and confirmed');
+    recordRowDecision(r,isNew?'Added and approved':changedFields.length?'Corrected and approved':'Reviewed and approved',surface,
+      changedFields.length?'Changed: '+changedFields.join(', '):'No field changes');
+    renderTakeoff();renderReport();renderProjHeader();saveProject(p);
+    if(surface==='Viewer')renderViewer();
+    toast(isNew?'Device added':changedFields.length?'Row corrected and confirmed':'Row reviewed and confirmed');
   });
+  $('#modalBk .modal')?.classList.add('row-editor-modal');
 }
 $('#bulkApproveBtn').addEventListener('click', ()=>{
   const p=state.cur; if(!p||!p.analysis) return;
@@ -3305,7 +3440,7 @@ $('#addManualBtn').addEventListener('click', ()=>{
   const p=state.cur; if(!p) return;
   if (!p.analysis) p.analysis={ranAt:todayStr(),boards:{},rows:[],cables:[],feeders:[],legend:[],filters:null};
   openRowEditor({id:uid(), boardNorm:null, fileId:null, page:null, line:null, status:'confirmed', kind:'manual',
-    way:null, desc:'', device:'MCB', rating:null, poles:null, poleConfiguration:null, curve:null, sens:null, phase:null, ka:null,
+    way:null, desc:'', device:'MCB', rating:null, poles:null, poleConfiguration:null, curve:null, sens:null,rcdProtected:null,afdd:null,afddIndicated:null, phase:null, ka:null,
     cable:null, spare:false, space:false, incomer:false, qty:1, srcText:'(added manually)', extractionMethod:'Manual entry', conf:1}, true);
 });
 
@@ -3349,6 +3484,10 @@ function renderReport(){
   const host=$('#reportMatrixHost');
   const facts=$('#reportFacts');
   const status=$('#reportStatus');
+  const mode=state.reportMode==='matrix'?'matrix':'board';
+  $$('#reportModeBar [data-report-mode]').forEach(button=>{
+    const active=button.dataset.reportMode===mode;button.classList.toggle('active',active);button.setAttribute('aria-selected',String(active));
+  });
   $('#reportProject').textContent=p?p.name:'No project selected';
   const model=currentReportModel();
   if (!model || !model.groups.length){
@@ -3371,12 +3510,59 @@ function renderReport(){
   if (!model.reconciliation?.valid) issues.push('quantities do not reconcile');
   status.className='report-status '+(!model.reconciliation?.valid||model.unassignedQty?'bad':(model.reviewCount||model.coverageIssueCount)?'warn':'ok');
   status.textContent=issues.length?issues.join(' · '):'Ready for issue';
-  const colSpan=model.boards.length+11;
+  const rcdLabel=row=>row.rcdProtected===true?(row.rcdSensitivity!=null?`RCD ${row.rcdSensitivity}mA`:'RCD protected'):row.rcdProtected===false?'No RCD':'Not specified';
+  const afddLabel=row=>row.afdd===true?'AFDD':row.afdd===false?'No AFDD':'Not specified';
+  const techChips=row=>{
+    const values=[
+      [row.rating==null?'Rating not stated':row.rating+'A',row.rating==null],
+      [row.pole,row.pole==='Unclear'||row.pole==='Not specified'],
+      [row.curve==='Not specified'?'Curve not stated':row.curve+' curve',row.curve==='Not specified'],
+      [row.breakingCapacity==='Not specified'?'Capacity not stated':row.breakingCapacity,row.breakingCapacity==='Not specified'],
+    ];
+    if(row.protectionStandard&&row.protectionStandard!=='Not specified')values.push([row.protectionStandard,false]);
+    if(row.tripUnit&&row.tripUnit!=='Not specified')values.push(['Trip '+row.tripUnit,false]);
+    return values.map(([value,missing])=>`<span class="chip ${missing?'amber':'grey'}">${esc(value)}</span>`).join('');
+  };
+  const protectionHtml=row=>{
+    const values=[];
+    const rcd=row.rcdLabel||rcdLabel(row),afdd=row.afddLabel||afddLabel(row);
+    values.push(`<span class="chip ${rcd==='Not specified'?'grey':row.rcdProtected===true?'cyan':'grey'}">${esc(rcd)}</span>`);
+    values.push(`<span class="chip ${afdd==='Not specified'?'grey':row.afdd===true?'purple':'grey'}">${esc(afdd)}</span>`);
+    return `<div class="report-protection">${values.join('')}</div>`;
+  };
+  const boardView=(sections,title='')=>{
+    const available=(sections||[]).filter(board=>board.families?.length);
+    if(!available.length)return '';
+    let html=title?`<div class="report-subhead"><h3>${esc(title)}</h3></div>`:'';
+    html+='<div class="report-board-list">';
+    available.forEach(board=>{
+      html+=`<section class="report-board-section"><header class="report-board-head">
+        <button class="report-board-open" data-report-board="${esc(board.norm)}" title="Open ${esc(board.label)} in Boards & Devices"><strong>${esc(board.label)}</strong><span>Open board</span></button>
+        <div class="report-board-metrics"><div class="metric"><b>${board.total}</b><span>Devices</span></div><div class="metric"><b>${board.reviewCount}</b><span>To review</span></div></div>
+      </header><table class="report-board-table"><thead><tr><th>Specification and circuit</th><th>Qty</th><th>Protection</th><th>Circuits / ways</th><th>Source pages</th><th>Status</th></tr></thead><tbody>`;
+      board.families.forEach(family=>{
+        html+=`<tr class="report-family-row"><td colspan="6"><span class="devdot" style="background:${deviceColor(family.name)}"></span>${esc(family.name)}<span class="report-family-total">${family.total} total</span></td></tr>`;
+        family.rows.forEach(row=>{
+          const descriptions=(row.descriptions||[]).slice(0,3),more=(row.descriptions||[]).length-descriptions.length;
+          const description=descriptions.join('; ')+(more>0?` · +${more} more`:'');
+          const locations=(row.circuitLocators||[]).slice(0,5),moreLocations=(row.circuitLocators||[]).length-locations.length;
+          const locationText=locations.join('; ')+(moreLocations>0?` · +${moreLocations} more`:'');
+          const reviewDetail=[...(row.reviewReasons||[]),...(row.notes||[])].join(' ');
+          html+=`<tr><td><div class="report-techline">${techChips(row)}</div>${description?`<div class="report-description">${esc(description)}</div>`:''}</td>
+            <td>${row.quantity}</td><td>${protectionHtml(row)}</td><td class="report-locations">${esc(locationText||'Not specified')}</td>
+            <td class="report-sources">${esc((row.sourcePages||[]).join('; '))}</td><td><span class="chip ${row.reviewStatus==='Ready'?'green':'amber'}" title="${esc(reviewDetail)}">${esc(row.reviewStatus)}</span></td></tr>`;
+        });
+      });
+      html+='</tbody></table></section>';
+    });
+    return html+'</div>';
+  };
+  const colSpan=model.boards.length+13;
   const matrix=(groups,title,totalLabel,boardTotals,grandTotal)=>{
     let table='<table class="report-matrix"><thead>'+
       `<tr class="report-row-project"><th class="report-device" colspan="${colSpan}">${esc(model.projectName)}</th></tr>`+
       `<tr class="report-row-title"><th class="report-device" colspan="${colSpan}">${esc(title)}</th></tr>`+
-      `<tr class="report-row-head"><th class="report-category">Category</th><th class="report-device">Device</th><th class="report-tech">Rating</th><th class="report-tech">Poles</th><th class="report-tech">Curve</th><th class="report-tech">Capacity</th>`+
+      `<tr class="report-row-head"><th class="report-category">Category</th><th class="report-device">Device</th><th class="report-tech">Rating</th><th class="report-tech">Poles</th><th class="report-tech">Curve</th><th class="report-tech">Capacity</th><th class="report-tech">RCD</th><th class="report-tech">AFDD</th>`+
       model.boards.map(b=>`<th class="report-board"><button data-report-board="${esc(b.norm)}" title="Open ${esc(b.label)}">${esc(b.label)}</button></th>`).join('')+
       '<th class="report-total">Total</th><th class="report-purpose">Applications</th><th class="report-source">Source pages</th><th class="report-tech">Confidence</th><th class="report-review">Review</th></tr></thead><tbody>';
     groups.forEach(group=>{
@@ -3384,17 +3570,22 @@ function renderReport(){
         const compactReasons=row.reviewReasons.map(shortReviewReason);
         const reviewDetail=[...row.reviewReasons,...row.notes].join(' ');
         table+=`<tr class="report-data"><td class="report-category">${esc(group.name)}</td><td class="report-device"><b>${esc(row.label)}</b>${compactReasons.length?`<div class="hint" style="margin:3px 0 0" title="${esc(reviewDetail)}">${esc(compactReasons.join(' · '))}</div>`:''}</td>`+
-          `<td>${row.rating??'Not specified'}</td><td>${esc(row.pole)}</td><td>${esc(row.curve)}</td><td>${esc(row.breakingCapacity)}</td>`+
+          `<td>${row.rating??'Not specified'}</td><td>${esc(row.pole)}</td><td>${esc(row.curve)}</td><td>${esc(row.breakingCapacity)}</td><td>${esc(rcdLabel(row))}</td><td>${esc(afddLabel(row))}</td>`+
           row.quantities.map((qty,index)=>`<td>${qty?`<button class="report-qty" data-report-board="${esc(model.boards[index].norm)}" title="Open ${esc(model.boards[index].label)}">${qty}</button>`:''}</td>`).join('')+
           `<td class="report-total">${row.total}</td><td class="report-purpose">${esc(row.purposes.join(', '))}</td><td class="report-source">${esc(row.sourcePages.join('; '))}</td><td>${Math.round(row.confidence*100)}%</td><td class="report-review"><span class="chip ${row.reviewStatus==='Ready'?'green':'amber'}">${esc(row.reviewStatus)}</span></td></tr>`;
       });
     });
-    return table+`<tr class="report-final"><td class="report-category">${esc(totalLabel)}</td><td class="report-device"></td><td></td><td></td><td></td><td></td>${boardTotals.map(v=>`<td>${v||''}</td>`).join('')}<td class="report-total">${grandTotal}</td><td></td><td></td><td></td><td></td></tr></tbody></table>`;
+    return table+`<tr class="report-final"><td class="report-category">${esc(totalLabel)}</td><td class="report-device"></td><td></td><td></td><td></td><td></td><td></td><td></td>${boardTotals.map(v=>`<td>${v||''}</td>`).join('')}<td class="report-total">${grandTotal}</td><td></td><td></td><td></td><td></td></tr></tbody></table>`;
   };
-  let html=matrix(model.groups,'Consolidated Device Take-Off','Grand Total',model.boardTotals,model.grandTotal);
-  if(model.associated&&model.associated.grandTotal){
-    html+='<div class="report-subhead"><h3>Control &amp; associated equipment</h3></div>'+
-      matrix(model.associated.groups,'Control & Associated Equipment','Associated Equipment Total',model.associated.boardTotals,model.associated.grandTotal);
+  let html='';
+  if(mode==='board'){
+    html=boardView(model.boardSections);
+    if(model.associated&&model.associated.grandTotal)html+=boardView(model.associated.boardSections,'Control & associated equipment');
+  }else{
+    html=matrix(model.groups,'Consolidated Device Take-Off','Grand Total',model.boardTotals,model.grandTotal);
+    if(model.associated&&model.associated.grandTotal){
+      html+='<div class="report-subhead"><h3>Control &amp; associated equipment</h3></div>'+matrix(model.associated.groups,'Control & Associated Equipment','Associated Equipment Total',model.associated.boardTotals,model.associated.grandTotal);
+    }
   }
   host.innerHTML=html;
   host.querySelectorAll('[data-report-board]').forEach(control=>control.addEventListener('click',()=>{
@@ -3402,6 +3593,10 @@ function renderReport(){
     setTab('analysis');
   }));
 }
+$('#reportModeBar').addEventListener('click',event=>{
+  const button=event.target.closest('[data-report-mode]');if(!button)return;
+  state.reportMode=button.dataset.reportMode;renderReport();
+});
 function reportFileName(ext){
   const d=new Date();
   const stamp=[String(d.getDate()).padStart(2,'0'),String(d.getMonth()+1).padStart(2,'0'),String(d.getFullYear()).slice(-2)].join('.');
@@ -3811,9 +4006,9 @@ function viewerFile(){
 function pageDetections(f, pageNo){
   const p=state.cur, A=p.analysis; const out=[];
   if (A){
-    A.rows.forEach(r=>{ if(r.fileId===f.id&&r.page===pageNo) out.push({kind:'row', r, line:r.line,bbox:r.bbox,
+    A.rows.forEach(r=>{ if(r.fileId===f.id&&r.page===pageNo) out.push({kind:'row', r, line:r.line,bbox:r.highlightBbox||r.bbox,
       color: state.viewer.evidenceId===r.id?'boardhl':r.status==='confirmed'?'green': r.status==='rejected'?'red': r.conf>=0.8?'green':'amber',
-      label:(r.qty>1?r.qty+'× ':'')+(r.device||(r.spare?'Spare':r.space?'Space':'Row'))+(r.rating?' '+r.rating+'A':'')}); });
+      label:(r.qty>1?r.qty+'× ':'')+(r.device||(r.spare?'Spare':r.space?'Space':'Row'))+(r.rating?' '+r.rating+'A':'')+(r.rcdProtected===true?' · RCD'+(r.sens?' '+r.sens+'mA':''):'')+(r.afdd===true?' · AFDD':'')}); });
     A.cables.forEach(c=>{ if(c.fileId===f.id&&c.page===pageNo) out.push({kind:'cable', r:c, line:c.line, color:'cyan', label:'Cable '+c.orig}); });
   }
   (f.pages[pageNo-1].lines||[]).forEach((l,li)=>{
@@ -4097,9 +4292,11 @@ async function renderViewer(){
     dl.innerHTML = listDets.length? listDets.map((d,i)=>`<div class="det" data-i="${i}">
       <div class="det-head"><span class="chip ${d.color}">${d.kind}</span><b>${esc(d.label)}</b><span class="det-actions">
         ${d.r?.boardNorm?'<button class="btn sm ghost" data-action="board">Board</button>':''}
+        ${d.kind==='row'?'<button class="btn sm ghost" data-action="edit">Correct</button>':''}
         ${d.kind==='row'&&d.r.status!=='confirmed'?'<button class="btn sm primary" data-action="approve">Approve</button>':d.kind==='row'?'<span class="chip green">Approved</span>':''}
       </span></div>
-      <div class="hint" style="margin-top:2px">${esc((d.r.srcText||'').slice(0,90))}</div></div>`).join('')
+      <div class="hint" style="margin-top:2px">${esc((d.r.srcText||'').slice(0,90))}</div>
+      ${d.kind==='row'&&(d.r.rcdProtected===true||d.r.afdd===true)?`<div class="det-protection">${d.r.rcdProtected===true?`<span class="chip cyan">RCD${d.r.sens?' '+d.r.sens+'mA':''}</span>`:''}${d.r.afdd===true?'<span class="chip purple">AFDD</span>':''}</div>`:''}</div>`).join('')
     : '<div class="empty">No detections on this page.</div>';
     dl.querySelectorAll('.det').forEach(el=>{
       const d=listDets[+el.dataset.i];
@@ -4107,6 +4304,8 @@ async function renderViewer(){
         event.stopPropagation();
         if(button.dataset.action==='approve'){
           setRowDecision(d.r,'confirmed','Viewer');saveProject(p);renderProjHeader();renderViewer();toast(d.label+' approved');
+        }else if(button.dataset.action==='edit'){
+          openRowEditor(d.r,false,'Viewer');
         }else if(button.dataset.action==='board'){
           state.selectedBoard=d.r.boardNorm;setTab('analysis');
         }
