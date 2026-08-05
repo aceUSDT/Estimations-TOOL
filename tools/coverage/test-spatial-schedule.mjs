@@ -172,6 +172,9 @@ for (const [way, baseY] of [[1, 100], [2, 175]]) {
     }
   });
 }
+// A full-width section title can sit inside the wider way band immediately
+// above L1. It is structural context, not evidence for the first phase row.
+phaseRowWords.push(word('METER SECTION 3-LIGHTING', 205, 160, 125));
 const perPhase = Core.parseSpatialSchedulePage({
   lines: [
     { text: 'DISTRIBUTION BOARD SCHEDULE' },
@@ -192,6 +195,9 @@ assert.deepEqual(perPhase.rows.map((row) => [row.way, row.phase, row.device, row
 assert.ok(perPhase.rows.slice(0, 4).every((row) => row.poles === 1));
 assert.ok(perPhase.rows.slice(0, 4).every((row) => row.ka === 10));
 assert.ok(perPhase.rows.slice(4).every((row) => row.spare));
+const firstRowAfterSection = perPhase.rows.find((row) => row.way === 2 && row.phase === 'L1');
+assert.doesNotMatch(firstRowAfterSection.srcText, /METER SECTION/i);
+assert.ok(firstRowAfterSection.highlightBbox[1] >= 170, 'section headings above L1 must not expand the selected-row highlight');
 const wayOneHighlights = perPhase.rows.filter((row) => row.way === 1).map((row) => row.highlightBbox);
 for (let index = 1; index < wayOneHighlights.length; index += 1) {
   const prior = wayOneHighlights[index - 1];

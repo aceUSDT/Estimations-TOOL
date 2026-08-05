@@ -626,9 +626,6 @@
   }
 
   function parseSpatialWayRows(rowWords, wayAnchor, top, bottom, schema, context) {
-    const aggregateCells = columnCells(rowWords, schema);
-    aggregateCells.way = sourceCell([wayAnchor], 'way');
-    const aggregate = parseSpatialRow(aggregateCells, schema.confidence, context);
     const phaseColumn = schema.columns.find((column) => column.role === 'phase');
     const phaseWords = rowWords.filter((word) => /^L[123]$/i.test(word.text)
       && (!phaseColumn || (word.cx >= phaseColumn.left && word.cx < phaseColumn.right)))
@@ -638,12 +635,24 @@
       const phase = word.text.toUpperCase();
       if (!phases.some((item) => item.phase === phase)) phases.push({ phase, word, cy: word.cy });
     }
+    const phaseGaps = phases.slice(1).map((item, index) => item.cy - phases[index].cy).filter((gap) => gap > 2);
+    const phaseSpacing = median(phaseGaps)
+      || Math.max(8, Number(schema.rowSpacing || 0) / 3)
+      || Math.max(...phases.map((item) => item.word.height || 0), 8);
+    const evidenceTop = phases.length >= 2 ? Math.max(top, phases[0].cy - phaseSpacing / 2) : top;
+    const evidenceBottom = phases.length >= 2 ? Math.min(bottom, phases[phases.length - 1].cy + phaseSpacing / 2) : bottom;
+    const evidenceWords = phases.length >= 2
+      ? rowWords.filter((word) => word.cy >= evidenceTop && word.cy < evidenceBottom)
+      : rowWords;
+    const aggregateCells = columnCells(evidenceWords, schema);
+    aggregateCells.way = sourceCell([wayAnchor], 'way');
+    const aggregate = parseSpatialRow(aggregateCells, schema.confidence, context);
     if (!aggregate || phases.length < 2) return aggregate ? [aggregate] : [];
 
     const phaseRows = phases.map((item, index) => {
-      const laneTop = index ? (phases[index - 1].cy + item.cy) / 2 : top;
-      const laneBottom = index < phases.length - 1 ? (item.cy + phases[index + 1].cy) / 2 : bottom;
-      const laneWords = rowWords.filter((word) => word.cy >= laneTop && word.cy < laneBottom);
+      const laneTop = index ? (phases[index - 1].cy + item.cy) / 2 : evidenceTop;
+      const laneBottom = index < phases.length - 1 ? (item.cy + phases[index + 1].cy) / 2 : evidenceBottom;
+      const laneWords = evidenceWords.filter((word) => word.cy >= laneTop && word.cy < laneBottom);
       const cells = columnCells(laneWords, schema);
       cells.way = sourceCell([wayAnchor], 'way');
       cells.phase = sourceCell([item.word], 'phase');

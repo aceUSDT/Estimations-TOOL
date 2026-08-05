@@ -18,12 +18,18 @@ const required = [
   'host.requestFullscreen',
   "document.addEventListener('fullscreenchange'",
   'function syncViewerLayout()',
-  'const ANALYSIS_VERSION=6;',
+  'const ANALYSIS_VERSION=7;',
   'data-report-mode="board"',
   'data-action="edit"',
   "openRowEditor(d.r,false,'Viewer')",
   "bbox:r.highlightBbox||r.bbox",
   "'RCD Protection':evidence",
+  'id="guidedReviewBtn"',
+  'id="vReviewBar"',
+  'function orderedPendingReviewRows()',
+  'function advanceGuidedReview(',
+  'function openReportSources(',
+  'data-report-source-key',
 ];
 required.forEach((value) => assert.ok(html.includes(value), `missing UI contract: ${value}`));
 assert.ok(!html.includes('id="vAssistBoard"'), 'viewer must not contain a duplicate board selector');
@@ -39,4 +45,4 @@ const inline = html.match(/<script>([\s\S]*?)<\/script>/)?.[1];
 assert.ok(inline, 'inline application script not found');
 new Function(inline);
 
-console.log('PASS: analysis, board-review, approval-log, and viewer UI contracts');
+console.log('PASS: analysis, guided review, report-source, approval-log, and viewer UI contracts');
