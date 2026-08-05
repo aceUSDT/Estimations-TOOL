@@ -5,6 +5,7 @@ const root = path.resolve(__dirname, '..');
 const required = [
   'index.html',
   'extractor-core.js',
+  'spatial-schedule-core.js',
   'report-core.js',
   'assets/hager-logo.png',
   'desktop/build/icon.png',

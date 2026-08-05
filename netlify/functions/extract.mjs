@@ -42,12 +42,13 @@ export default async function handler(req) {
   } catch {
     return json(400, { error: 'Invalid JSON body' });
   }
-  const { filename, page_number: pageNumber, image_base64: imageBase64, media_type: mediaType, text_lines: textLines, hints } = body || {};
+  const { filename, page_number: pageNumber, image_base64: imageBase64, media_type: mediaType, text_lines: textLines,
+    layout_hint: layoutHint, hints } = body || {};
   if (!imageBase64 && !(Array.isArray(textLines) && textLines.length)) {
     return json(400, { error: 'Provide image_base64 and/or text_lines' });
   }
 
-  const instruction = buildInstruction({ filename, pageNumber, hints, textLines });
+  const instruction = buildInstruction({ filename, pageNumber, hints, textLines, layoutHint });
   try {
     const out = await extractPage({ imageBase64, mediaType, instruction, maxTokens: 12000 });
     return json(200, out);

@@ -54,13 +54,15 @@ export const EXTRACTION_SYSTEM_PROMPT = `You are the extraction engine of an ele
 4. Phase-slots are independent. Way 7 may be L1=spare, L2=equipped, L3=equipped: emit one device entry per phase-slot as shown. Never mark a whole way spare because one phase-line is spare. Multi-phase circuits that genuinely share one device across L1..L3 (one rating spanning three slot rows) are ONE device entry with phase "L1L2L3".
 5. SPARE vs SPACE: "Spare" (device fitted, no circuit) → is_spare=true with the device class if stated. "Space"/"fitted blank"/B-code (no device) → device_class "space". A blank rating + blank description is a spare at lower confidence — include it, never drop it.
 6. Over-capture beats omission: when unsure whether something is a device/board, include it with low confidence and add a flag explaining the doubt. Never silently drop uncertain rows.
-7. Board header completeness: capture every labelled header field present (reference, description, location, fed-from/served-by, serving, ways, spare capacity %, incomer class+rating+poles, board make/model, metering as stated, fault kA). A blank cell is null, not an omission.
+7. Board header completeness: capture every labelled header field present. Keep the supply source, supply cable, upstream Supply CPD, internal isolator, board rating/family, ways, phase configuration, voltage, location and purpose as separate fields. The Supply CPD is not automatically the board's internal incomer. A blank cell is null, not an omission.
 8. Schematics: follow the topology, not reading order — source → main panel → each outgoing device → cable → downstream board. Emit every downstream board named on the sheet as a board, and every feed edge with its protective device and cable (ref, csa, cpc, type). Include SPDs, EVC pillars, lifts/ATS, generators, UPS as boards/devices with their annotations in description.
 9. The incomer/main switch of a board is a device entry with is_incomer=true, way null.
 10. Confidence is per item, 0..1: 0.9+ clearly printed; 0.6–0.9 legible but ambiguous; <0.6 guessed from context (always also add a flag).
 11. Use the board reference EXACTLY as printed (e.g. "DB-00-08P", "DB/GF", "2A4"). Do not invent, normalise, merge or split references.
 12. If the page is a continuation of a board started on an earlier page (way numbers continue, "continued" markers, no header), set boards[].continuation=true and still use the printed board reference if shown, else "".
-13. OUTPUT FORMAT: return every numeric field as a STRING (e.g. rating "32", ways "18", confidence "0.9"), and "" when a value is absent — never a bare number and never null. Booleans stay booleans. Enums use exactly the listed values ("" where allowed).`;
+13. A board reference printed in a schedule's Circuit Reference, Load Reference or outgoing-circuit cell is a downstream feed target. Emit the relationship in feeds[] and the value in devices[].circuit_reference, but do NOT create a boards[] record for it unless the page also contains an independent board identity/header, board index entry or schematic node.
+14. A spatial layout hint may accompany the image. It contains candidate column roles and bounding regions from deterministic geometry. Use it to preserve rows and columns, but verify every value against the image; it is not authoritative and never supplies totals.
+15. OUTPUT FORMAT: return every numeric field as a STRING (e.g. rating "32", ways "18", confidence "0.9"), and "" when a value is absent — never a bare number and never null. Booleans stay booleans. Enums use exactly the listed values ("" where allowed).`;
 
 /* JSON schema for structured outputs (output_config.format).
  * IMPORTANT: the Messages API rejects schemas with more than ~32 union-typed
@@ -76,28 +78,46 @@ const NUM = { type: 'string', description: 'number as a string, e.g. "32"; "" if
 const BOARD = {
   type: 'object',
   additionalProperties: false,
-  required: ['ref', 'description', 'location', 'fed_from_ref', 'serving', 'ways_total', 'ways_sp', 'ways_tp',
-    'spare_capacity_pct', 'incomer_class', 'incomer_rating_a', 'incomer_poles', 'board_model', 'metering',
-    'fault_ka', 'board_type_text', 'phase_config', 'phase_config_evidence', 'continuation', 'confidence'],
+  required: ['ref', 'job_reference', 'job_number', 'description', 'purpose', 'location', 'fed_from_ref', 'supplied_from_text',
+    'serving', 'ways_total', 'ways_sp', 'ways_tp', 'spare_capacity_pct', 'phase_count', 'voltage_v',
+    'incomer_class', 'incomer_rating_a', 'incomer_poles', 'supply_cable_details', 'supply_cpd_class',
+    'supply_cpd_rating_a', 'supply_cpd_standard', 'supply_cpd_trip_unit', 'internal_isolator_class',
+    'internal_isolator_rating_a', 'board_model', 'metering', 'fault_ka', 'board_type_text', 'board_family',
+    'board_family_reason', 'phase_config', 'phase_config_evidence', 'continuation', 'confidence'],
   properties: {
     ref: { type: 'string', description: 'Board reference exactly as printed' },
+    job_reference: STR,
+    job_number: STR,
     phase_config: { type: 'string', enum: ['SPN', 'TPN', 'mixed', 'ambiguous', ''] },
     phase_config_evidence: { type: 'string', description: 'The structural signals that decided phase_config; "" if none' },
     description: STR,
+    purpose: STR,
     location: STR,
     fed_from_ref: { type: 'string', description: 'Parent board ref / Served by / DB Fed From; "" if none' },
+    supplied_from_text: { type: 'string', description: 'Full source description exactly as printed; "" if none' },
     serving: STR,
     ways_total: NUM,
     ways_sp: NUM,
     ways_tp: NUM,
     spare_capacity_pct: NUM,
+    phase_count: NUM,
+    voltage_v: NUM,
     incomer_class: { type: 'string', description: 'e.g. Switch Disconnector, Isolator, MCCB, ACB; "" if none' },
     incomer_rating_a: NUM,
     incomer_poles: NUM,
+    supply_cable_details: STR,
+    supply_cpd_class: STR,
+    supply_cpd_rating_a: NUM,
+    supply_cpd_standard: STR,
+    supply_cpd_trip_unit: STR,
+    internal_isolator_class: STR,
+    internal_isolator_rating_a: NUM,
     board_model: { type: 'string', description: 'Manufacturer + model, e.g. Hager JKD186TM; "" if none' },
     metering: { type: 'string', description: 'Full metering spec as printed, not a boolean; "" if none' },
     fault_ka: NUM,
     board_type_text: { type: 'string', description: 'Verbatim size/type/rating line; "" if none' },
+    board_family: { type: 'string', enum: ['consumer_unit', 'distribution_board', 'panelboard', 'switchboard', 'unknown', ''] },
+    board_family_reason: STR,
     continuation: { type: 'boolean' },
     confidence: NUM,
   },
@@ -106,7 +126,8 @@ const BOARD = {
 const DEVICE = {
   type: 'object',
   additionalProperties: false,
-  required: ['board_ref', 'way', 'phase', 'description', 'device_class', 'rating_a', 'trip_curve', 'rcd_ma',
+  required: ['board_ref', 'way', 'phase', 'description', 'circuit_reference', 'device_class', 'protection_standard',
+    'trip_unit', 'rating_a', 'trip_curve', 'breaking_capacity_ka', 'rcd_ma',
     'afdd', 'poles', 'cable_type', 'phase_csa_mm2', 'cpc_csa_mm2', 'circuit_config', 'install_method',
     'is_spare', 'is_spd', 'is_incomer', 'confidence'],
   properties: {
@@ -114,9 +135,13 @@ const DEVICE = {
     way: { type: 'string', description: 'way number as a string; "" if none' },
     phase: { type: 'string', enum: ['L1', 'L2', 'L3', 'L1L2L3', 'SP', ''] },
     description: STR,
+    circuit_reference: { type: 'string', description: 'Downstream board/load reference from this row; "" if none' },
     device_class: { type: 'string', enum: ['MCB', 'RCBO', 'afdd_rcbo', 'MCCB', 'ACB', 'RCD', 'SPD', 'fuse', 'switch_disconnector', 'isolator', 'contactor', 'time_clock', 'photocell', 'relay', 'timer', 'starter', 'overload', 'transformer', 'dali_controller', 'meter', 'spare', 'space', 'other'] },
+    protection_standard: STR,
+    trip_unit: STR,
     rating_a: NUM,
     trip_curve: { type: 'string', enum: ['B', 'C', 'D', ''] },
+    breaking_capacity_ka: NUM,
     rcd_ma: NUM,
     afdd: { type: 'boolean' },
     poles: NUM,
@@ -188,8 +213,9 @@ export const EXTRACTION_SCHEMA = {
  * (or null). Applied in extract.mjs after JSON.parse so the client/harness
  * merge code is unchanged. */
 export const NUMERIC_FIELDS = {
-  board: ['ways_total', 'ways_sp', 'ways_tp', 'spare_capacity_pct', 'incomer_rating_a', 'incomer_poles', 'fault_ka', 'confidence'],
-  device: ['way', 'rating_a', 'rcd_ma', 'poles', 'phase_csa_mm2', 'confidence'],
+  board: ['ways_total', 'ways_sp', 'ways_tp', 'spare_capacity_pct', 'phase_count', 'voltage_v', 'incomer_rating_a',
+    'incomer_poles', 'supply_cpd_rating_a', 'internal_isolator_rating_a', 'fault_ka', 'confidence'],
+  device: ['way', 'rating_a', 'breaking_capacity_ka', 'rcd_ma', 'poles', 'phase_csa_mm2', 'confidence'],
   feed: ['rating_a', 'poles', 'cable_csa_mm2', 'confidence'],
 };
 // numeric-or-string (mm² number, else "SWA"/"integral", else null)

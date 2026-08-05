@@ -1,0 +1,236 @@
+import assert from 'node:assert/strict';
+
+await import('../../extractor-core.js');
+await import('../../spatial-schedule-core.js');
+const Core = globalThis.EstimationExtractorCore;
+
+const word = (text, x, y, width = Math.max(8, String(text).length * 4.5), height = 10, rotation = 0) => ({
+  text,
+  bbox: [x, y, width, height],
+  confidence: 0.98,
+  rotation,
+});
+
+function threePhaseFixture() {
+  const words = [
+    word('Way', 10, 205, 12, 70, 90),
+    word('Phase L1/L2/L3', 35, 205, 12, 70, 90),
+    word('Device BS (EN)', 78, 205, 12, 70, 90),
+    word('Type', 120, 205, 12, 70, 90),
+    word('Rating (A)', 150, 205, 12, 70, 90),
+    word('Short Circuit Capacity (kA)', 185, 205, 12, 70, 90),
+    word('AFDD', 235, 205, 12, 70, 90),
+    word('RCD', 265, 205, 12, 70, 90),
+    word('RCD Operating Current (mA)', 290, 205, 12, 70, 90),
+    word('Circuit Reference', 360, 205),
+    word('Circuit Type', 450, 205, 12, 70, 90),
+    word('Live (mm2)', 485, 205, 12, 70, 90),
+    word('CPC (mm2)', 520, 205, 12, 70, 90),
+    word('Cable Type', 555, 205, 12, 70, 90),
+  ];
+  const ratings = [100, 100, 100, 100, 50, 63, 63];
+  ratings.forEach((rating, index) => {
+    const way = index + 1;
+    const y = 300 + index * 30;
+    words.push(word(String(way), 12, y));
+    words.push(word('L1', 42, y - 9), word('L2', 42, y), word('L3', 42, y + 9));
+    words.push(word('60947', 82, y));
+    words.push(word('6.2', 122, y));
+    words.push(word(String(rating), 154, y));
+    words.push(word('25', 194, y));
+    words.push(word('X', 238, y));
+    words.push(word('X', 268, y));
+    words.push(word(`DB/Z1/00/0${way + 1}`, 350, y, 75));
+    words.push(word('Rd', 452, y));
+    words.push(word(index === 3 || index === 6 ? '50.0' : '25.0', 486, y));
+    words.push(word(index === 3 || index === 6 ? '25.0' : '16.0', 521, y));
+    words.push(word('A', 562, y));
+  });
+  const y = 300 + 7 * 30;
+  words.push(word('8', 12, y));
+  words.push(word('L1', 42, y - 9), word('L2', 42, y), word('L3', 42, y + 9));
+  return words.flat();
+}
+
+const lines = [
+  { text: 'DISTRIBUTION BOARD SCHEDULE' },
+  { text: 'Job Reference: EXAMPLE PROJECT Job No: 1001' },
+  { text: 'DIST/BD Ref: DB/Z1/00/01' },
+  { text: 'Location: TEST PLANTROOM' },
+  { text: 'Purpose: TEST ELECTRICAL SERVICES' },
+  { text: 'Size: 8 WAY TPN' },
+  { text: 'Supplied From: TRANSFER SWITCH FED VIA LVSB/Z1/00/01' },
+  { text: 'No of Phases: 3 PHASE Voltage: 415V' },
+  { text: 'Supply Cable Details: 120mm2 XLPE/SWA/LSF X3 IN PARALLEL' },
+  { text: 'Supply CPD Details: 60947 400A MCCB MICROLOGIC 6.3 TRIP UNIT' },
+  { text: 'Internal Isolator Details: 400A' },
+  { text: 'Circuit Reference' },
+  ...Array.from({ length: 7 }, (_, index) => ({ text: `${index + 1} DB/Z1/00/0${index + 2}` })),
+];
+
+const result = Core.parseSpatialSchedulePage({
+  lines,
+  words: threePhaseFixture(),
+  pageWidth: 600,
+  pageHeight: 700,
+  pageType: 'db-schedule',
+});
+
+assert.equal(result.matched, true);
+assert.equal(result.board.ref, 'DB/Z1/00/01');
+assert.equal(result.board.classification.family, 'panelboard');
+assert.equal(result.board.type, 'PB');
+assert.match(result.board.classification.reasons.join(' '), /400A/);
+assert.equal(result.board.header.ways_total, 8);
+assert.equal(result.board.header.phase_config, 'TPN');
+assert.equal(result.board.header.supply_cpd_rating_a, 400);
+assert.equal(result.board.header.supply_cpd_class, 'MCCB');
+assert.equal(result.board.header.supply_cpd_trip_unit, '6.3');
+assert.equal(result.board.header.internal_isolator_rating_a, 400);
+
+assert.equal(result.rows.length, 8);
+assert.deepEqual(result.rows.slice(0, 7).map((row) => row.rating), [100, 100, 100, 100, 50, 63, 63]);
+assert.ok(result.rows.slice(0, 7).every((row) => row.device === 'MCCB'));
+assert.ok(result.rows.slice(0, 7).every((row) => row.tripUnit === '6.2'));
+assert.ok(result.rows.slice(0, 7).every((row) => row.ka === 25));
+assert.ok(result.rows.slice(0, 7).every((row) => row.poles === 3 && row.phase === '3PH'));
+assert.equal(result.rows[7].space, true);
+assert.equal(result.rows[7].qty, 0);
+assert.equal(result.rows[7].requiresReview, true);
+assert.equal(result.feeds.length, 7);
+assert.ok(result.rows[0].fieldSources.rating.bbox);
+assert.notDeepEqual(result.rows[0].fieldSources.rating.bbox, result.rows[0].fieldSources.circuitReference.bbox);
+
+const roles = result.references.reduce((counts, reference) => {
+  counts[reference.role] = (counts[reference.role] || 0) + 1;
+  return counts;
+}, {});
+assert.equal(roles.primary_board, 1);
+assert.equal(roles.circuit_reference, 7);
+
+// A differently ordered compact schedule is mapped by header semantics, not
+// by the first fixture's column positions.
+const compactWords = [
+  word('CCT', 10, 30), word('Duty', 55, 30), word('Device Family', 210, 30),
+  word('Phase', 290, 30), word('Rating (A)', 340, 30), word('Trip Curve', 400, 30),
+  word('RCD mA', 460, 30),
+  word('1', 10, 80), word('Office lighting', 55, 80, 100), word('MCB', 215, 80),
+  word('L1', 292, 80), word('16', 345, 80), word('B', 405, 80),
+  word('2', 10, 110), word('Socket circuit', 55, 110, 100), word('RCBO', 215, 110),
+  word('L2', 292, 110), word('32', 345, 110), word('C', 405, 110), word('30', 465, 110),
+];
+const compact = Core.parseSpatialSchedulePage({
+  lines: [
+    { text: 'DISTRIBUTION BOARD SCHEDULE' },
+    { text: 'Board Reference: DB-TEST-02' },
+    { text: 'Size: 6 WAY TPN' },
+    { text: 'Internal Isolator Details: 125A' },
+  ],
+  words: compactWords,
+  pageWidth: 520,
+  pageHeight: 220,
+  pageType: 'db-schedule',
+});
+assert.equal(compact.matched, true);
+assert.deepEqual(compact.rows.filter((row) => !row.inferredWay).map((row) => [row.device, row.rating, row.curve]), [['MCB', 16, 'B'], ['RCBO', 32, 'C']]);
+assert.deepEqual(compact.rows.filter((row) => row.inferredWay).map((row) => row.way), [3, 4, 5, 6]);
+assert.equal(compact.board.classification.family, 'distribution_board');
+
+// A TPN way can contain either one merged three-pole device or three distinct
+// single-pole phase rows. Repeated per-phase evidence must remain three devices.
+const phaseRowWords = [
+  word('Way', 10, 30), word('Phase', 45, 30), word('Device BS (EN)', 90, 30),
+  word('Type', 145, 30), word('Rating (A)', 180, 30),
+  word('Short', 220, 30, 10, 28, 90), word('Circuit', 231, 30, 10, 28, 90),
+  word('Capacity', 242, 30, 10, 28, 90), word('(kA)', 253, 30, 10, 28, 90),
+  word('Circuit Reference', 330, 30),
+];
+for (const [way, baseY] of [[1, 100], [2, 175]]) {
+  phaseRowWords.push(word(String(way), 12, baseY + 20));
+  ['L1', 'L2', 'L3'].forEach((phase, phaseIndex) => {
+    const y = baseY + phaseIndex * 20;
+    phaseRowWords.push(word(phase, 47, y));
+    if (way === 1 || phase === 'L1') {
+      phaseRowWords.push(word('61009', 94, y), word('C', 148, y), word('20', 184, y), word('10', 247, y));
+      phaseRowWords.push(word(`LOAD-${way}-${phase}`, 325, y, 65));
+    } else {
+      phaseRowWords.push(word('SPARE', 335, y));
+    }
+  });
+}
+const perPhase = Core.parseSpatialSchedulePage({
+  lines: [
+    { text: 'DISTRIBUTION BOARD SCHEDULE' },
+    { text: 'Board Reference: DB-TEST-03' },
+    { text: 'Size: 2 WAY TPN' },
+    { text: 'Internal Isolator Details: 125A' },
+  ],
+  words: phaseRowWords,
+  pageWidth: 430,
+  pageHeight: 300,
+  pageType: 'db-schedule',
+});
+assert.equal(perPhase.matched, true);
+assert.deepEqual(perPhase.rows.map((row) => [row.way, row.phase, row.device, row.qty]), [
+  [1, 'L1', 'RCBO', 1], [1, 'L2', 'RCBO', 1], [1, 'L3', 'RCBO', 1],
+  [2, 'L1', 'RCBO', 1], [2, 'L2', null, 0], [2, 'L3', null, 0],
+]);
+assert.ok(perPhase.rows.slice(0, 4).every((row) => row.poles === 1));
+assert.ok(perPhase.rows.slice(0, 4).every((row) => row.ka === 10));
+assert.ok(perPhase.rows.slice(4).every((row) => row.spare));
+
+const correctedStandard = Core.resolveProtectionDevice({ standard: '60974', tripUnit: 'TMD' });
+assert.equal(correctedStandard.device, 'MCCB');
+assert.equal(correctedStandard.standardCode, '60947');
+assert.match(correctedStandard.reasons.join(' '), /60974/);
+
+const splitPageWords = [
+  word('Way', 10, 25), word('Phase', 45, 25), word('Device BS (EN)', 90, 25),
+  word('Type', 145, 25), word('Rating (A)', 180, 25),
+  word('1', 12, 90), word('L1', 47, 80), word('L2', 47, 90), word('L3', 47, 100),
+  word('60898', 94, 90), word('C', 148, 90), word('20', 184, 90),
+  word('2', 12, 150), word('L1', 47, 140), word('L2', 47, 150), word('L3', 47, 160),
+  word('60898', 94, 150), word('C', 148, 150), word('20', 184, 150),
+  // Way 3 begins at the page edge; its printed way number and L2/L3 are on the continuation page.
+  word('L1', 47, 188), word('61009', 94, 188), word('C', 148, 188), word('32', 184, 188),
+];
+const splitPage = Core.parseSpatialSchedulePage({
+  lines: [
+    { text: 'DISTRIBUTION BOARD SCHEDULE' },
+    { text: 'Board Reference: DB-SPLIT-01' },
+    { text: 'Size: 3 WAY TPN' },
+  ],
+  words: splitPageWords,
+  pageWidth: 260,
+  pageHeight: 220,
+  pageType: 'db-schedule',
+});
+const recoveredSplit = splitPage.rows.find((row) => row.resolutionSource === 'source_standard_reconciliation');
+assert.equal(recoveredSplit?.way, 3);
+assert.equal(recoveredSplit?.phase, 'L1');
+assert.equal(recoveredSplit?.device, 'RCBO');
+assert.equal(recoveredSplit?.wayNumberInferred, true);
+
+const indexRefs = Core.extractContextualBoardReferences([
+  'DISTRIBUTION BOARD SUMMARY INDEX',
+  'DB-A-01 Plantroom 12 Way',
+  'DB-A-02 Office 8 Way',
+], { pageType: 'db-schedule', isSchedule: true });
+assert.equal(indexRefs.filter((reference) => reference.role === 'index_board').length, 2);
+
+const hint = Core.buildSpatialLayoutHint(result);
+assert.equal(hint.version, 1);
+assert.equal(hint.table.rows.length, 8);
+assert.ok(hint.table.columns.some((column) => column.role === 'circuit_reference'));
+
+const feederResult = Core.deduplicateFeederRelationships([
+  { id: 'schedule', from: 'DB-A', to: 'DB-B', way: 4, rating: 63, fileId: 'f1', page: 3, conf: 0.91, spatial: true },
+  { id: 'ai', from: 'db-a', to: 'db-b', rating: 63, poles: 3, fileId: 'f1', page: 3, conf: 0.72, ai: true },
+  { id: 'parallel', from: 'DB-A', to: 'DB-B', way: 7, rating: 63, fileId: 'f1', page: 4, conf: 0.9 },
+]);
+assert.equal(feederResult.feeders.length, 2);
+assert.equal(feederResult.duplicates.length, 1);
+assert.equal(feederResult.feeders.find((feeder) => feeder.way === 4).poles, 3);
+assert.equal(feederResult.feeders.find((feeder) => feeder.way === 4).evidence.length, 2);
+
+console.log('PASS: spatial columns, contextual board identity, multi-phase grouping, feeder evidence, policy classification, and provenance.');

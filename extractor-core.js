@@ -1090,7 +1090,7 @@
 
   function reconstructSpatialRows(words) {
     const clean = (words || []).map((word) => {
-      const box = word?.bbox || word?.boundingBox || {};
+      const box = word?.bbox || word?.boundingBox || word || {};
       const x0 = Number(box.x0 ?? box.left);
       const y0 = Number(box.y0 ?? box.top);
       const x1 = Number(box.x1 ?? box.right);
@@ -1263,10 +1263,10 @@
   function cleanHeaderValue(value) {
     return String(value || '')
       .split(/\s*[|;]\s*/)[0]
-      .split(/\s+\b(?:LOCATION|SERVING|SERVED\s+BY|FED\s+FROM|WAYS?|INCOMER|MAIN\s+SWITCH|FAULT|METERING|MODEL)\b\s*[:=]/i)[0]
+      .split(/\s+\b(?:LOCATION|PURPOSE|SIZE|SERVING|SERVED\s+BY|FED\s+FROM|SUPPLIED\s+FROM|WAYS?|INCOMER|MAIN\s+SWITCH|FAULT|METERING|MODEL|VOLTAGE|SUPPLY\s+CABLE|SUPPLY\s+CPD|INTERNAL\s+ISOLATOR)\b\s*[:=]/i)[0]
       .replace(/^[\s:=\-]+|[\s,]+$/g, '')
       .trim()
-      .slice(0, 100);
+      .slice(0, 240);
   }
 
   function extractBoardHeader(lines) {
@@ -1290,12 +1290,29 @@
     const combined = sourceLines.join('\n');
     const ways = expectedWaysFromText(combined);
     if (ways) set('ways_total', ways.ways, ways.evidence);
+    labelled('board_ref', /\b(?:DIST\s*\/\s*BD|DISTRIBUTION\s+BOARD|DB|BOARD)\s*(?:REF(?:ERENCE)?|IDENTITY)\b\s*[:=\-]?\s*(.+)$/i);
     labelled('description', /\b(?:BOARD\s+DESCRIPTION|DESCRIPTION)\b\s*[:=\-]?\s*(.+)$/i);
     labelled('location', /\bLOCATION\b\s*[:=\-]?\s*(.+)$/i);
+    labelled('purpose', /\bPURPOSE\b\s*[:=\-]?\s*(.+)$/i);
+    labelled('size_text', /\bSIZE\b\s*[:=\-]?\s*(.+)$/i);
+    labelled('board_type_text', /\bSIZE\b\s*[:=\-]?\s*(.+)$/i);
     labelled('fed_from_ref', /\b(?:DB\s+FED\s+FROM|FED\s+FROM|SERVED\s+BY|SUPPLIED\s+FROM)\b\s*[:=\-]?\s*(.+)$/i);
+    labelled('supplied_from_text', /\bSUPPLIED\s+FROM\b\s*[:=\-]?\s*(.+)$/i);
     labelled('serving', /\bSERVING\b\s*[:=\-]?\s*(.+)$/i);
     labelled('board_model', /\b(?:BOARD\s+MODEL|MODEL|CAT(?:ALOGUE)?\.?\s*(?:NO|NUMBER)?)\b\s*[:=\-]?\s*(.+)$/i);
     labelled('metering', /\bMETERING\b\s*[:=\-]?\s*(.+)$/i);
+    labelled('supply_cable_details', /\bSUPPLY\s+CABLE\s+DETAILS?\b\s*[:=\-]?\s*(.+)$/i);
+    labelled('supply_cpd_details', /\bSUPPLY\s+CPD\s+DETAILS?\b\s*[:=\-]?\s*(.+)$/i);
+    labelled('internal_isolator_details', /\bINTERNAL\s+ISOLATOR\s+DETAILS?\b\s*[:=\-]?\s*(.+)$/i);
+
+    const phaseConfig = combined.match(/\b(TP\s*&?\s*N|TPN|SP\s*&?\s*N|SPN|3\s*PHASE|THREE\s+PHASE|1\s*PHASE|SINGLE\s+PHASE)\b/i);
+    if (phaseConfig) {
+      const token = phaseConfig[1].replace(/\s+/g, '').toUpperCase();
+      set('phase_config', /^(?:TP&?N|TPN|3PHASE|THREEPHASE)$/.test(token) ? 'TPN' : 'SPN', phaseConfig[0]);
+      set('phase_count', /^(?:TP&?N|TPN|3PHASE|THREEPHASE)$/.test(token) ? 3 : 1, phaseConfig[0]);
+    }
+    const voltage = combined.match(/\bVOLTAGE\b\s*[:=\-]?\s*(\d+(?:\.\d+)?)\s*V?\b/i);
+    if (voltage) set('voltage_v', Number(voltage[1]), voltage[0]);
 
     for (const line of sourceLines) {
       const spareCapacity = line.match(/\bSPARE\s+CAPACITY\b\s*[:=\-]?\s*(\d+(?:\.\d+)?)\s*%/i);
@@ -1317,8 +1334,20 @@
         const breaking = extractBreakingCapacity(line);
         if (breaking) set('fault_ka', breaking.value, line);
       }
+      if (/\bINTERNAL\s+ISOLATOR\s+DETAILS?\b/i.test(line)) {
+        const rating = line.match(/\b(\d+(?:\.\d+)?)\s*A(?:MPS?)?\b/i);
+        set('internal_isolator_class', 'Isolator', line);
+        if (rating) {
+          set('internal_isolator_rating_a', Number(rating[1]), line);
+          set('board_rating_a', Number(rating[1]), line);
+          if (header.incomer_rating_a === undefined) set('incomer_rating_a', Number(rating[1]), line);
+          if (header.incomer_class === undefined) set('incomer_class', 'Isolator', line);
+        }
+      }
     }
-    const completenessFields = ['ways_total', 'description', 'location', 'fed_from_ref', 'serving', 'incomer_class', 'incomer_rating_a', 'incomer_poles', 'fault_ka', 'board_model', 'metering'];
+    const completenessFields = ['board_ref', 'ways_total', 'description', 'location', 'purpose', 'fed_from_ref', 'serving',
+      'supply_cable_details', 'supply_cpd_details', 'internal_isolator_details', 'incomer_class', 'incomer_rating_a',
+      'incomer_poles', 'fault_ka', 'board_model', 'metering'];
     return { header, evidence, completeness: completenessFields.filter((field) => header[field] !== undefined).length };
   }
 
@@ -1375,9 +1404,12 @@
         }
       }
       const boardRows = scheduleRows.filter((r) => r.boardNorm === board.norm);
-      const ways = new Set(boardRows.filter((r) => r.way != null).map((r) => `${r.boardSection || ''}:${r.way}`));
-      const protectionRows = boardRows.filter((r) => !r.space && !r.spare);
-      const incompleteProtectionRows = protectionRows.filter((r) => !r.device || r.rating == null).length;
+      const observedRows = boardRows.filter((row) => !row.inferredWay || row.status === 'confirmed');
+      const ways = new Set(observedRows.filter((r) => r.way != null).map((r) => `${r.boardSection || ''}:${r.way}`));
+      const inferredWays = new Set(boardRows.filter((row) => row.inferredWay && row.status !== 'confirmed' && row.way != null)
+        .map((row) => `${row.boardSection || ''}:${row.way}`));
+      const protectionRows = boardRows.filter((r) => !r.space && !r.spare && r.status !== 'rejected');
+      const incompleteProtectionRows = protectionRows.filter((r) => r.status !== 'confirmed' && (!r.device || r.rating == null)).length;
       const unaccounted = expected != null ? Math.max(0, expected - ways.size) : null;
       const upstreamType = /^(?:MAIN|MDB|SMDB|MCC|SB|PB)$/.test(String(board.type || '').toUpperCase());
       const upstreamReference = /^(?:MAIN|MSB|SWB|SMDB|MDB|PB|MCC|MCP|GENERATOR)/i.test(String(board.orig || '').replace(/[\s._/\\-]+/g, ''));
@@ -1385,7 +1417,7 @@
       perBoard.push({
         norm: board.norm, orig: board.orig,
         expectedWays: expected, evidence,
-        capturedWays: ways.size, rowsCaptured: boardRows.length,
+        capturedWays: ways.size, inferredWays: inferredWays.size, rowsCaptured: boardRows.length,
         protectionRows: protectionRows.length,
         incompleteProtectionRows,
         unaccountedWays: unaccounted, inScope,
@@ -1432,6 +1464,7 @@
         capturedWays: capturedTotal,
         pctComplete: expectedTotal ? Math.round((100 * capturedTotal) / expectedTotal) : null,
         unaccountedBoards: scopedBoards.filter((b) => (b.unaccountedWays || 0) > 0).length,
+        inferredWays: scopedBoards.reduce((sum, board) => sum + (board.inferredWays || 0), 0),
         incompleteProtectionRows: scopedBoards.reduce((sum, board) => sum + board.incompleteProtectionRows, 0),
         boardsWithProtectionGaps: scopedBoards.filter((board) => board.incompleteProtectionRows > 0 || board.protectionRows === 0).length,
       },
@@ -1470,6 +1503,7 @@
     ZERO_DEVICES_WITH_BOARDS: 'Boards were identified but no device rows were captured anywhere',
     BOARD_ROWS_MISSING: 'Board has schedule evidence but zero captured device rows',
     WAYS_UNACCOUNTED: 'Board header promises more ways than were captured',
+    PROTECTION_DETAILS_MISSING: 'Active circuit rows are missing a protective device or rating',
     SCHEDULE_PAGE_UNPARSED: 'Page looks like a schedule but produced no rows',
     SCHEDULE_DOC_NO_BOARDS: 'Schedule-type pages exist but no board reference was identified',
     PAGE_TEXT_UNRELIABLE: 'Page text is unreliable and OCR has not replaced it',
@@ -1553,6 +1587,9 @@
         else if ((board.unaccountedWays || 0) > 0) {
           addReason('WAYS_UNACCOUNTED', { board: board.norm, expected: board.expectedWays, captured: board.capturedWays });
         }
+        if ((board.incompleteProtectionRows || 0) > 0) {
+          addReason('PROTECTION_DETAILS_MISSING', { board: board.norm, count: board.incompleteProtectionRows });
+        }
       }
     }
     if (boardCount === 0 && schedulePages.length > 0) addReason('SCHEDULE_DOC_NO_BOARDS', null);
@@ -1622,6 +1659,10 @@
         scheduleScore: pg.scheduleScore ?? null,
         scheduleSignals: pg.scheduleSignals || [],
         rowsParsed: pg.rowsParsed || 0,
+        spatialConfidence: pg.spatialConfidence ?? null,
+        spatialColumns: pg.spatialColumns || [],
+        spatialWarnings: pg.spatialWarnings || [],
+        spatialContinuation: Boolean(pg.spatialContinuation),
       })),
     };
   }

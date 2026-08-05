@@ -35,6 +35,7 @@ module.exports = {
   extraResources: [
     { from: '../index.html', to: 'web/index.html' },
     { from: '../extractor-core.js', to: 'web/extractor-core.js' },
+    { from: '../spatial-schedule-core.js', to: 'web/spatial-schedule-core.js' },
     { from: '../report-core.js', to: 'web/report-core.js' },
     { from: '../assets', to: 'web/assets' },
     { from: '../vendor', to: 'web/vendor' },

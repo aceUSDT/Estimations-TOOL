@@ -19,12 +19,13 @@ export default async function handler(req) {
   if (!jobId) return new Response(null, { status: 202 });
 
   try {
-    const { filename, page_number: pageNumber, image_base64: imageBase64, media_type: mediaType, text_lines: textLines, hints } = body;
+    const { filename, page_number: pageNumber, image_base64: imageBase64, media_type: mediaType, text_lines: textLines,
+      layout_hint: layoutHint, hints } = body;
     if (!imageBase64 && !(Array.isArray(textLines) && textLines.length)) {
       await store.setJSON(jobId, { status: 'error', error: 'Provide image_base64 and/or text_lines' });
       return new Response(null, { status: 202 });
     }
-    const instruction = buildInstruction({ filename, pageNumber, hints, textLines });
+    const instruction = buildInstruction({ filename, pageNumber, hints, textLines, layoutHint });
     const out = await extractPage({ imageBase64, mediaType, instruction, maxTokens: 16000 });
     await store.setJSON(jobId, { status: 'done', ...out });
   } catch (err) {

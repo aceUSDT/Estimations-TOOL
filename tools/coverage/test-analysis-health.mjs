@@ -87,6 +87,22 @@ test('header promising more ways than captured ⇒ incomplete (WAYS_UNACCOUNTED)
   assert.equal(reason.refs[0].expected, 18);
 });
 
+test('active rows missing protection details block export until confirmed', () => {
+  const gapCoverage = {
+    perBoard: [{ norm: 'DB-01', inScope: true, rowsCaptured: 2, capturedWays: 2, expectedWays: 2, unaccountedWays: 0, incompleteProtectionRows: 1 }],
+    summary: { expectedWays: 2, capturedWays: 2 },
+  };
+  const h = core.buildAnalysisHealth({
+    coverage: gapCoverage,
+    boards: { 'DB-01': {} },
+    rows: [row(), row({ id: 'gap', way: 2, device: null, rating: null })],
+    pages: [page({ rowsParsed: 2 })],
+    files: [{ id: 'f1', status: 'ready' }],
+  });
+  assert.equal(h.state, 'incomplete');
+  assert.ok(h.reasons.some((reason) => reason.code === 'PROTECTION_DETAILS_MISSING'));
+});
+
 test('pages awaiting OCR ⇒ incomplete (OCR_PENDING)', () => {
   const h = core.buildAnalysisHealth({
     coverage: { perBoard: [{ norm: 'DB-01', inScope: true, rowsCaptured: 5, capturedWays: 5, expectedWays: null, unaccountedWays: null }], summary: { expectedWays: 0, capturedWays: 0 } },
@@ -166,7 +182,7 @@ test('diagnostic export contains NO document text, board names, or file names', 
 });
 
 test('every reason emitted by the model has a stable message in HEALTH_REASONS', () => {
-  for (const code of ['ZERO_DEVICES_WITH_BOARDS', 'BOARD_ROWS_MISSING', 'WAYS_UNACCOUNTED', 'SCHEDULE_PAGE_UNPARSED', 'SCHEDULE_DOC_NO_BOARDS', 'PAGE_TEXT_UNRELIABLE', 'OCR_PENDING', 'DOCUMENT_UNREADABLE', 'NO_CONTENT']) {
+  for (const code of ['ZERO_DEVICES_WITH_BOARDS', 'BOARD_ROWS_MISSING', 'WAYS_UNACCOUNTED', 'PROTECTION_DETAILS_MISSING', 'SCHEDULE_PAGE_UNPARSED', 'SCHEDULE_DOC_NO_BOARDS', 'PAGE_TEXT_UNRELIABLE', 'OCR_PENDING', 'DOCUMENT_UNREADABLE', 'NO_CONTENT']) {
     assert.ok(core.HEALTH_REASONS[code], `missing message for ${code}`);
   }
 });
