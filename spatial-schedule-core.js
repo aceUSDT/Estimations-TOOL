@@ -445,6 +445,18 @@
       || /MICROLOGIC|MCCB/i.test(context.boardProtectionText || ''))) {
       device = 'MCCB'; confidence = 0.91; reasons.push('BS 60947 with MCCB trip-unit evidence');
     }
+    if (/^AFDD\s*\+\s*RCBO$/i.test(device || '')) device = 'AFDD+RCBO';
+    const rcdProtected = fields.rcdProtected === true || Number(fields.sensitivityMa) > 0;
+    if (device === 'MCB' && rcdProtected) {
+      device = fields.afdd === true ? 'AFDD+RCBO' : 'RCBO';
+      confidence = Math.max(confidence, 0.94);
+      reasons.push(fields.afdd === true
+        ? 'MCB with row-level RCD and AFDD protection'
+        : 'MCB with row-level RCD protection');
+    } else if (device === 'RCBO' && fields.afdd === true) {
+      device = 'AFDD+RCBO';
+      reasons.push('RCBO with row-level AFDD protection');
+    }
     return { device, confidence, reasons, standardCode: standard.code, protectionStandard: standard.label };
   }
 
@@ -560,17 +572,25 @@
     const description = cellText(cells, 'description') || circuitText || '';
     const spare = /\bSPARE\b/i.test(allText);
     const explicitSpace = /\b(?:SPACE|FITTED\s+BLANK|BLANK\s+WAY)\b/i.test(allText);
-    const resolution = resolveProtectionDevice({ standard: standardText, deviceClass: deviceClassText, tripUnit, description }, context);
+    const rcdMa = numberValue(cells.rcd_ma, { min: 1, max: 1000 });
+    const rcdIndicator = indicatorValue(cells.rcd);
+    const rcdProtected = rcdIndicator === true || rcdMa != null ? true : rcdIndicator;
+    const afddIndicator = indicatorValue(cells.afdd);
+    const resolution = resolveProtectionDevice({
+      standard: standardText,
+      deviceClass: deviceClassText,
+      tripUnit,
+      description,
+      rcdProtected,
+      sensitivityMa: rcdMa,
+      afdd: afddIndicator === true,
+    }, context);
     const hasDeviceEvidence = Boolean(resolution.device || rating != null || standardText || deviceClassText);
     const space = explicitSpace || (!spare && !hasDeviceEvidence && !description);
     const poles = uniquePhases.length >= 3 && [cells.rating, cells.device_standard, cells.device_class].filter(Boolean).length
       ? 3
       : (uniquePhases.length === 1 && hasDeviceEvidence ? 1 : null);
     const phase = poles === 3 ? '3PH' : (uniquePhases.length === 1 ? uniquePhases[0] : null);
-    const rcdMa = numberValue(cells.rcd_ma, { min: 1, max: 1000 });
-    const rcdIndicator = indicatorValue(cells.rcd);
-    const rcdProtected = rcdIndicator === true || rcdMa != null ? true : rcdIndicator;
-    const afddIndicator = indicatorValue(cells.afdd);
     const circuitTypeRaw = cellText(cells, 'circuit_type').toUpperCase();
     const circuitConfig = /^(?:RD|RAD|RADIAL)$/.test(circuitTypeRaw) ? 'RADIAL' : (/^(?:RG|RING)$/.test(circuitTypeRaw) ? 'RING' : null);
     const liveCsa = numberValue(cells.line_csa, { max: 1000 });
@@ -578,7 +598,8 @@
     const cableType = cellText(cells, 'cable_type') || null;
     const confidence = Math.min(resolution.confidence || 0.55, schemaConfidence || 0.55,
       ...Object.values(cells).filter(Boolean).map((cell) => Number(cell.confidence) || 0.6));
-    const requiresReview = space || (!spare && (!resolution.device || rating == null)) || confidence < 0.78;
+    const requiresReview = space || (!spare && (!resolution.device || rating == null
+      || ((resolution.device === 'RCBO' || resolution.device === 'AFDD+RCBO') && rcdMa == null))) || confidence < 0.78;
     const rowCells = Object.entries(cells)
       .filter(([role, cell]) => Boolean(cell) && !(context.phaseLane && role === 'way'))
       .map(([, cell]) => cell);

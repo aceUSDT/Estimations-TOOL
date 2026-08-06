@@ -704,15 +704,17 @@
     }
 
     const afdd = indicators[0] === true;
-    const rcdColumn = indicators[1] === true;
+    const rcdColumn = indicators.length >= 2 ? indicators[1] : null;
     let sensitivityMa = null;
     const possibleSensitivity = Number(tokens[0]);
-    if ((standard.combinedRcd || rcdColumn) && [10, 30, 100, 300, 500].includes(possibleSensitivity)) {
+    if ((standard.combinedRcd || rcdColumn === true) && [10, 30, 100, 300, 500].includes(possibleSensitivity)) {
       sensitivityMa = possibleSensitivity;
       tokens.shift();
     }
 
+    const rcdProtected = standard.combinedRcd ? true : rcdColumn;
     let device = standard.device;
+    if (device === 'MCB' && rcdProtected) device = 'RCBO';
     if (afdd && device === 'RCBO') device = 'AFDD+RCBO';
     return {
       standard: standard.label,
@@ -722,7 +724,7 @@
       rating,
       breakingCapacityKa,
       afdd,
-      rcdProtected: standard.combinedRcd || rcdColumn,
+      rcdProtected,
       rcdCombined: standard.combinedRcd,
       sensitivityMa,
       description: tokens.join(' ').trim(),
@@ -756,9 +758,17 @@
       : (curveEvidence?.rating ?? (ratingCurve ? Number(ratingCurve[1]) : null)));
     const curve = standardSequence?.curve || curveEvidence?.value || (ratingCurve ? ratingCurve[2].toUpperCase() : null);
     const sensitivity = standardSequence?.sensitivityMa ?? (Number(text.match(/\b(\d{1,4})\s*mA\b/i)?.[1]) || null);
-    const rcdConfirmed = Boolean(standardSequence?.rcdProtected) || sensitivity != null
-      || (/(?:^|\s)YES(?:\s|$)/i.test(text) && /\bRCD\b/i.test(header));
+    const explicitCombinedRcd = /^(?:RCBO|AFDD\+RCBO|RCD)$/i.test(explicitDevice || '');
+    const rcdHeader = /\bRCD\b/i.test(header);
+    const explicitRcdYes = /(?:^|\s)(?:YES|TRUE|TICK|[✓✔☑])(?:\s|$)/i.test(text) && rcdHeader;
+    const explicitRcdNo = /(?:^|\s)(?:NO|FALSE|[×✕✖☐])(?:\s|$)/i.test(text) && rcdHeader;
+    const rcdState = standardSequence
+      ? standardSequence.rcdProtected
+      : (explicitCombinedRcd || sensitivity != null || explicitRcdYes ? true : (explicitRcdNo ? false : null));
+    const rcdConfirmed = rcdState === true;
     let device = standardSequence?.device || explicitDevice;
+    if (device === 'MCB' && rcdConfirmed) device = 'RCBO';
+    if (device === 'RCBO' && standardSequence?.afdd) device = 'AFDD+RCBO';
     let inferredDevice = false;
     if (!device && curve && rating != null && protectionHeader) {
       device = rcdConfirmed ? 'RCBO' : 'MCB';
@@ -786,7 +796,7 @@
       curve,
       sens: sensitivity,
       afdd: Boolean(standardSequence?.afdd),
-      rcdProtected: rcdConfirmed,
+      rcdProtected: rcdState,
       protectionStandard: standardSequence?.standard || null,
       poles: poleMatch ? Number(poleMatch[1]) : null,
       ka: breaking?.value ?? null,
@@ -811,6 +821,39 @@
       srcText: text,
       conf: confidence,
     };
+  }
+
+  /**
+   * Reconcile protection columns after any extraction path. A schedule row that
+   * identifies an MCB and also marks RCD protection represents the combined
+   * protective function sold and counted as an RCBO. Keeping this rule here
+   * means OCR, spatial parsing, assisted extraction, and user edits agree.
+   */
+  function reconcileCombinedProtection(row) {
+    if (!row) return row;
+    const next = { ...row };
+    const rcdProtected = next.rcdProtected === true || next.sens != null
+      ? true
+      : (next.rcdProtected === false ? false : null);
+    const afdd = next.afdd === true;
+    const current = String(next.device || '').toUpperCase().replace(/\s+/g, '');
+    let device = next.device;
+    if (current === 'MCB' && rcdProtected) device = afdd ? 'AFDD+RCBO' : 'RCBO';
+    else if ((current === 'RCBO' || current === 'AFDD+RCBO') && afdd) device = 'AFDD+RCBO';
+    if (device === next.device && next.rcdProtected === rcdProtected) return next;
+
+    next.device = device;
+    next.rcdProtected = rcdProtected;
+    const reasons = Array.isArray(next.resolutionReasons) ? [...next.resolutionReasons] : [];
+    const reason = current === 'MCB'
+      ? (afdd
+        ? 'Combined MCB, RCD and AFDD row evidence classified as AFDD+RCBO'
+        : 'Combined MCB and RCD row evidence classified as RCBO')
+      : 'RCBO with AFDD row evidence classified as AFDD+RCBO';
+    if (device !== row.device && !reasons.includes(reason)) reasons.push(reason);
+    next.resolutionReasons = reasons;
+    if ((device === 'RCBO' || device === 'AFDD+RCBO') && next.sens == null) next.requiresReview = true;
+    return next;
   }
 
   function aggregateDevices(rows) {
@@ -1691,6 +1734,7 @@
     parseKnownScheduleLine,
     parseProtectionStandardSequence,
     parseProtectionTableLine,
+    reconcileCombinedProtection,
     extractAssociatedEquipment,
     aggregateDevices,
     finalizeScheduleContext,
