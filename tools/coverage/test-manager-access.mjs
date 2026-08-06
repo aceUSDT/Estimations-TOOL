@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const app = fs.readFileSync(new URL('../../index.html', import.meta.url), 'utf8');
-const page = fs.readFileSync(new URL('../../manager-test/index.html', import.meta.url), 'utf8');
+const page = fs.readFileSync(new URL('../../test-workspace/index.html', import.meta.url), 'utf8');
 const migration = fs.readFileSync(new URL('../../supabase/migrations/202608060001_manager_test_passes.sql', import.meta.url), 'utf8');
 const edge = fs.readFileSync(new URL('../../supabase/functions/manager-test-redeem/index.ts', import.meta.url), 'utf8');
 
@@ -15,6 +15,8 @@ assert.match(page, /Date\.parse\(payload\.expiresAt/, 'the page must use the ser
 assert.match(page, /<title>Test workspace \| Estimation Tools<\/title>/, 'the evaluation page must use the neutral Test workspace title');
 assert.match(page, /<h1 id="title">Test workspace<\/h1>/, 'the evaluation page heading must use the neutral Test workspace label');
 assert.doesNotMatch(page, /Manager evaluation|Manager test workspace/, 'the evaluation page must not expose manager-specific wording');
+assert.match(page, /location\.replace\('\.\.\/\?test-workspace=1'\)/, 'the activated workspace URL must use the neutral test-workspace route');
+assert.doesNotMatch(page, /location\.replace\([^\n]*manager-test=1/, 'the activated workspace URL must not expose the legacy manager-test label');
 assert.match(page, /noindex,nofollow,noarchive/, 'the private page must not be indexed');
 assert.match(app, /managerTestMode\?false:await idbOpen\(\)/, 'manager mode must not open persistent project storage');
 assert.match(app, /setTimeout\(expireSession,Math\.max\(0,managerGrant\.expiresAt-Date\.now\(\)\)\)/, 'the open workspace must close at the absolute pass deadline');
