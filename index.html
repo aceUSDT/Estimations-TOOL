@@ -1281,7 +1281,7 @@ $('#pwInput').addEventListener('keydown', e=>{ if(e.key==='Enter') tryUnlock(); 
 $('#lockBtn').addEventListener('click', ()=>{
   if(window.__MANAGER_TEST__){
     try{sessionStorage.removeItem(MANAGER_SESSION_KEY);}catch(error){}
-    location.replace('./manager-test/');
+    location.replace('./test-workspace/');
     return;
   }
   $('#appView').classList.remove('active');$('#lockView').classList.add('active');configureLock();
@@ -5513,16 +5513,16 @@ async function boot(){
   const localTestMode=['localhost','127.0.0.1','::1'].includes(location.hostname)
     && params.get('test')==='1';
   let managerTestMode=false,managerGrant=null;
-  if(params.get('manager-test')==='1'){
+  if(params.get('test-workspace')==='1'||params.get('manager-test')==='1'){
     try{
       managerGrant=JSON.parse(sessionStorage.getItem(MANAGER_SESSION_KEY)||'null');
       managerTestMode=Boolean(managerGrant&&managerGrant.expiresAt>Date.now());
     }catch(error){managerTestMode=false;}
-    if(!managerTestMode){location.replace('./manager-test/?expired=1');return;}
+    if(!managerTestMode){location.replace('./test-workspace/?expired=1');return;}
     const expireSession=()=>{
       if(Date.now()<managerGrant.expiresAt)return;
       try{sessionStorage.removeItem(MANAGER_SESSION_KEY);}catch(error){}
-      location.replace('./manager-test/?expired=1');
+      location.replace('./test-workspace/?expired=1');
     };
     setTimeout(expireSession,Math.max(0,managerGrant.expiresAt-Date.now()));
     document.addEventListener('visibilitychange',()=>{if(!document.hidden)expireSession();});
