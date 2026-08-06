@@ -373,6 +373,7 @@
   .det-actions{display:flex;gap:5px;margin-left:auto;flex:0 0 auto;}
   .det-actions .btn{padding:3px 7px;font-size:10.5px;}
   .det-protection{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px;}
+  .v-toolbar,.v-doctabs,.assist-bar,.guided-review-bar,#vMetaRow{flex-shrink:0;}
   .guided-review-bar{display:flex;align-items:center;gap:9px;min-height:43px;padding:7px 12px;border-bottom:1px solid #c8d9ef;background:#eef6ff;}
   .guided-review-bar[hidden]{display:none;}
   .guided-review-copy{display:grid;gap:1px;min-width:0;}
@@ -582,9 +583,9 @@
     .report-viewbar{padding:8px 10px;}
     .report-mode{display:grid;grid-template-columns:1fr 1fr;width:100%;}
     .report-mode button{white-space:normal;line-height:1.2;}
-    .guided-review-bar{align-items:flex-start;flex-wrap:wrap;}
-    .guided-review-copy{width:calc(100% - 112px);}
-    .guided-review-actions{width:100%;margin-left:0;}
+    .guided-review-bar{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:start;}
+    .guided-review-copy{width:auto;}
+    .guided-review-actions{grid-column:1/-1;width:100%;margin-left:0;}
     .guided-review-actions .btn{flex:1;}
     .report-source-fields{grid-template-columns:1fr;}
     .report-source-item-head{align-items:flex-start;flex-wrap:wrap;}
@@ -594,6 +595,8 @@
     .viewer-layout{grid-template-columns:minmax(0,1fr);}
     .viewer-layout>.thumbs{display:none;}
     .v-stage{height:calc(100vh - 300px);min-height:440px;}
+    .viewer-layout,.viewer-layout.left-closed,.viewer-layout.right-closed,.viewer-layout.left-closed.right-closed{
+      height:max(900px,calc(100vh + 56px));min-height:900px;}
   }
 </style>
 </head>
@@ -750,9 +753,9 @@
               <option value="cable">Cables</option>
               <option value="board">Boards</option>
             </select>
-            <select class="sel" id="vBoardHl" title="Open the primary document page for a board"><option value="">Go to board…</option></select>
+            <select class="sel" id="vBoardHl" aria-label="Current board and go to board" title="Shows the board on the current page; choose another board to open it"><option value="">No board on this page</option></select>
             <div class="vsep"></div>
-            <button class="btn sm" id="vReviewStart" title="Start or resume guided row review">Start review</button>
+            <button class="btn sm" id="vReviewStart" title="Start at the first board and review every required row in document order">Review from first board</button>
             <button class="btn sm" id="vAssistMode" title="Select one device row and find the same protection device on this board">Find similar</button>
             <button class="btn sm" id="vOcrBtn" title="Read a scanned page with OCR">OCR page</button>
             <button class="btn sm" id="vDark" title="Dark / light canvas">◐</button>
@@ -773,7 +776,7 @@
           <div class="guided-review-bar" id="vReviewBar" hidden>
             <span class="chip blue">Guided review</span>
             <div class="guided-review-copy"><strong id="vReviewTitle">Current row</strong><span id="vReviewProgress"></span></div>
-            <div class="guided-review-actions"><button class="btn sm" id="vReviewFocus">Show current</button><button class="btn sm ghost" id="vReviewStop">Stop</button></div>
+            <div class="guided-review-actions"><button class="btn sm" id="vReviewFocus">Begin at first board</button><button class="btn sm ghost" id="vReviewStop">Stop</button></div>
           </div>
           <div style="padding:7px 12px;border-bottom:1px solid var(--line);display:flex;gap:8px;align-items:center;flex-wrap:wrap" id="vMetaRow"></div>
           <div class="v-stage" id="vStage"><div class="empty">Select a document to view.</div></div>
@@ -843,7 +846,7 @@
             <div style="display:flex;gap:8px;align-items:center;padding:11px 18px;flex-wrap:wrap">
               <span style="font-weight:800;font-size:13px">Take-off</span>
               <span class="sub" style="margin-left:2px">roll-up across all boards — select a board to drill in</span>
-              <button class="btn sm" id="guidedReviewBtn" style="margin-left:auto">Start guided review</button>
+              <button class="btn sm" id="guidedReviewBtn" style="margin-left:auto">Review from first board</button>
               <button class="btn sm" id="bulkApproveBtn">Approve high-confidence rows</button>
               <button class="btn sm" id="addManualBtn">Add device</button>
               <button class="btn sm primary" id="openReportBtn">Open report</button>
@@ -1061,7 +1064,7 @@ const state = {
   viewer: {fileId:null, page:1, zoom:1, rot:0, dark:false, fullscreen:false, boardHl:null, evidenceId:null, pdfDocs:{}, panels:{leftOpen:true,rightOpen:true,leftWidth:132,rightWidth:320}, assist:{enabled:false,boardNorm:null,seed:null,results:[]}},
   selectedBoard: null,  // §5.4 — board selected in the merged Boards & Devices page ('__none__' = unassigned rows), null = roll-up
   reportMode: 'board',
-  reviewFlow: {active:false,currentRowId:null,initialCount:0,moving:false},
+  reviewFlow: {active:false,currentRowId:null,initialCount:0,moving:false,boardOrder:[],initialByBoard:{},rowOrderByBoard:{}},
 };
 const ANALYSIS_VERSION=7;
 const uid = () => 'x'+(state.nextId++)+'_'+Math.random().toString(36).slice(2,6);
@@ -3098,24 +3101,45 @@ function compareReviewTuple(left,right){
   }
   return 0;
 }
+function reviewBoardSourceTuple(key,rows=state.cur?.analysis?.rows||[]){
+  if(key==='__none__')return [Number.MAX_SAFE_INTEGER,Number.MAX_SAFE_INTEGER,9,9,9,9,9,key];
+  const p=state.cur,A=p?.analysis,files=p?.files||[],board=A?.boards?.[key];
+  const references=(board?.pages||[]).filter(ref=>ref?.fileId&&Number.isFinite(Number(ref.page)));
+  const preferred=references.some(ref=>ref.primary)?references.filter(ref=>ref.primary):references;
+  const refTuples=preferred.map(ref=>[
+    files.some(file=>file.id===ref.fileId)?Math.max(0,files.findIndex(file=>file.id===ref.fileId)):Number.MAX_SAFE_INTEGER,
+    Number(ref.page)||Number.MAX_SAFE_INTEGER,
+    -1,-1,-1,-1,-1,key,
+  ]);
+  if(refTuples.length)return refTuples.sort(compareReviewTuple)[0];
+  const sourceRows=rows.filter(row=>row.boardNorm===key&&row.fileId);
+  const structured=sourceRows.some(row=>row.kind==='schedule')?sourceRows.filter(row=>row.kind==='schedule'):sourceRows;
+  if(structured.length){
+    const first=structured.map(reviewSourceTuple).sort(compareReviewTuple)[0];
+    return [...first.slice(0,-1),key];
+  }
+  return [Number.MAX_SAFE_INTEGER,Number.MAX_SAFE_INTEGER,9,9,9,9,9,key];
+}
+function reviewRowTuple(row){
+  const kindRank=row.kind==='schedule'?0:row.kind==='ai'?1:row.fileId?2:3;
+  return [kindRank,...reviewSourceTuple(row)];
+}
 function orderedPendingReviewRows(){
   const rows=state.cur?.analysis?.rows||[];
   const pending=rows.filter(reviewDecisionPending);
   if(!pending.length)return [];
-  const boardFirst=new Map();
-  rows.slice().sort((a,b)=>compareReviewTuple(reviewSourceTuple(a),reviewSourceTuple(b))).forEach(row=>{
-    const key=row.boardNorm||'__none__';
-    if(!boardFirst.has(key))boardFirst.set(key,reviewSourceTuple(row));
-  });
   const boardKeys=[...new Set(pending.map(row=>row.boardNorm||'__none__'))].sort((a,b)=>{
-    const position=compareReviewTuple(boardFirst.get(a)||[Number.MAX_SAFE_INTEGER],boardFirst.get(b)||[Number.MAX_SAFE_INTEGER]);
+    const position=compareReviewTuple(reviewBoardSourceTuple(a,rows),reviewBoardSourceTuple(b,rows));
     return position||guidedBoardName(a).localeCompare(guidedBoardName(b),undefined,{numeric:true,sensitivity:'base'});
   });
   const boardRank=new Map(boardKeys.map((key,index)=>[key,index]));
   return pending.slice().sort((a,b)=>{
     const boardDifference=boardRank.get(a.boardNorm||'__none__')-boardRank.get(b.boardNorm||'__none__');
-    return boardDifference||compareReviewTuple(reviewSourceTuple(a),reviewSourceTuple(b));
+    return boardDifference||compareReviewTuple(reviewRowTuple(a),reviewRowTuple(b));
   });
+}
+function guidedReviewBoardKeys(rows=orderedPendingReviewRows()){
+  return [...new Set(rows.map(row=>row.boardNorm||'__none__'))];
 }
 function guidedReviewCurrentRow(){
   return state.cur?.analysis?.rows?.find(row=>row.id===state.reviewFlow.currentRowId)||null;
@@ -3129,28 +3153,47 @@ function guidedReviewRowTitle(row){
 function renderGuidedReviewControls(){
   const queue=orderedPendingReviewRows(),flow=state.reviewFlow;
   const current=guidedReviewCurrentRow();
-  const analysisButton=$('#guidedReviewBtn'),viewerButton=$('#vReviewStart'),bar=$('#vReviewBar');
+  const analysisButton=$('#guidedReviewBtn'),viewerButton=$('#vReviewStart'),bar=$('#vReviewBar'),focus=$('#vReviewFocus'),stop=$('#vReviewStop');
   [analysisButton,viewerButton].filter(Boolean).forEach(button=>{
     button.disabled=!flow.active&&!queue.length;
-    button.textContent=flow.active?(button===analysisButton?'Continue guided review':'Current review'):(button===analysisButton?'Start guided review':'Start review');
+    button.textContent=flow.active?(button===analysisButton?'Continue guided review':'Show current row'):'Review from first board';
     button.title=queue.length?`${queue.length} row${queue.length===1?'':'s'} awaiting a decision`:'No rows are awaiting a decision';
   });
   if(!bar)return;
-  bar.hidden=!flow.active;
-  if(!flow.active)return;
+  bar.hidden=!flow.active&&!queue.length;
+  if(!flow.active){
+    if(!queue.length)return;
+    const first=queue[0],boardKeys=guidedReviewBoardKeys(queue);
+    $('#vReviewTitle').textContent=`Ready to begin with ${guidedBoardName(first.boardNorm||'__none__')}`;
+    $('#vReviewProgress').textContent=`${queue.length} required row${queue.length===1?'':'s'} across ${boardKeys.length} board${boardKeys.length===1?'':'s'}; starts on page ${first.page||1}`;
+    if(focus){focus.hidden=false;focus.textContent='Begin at first board';}
+    if(stop)stop.hidden=true;
+    return;
+  }
+  if(focus){focus.hidden=false;focus.textContent='Show current';}
+  if(stop)stop.hidden=false;
   const activeCurrent=current&&reviewDecisionPending(current)?current:queue[0];
   const total=Math.max(flow.initialCount,queue.length),completed=Math.max(0,total-queue.length);
   const boardKey=activeCurrent?.boardNorm||'__none__';
   const boardRemaining=queue.filter(row=>(row.boardNorm||'__none__')===boardKey).length;
+  const boardOrder=flow.boardOrder?.length?flow.boardOrder:guidedReviewBoardKeys(queue);
+  const boardPosition=Math.max(0,boardOrder.indexOf(boardKey));
+  const boardTotal=Math.max(flow.initialByBoard?.[boardKey]||0,boardRemaining);
+  const boardCompleted=Math.max(0,boardTotal-boardRemaining);
+  const originalBoardRows=flow.rowOrderByBoard?.[boardKey]||[];
+  const originalPosition=originalBoardRows.indexOf(activeCurrent?.id);
+  const boardRowNumber=originalPosition>=0?originalPosition+1:Math.min(boardTotal,boardCompleted+1);
   $('#vReviewTitle').textContent=guidedReviewRowTitle(activeCurrent);
   $('#vReviewProgress').textContent=queue.length
-    ? `Item ${Math.min(total,completed+1)} of ${total} · ${boardRemaining} remaining on this board · ${queue.length} overall`
+    ? `Board ${Math.min(boardOrder.length,boardPosition+1)} of ${boardOrder.length} · Row ${boardRowNumber} of ${boardTotal} · ${boardRemaining} remaining on this board · ${queue.length} overall`
     : `All ${total} review decisions completed`;
 }
 async function showGuidedReviewRow(row){
   if(!row)return;
   state.reviewFlow.currentRowId=row.id;
   if(row.boardNorm)state.selectedBoard=row.boardNorm;
+  state.viewer.boardHl=row.boardNorm||null;
+  state.viewer.assist.boardNorm=row.boardNorm||null;
   renderGuidedReviewControls();
   if(row.fileId){
     ensureViewerPanels().rightOpen=true;
@@ -3163,7 +3206,13 @@ async function showGuidedReviewRow(row){
 async function startGuidedReview(){
   const queue=orderedPendingReviewRows();
   if(!queue.length){toast('Every extracted row already has a decision');renderGuidedReviewControls();return;}
-  state.reviewFlow={active:true,currentRowId:queue[0].id,initialCount:queue.length,moving:false};
+  const boardOrder=guidedReviewBoardKeys(queue),initialByBoard={},rowOrderByBoard={};
+  queue.forEach(row=>{
+    const key=row.boardNorm||'__none__';
+    initialByBoard[key]=(initialByBoard[key]||0)+1;
+    (rowOrderByBoard[key]=rowOrderByBoard[key]||[]).push(row.id);
+  });
+  state.reviewFlow={active:true,currentRowId:queue[0].id,initialCount:queue.length,moving:false,boardOrder,initialByBoard,rowOrderByBoard};
   await showGuidedReviewRow(queue[0]);
 }
 async function focusGuidedReview(){
@@ -3177,7 +3226,7 @@ async function focusGuidedReview(){
 function stopGuidedReview(showToast=true){
   if(!state.reviewFlow)return;
   const wasActive=state.reviewFlow.active;
-  state.reviewFlow={active:false,currentRowId:null,initialCount:0,moving:false};
+  state.reviewFlow={active:false,currentRowId:null,initialCount:0,moving:false,boardOrder:[],initialByBoard:{},rowOrderByBoard:{}};
   renderGuidedReviewControls();
   if(showToast&&wasActive)toast('Guided review stopped');
 }
@@ -3194,7 +3243,8 @@ async function advanceGuidedReview(completedRow,action='decision saved'){
     toast(`Guided review complete · ${total} decision${total===1?'':'s'} saved`);
     return;
   }
-  const next=queue[0],nextBoard=next.boardNorm||'__none__';
+  const sameBoard=queue.filter(row=>(row.boardNorm||'__none__')===previousBoard);
+  const next=sameBoard[0]||queue[0],nextBoard=next.boardNorm||'__none__';
   flow.currentRowId=next.id;flow.moving=false;
   await showGuidedReviewRow(next);
   toast(previousBoard===nextBoard?`${action} · moved to the next row`:`${guidedBoardName(previousBoard)} complete · moved to ${guidedBoardName(nextBoard)}`);
@@ -4296,6 +4346,50 @@ function boardPagesIn(f,norm){
   boardScanCache[key].forEach(x=>set.add(x));
   return [...set].sort((a,b)=>a-b);
 }
+function viewerBoardsOnPage(f,pageNo){
+  const p=state.cur,A=p?.analysis,pg=f?.pages?.[pageNo-1];
+  if(!f||!A||!pg)return [];
+  const candidates=new Map();
+  const add=(norm,score,source)=>{
+    if(!norm||!A.boards[norm])return;
+    const current=candidates.get(norm)||{norm,score:0,rowCount:0,sources:new Set()};
+    current.score+=score;
+    if(source)current.sources.add(source);
+    candidates.set(norm,current);
+  };
+  Object.values(A.boards).forEach(board=>{
+    (board.pages||[]).forEach(ref=>{
+      if(ref.fileId!==f.id||Number(ref.page)!==Number(pageNo))return;
+      add(board.norm,ref.primary?10000:2000,ref.primary?'primary board evidence':'board evidence');
+    });
+  });
+  A.rows.forEach(row=>{
+    if(row.fileId!==f.id||Number(row.page)!==Number(pageNo)||!row.boardNorm)return;
+    add(row.boardNorm,row.kind==='schedule'?80:20,row.kind==='schedule'?'schedule rows':'extracted rows');
+    candidates.get(row.boardNorm).rowCount+=1;
+  });
+  (pg.lines||[]).forEach(line=>detectBoards(line.text).forEach(board=>add(board.norm,1,'printed reference')));
+  return [...candidates.values()].sort((left,right)=>
+    right.score-left.score||right.rowCount-left.rowCount||
+    guidedBoardName(left.norm).localeCompare(guidedBoardName(right.norm),undefined,{numeric:true,sensitivity:'base'})
+  );
+}
+function viewerBoardOnPage(f,pageNo,preferred=null){
+  const candidates=viewerBoardsOnPage(f,pageNo);
+  if(!candidates.length)return null;
+  const topScore=candidates[0].score;
+  const preferredCandidate=preferred&&candidates.find(item=>item.norm===preferred&&item.score===topScore);
+  return preferredCandidate?.norm||candidates[0].norm;
+}
+function syncViewerBoardToPage(f,pageNo=state.viewer.page){
+  const V=state.viewer,next=viewerBoardOnPage(f,pageNo,V.boardHl);
+  if(V.boardHl!==next){
+    V.boardHl=next;
+    V.evidenceId=null;
+  }
+  if(!V.assist.enabled||!V.assist.seed)V.assist.boardNorm=next;
+  return next;
+}
 async function ensureThumbs(f){
   if (f.ext!=='pdf'||!rawStore[f.id]||!window.pdfjsLib) return;
   if (vThumbBusy===f.id) return; vThumbBusy=f.id;
@@ -4357,7 +4451,6 @@ function setViewerPanel(side,open){
 }
 async function renderViewer(){
   syncViewerLayout();
-  renderGuidedReviewControls();
   const p=state.cur; if(!p) return;
   const f=viewerFile();
   const ready=p.files.filter(x=>x.status==='ready');
@@ -4366,7 +4459,7 @@ async function renderViewer(){
   tabs.innerHTML=ready.map(x=>`<div class="v-doctab${f&&x.id===f.id?' act':''}" data-id="${x.id}" title="${esc(x.name)}">${esc(x.name)}</div>`).join('');
   tabs.querySelectorAll('.v-doctab').forEach(t=>t.addEventListener('click',()=>{ state.viewer.fileId=t.dataset.id; state.viewer.page=1; renderViewer(); }));
   const stage=$('#vStage');
-  if (!f){ stage.innerHTML='<div class="empty">Upload a document first.</div>'; $('#vThumbs').innerHTML=''; $('#vDetList').innerHTML='<div class="empty">No detections.</div>'; return; }
+  if (!f){ renderGuidedReviewControls();stage.innerHTML='<div class="empty">Upload a document first.</div>'; $('#vThumbs').innerHTML=''; $('#vDetList').innerHTML='<div class="empty">No detections.</div>'; return; }
   state.viewer.fileId=f.id;
   const V=state.viewer;
   if (f.ext==='pdf' && rawStore[f.id] && !window.pdfjsLib){
@@ -4374,6 +4467,8 @@ async function renderViewer(){
     catch (error) { stage.innerHTML='<div class="empty">PDF preview is unavailable: '+esc(error.message)+'</div>'; return; }
   }
   V.page=Math.min(Math.max(1,V.page), f.pages.length);
+  syncViewerBoardToPage(f,V.page);
+  renderGuidedReviewControls();
   $('#vPageNo').textContent=V.page; $('#vPageCt').textContent=f.pages.length;
   $('#vZoomPct').value=Math.round(V.zoom*100);
   stage.classList.toggle('v-dark', !!V.dark);
@@ -4383,7 +4478,8 @@ async function renderViewer(){
   // §5.2 smart-highlight board select
   const bsel=$('#vBoardHl'); const A=p.analysis;
   const bkeep=V.boardHl||'';
-  bsel.innerHTML='<option value="">Go to board…</option>'+(A?Object.values(A.boards).sort((a,b)=>a.norm<b.norm?-1:1)
+  bsel.innerHTML='<option value="">No board on this page</option>'+(A?Object.values(A.boards).sort((a,b)=>
+      compareReviewTuple(reviewBoardSourceTuple(a.norm,A.rows),reviewBoardSourceTuple(b.norm,A.rows))||a.norm.localeCompare(b.norm,undefined,{numeric:true,sensitivity:'base'}))
     .map(b=>`<option value="${b.norm}" ${b.norm===bkeep?'selected':''}>${esc(b.orig)}</option>`).join(''):'');
   if (A&&bkeep&&!A.boards[bkeep]) V.boardHl=null;
   // search state (across the whole document)
@@ -4571,7 +4667,7 @@ function focusViewerDetection(d){
 }
 async function jumpToEvidence(r){
   if (!r.fileId){ toast('Manually-added rows have no source document'); return; }
-  state.viewer.fileId=r.fileId; state.viewer.page=r.page||1;state.viewer.evidenceId=r.id;
+  state.viewer.fileId=r.fileId;state.viewer.page=r.page||1;state.viewer.boardHl=r.boardNorm||null;state.viewer.assist.boardNorm=r.boardNorm||null;state.viewer.evidenceId=r.id;
   await setTab('viewer');
   const target=$('#vStage .attention')||document.getElementById('vline-'+r.line);
   target?.scrollIntoView?.({block:'center',inline:'center'});
