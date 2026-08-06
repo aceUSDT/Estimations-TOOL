@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="robots" content="noindex,nofollow,noarchive">
   <meta name="referrer" content="no-referrer">
-  <title>Manager evaluation | Estimation Tools</title>
+  <title>Test workspace | Estimation Tools</title>
   <link rel="icon" href="../assets/hager-logo.png">
   <style>
     :root{color-scheme:light;--nav:#151a20;--brand:#009ee2;--brand2:#007eb5;--text:#17202a;--muted:#5b6876;--line:#d6dde5;--surface:#fff;--page:#eef2f6;}
@@ -28,7 +28,7 @@
   <main>
     <section class="access" aria-labelledby="title">
       <p class="eyebrow">Private evaluation</p>
-      <h1 id="title">Manager test workspace</h1>
+      <h1 id="title">Test workspace</h1>
       <p>This single-use pass opens a temporary workspace containing synthetic electrical schedules. No customer documents or live project data are included.</p>
       <button id="start" type="button">Start test</button>
       <div id="status" role="status" aria-live="polite"></div>
@@ -55,7 +55,10 @@
           const response=await fetch(ENDPOINT,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({token})});
           token='';
           if(!response.ok){show(response.status===410?'This pass has expired or has already been used.':'The test workspace could not be opened.');button.textContent='Pass unavailable';return;}
-          sessionStorage.setItem(SESSION_KEY,JSON.stringify({expiresAt:Date.now()+8*60*60*1000}));
+          const payload=await response.json();
+          const expiresAt=Date.parse(payload.expiresAt||'');
+          if(!Number.isFinite(expiresAt)||expiresAt<=Date.now()){show('This pass has expired or has already been used.');button.textContent='Pass unavailable';return;}
+          sessionStorage.setItem(SESSION_KEY,JSON.stringify({expiresAt}));
           show('Pass accepted. Opening the sample project...',true);
           location.replace('../?manager-test=1');
         }catch(error){
