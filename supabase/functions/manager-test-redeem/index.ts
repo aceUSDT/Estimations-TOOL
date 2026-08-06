@@ -64,6 +64,8 @@ Deno.serve(async (request: Request) => {
   if (!redeem.ok) return response(origin, 503, { error: 'service_unavailable' });
   const rows = await redeem.json();
   if (!Array.isArray(rows) || rows.length !== 1) return response(origin, 410, { error: 'pass_unavailable' });
+  const expiresAt = Date.parse(rows[0]?.expires_at || '');
+  if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) return response(origin, 410, { error: 'pass_unavailable' });
 
-  return response(origin, 200, { ok: true });
+  return response(origin, 200, { ok: true, expiresAt: new Date(expiresAt).toISOString() });
 });
