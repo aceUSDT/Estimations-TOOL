@@ -5512,13 +5512,20 @@ async function boot(){
   const params=new URLSearchParams(location.search);
   const localTestMode=['localhost','127.0.0.1','::1'].includes(location.hostname)
     && params.get('test')==='1';
-  let managerTestMode=false;
+  let managerTestMode=false,managerGrant=null;
   if(params.get('manager-test')==='1'){
     try{
-      const grant=JSON.parse(sessionStorage.getItem(MANAGER_SESSION_KEY)||'null');
-      managerTestMode=Boolean(grant&&grant.expiresAt>Date.now());
+      managerGrant=JSON.parse(sessionStorage.getItem(MANAGER_SESSION_KEY)||'null');
+      managerTestMode=Boolean(managerGrant&&managerGrant.expiresAt>Date.now());
     }catch(error){managerTestMode=false;}
     if(!managerTestMode){location.replace('./manager-test/?expired=1');return;}
+    const expireSession=()=>{
+      if(Date.now()<managerGrant.expiresAt)return;
+      try{sessionStorage.removeItem(MANAGER_SESSION_KEY);}catch(error){}
+      location.replace('./manager-test/?expired=1');
+    };
+    setTimeout(expireSession,Math.max(0,managerGrant.expiresAt-Date.now()));
+    document.addEventListener('visibilitychange',()=>{if(!document.hidden)expireSession();});
   }
   if (localTestMode||managerTestMode){
     window.__TEST__=true;
@@ -5530,10 +5537,10 @@ async function boot(){
   if (!ok&&!managerTestMode) toast('Storage unavailable — work is session-only until you export');   // header chip removed by design
   if(managerTestMode){
     const storage=$('#storageState');
-    storage.textContent='Manager test - session only';
+    storage.textContent='Test workspace - session only';
     storage.title='Synthetic sample data only; changes are discarded when this test ends.';
     $('#lockBtn').textContent='End test';
-    $('#lockBtn').title='End this manager test session';
+    $('#lockBtn').title='End this test workspace session';
   }else await refreshStorageState();
   let stored=[];
   if(!managerTestMode){try{ stored=await loadProjects(); }catch(e){}}
