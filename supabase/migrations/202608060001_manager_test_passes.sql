@@ -11,7 +11,7 @@ alter table public.manager_test_passes enable row level security;
 alter table public.manager_test_passes force row level security;
 
 create or replace function public.redeem_manager_test_pass(p_token_hash text)
-returns table(pass_id uuid)
+returns table(pass_id uuid, expires_at timestamptz)
 language sql
 security definer
 set search_path = public
@@ -21,7 +21,7 @@ as $$
   where token_hash = p_token_hash
     and redeemed_at is null
     and expires_at > now()
-  returning id;
+  returning id, manager_test_passes.expires_at;
 $$;
 
 revoke all on public.manager_test_passes from public, anon, authenticated;
