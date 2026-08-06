@@ -331,6 +331,7 @@
     line-height:1.85;white-space:pre-wrap;color:#26303f;}
   .v-textsizer{position:relative;margin:0 auto;text-align:left;}
   .v-textpage .hl{border-radius:3px;padding:0 2px;margin:0 -2px;}
+  .hl.spec{background:color-mix(in srgb,var(--spec-color) 18%,white);outline:2px solid var(--spec-color);}
   .hl.green{background:var(--green-soft);outline:1px solid #bfe5d2;}
   .hl.amber{background:var(--amber-soft);outline:1px solid #f0d9a8;}
   .hl.red{background:var(--red-soft);outline:1px solid #f2c2c5;}
@@ -340,6 +341,9 @@
   .hl.boardhl{background:rgba(22,104,227,.22);outline:3px solid var(--blue);}
   .devdot{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:7px;vertical-align:-1px;}
   .ovl{position:absolute;border-radius:2px;pointer-events:none;}
+  .ovl.spec{background:color-mix(in srgb,var(--spec-color) 18%,transparent);outline:2px solid var(--spec-color);}
+  .ovl.row-link,.hl.row-link{pointer-events:auto;cursor:pointer;}
+  .ovl.row-link:focus-visible,.hl.row-link:focus-visible{outline:4px solid #111!important;z-index:8;}
   .ovl.green{background:rgba(15,153,96,.16);outline:1.5px solid rgba(15,153,96,.7);}
   .ovl.amber{background:rgba(200,125,14,.14);outline:1.5px solid rgba(200,125,14,.7);}
   .ovl.red{background:rgba(211,60,67,.14);outline:1.5px solid rgba(211,60,67,.7);}
@@ -367,11 +371,18 @@
   .v-info #vDetList{min-height:0;overflow-y:auto;flex:1;}
   .v-info .det{padding:9px 12px;border-bottom:1px solid #edf0f5;font-size:12px;color:var(--txt2);cursor:pointer;}
   .v-info .det:hover{background:#f7f9fc;}
+  .v-info .det.current{background:#eef6ff;box-shadow:inset 4px 0 0 var(--red);}
   .v-info .det b{color:var(--txt);}
-  .det-head{display:flex;align-items:center;gap:6px;min-width:0;}
-  .det-head b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-  .det-actions{display:flex;gap:5px;margin-left:auto;flex:0 0 auto;}
+  .det-head{display:flex;align-items:flex-start;gap:6px;min-width:0;flex-wrap:wrap;}
+  .det-head b{overflow-wrap:anywhere;line-height:1.35;}
+  .det-actions{display:flex;gap:5px;margin-left:auto;flex:0 0 auto;flex-wrap:wrap;}
   .det-actions .btn{padding:3px 7px;font-size:10.5px;}
+  .det-spec{display:flex;align-items:center;gap:6px;flex:1 1 170px;flex-wrap:wrap;min-width:0;}
+  .det-spec-swatch{width:10px;height:24px;border-radius:2px;flex:0 0 auto;background:var(--spec-color);}
+  .det-primary{font-size:12.5px;font-weight:800;color:var(--txt);overflow-wrap:anywhere;}
+  .det-circuit{margin-top:6px;color:var(--txt);font-size:11.5px;line-height:1.45;overflow-wrap:anywhere;}
+  .det-source{margin-top:4px;color:var(--txt3);font:10.5px/1.45 var(--mono);white-space:normal;overflow-wrap:anywhere;}
+  .det-count{margin-top:6px;color:var(--txt2);font-size:10.5px;font-weight:700;}
   .det-protection{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px;}
   .v-toolbar,.v-doctabs,.assist-bar,.guided-review-bar,#vMetaRow{flex-shrink:0;}
   .guided-review-bar{display:flex;align-items:center;gap:9px;min-height:43px;padding:7px 12px;border-bottom:1px solid #c8d9ef;background:#eef6ff;}
@@ -433,7 +444,7 @@
 
   /* modal + toast */
   .modal-bk{position:fixed;inset:0;background:rgba(14,26,43,.5);display:none;align-items:center;
-    justify-content:center;z-index:90;}
+    justify-content:center;z-index:1300;}
   .modal-bk.show{display:flex;}
   .modal{background:#fff;border-radius:12px;width:460px;max-width:94vw;max-height:86vh;overflow:auto;
     box-shadow:0 24px 70px rgba(4,10,20,.4);}
@@ -441,6 +452,8 @@
   .modal .m-body{padding:18px 20px;}
   .modal .m-foot{padding:13px 20px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:8px;}
   .modal.row-editor-modal{width:720px;}
+  .modal.is-flexible{resize:both;min-width:min(520px,90vw);min-height:330px;max-width:96vw;max-height:92vh;}
+  .modal.is-flexible .m-head{cursor:move;touch-action:none;user-select:none;}
   .modal.report-source-modal{width:980px;}
   .row-editor-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px 14px;margin-bottom:14px;}
   .row-editor-grid .span-2{grid-column:1/-1;}
@@ -592,6 +605,7 @@
     .report-source-item-head .chip:first-of-type{margin-left:0;}
     .row-editor-grid{grid-template-columns:minmax(0,1fr);}
     .row-editor-grid .span-2{grid-column:auto;}
+    .modal.is-flexible{min-width:0;resize:vertical;}
     .viewer-layout{grid-template-columns:minmax(0,1fr);}
     .viewer-layout>.thumbs{display:none;}
     .v-stage{height:calc(100vh - 300px);min-height:440px;}
@@ -1038,17 +1052,49 @@ const confChip = (c,status)=>{
 
 /* generic modal */
 let modalOk=null;
+let modalDrag=null;
+function resetFlexibleModal(){
+  const modal=$('#modalBk .modal');if(!modal)return;
+  modal.style.removeProperty('width');modal.style.removeProperty('height');modal.style.removeProperty('transform');
+  modal.dataset.dragX='0';modal.dataset.dragY='0';
+}
+function placeModalInActiveSurface(){
+  const backdrop=$('#modalBk'),viewer=$('#pt-viewer');
+  const inViewer=Boolean(viewer&&(document.fullscreenElement===viewer||state.viewer.fullscreen));
+  (inViewer?viewer:document.body).appendChild(backdrop);
+  backdrop.classList.toggle('in-viewer',inViewer);
+}
 function openModal(title, bodyHtml, onOk, okLabel='Save'){
-  $('#modalBk .modal')?.classList.remove('row-editor-modal','report-source-modal');
+  $('#modalBk .modal')?.classList.remove('row-editor-modal','report-source-modal','is-flexible');
+  resetFlexibleModal();placeModalInActiveSurface();
   $('#mCancel').hidden=false;
   $('#mHead').textContent=title; $('#mBody').innerHTML=bodyHtml;
   $('#mOk').textContent=okLabel; modalOk=onOk;
   $('#modalBk').classList.add('show');
 }
-function closeModal(){ $('#modalBk').classList.remove('show');$('#modalBk .modal')?.classList.remove('row-editor-modal','report-source-modal');$('#mCancel').hidden=false;modalOk=null; }
+function closeModal(){
+  const backdrop=$('#modalBk');backdrop.classList.remove('show','in-viewer');
+  $('#modalBk .modal')?.classList.remove('row-editor-modal','report-source-modal','is-flexible');
+  $('#mCancel').hidden=false;modalOk=null;document.body.appendChild(backdrop);
+}
 $('#mCancel').addEventListener('click', closeModal);
 $('#modalBk').addEventListener('click', e=>{ if(e.target===$('#modalBk')) closeModal(); });
 $('#mOk').addEventListener('click', ()=>{ if(modalOk && modalOk()===false) return; closeModal(); });
+$('#mHead').addEventListener('pointerdown',event=>{
+  const modal=$('#modalBk .modal');if(!modal?.classList.contains('is-flexible')||event.button!==0)return;
+  modalDrag={id:event.pointerId,x:event.clientX,y:event.clientY,dx:Number(modal.dataset.dragX)||0,dy:Number(modal.dataset.dragY)||0};
+  $('#mHead').setPointerCapture?.(event.pointerId);event.preventDefault();
+});
+$('#mHead').addEventListener('pointermove',event=>{
+  if(!modalDrag||modalDrag.id!==event.pointerId)return;
+  const modal=$('#modalBk .modal'),rect=modal.getBoundingClientRect();
+  const nextX=modalDrag.dx+event.clientX-modalDrag.x,nextY=modalDrag.dy+event.clientY-modalDrag.y;
+  const maxX=Math.max(0,(window.innerWidth-rect.width)/2),maxY=Math.max(0,(window.innerHeight-rect.height)/2);
+  const x=Math.max(-maxX,Math.min(maxX,nextX)),y=Math.max(-maxY,Math.min(maxY,nextY));
+  modal.dataset.dragX=String(x);modal.dataset.dragY=String(y);modal.style.transform=`translate(${x}px,${y}px)`;
+});
+const stopModalDrag=event=>{if(modalDrag?.id===event.pointerId)modalDrag=null;};
+$('#mHead').addEventListener('pointerup',stopModalDrag);$('#mHead').addEventListener('pointercancel',stopModalDrag);
 
 /* ============================ STATE ============================ */
 const APP_SETTINGS_KEY='estimation-tools-settings-v1';
@@ -1067,7 +1113,7 @@ const state = {
   reportMode: 'board',
   reviewFlow: {active:false,currentRowId:null,initialCount:0,moving:false,boardOrder:[],initialByBoard:{},rowOrderByBoard:{}},
 };
-const ANALYSIS_VERSION=7;
+const ANALYSIS_VERSION=8;
 const uid = () => 'x'+(state.nextId++)+'_'+Math.random().toString(36).slice(2,6);
 
 /* ====================== PERSISTENCE (IndexedDB) ====================== */
@@ -2919,6 +2965,9 @@ async function runAnalysis(opts){
   if (appSettings.onlineExtraction&&!(opts&&opts.noAi)){
     try{ await runAiExtraction(A, f, p, pageSet); }catch(e){ console.warn('AI extraction unavailable:', e.message); }
   }
+  if(window.EstimationExtractorCore?.reconcileCombinedProtection){
+    A.rows=A.rows.map(row=>window.EstimationExtractorCore.reconcileCombinedProtection(row));
+  }
   if(window.EstimationExtractorCore?.deduplicateExtractionRows){
     const observedSlots=new Set(A.rows.filter(row=>!row.inferredWay&&row.boardNorm&&row.way!=null)
       .map(row=>[row.boardNorm,row.boardSection||'',row.way].join('|')));
@@ -2957,6 +3006,9 @@ async function runAnalysis(opts){
     });
     prev.rows.filter(r=>r.kind==='manual').forEach(r=>A.rows.push(r));
     Object.values(prev.boards).forEach(b=>{ if(b.manual){ if(!A.boards[b.norm]) A.boards[b.norm]=b; A.boards[b.norm].parent=b.parent; A.boards[b.norm].manual=true; } });
+  }
+  if(window.EstimationExtractorCore?.reconcileCombinedProtection){
+    A.rows=A.rows.map(row=>window.EstimationExtractorCore.reconcileCombinedProtection(row));
   }
   // Workstream 0 §0.3 — reconciliation pass: check the result against the
   // documents' own evidence (header way counts, schedule-looking pages).
@@ -3260,13 +3312,63 @@ async function advanceGuidedReview(completedRow,action='decision saved'){
 function scheduleGuidedAdvance(row,action){
   if(state.reviewFlow.active&&state.reviewFlow.currentRowId===row?.id)setTimeout(()=>advanceGuidedReview(row,action),0);
 }
-/* Colour-coding per counted device type (design doc: estimator-style "dot off" colours).
-   Deterministic hash → fixed palette, so MCB 32A is the same colour everywhere in the app. */
-const DEVICE_PALETTE=['#1668e3','#0f9960','#c87d0e','#7b5cd6','#d33c43','#0aa2c0','#b0328f','#5b7a1e','#8a5a2c','#2f6f8f'];
-function deviceColor(name){
-  let h=0; const s=String(name).toUpperCase();
-  for (let i=0;i<s.length;i++) h=(h*31+s.charCodeAt(i))>>>0;
-  return DEVICE_PALETTE[h%DEVICE_PALETTE.length];
+/* Stable specification colours keep visually different devices distinct even
+   when they share a broad family such as MCB or RCBO. */
+const DEVICE_PALETTE=['#1668e3','#d18400','#0f8f5f','#b43a47','#7a56c2','#007f95','#c0448f','#567b1f','#9a5328','#2b6f92','#cf5d17','#006d77','#6d597a','#1982c4','#8f2d56','#4d7c0f','#7c3aed','#b45309','#0369a1','#be123c','#047857','#92400e','#4338ca','#0e7490'];
+const SPECIFICATION_PALETTE=[...DEVICE_PALETTE,...Array.from({length:168},(_,index)=>{
+  const hue=Math.round((index*137.508)%360),saturation=60+(index%3)*8,lightness=34+(Math.floor(index/3)%3)*7;
+  return `hsl(${hue} ${saturation}% ${lightness}%)`;
+})];
+function hashText(value){
+  let hash=2166136261;const text=String(value).toUpperCase();
+  for(let index=0;index<text.length;index++){hash^=text.charCodeAt(index);hash=Math.imul(hash,16777619);}
+  return hash>>>0;
+}
+function deviceColor(name){return DEVICE_PALETTE[hashText(name)%DEVICE_PALETTE.length];}
+function deviceSpecificationKey(row){
+  if(!row||!row.device||row.space||row.spare)return '';
+  return [
+    String(row.device).toUpperCase(),
+    row.rating??'',
+    String(row.curve||'').toUpperCase(),
+    String(row.poleConfiguration||(row.poles?row.poles+'P':'')).toUpperCase(),
+    row.ka??'',
+    row.rcdProtected===true?'RCD':row.rcdProtected===false?'NO_RCD':'RCD_UNSTATED',
+    row.sens??'',
+    row.afdd===true?'AFDD':'NO_AFDD',
+  ].join('|');
+}
+function deviceSpecificationLabel(row){
+  if(!row)return 'Unclassified row';
+  if(row.spare)return 'Spare way';
+  if(row.space)return 'Space way';
+  return [row.rating!=null?row.rating+'A':null,row.curve?row.curve+' curve':null,row.device||'Unclassified device']
+    .filter(Boolean).join(' ');
+}
+function buildSpecificationColorMap(rows){
+  const keys=[...new Set((rows||[]).map(deviceSpecificationKey).filter(Boolean))].sort();
+  const used=new Set(),map=new Map();
+  keys.forEach(key=>{
+    const start=hashText(key)%SPECIFICATION_PALETTE.length;
+    let slot=start;
+    for(let offset=0;offset<SPECIFICATION_PALETTE.length;offset++){
+      const candidate=(start+offset)%SPECIFICATION_PALETTE.length;
+      if(!used.has(candidate)){slot=candidate;break;}
+    }
+    used.add(slot);map.set(key,SPECIFICATION_PALETTE[slot]);
+  });
+  return map;
+}
+function countedRowQuantity(row){
+  return row&&row.status!=='rejected'&&!row.space&&!row.spare&&row.device?Math.max(1,Number(row.qty)||1):0;
+}
+function viewerSpecificationCounts(row,key,rows){
+  if(!row||!key)return {group:0,board:0};
+  const boardRows=(rows||[]).filter(candidate=>candidate.boardNorm===row.boardNorm);
+  return {
+    group:boardRows.filter(candidate=>deviceSpecificationKey(candidate)===key).reduce((sum,candidate)=>sum+countedRowQuantity(candidate),0),
+    board:boardRows.reduce((sum,candidate)=>sum+countedRowQuantity(candidate),0),
+  };
 }
 /* shared by the all-boards roll-up and the single-board detail view (§5.4) */
 function buildDeviceTable(devs, approveLabel){
@@ -3640,6 +3742,9 @@ function openRowEditor(r, isNew, surface='Boards & Devices'){
     const afdd=$('#eAfdd').value;r.afddIndicated=afdd===''?null:afdd==='yes';r.afdd=r.afddIndicated;
     r.circuitReference=$('#eCircuit').value.trim()||null;
     r.desc=$('#eDesc').value;
+    if(window.EstimationExtractorCore?.reconcileCombinedProtection){
+      Object.assign(r,window.EstimationExtractorCore.reconcileCombinedProtection(r));
+    }
     const changed=[['Board Reference','boardNorm'],['Way','way'],['Phase','phase'],['Device Family','device'],['Quantity','qty'],['Current Rating','rating'],
       ['Tripping Curve','curve'],['Pole Configuration','poleConfiguration'],['Breaking Capacity','ka'],['Protection Standard','protectionStandard'],['Trip Unit','tripUnit'],
       ['RCD Protection','rcdProtected'],['RCD Sensitivity','sens'],['AFDD Protection','afdd'],['Circuit Reference','circuitReference'],['Description','desc']];
@@ -3663,7 +3768,7 @@ function openRowEditor(r, isNew, surface='Boards & Devices'){
     toast(isNew?'Device added':changedFields.length?'Row corrected and confirmed':'Row reviewed and confirmed');
     if(!isNew)scheduleGuidedAdvance(r,changedFields.length?'Correction saved':'Review saved');
   });
-  $('#modalBk .modal')?.classList.add('row-editor-modal');
+  $('#modalBk .modal')?.classList.add('row-editor-modal','is-flexible');
 }
 $('#bulkApproveBtn').addEventListener('click', ()=>{
   const p=state.cur; if(!p||!p.analysis) return;
@@ -4308,9 +4413,22 @@ function viewerFile(){
 function pageDetections(f, pageNo){
   const p=state.cur, A=p.analysis; const out=[];
   if (A){
-    A.rows.forEach(r=>{ if(r.fileId===f.id&&r.page===pageNo) out.push({kind:'row', r, line:r.line,bbox:r.highlightBbox||r.bbox,
-      color: state.viewer.evidenceId===r.id?'boardhl':r.status==='confirmed'?'green': r.status==='rejected'?'red': r.conf>=0.8?'green':'amber',
-      label:(r.qty>1?r.qty+'× ':'')+(r.device||(r.spare?'Spare':r.space?'Space':'Row'))+(r.rating?' '+r.rating+'A':'')+(r.rcdProtected===true?' · RCD'+(r.sens?' '+r.sens+'mA':''):'')+(r.afdd===true?' · AFDD':'')}); });
+    const colourMap=buildSpecificationColorMap(A.rows);
+    A.rows.forEach(r=>{
+      if(r.fileId!==f.id||r.page!==pageNo)return;
+      const specKey=deviceSpecificationKey(r),specColor=colourMap.get(specKey)||null;
+      const counts=viewerSpecificationCounts(r,specKey,A.rows),specLabel=deviceSpecificationLabel(r);
+      const boardName=r.boardNorm?boardLabel(r.boardNorm):'unassigned board';
+      const countTitle=specKey
+        ? `${specLabel}: ${counts.group} on ${boardName}; ${counts.board} counted device${counts.board===1?'':'s'} on this board`
+        : `${specLabel} on ${boardName}`;
+      out.push({
+        kind:'row',r,line:r.line,bbox:r.highlightBbox||r.bbox,
+        color:specColor?'spec':r.status==='rejected'?'red':r.status==='confirmed'?'green':'amber',
+        specKey,specColor,specLabel,counts,countTitle,
+        label:(r.qty>1?r.qty+'x ':'')+specLabel+(r.rcdProtected===true?' · RCD'+(r.sens?' '+r.sens+'mA':''):'')+(r.afdd===true?' · AFDD':''),
+      });
+    });
     A.cables.forEach(c=>{ if(c.fileId===f.id&&c.page===pageNo) out.push({kind:'cable', r:c, line:c.line, color:'cyan', label:'Cable '+c.orig}); });
   }
   (f.pages[pageNo-1].lines||[]).forEach((l,li)=>{
@@ -4457,6 +4575,58 @@ function setViewerPanel(side,open){
   if(open&&panels.compactMode)panels[side==='left'?'rightOpen':'leftOpen']=false;
   syncViewerLayout();
 }
+function viewerDetectionCardHtml(d,index){
+  if(d.kind!=='row')return `<div class="det" data-i="${index}">
+    <div class="det-head"><span class="chip ${d.color}">${esc(d.kind)}</span><b>${esc(d.label)}</b><span class="det-actions">
+      ${d.r?.boardNorm?'<button class="btn sm ghost" data-action="board">Board</button>':''}
+    </span></div><div class="det-source">${esc(d.r?.srcText||'')}</div></div>`;
+  const row=d.r,primary=row.device||(row.spare?'Spare way':row.space?'Space way':'Unclassified device');
+  const current=state.viewer.evidenceId===row.id;
+  const circuit=row.circuitReference||null,description=String(row.desc||'').trim();
+  const protection=[];
+  if(row.rcdProtected===true)protection.push(`<span class="chip cyan">RCD${row.sens!=null?' '+esc(row.sens)+'mA':''}</span>`);
+  else if(row.rcdProtected===false)protection.push('<span class="chip grey">No RCD</span>');
+  if(row.afdd===true)protection.push('<span class="chip purple">AFDD</span>');
+  else if(row.afdd===false)protection.push('<span class="chip grey">No AFDD</span>');
+  if(row.protectionStandard)protection.push(`<span class="chip grey">${esc(row.protectionStandard)}</span>`);
+  if(row.poleConfiguration||row.poles)protection.push(`<span class="chip grey">${esc(row.poleConfiguration||row.poles+'P')}</span>`);
+  if(row.ka!=null)protection.push(`<span class="chip grey">${esc(row.ka)}kA</span>`);
+  const countText=d.specKey
+    ? `${d.counts.group} matching ${d.specLabel} on this board · ${d.counts.board} counted device${d.counts.board===1?'':'s'} in board total`
+    : 'This row is not counted as a protective device';
+  return `<div class="det${current?' current':''}" data-i="${index}" data-row-id="${esc(row.id)}" aria-current="${current?'true':'false'}"
+      style="--spec-color:${d.specColor||'#8a95a5'}" title="${esc(d.countTitle)}">
+    <div class="det-head"><div class="det-spec"><span class="det-spec-swatch" aria-hidden="true"></span><span class="det-primary">${esc(primary)}</span>
+      ${row.rating!=null?`<span class="chip grey">${esc(row.rating)}A</span>`:''}${row.curve?`<span class="chip grey">${esc(row.curve)} curve</span>`:''}</div>
+      <span class="det-actions">${row.boardNorm?'<button class="btn sm ghost" data-action="board">Board</button>':''}
+        <button class="btn sm ghost" data-action="edit">Correct</button>
+        ${row.status!=='confirmed'?'<button class="btn sm primary" data-action="approve">Approve</button>':'<span class="chip green">Approved</span>'}</span></div>
+    ${circuit?`<div class="det-circuit"><b>Circuit:</b> ${esc(circuit)}</div>`:''}
+    ${description&&description!==circuit?`<div class="det-circuit">${esc(description)}</div>`:''}
+    ${protection.length?`<div class="det-protection">${protection.join('')}</div>`:''}
+    <div class="det-count">${esc(countText)}</div>
+    ${row.srcText?`<div class="det-source"><b>Source:</b> ${esc(row.srcText)}</div>`:''}
+  </div>`;
+}
+function syncViewerDetectionList(rowId,{scroll=true}={}){
+  const list=$('#vDetList');if(!list)return;
+  list.querySelectorAll('.det.current').forEach(element=>{element.classList.remove('current');element.setAttribute('aria-current','false');});
+  if(!rowId)return;
+  const target=[...list.querySelectorAll('.det[data-row-id]')].find(element=>element.dataset.rowId===String(rowId));
+  if(!target)return;
+  target.classList.add('current');target.setAttribute('aria-current','true');
+  if(scroll)target.scrollIntoView?.({block:'nearest',behavior:'smooth'});
+}
+function bindViewerDocumentRows(detections){
+  const byId=new Map((detections||[]).filter(d=>d.kind==='row'&&d.r?.id).map(d=>[String(d.r.id),d]));
+  $$('#vStage [data-row-id]').forEach(element=>{
+    const detection=byId.get(element.dataset.rowId);if(!detection)return;
+    element.classList.add('row-link');element.tabIndex=0;element.setAttribute('role','button');
+    element.setAttribute('aria-label',`Show extracted device: ${detection.label}`);
+    const focus=event=>{event.stopPropagation();if(event.type==='keydown'&&!['Enter',' '].includes(event.key))return;if(event.type==='keydown')event.preventDefault();focusViewerDetection(detection);};
+    element.addEventListener('click',focus);element.addEventListener('keydown',focus);
+  });
+}
 async function renderViewer(){
   syncViewerLayout();
   const p=state.cur; if(!p) return;
@@ -4505,7 +4675,7 @@ async function renderViewer(){
     (pg.lines||[]).forEach((l,li)=>{
       const hit=detectBoards(l.text).some(b=>b.norm===V.boardHl)
         || (A&&A.rows.some(r=>r.fileId===f.id&&r.page===V.page&&r.line===li&&r.boardNorm===V.boardHl));
-      if (hit) dets.push({kind:'boardhl', line:li, color:'boardhl', label:'Board '+boardLabel(V.boardHl), r:{srcText:l.text}});
+      if (hit&&!dets.some(d=>d.kind==='row'&&d.line===li)) dets.push({kind:'boardhl', line:li, color:'boardhl', label:'Board '+boardLabel(V.boardHl), r:{srcText:l.text}});
     });
   }
   dets.forEach((d,index)=>{d.viewerKey='det-'+index;});
@@ -4561,7 +4731,10 @@ async function renderViewer(){
         if (showOvl) dets.forEach(d=>{
           const ln=pg.lines[d.line],bbox=d.bbox||ln?.bbox; if(!bbox) return;
           const focused=V.evidenceId&&d.r?.id===V.evidenceId;
-          const o=document.createElement('div'); o.className='ovl '+d.color+(d.kind==='assisted'?' assisted':'')+(focused?' attention':''); o.title=d.label;o.dataset.detKey=d.viewerKey;
+          const o=document.createElement('div'); o.className='ovl '+d.color+(d.kind==='row'?' row-link':'')+(d.kind==='assisted'?' assisted':'')+(focused?' attention':'');
+          o.title=d.countTitle||d.label;o.dataset.detKey=d.viewerKey;
+          if(d.kind==='row'&&d.r?.id)o.dataset.rowId=d.r.id;
+          if(d.specColor)o.style.setProperty('--spec-color',d.specColor);
           o.style.left=(bbox[0]*sc-2)+'px'; o.style.top=(bbox[1]*sc-1)+'px';
           o.style.width=(bbox[2]*sc+4)+'px'; o.style.height=(bbox[3]*sc+2)+'px';
           wrap.appendChild(o);
@@ -4597,7 +4770,9 @@ async function renderViewer(){
     if(showOvl&&pg.lines) dets.forEach(d=>{
       const line=pg.lines[d.line],bbox=d.bbox||line?.bbox;if(!bbox)return;
       const focused=V.evidenceId&&d.r?.id===V.evidenceId;
-      const overlay=document.createElement('div');overlay.className='ovl '+d.color+(focused?' attention':'');overlay.title=d.label;overlay.dataset.detKey=d.viewerKey;
+      const overlay=document.createElement('div');overlay.className='ovl '+d.color+(d.kind==='row'?' row-link':'')+(focused?' attention':'');overlay.title=d.countTitle||d.label;overlay.dataset.detKey=d.viewerKey;
+      if(d.kind==='row'&&d.r?.id)overlay.dataset.rowId=d.r.id;
+      if(d.specColor)overlay.style.setProperty('--spec-color',d.specColor);
       overlay.style.left=(bbox[0]*scale-2)+'px';overlay.style.top=(bbox[1]*scale-1)+'px';
       overlay.style.width=(bbox[2]*scale+4)+'px';overlay.style.height=(bbox[3]*scale+2)+'px';wrap.appendChild(overlay);
     });
@@ -4614,7 +4789,13 @@ async function renderViewer(){
       if (q && l.text.toLowerCase().includes(q))
         t=t.replace(new RegExp('('+q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')','gi'),'<span class="hl blue">$1</span>');
       const ds=byLine[li];
-      if (ds && !q){ const top=ds.find(x=>x.kind==='assisted')||ds.find(x=>x.kind==='boardhl')||ds[0]; const focused=V.evidenceId&&ds.some(item=>item.r?.id===V.evidenceId); t=`<span class="hl ${top.color}${focused?' attention':''}" data-line="${li}" title="${esc(ds.map(x=>x.label).join(' · '))}">${t}</span>`; }
+      if (ds){
+        const rowDetection=ds.find(item=>item.kind==='row'),top=rowDetection||ds.find(x=>x.kind==='assisted')||ds.find(x=>x.kind==='boardhl')||ds[0];
+        const focused=V.evidenceId&&ds.some(item=>item.r?.id===V.evidenceId);
+        const rowAttrs=rowDetection?` data-row-id="${esc(rowDetection.r.id)}" data-det-key="${rowDetection.viewerKey}"`:'';
+        const specStyle=top.specColor?` style="--spec-color:${top.specColor}"`:'';
+        t=`<span class="hl ${top.color}${rowDetection?' row-link':''}${focused?' attention':''}" data-line="${li}"${rowAttrs}${specStyle} title="${esc(top.countTitle||ds.map(x=>x.label).join(' · '))}">${t}</span>`;
+      }
       return `<span id="vline-${li}" data-line="${li}">${t}</span>`;
     }).join('\n');
     const sizer=document.createElement('div');sizer.className='v-textsizer';sizer.appendChild(div);
@@ -4638,14 +4819,7 @@ async function renderViewer(){
     }));
   } else {
     const listDets=dets.filter(d=>d.kind!=='boardhl');
-    dl.innerHTML = listDets.length? listDets.map((d,i)=>`<div class="det" data-i="${i}">
-      <div class="det-head"><span class="chip ${d.color}">${d.kind}</span><b>${esc(d.label)}</b><span class="det-actions">
-        ${d.r?.boardNorm?'<button class="btn sm ghost" data-action="board">Board</button>':''}
-        ${d.kind==='row'?'<button class="btn sm ghost" data-action="edit">Correct</button>':''}
-        ${d.kind==='row'&&d.r.status!=='confirmed'?'<button class="btn sm primary" data-action="approve">Approve</button>':d.kind==='row'?'<span class="chip green">Approved</span>':''}
-      </span></div>
-      <div class="hint" style="margin-top:2px">${esc((d.r.srcText||'').slice(0,90))}</div>
-      ${d.kind==='row'&&(d.r.rcdProtected===true||d.r.afdd===true)?`<div class="det-protection">${d.r.rcdProtected===true?`<span class="chip cyan">RCD${d.r.sens?' '+d.r.sens+'mA':''}</span>`:''}${d.r.afdd===true?'<span class="chip purple">AFDD</span>':''}</div>`:''}</div>`).join('')
+    dl.innerHTML = listDets.length? listDets.map(viewerDetectionCardHtml).join('')
     : '<div class="empty">No detections on this page.</div>';
     dl.querySelectorAll('.det').forEach(el=>{
       const d=listDets[+el.dataset.i];
@@ -4665,6 +4839,8 @@ async function renderViewer(){
       });
     });
   }
+  bindViewerDocumentRows(dets);
+  if(!V.assist.enabled)requestAnimationFrame(()=>syncViewerDetectionList(V.evidenceId,{scroll:Boolean(V.evidenceId)}));
 }
 function focusViewerDetection(d){
   const V=state.viewer;V.evidenceId=d.r?.id||null;
@@ -4672,6 +4848,7 @@ function focusViewerDetection(d){
   const line=document.getElementById('vline-'+d.line);
   const target=document.querySelector(`#vStage [data-det-key="${d.viewerKey}"]`)||line?.querySelector('.hl')||line;
   if(target){target.classList.add('attention');if(target.matches('.hl'))target.classList.add('hl');target.scrollIntoView?.({block:'center',inline:'center',behavior:'smooth'});}
+  syncViewerDetectionList(V.evidenceId,{scroll:true});
 }
 async function jumpToEvidence(r){
   if (!r.fileId){ toast('Manually-added rows have no source document'); return; }
@@ -4679,6 +4856,7 @@ async function jumpToEvidence(r){
   await setTab('viewer');
   const target=$('#vStage .attention')||document.getElementById('vline-'+r.line);
   target?.scrollIntoView?.({block:'center',inline:'center'});
+  syncViewerDetectionList(r.id,{scroll:true});
 }
 $('#vThumbToggle').addEventListener('click',()=>setViewerPanel('left',!ensureViewerPanels().leftOpen));
 $('#vInfoToggle').addEventListener('click',()=>setViewerPanel('right',!ensureViewerPanels().rightOpen));
@@ -4820,7 +4998,7 @@ $('#vSearch').addEventListener('keydown', e=>{ if(e.key==='Enter') $('#vSearchNe
 $('#vStage').addEventListener('wheel', e=>{ if(e.ctrlKey){ e.preventDefault(); vZoomBy(e.deltaY<0?1.15:1/1.15,e); } }, {passive:false});
 let viewerPan=null;
 $('#vStage').addEventListener('pointerdown',e=>{
-  if(e.button!==0||state.viewer.assist.enabled) return;
+  if(e.button!==0||state.viewer.assist.enabled||e.target.closest?.('.row-link')) return;
   const stage=$('#vStage');
   viewerPan={id:e.pointerId,x:e.clientX,y:e.clientY,left:stage.scrollLeft,top:stage.scrollTop};
   stage.classList.add('is-panning');stage.setPointerCapture(e.pointerId);e.preventDefault();

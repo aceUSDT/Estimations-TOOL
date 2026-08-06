@@ -15,6 +15,7 @@ tools/coverage/*.traineddata
 
 # Private customer documents used to reproduce extraction bugs — NEVER commit
 .private-fixtures/
+.codex-tmp/
 
 # OS noise
 .DS_Store

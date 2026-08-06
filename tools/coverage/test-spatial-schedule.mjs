@@ -210,6 +210,10 @@ assert.equal(correctedStandard.device, 'MCCB');
 assert.equal(correctedStandard.standardCode, '60947');
 assert.match(correctedStandard.reasons.join(' '), /60974/);
 
+const spatialMcbWithRcd = Core.resolveProtectionDevice({standard:'BS EN 60898',rcdProtected:true,sensitivityMa:30});
+assert.equal(spatialMcbWithRcd.device, 'RCBO');
+assert.match(spatialMcbWithRcd.reasons.join(' '), /row-level RCD protection/);
+
 const splitPageWords = [
   word('Way', 10, 25), word('Phase', 45, 25), word('Device BS (EN)', 90, 25),
   word('Type', 145, 25), word('Rating (A)', 180, 25),

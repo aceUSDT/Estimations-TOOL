@@ -18,7 +18,7 @@ const required = [
   'host.requestFullscreen',
   "document.addEventListener('fullscreenchange'",
   'function syncViewerLayout()',
-  'const ANALYSIS_VERSION=7;',
+  'const ANALYSIS_VERSION=8;',
   'data-report-mode="board"',
   'data-action="edit"',
   "openRowEditor(d.r,false,'Viewer')",
@@ -39,11 +39,21 @@ const required = [
   'Board ${Math.min(boardOrder.length,boardPosition+1)} of ${boardOrder.length}',
   'function openReportSources(',
   'data-report-source-key',
+  'function placeModalInActiveSurface()',
+  "classList.add('row-editor-modal','is-flexible')",
+  'function deviceSpecificationKey(row)',
+  'function viewerSpecificationCounts(row,key,rows)',
+  'function viewerDetectionCardHtml(d,index)',
+  'function bindViewerDocumentRows(detections)',
+  'function syncViewerDetectionList(rowId',
+  'data-row-id=',
+  'reconcileCombinedProtection(row)',
 ];
 required.forEach((value) => assert.ok(html.includes(value), `missing UI contract: ${value}`));
 assert.ok(!html.includes('id="vAssistBoard"'), 'viewer must not contain a duplicate board selector');
 assert.ok(!html.includes('Match rows'), 'ambiguous Match rows command must not return');
 assert.ok(!html.includes('Approve checked rows'), 'bulk approval must not claim rows are checked');
+assert.ok(!html.includes("slice(0,90)"), 'viewer source evidence must not be silently truncated');
 
 const markup = html.slice(0, html.indexOf('<script'));
 const ids = [...markup.matchAll(/\bid="([^"]+)"/g)].map((match) => match[1]);
