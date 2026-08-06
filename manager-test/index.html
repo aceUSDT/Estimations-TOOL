@@ -60,7 +60,7 @@
           if(!Number.isFinite(expiresAt)||expiresAt<=Date.now()){show('This pass has expired or has already been used.');button.textContent='Pass unavailable';return;}
           sessionStorage.setItem(SESSION_KEY,JSON.stringify({expiresAt}));
           show('Pass accepted. Opening the sample project...',true);
-          location.replace('../?manager-test=1');
+          location.replace('../?test-workspace=1');
         }catch(error){
           show('The test service is temporarily unavailable. Please try again.');button.disabled=false;button.textContent='Try again';
         }
