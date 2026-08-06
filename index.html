@@ -1052,6 +1052,7 @@ $('#mOk').addEventListener('click', ()=>{ if(modalOk && modalOk()===false) retur
 
 /* ============================ STATE ============================ */
 const APP_SETTINGS_KEY='estimation-tools-settings-v1';
+const MANAGER_SESSION_KEY='estimation-tools-manager-session-v1';
 const LOCAL_DESKTOP=location.protocol==='estimation:';
 let appSettings={onlineExtraction:false};
 try{appSettings={...appSettings,...JSON.parse(localStorage.getItem(APP_SETTINGS_KEY)||'{}')};}catch(error){}
@@ -1231,7 +1232,14 @@ function tryUnlock(){
 }
 $('#pwBtn').addEventListener('click', tryUnlock);
 $('#pwInput').addEventListener('keydown', e=>{ if(e.key==='Enter') tryUnlock(); });
-$('#lockBtn').addEventListener('click', ()=>{ $('#appView').classList.remove('active');$('#lockView').classList.add('active');configureLock(); });
+$('#lockBtn').addEventListener('click', ()=>{
+  if(window.__MANAGER_TEST__){
+    try{sessionStorage.removeItem(MANAGER_SESSION_KEY);}catch(error){}
+    location.replace('./manager-test/');
+    return;
+  }
+  $('#appView').classList.remove('active');$('#lockView').classList.add('active');configureLock();
+});
 
 /* ==================== ELECTRICAL KNOWLEDGE BASE ==================== */
 const DEVICE_DEFS = [
@@ -5326,22 +5334,40 @@ async function boot(){
   const params=new URLSearchParams(location.search);
   const localTestMode=['localhost','127.0.0.1','::1'].includes(location.hostname)
     && params.get('test')==='1';
-  if (localTestMode){
+  let managerTestMode=false;
+  if(params.get('manager-test')==='1'){
+    try{
+      const grant=JSON.parse(sessionStorage.getItem(MANAGER_SESSION_KEY)||'null');
+      managerTestMode=Boolean(grant&&grant.expiresAt>Date.now());
+    }catch(error){managerTestMode=false;}
+    if(!managerTestMode){location.replace('./manager-test/?expired=1');return;}
+  }
+  if (localTestMode||managerTestMode){
     window.__TEST__=true;
+    window.__MANAGER_TEST__=managerTestMode;
     $('#lockView').classList.remove('active');
     $('#appView').classList.add('active');
   }else configureLock();
-  const ok=await idbOpen();
-  if (!ok) toast('Storage unavailable — work is session-only until you export');   // header chip removed by design
-  await refreshStorageState();
+  const ok=managerTestMode?false:await idbOpen();
+  if (!ok&&!managerTestMode) toast('Storage unavailable — work is session-only until you export');   // header chip removed by design
+  if(managerTestMode){
+    const storage=$('#storageState');
+    storage.textContent='Manager test - session only';
+    storage.title='Synthetic sample data only; changes are discarded when this test ends.';
+    $('#lockBtn').textContent='End test';
+    $('#lockBtn').title='End this manager test session';
+  }else await refreshStorageState();
   let stored=[];
-  try{ stored=await loadProjects(); }catch(e){}
+  if(!managerTestMode){try{ stored=await loadProjects(); }catch(e){}}
   stored.forEach(rec=>{
     if (isBundledDemoProject(rec)) deleteProjectStore(rec.id);
     else { cleanLegacySourceLabels(rec); state.projects.push(rec); }
   });
   state.nextId += state.projects.length*50;
-  if (localTestMode && params.get('fixture')==='report' && !state.projects.length){
+  if(managerTestMode){
+    const fixtures=seedDemo();
+    fixtures.forEach(project=>project.testFixture=true);
+  }else if (localTestMode && params.get('fixture')==='report' && !state.projects.length){
     const fixtures=seedDemo();
     fixtures.forEach(project=>project.testFixture=true);
     state.cur=fixtures[0];
