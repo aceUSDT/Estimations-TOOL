@@ -10,9 +10,20 @@
  */
 import { EXTRACTION_SYSTEM_PROMPT, EXTRACTION_SCHEMA, coerceResult } from './domain-pack.mjs';
 
-/* Pinned to an exact stable model id — never a "latest" alias, so extraction
- * behaviour only changes when the owner deliberately changes this value. */
-export const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+/* Pin production to stable model ids. The short compatibility list is tried
+ * only when Google reports that the configured model is unavailable, keeping
+ * extraction online across staged model retirements without using a moving
+ * "latest" alias. */
+export const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.6-flash';
+export const GEMINI_FALLBACK_MODELS = Object.freeze(['gemini-3.5-flash']);
+
+export function geminiModelCandidates() {
+  return [...new Set([GEMINI_MODEL, ...GEMINI_FALLBACK_MODELS])];
+}
+
+export function isGeminiModelUnavailable(status, detail = '') {
+  return status === 404 || (status === 400 && /model[^\n]*(?:unavailable|not found|no longer available|unsupported)/i.test(detail));
+}
 
 export function providerStatus() {
   const gemini = Boolean(process.env.GEMINI_API_KEY);
@@ -47,7 +58,7 @@ export function geminiSchema(node) {
   return out;
 }
 
-export async function callGemini({ imageBase64, mediaType, instruction, maxTokens = 16000 }) {
+async function callGeminiModel({ model, imageBase64, mediaType, instruction, maxTokens }) {
   const key = process.env.GEMINI_API_KEY;
   if (!key) throw new Error('GEMINI_API_KEY unset');
   const parts = [];
@@ -57,20 +68,23 @@ export async function callGemini({ imageBase64, mediaType, instruction, maxToken
     systemInstruction: { parts: [{ text: EXTRACTION_SYSTEM_PROMPT }] },
     contents: [{ role: 'user', parts }],
     generationConfig: {
-      temperature: 0,
       maxOutputTokens: maxTokens,
       responseMimeType: 'application/json',
       responseJsonSchema: geminiSchema(EXTRACTION_SCHEMA),
     },
   };
-  const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`, {
+  const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-goog-api-key': key },
     body: JSON.stringify(body),
   });
   if (!resp.ok) {
     const detail = await resp.text().catch(() => '');
-    throw new Error(`Gemini API error ${resp.status}: ${detail.slice(0, 300)}`);
+    throw Object.assign(new Error(`Gemini API error ${resp.status}: ${detail.slice(0, 300)}`), {
+      status: resp.status,
+      model,
+      modelUnavailable: isGeminiModelUnavailable(resp.status, detail),
+    });
   }
   const data = await resp.json();
   const candidate = data.candidates && data.candidates[0];
@@ -81,12 +95,26 @@ export async function callGemini({ imageBase64, mediaType, instruction, maxToken
   const text = candidate.content.parts.map((p) => p.text || '').join('');
   return {
     result: coerceResult(JSON.parse(text)),
-    model: GEMINI_MODEL,
+    model,
     usage: {
       input_tokens: data.usageMetadata ? data.usageMetadata.promptTokenCount : null,
       output_tokens: data.usageMetadata ? data.usageMetadata.candidatesTokenCount : null,
     },
   };
+}
+
+export async function callGemini({ imageBase64, mediaType, instruction, maxTokens = 16000 }) {
+  const candidates = geminiModelCandidates();
+  let unavailableError = null;
+  for (const model of candidates) {
+    try {
+      return await callGeminiModel({ model, imageBase64, mediaType, instruction, maxTokens });
+    } catch (error) {
+      if (!error?.modelUnavailable) throw error;
+      unavailableError = error;
+    }
+  }
+  throw unavailableError || new Error('No Gemini extraction model is available');
 }
 
 /* Full-page extraction. Fails with 503 semantics when unconfigured so the

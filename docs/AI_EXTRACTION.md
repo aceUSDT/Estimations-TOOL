@@ -24,9 +24,11 @@ win when an online result refers to the same circuit slot.
 
 ## Server configuration
 
-Set `GEMINI_API_KEY` in the Netlify site's server-side environment (Google Gemini is the
-only runtime AI provider). Optionally set `GEMINI_MODEL` — it defaults to an exact pinned
-model id. Never put a key in `index.html`, a committed `.env`, the desktop bundle,
+Set `GEMINI_API_KEY` in the hosting provider's server-side environment (Google Gemini is
+the only runtime AI provider). Optionally set `GEMINI_MODEL` — it defaults to the exact
+stable `gemini-3.6-flash` id. If Google reports that model as unavailable, the runtime may
+retry the exact stable `gemini-3.5-flash` compatibility model. It never uses a moving
+`latest` alias. Never put a key in `index.html`, a committed `.env`, the desktop bundle,
 or any other browser-downloadable file.
 
 For local hosted-function development, use `netlify dev` with an untracked `.env`. Running

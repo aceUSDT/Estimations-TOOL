@@ -16,7 +16,7 @@ const FN = path.resolve(ROOT, 'netlify/functions/extract.mjs');
 delete process.env.GEMINI_API_KEY;
 
 const providers = await import(pathToFileURL(LIB));
-const { geminiSchema, providerStatus, buildInstruction, GEMINI_MODEL } = providers;
+const { geminiSchema, providerStatus, buildInstruction, GEMINI_MODEL, geminiModelCandidates, isGeminiModelUnavailable } = providers;
 const { default: handler } = await import(pathToFileURL(FN));
 
 let fail = 0;
@@ -34,6 +34,9 @@ for (const file of ['netlify/functions/lib/providers.mjs', 'netlify/functions/ex
 const pkg = JSON.parse(fs.readFileSync(path.resolve(ROOT, 'package.json'), 'utf8'));
 check('@anthropic-ai/sdk removed from dependencies', !(pkg.dependencies || {})['@anthropic-ai/sdk']);
 check('GEMINI_MODEL is pinned to an exact id, not "latest"', /^gemini-[\w.-]+$/.test(GEMINI_MODEL) && !/latest/i.test(GEMINI_MODEL));
+check('all compatibility models are exact ids', geminiModelCandidates().every((model) => /^gemini-[\w.-]+$/.test(model) && !/latest/i.test(model)));
+check('model retirement errors permit compatibility fallback', isGeminiModelUnavailable(404, 'no longer available') && isGeminiModelUnavailable(400, 'model is unsupported'));
+check('quota and auth failures do not change models', !isGeminiModelUnavailable(429, 'quota') && !isGeminiModelUnavailable(401, 'invalid key'));
 
 /* ---------- geminiSchema translation ---------- */
 const translated = geminiSchema({
@@ -63,6 +66,30 @@ check('health: gemini configured', body.configured === true && body.primary === 
 check('health: pinned model reported', typeof body.model === 'string' && body.model.includes('gemini'));
 check('health: no anthropic field in probe', !('anthropic' in (body.providers || {})));
 delete process.env.GEMINI_API_KEY;
+
+/* ---------- compatibility fallback ---------- */
+process.env.GEMINI_API_KEY = 'test-not-a-real-key';
+const originalFetch = globalThis.fetch;
+const modelCalls = [];
+globalThis.fetch = async (url) => {
+  modelCalls.push(String(url));
+  if (modelCalls.length === 1) return new Response('model no longer available', { status: 404 });
+  const result = {
+    classification: { type: 'other', sub_format: 'unknown', confidence: '1' },
+    boards: [], devices: [], feeds: [], flags: [],
+  };
+  return new Response(JSON.stringify({
+    candidates: [{ finishReason: 'STOP', content: { parts: [{ text: JSON.stringify(result) }] } }],
+    usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 1 },
+  }), { status: 200, headers: { 'content-type': 'application/json' } });
+};
+try {
+  const fallback = await providers.callGemini({ instruction: 'test', maxTokens: 100 });
+  check('retired primary retries a stable compatibility model', modelCalls.length === 2 && fallback.model === geminiModelCandidates()[1]);
+} finally {
+  globalThis.fetch = originalFetch;
+  delete process.env.GEMINI_API_KEY;
+}
 
 /* ---------- instruction builder ---------- */
 const instr = buildInstruction({ filename: 'a.pdf', pageNumber: 3, hints: { type: 'db_schedule', sub_format: 'bam_epo' }, textLines: ['ROW 1'] });

@@ -12,7 +12,7 @@
  * Note on timeouts: Netlify synchronous functions cap at ~26s; dense pages
  * go through the background function instead (no such ceiling).
  */
-import { buildInstruction, extractPage, providerStatus, GEMINI_MODEL } from './lib/providers.mjs';
+import { buildInstruction, extractPage, providerStatus, GEMINI_MODEL, geminiModelCandidates } from './lib/providers.mjs';
 
 const json = (status, body) => new Response(JSON.stringify(body), {
   status,
@@ -29,6 +29,7 @@ export default async function handler(req) {
       providers: { gemini: status.gemini },
       primary: status.primary,
       model: GEMINI_MODEL,
+      fallbackModels: geminiModelCandidates().slice(1),
       executionMode: process.env.VERCEL ? 'sync' : 'background',
     });
   }
