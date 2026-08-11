@@ -1,5 +1,5 @@
 /* AI extraction provider — Google Gemini is the ONLY runtime AI provider.
- * The key lives ONLY in a Netlify env var — never in the browser, never in
+ * The key lives ONLY in a hosting environment variable — never in the browser, never in
  * this repo.
  *
  *   GEMINI_API_KEY      required — https://aistudio.google.com/apikey
@@ -93,7 +93,7 @@ export async function callGemini({ imageBase64, mediaType, instruction, maxToken
  * front-end can fall back to local-only extraction cleanly. */
 export async function extractPage({ imageBase64, mediaType, instruction, maxTokens }) {
   if (!providerStatus().configured) {
-    throw Object.assign(new Error('AI extraction is not configured: set GEMINI_API_KEY in the Netlify environment.'), { http: 503 });
+    throw Object.assign(new Error('AI extraction is not configured: set GEMINI_API_KEY in the hosting environment.'), { http: 503 });
   }
   const primary = await callGemini({ imageBase64, mediaType, instruction, maxTokens });
   return { ...primary, provider: 'gemini' };

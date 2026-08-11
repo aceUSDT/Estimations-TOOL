@@ -267,6 +267,8 @@
 
   const ASSOCIATED_EQUIPMENT_DEFS = [
     { device: 'Contactor', re: /\bcontactors?\b/i },
+    { device: 'Emergency power off', re: /\bEPO\b|\bemergency\s+(?:power\s+)?off\b|\bmushroom\s+push\s+button\s+emergency\s+stop\b/i },
+    { device: 'Key reset', re: /\bkey\s+reset(?:\s+buttons?)?\b/i },
     { device: 'Time clock', re: /\b(?:time\s*clock|timeclock)\b/i },
     { device: 'Photocell', re: /\b(?:photo\s*cell|photocell)\b/i },
     { device: 'Relay', re: /\brelays?\b/i },
@@ -277,6 +279,7 @@
     { device: 'DALI controller', re: /\bDALI\s+(?:headend|controller|control\s+unit)\b/i },
     { device: 'Lighting controller', re: /\blighting\s+(?:controller|control\s+(?:module|unit))\b/i },
     { device: 'Key switch', re: /\bkey\s+switch(?:es)?\b/i },
+    { device: 'BMS interface', re: /\bBMS\s+(?:interface|connection|control\s+point)\b/i },
   ];
 
   function extractAssociatedEquipment(description) {
@@ -290,6 +293,87 @@
       equipment.push({ device: definition.device, qty: quantity });
     }
     return equipment;
+  }
+
+  function noteReferences(value) {
+    const source = String(value || '');
+    const labels = [];
+    const patterns = [
+      /\(\s*#\s*([A-Z0-9][A-Z0-9.-]{0,11})\s*\)/gi,
+      /\bNOTE\s*#\s*([A-Z0-9][A-Z0-9.-]{0,11})\b/gi,
+    ];
+    for (const pattern of patterns) {
+      for (const match of source.matchAll(pattern)) {
+        const label = match[1].toUpperCase();
+        if (!labels.includes(label)) labels.push(label);
+      }
+    }
+    return labels;
+  }
+
+  function parseGoverningNotes(lines) {
+    const sourceLines = (lines || []).map((line, index) => ({
+      line: index,
+      text: String(line?.text ?? line ?? '').replace(/\s+/g, ' ').trim(),
+      bbox: line?.bbox || null,
+      confidence: Number(line?.confidence ?? 1),
+    })).filter((line) => line.text);
+    const notes = [];
+    let active = null;
+    for (const source of sourceLines) {
+      const definition = source.text.match(/^\s*(?:NOTE\s*)?\(\s*#\s*([A-Z0-9][A-Z0-9.-]{0,11})\s*\)\s*[:.\-]?\s*(.+)$/i)
+        || source.text.match(/^\s*NOTE\s*#\s*([A-Z0-9][A-Z0-9.-]{0,11})\s*[:.\-]?\s*(.+)$/i);
+      if (definition) {
+        active = {
+          label: definition[1].toUpperCase(),
+          text: definition[2].trim(),
+          line: source.line,
+          bbox: source.bbox,
+          confidence: source.confidence,
+        };
+        notes.push(active);
+        continue;
+      }
+      if (!active || noteReferences(source.text).length) {
+        active = null;
+        continue;
+      }
+      const likelyTableContent = /^\s*(?:\d{1,3}|[LP]\d+)\b/i.test(source.text)
+        || /\b(?:WAY|CCT|CIRCUIT|LOAD\s+DESCRIPTION|RATING|DEVICE\s+BS)\b/i.test(source.text);
+      if (likelyTableContent) {
+        active = null;
+        continue;
+      }
+      if (active.text.length < 480) active.text += ` ${source.text}`;
+    }
+    return notes.map((note) => ({ ...note, associatedDevices: extractAssociatedEquipment(note.text) }));
+  }
+
+  function applyGoverningNotes(row, notes) {
+    const references = noteReferences([row?.desc, row?.srcText, row?.circuitReferenceText].filter(Boolean).join(' '));
+    if (!references.length) return { ...row, noteReferences: [], governingNotes: Array.isArray(row?.governingNotes) ? row.governingNotes : [] };
+    const governingNotes = (notes || []).filter((note) => references.includes(String(note.label || '').toUpperCase()));
+    const associated = [...(Array.isArray(row?.associatedDevices) ? row.associatedDevices : [])];
+    for (const note of governingNotes) {
+      for (const item of note.associatedDevices || extractAssociatedEquipment(note.text)) {
+        const existing = associated.find((candidate) => candidate.device === item.device);
+        if (existing) existing.qty = Math.max(Number(existing.qty) || 1, Number(item.qty) || 1);
+        else associated.push({ ...item, source: 'governing_note', noteLabel: note.label });
+      }
+    }
+    return {
+      ...row,
+      noteReferences: references,
+      governingNotes: governingNotes.map((note) => ({
+        label: note.label,
+        text: note.text,
+        page: note.page || null,
+        line: note.line,
+        bbox: note.bbox,
+        confidence: note.confidence,
+      })),
+      associatedDevices: associated,
+    };
   }
 
   function cleanTbaDescription(value) {
@@ -1293,6 +1377,11 @@
       const ways = Number(split[1]) + Number(split[2]);
       if (ways >= 2 && ways <= 200) return { ways, evidence: split[0].trim(), split: true };
     }
+    const compactSplit = source.match(/\bWAYS?\s*(?:[-:=]|TOTAL\s*[:=])?\s*(\d{1,3})\s*\+\s*(\d{1,3})\b/i);
+    if (compactSplit) {
+      const ways = Number(compactSplit[1]) + Number(compactSplit[2]);
+      if (ways >= 2 && ways <= 200) return { ways, evidence: compactSplit[0].trim(), split: true };
+    }
     for (const pattern of WAY_HEADER_PATTERNS) {
       const match = source.match(pattern);
       if (match) {
@@ -1301,6 +1390,34 @@
       }
     }
     return null;
+  }
+
+  function applyBoardScope(boards, rows) {
+    const scopedBoards = {};
+    const rowList = (rows || []).map((row) => ({ ...row }));
+    for (const [norm, sourceBoard] of Object.entries(boards || {})) {
+      const board = { ...sourceBoard };
+      const boardRows = rowList.filter((row) => row.boardNorm === norm && row.status !== 'rejected' && !row.incomer);
+      const fuseOutgoings = boardRows.filter((row) => row.device === 'Fuse'
+        || /\bBS\s*88\b|\bFUSE(?:\s+SWITCH)?\b/i.test([row.protectionStandard, row.srcText, row.desc].filter(Boolean).join(' ')))
+        .reduce((sum, row) => sum + Math.max(1, Number(row.qty) || 1), 0);
+      const reference = `${norm} ${board.orig || ''}`.replace(/[\s._/\\-]+/g, '').toUpperCase();
+      const reasons = [];
+      if (reference.includes('MSDB')) reasons.push('MSDB_ASSEMBLY');
+      if (fuseOutgoings >= 4) reasons.push('FOUR_OR_MORE_FUSE_OUTGOINGS');
+      board.inScope = reasons.length === 0;
+      board.outOfScope = reasons.length > 0;
+      board.outOfScopeReasons = reasons;
+      board.fuseOutgoingCount = fuseOutgoings;
+      scopedBoards[norm] = board;
+    }
+    for (const row of rowList) {
+      const board = scopedBoards[row.boardNorm];
+      if (!board?.outOfScope) continue;
+      row.outOfScope = true;
+      row.exclusionReasons = [...board.outOfScopeReasons];
+    }
+    return { boards: scopedBoards, rows: rowList };
   }
 
   function cleanHeaderValue(value) {
@@ -1456,7 +1573,8 @@
       const unaccounted = expected != null ? Math.max(0, expected - ways.size) : null;
       const upstreamType = /^(?:MAIN|MDB|SMDB|MCC|SB|PB)$/.test(String(board.type || '').toUpperCase());
       const upstreamReference = /^(?:MAIN|MSB|SWB|SMDB|MDB|PB|MCC|MCP|GENERATOR)/i.test(String(board.orig || '').replace(/[\s._/\\-]+/g, ''));
-      const inScope = hasPrimaryMetadata ? boardPages.length > 0 && !upstreamType && !upstreamReference : true;
+      const inScope = board.inScope !== false
+        && (hasPrimaryMetadata ? boardPages.length > 0 && !upstreamType && !upstreamReference : !upstreamType && !upstreamReference);
       perBoard.push({
         norm: board.norm, orig: board.orig,
         expectedWays: expected, evidence,
@@ -1586,6 +1704,63 @@
     return { score: Number(score.toFixed(2)), signals };
   }
 
+  function buildDocumentExtractionScope(pages, options = {}) {
+    const longDocumentThreshold = Number(options.longDocumentThreshold) || 80;
+    const pageList = (pages || []).map((page, index) => {
+      const text = String(page?.text ?? (page?.lines || []).map((line) => line?.text ?? line ?? '').join('\n') ?? '');
+      const type = String(page?.type || 'unknown').toLowerCase();
+      return {
+        page: Number(page?.page) || index + 1,
+        type,
+        text,
+        schedule: scoreScheduleCandidate(text.split(/\r?\n/)),
+      };
+    });
+    const circuitMarkerIndex = pageList.findIndex((page) => /\bCIRCUIT\s+CHARTS?\b|\bDISTRIBUTION\s+BOARD\s+(?:SCHEDULES?|CHARTS?)\b/i.test(page.text));
+    let scheduleStartIndex = -1;
+    let scheduleEndIndex = -1;
+    if (circuitMarkerIndex >= 0) {
+      const marker = pageList[circuitMarkerIndex];
+      const markerIsSchedule = COVERAGE_SCHEDULE_TYPES.has(marker.type)
+        || (marker.schedule.score >= 0.45 && marker.schedule.signals.length >= 2 && /\b(?:WAY|CCT|CIRCUIT)\b/i.test(marker.text));
+      scheduleStartIndex = markerIsSchedule ? circuitMarkerIndex : circuitMarkerIndex + 1;
+      const cableIndex = pageList.findIndex((page, index) => index >= scheduleStartIndex
+        && (page.type === 'cable-schedule' || /\bCABLE\s+SCHEDULES?\b/i.test(page.text)));
+      scheduleEndIndex = (cableIndex >= 0 ? cableIndex : pageList.length) - 1;
+    }
+
+    const selected = new Set();
+    if (scheduleStartIndex >= 0 && scheduleStartIndex < pageList.length && scheduleEndIndex >= scheduleStartIndex) {
+      for (let index = scheduleStartIndex; index <= scheduleEndIndex; index += 1) selected.add(pageList[index].page);
+    }
+    for (const page of pageList) {
+      const schematic = page.type === 'sld' || page.type === 'schematic'
+        || /\b(?:SINGLE\s+LINE|LV\s+SCHEMATIC|DISTRIBUTION\s+SCHEMATIC)\b/i.test(page.text);
+      if (schematic) selected.add(page.page);
+    }
+
+    let enforced = scheduleStartIndex >= 0;
+    if (!enforced && pageList.length >= longDocumentThreshold) {
+      for (const page of pageList) {
+        if (COVERAGE_SCHEDULE_TYPES.has(page.type)
+          || (page.schedule.score >= 0.4 && page.schedule.signals.length >= 2)) selected.add(page.page);
+      }
+      enforced = selected.size > 0;
+    }
+    if (!enforced) pageList.forEach((page) => selected.add(page.page));
+
+    const scheduleRange = scheduleStartIndex >= 0 && scheduleEndIndex >= scheduleStartIndex
+      ? { start: pageList[scheduleStartIndex].page, end: pageList[scheduleEndIndex].page }
+      : null;
+    return {
+      enforced,
+      pages: [...selected].sort((left, right) => left - right),
+      scheduleRange,
+      reason: scheduleRange ? 'circuit-charts-to-cable-schedules' : (enforced ? 'long-document-content-signals' : 'all-pages-short-document'),
+      totalPages: pageList.length,
+    };
+  }
+
   /**
    * Compute the honest health of one analysis run.
    * @param coverage output of buildCoverage (may be null)
@@ -1604,13 +1779,15 @@
       if (ref && entry.refs.length < 25) entry.refs.push(ref);
     };
 
-    const allRows = (rows || []).filter((r) => r && r.status !== 'rejected');
+    const allRows = (rows || []).filter((r) => r && r.status !== 'rejected' && !r.outOfScope);
     const deviceRows = allRows.filter((r) => r.device && !r.space);
     const deviceCount = deviceRows.reduce((sum, r) => sum + (Number(r.qty) || 1), 0);
-    const boardCount = Object.keys(boards || {}).length;
     const inScopeBoardNorms = coverage
       ? new Set((coverage.perBoard || []).filter((board) => board.inScope).map((board) => board.norm))
       : null;
+    const boardCount = inScopeBoardNorms
+      ? inScopeBoardNorms.size
+      : Object.values(boards || {}).filter((board) => board?.inScope !== false).length;
     const pageList = pages || [];
     const schedulePages = pageList.filter((pg) => (pg.scheduleScore || 0) >= 0.45 || COVERAGE_SCHEDULE_TYPES.has(pg.type));
 
@@ -1736,6 +1913,7 @@
     buildCoverage,
     HEALTH_REASONS,
     scoreScheduleCandidate,
+    buildDocumentExtractionScope,
     buildAnalysisHealth,
     buildDiagnosticExport,
     THREE_TYPES,
@@ -1755,6 +1933,10 @@
     parseProtectionTableLine,
     reconcileCombinedProtection,
     extractAssociatedEquipment,
+    noteReferences,
+    parseGoverningNotes,
+    applyGoverningNotes,
+    applyBoardScope,
     aggregateDevices,
     finalizeScheduleContext,
     normaliseAssistedDevice,

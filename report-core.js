@@ -230,7 +230,7 @@
   }
 
   function includeRow(row) {
-    if (!row || row.status === "rejected" || row.space || !row.device) return false;
+    if (!row || row.status === "rejected" || row.outOfScope || row.space || !row.device) return false;
     if (row.spare && !row.device) return false;
     if (row.kind === "mention" && row.status !== "confirmed") return false;
     return Number(row.qty || 1) > 0;
@@ -238,6 +238,8 @@
 
   const ASSOCIATED_DEFS = [
     { device: "Contactor", re: /\bcontactors?\b/i },
+    { device: "Emergency power off", re: /\bEPO\b|\bemergency\s+(?:power\s+)?off\b|\bmushroom\s+push\s+button\s+emergency\s+stop\b/i },
+    { device: "Key reset", re: /\bkey\s+reset(?:\s+buttons?)?\b/i },
     { device: "Time clock", re: /\b(?:time\s*clock|timeclock)s?\b/i },
     { device: "Photocell", re: /\b(?:photo\s*cell|photocell)s?\b/i },
     { device: "Relay", re: /\brelays?\b/i },
@@ -248,6 +250,7 @@
     { device: "DALI controller", re: /\bDALI\s+(?:headend|controller|control\s+unit)\b/i },
     { device: "Lighting controller", re: /\blighting\s+(?:controller|control\s+(?:module|unit))\b/i },
     { device: "Key switch", re: /\bkey\s+switch(?:es)?\b/i },
+    { device: "BMS interface", re: /\bBMS\s+(?:interface|connection|control\s+point)\b/i },
   ];
 
   function associatedEquipment(row) {
@@ -285,8 +288,8 @@
             deviceFamily: label,
             rating: null,
             pole: NOT_SPECIFIED,
-            curve: "Not applicable",
-            breakingCapacity: "Not applicable",
+            curve: NOT_SPECIFIED,
+            breakingCapacity: NOT_SPECIFIED,
             quantities: Array(boards.length).fill(0),
             rowIdsByBoard: Array.from({ length: boards.length }, () => []),
             contributors: [],
@@ -300,7 +303,7 @@
           });
         }
         const reportRow = grouped.get(key);
-        const specification = { key, deviceFamily: label, rating: null, pole: NOT_SPECIFIED, curve: "Not applicable", breakingCapacity: "Not applicable" };
+        const specification = { key, deviceFamily: label, rating: null, pole: NOT_SPECIFIED, curve: NOT_SPECIFIED, breakingCapacity: NOT_SPECIFIED };
         const contributor = contributorFor({ ...source, device: label, qty: item.qty }, specification, boards[boardIndex], fileNames || new Map());
         reportRow.quantities[boardIndex] += item.qty;
         reportRow.total += item.qty;
@@ -339,7 +342,14 @@
       const split = label.match(/^(DB(?:-[A-Z0-9]+)+)-(LP|L|P)$/i);
       if (split && /(?:^|-)\d{1,3}$/.test(split[1])) label = split[1];
       const norm = label.replace(/[\s._/\\-]+/g, "");
-      return { sourceNorm, norm, label: label || rawLabel, type: text(board && board.type) };
+      return {
+        sourceNorm,
+        norm,
+        label: label || rawLabel,
+        type: text(board && board.type),
+        inScope: board?.inScope !== false,
+        outOfScopeReasons: Array.isArray(board?.outOfScopeReasons) ? board.outOfScopeReasons.slice() : [],
+      };
     });
   }
 
@@ -571,13 +581,15 @@
 
   function buildModel(options) {
     const rows = Array.isArray(options && options.rows) ? options.rows : [];
-    const knownBoards = boardEntries(options && options.boards);
+    const allKnownBoards = boardEntries(options && options.boards);
+    const excludedBoardNorms = new Set(allKnownBoards.filter((board) => !board.inScope).flatMap((board) => [board.sourceNorm, board.norm]));
+    const knownBoards = allKnownBoards.filter((board) => board.inScope);
     const aliases = new Map(knownBoards.map((board) => [board.sourceNorm, board.norm]));
     const knownMap = new Map();
     knownBoards.forEach((board) => {
       if (!knownMap.has(board.norm)) knownMap.set(board.norm, board);
     });
-    const accepted = rows.filter(includeRow);
+    const accepted = rows.filter((row) => includeRow(row) && !excludedBoardNorms.has(text(row.boardNorm)));
     const deduplicated = deduplicateRows(accepted);
     const included = deduplicated.unique;
     const fileNames = new Map((Array.isArray(options && options.files) ? options.files : [])
@@ -821,17 +833,13 @@
       rows.push([options.totalLabel || "Device Total", null, ...boardTotals, grandTotal, null]);
       return rows;
     }
-    const rows = [[
-      "Device Category", "Device Description", "Current Rating (A)", "Pole Configuration", "Tripping Curve", "Breaking Capacity",
-      ...model.boards.map((board) => board.label), "Total Quantity", "Included Applications", "Source Pages", "Confidence", "Review Status",
-      "RCD Protection", "AFDD Protection", "Notes",
-    ]];
-    groups.forEach((group) => group.rows.forEach((row) => rows.push([
-      group.name, row.label, row.rating == null ? NOT_SPECIFIED : row.rating, row.pole, row.curve, row.breakingCapacity,
-      ...row.quantities.map((quantity) => quantity || null), row.total, row.purposes.join(", "), row.sourcePages.join("; "), row.confidence,
-      row.reviewStatus, rcdProtectionLabel(row.rcdProtected, row.rcdSensitivity), afddProtectionLabel(row.afdd), row.notes.join(" "),
-    ])));
-    rows.push(["Grand Total", null, null, null, null, null, ...boardTotals, grandTotal, null, null, null, null, null, null, null]);
+    const devices = deviceColumns(model);
+    const rows = [["Board Reference", ...devices.map((device) => deviceColumnHeader(device).replace(/\n/g, " | ")), "Board Total"]];
+    model.boards.forEach((board, boardIndex) => {
+      const quantities = devices.map((device) => Number(device.quantities[boardIndex]) || null);
+      rows.push([board.label, ...quantities, quantities.reduce((sum, quantity) => sum + (Number(quantity) || 0), 0)]);
+    });
+    rows.push(["All Boards Total", ...devices.map((device) => device.total), devices.reduce((sum, device) => sum + (Number(device.total) || 0), 0)]);
     return rows;
   }
 
@@ -931,7 +939,7 @@
     for (let col = 1; col <= wsColumn; col += 1) {
       const cell = sheet.getCell(3, col);
       cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF7E0D1" } };
-      cell.font = { name: "Montserrat", size: 9, bold: true, color: { argb: "FF000000" } };
+      cell.font = { name: "Montserrat", size: 9, bold: true, color: { argb: fill === XLSX_COLORS.black ? XLSX_COLORS.white : "FF000000" } };
     }
 
     cursor = 4;
@@ -979,10 +987,11 @@
   function styleHeaderRow(sheet, rowNumber, lastColumn, fill = XLSX_COLORS.peach) {
     const row = sheet.getRow(rowNumber);
     row.height = 34;
+    const fontColor = fill === XLSX_COLORS.black ? XLSX_COLORS.white : 'FF000000';
     for (let column = 1; column <= lastColumn; column += 1) {
       const cell = row.getCell(column);
       cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: fill } };
-      cell.font = { name: "Montserrat", size: 9, bold: true, color: { argb: "FF000000" } };
+      cell.font = { name: "Montserrat", size: 9, bold: true, color: { argb: fontColor } };
       cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
       cell.border = borderStyle();
     }
@@ -1014,6 +1023,49 @@
     });
   }
 
+  function deliverableValue(value) {
+    const normalised = text(value);
+    return !normalised || normalised === NOT_SPECIFIED || normalised === UNCLEAR || /^not applicable$/i.test(normalised) ? null : value;
+  }
+
+  function combinedBoardSections(model) {
+    const main = new Map((model.boardSections || []).map((board) => [board.norm, board]));
+    const associated = new Map((model.associated?.boardSections || []).map((board) => [board.norm, board]));
+    return (model.boards || []).map((board) => {
+      const protective = main.get(board.norm);
+      const controls = associated.get(board.norm);
+      const families = [...(protective?.families || []), ...(controls?.families || [])];
+      return {
+        ...board,
+        families,
+        total: (Number(protective?.total) || 0) + (Number(controls?.total) || 0),
+        reviewCount: families.flatMap((family) => family.rows || []).filter((row) => row.reviewStatus !== 'Ready').length,
+      };
+    });
+  }
+
+  function deviceColumns(model) {
+    return [
+      ...(model.groups || []).flatMap((group) => group.rows.map((row) => ({ ...row, category: group.name }))),
+      ...((model.associated?.groups || []).flatMap((group) => group.rows.map((row) => ({ ...row, category: group.name })))),
+    ];
+  }
+
+  function deviceColumnHeader(row) {
+    const fields = [
+      row.deviceFamily,
+      row.rating == null ? null : `${formatRating(row.rating)}A`,
+      deliverableValue(row.pole),
+      deliverableValue(row.curve) ? `${row.curve} curve` : null,
+      deliverableValue(row.tripUnit) ? `Trip ${row.tripUnit}` : null,
+      deliverableValue(row.breakingCapacity),
+      deliverableValue(row.protectionStandard),
+      row.rcdProtected === true ? rcdProtectionLabel(true, row.rcdSensitivity) : row.rcdProtected === false ? 'No RCD' : null,
+      row.afdd === true ? 'AFDD' : row.afdd === false ? 'No AFDD' : null,
+    ].filter(Boolean);
+    return fields.join('\n');
+  }
+
   function createBoardTakeOffWorksheet(workbook, model) {
     const lastColumn = 13;
     const sheet = workbook.addWorksheet('Board Take-Off', {
@@ -1030,13 +1082,13 @@
     addTitleRows(sheet, model, 'Board-by-board device take-off', lastColumn);
     const headers = [
       'Circuit Description', 'Quantity', 'Current Rating (A)', 'Pole Configuration', 'Tripping Curve', 'Trip Unit',
-      'Breaking Capacity', 'Protection Standard', 'RCD Protection', 'AFDD Protection', 'Circuit / Way', 'Source Pages', 'Review Status',
+      'Breaking Capacity', 'RCD Protection', 'AFDD Protection', 'Circuit / Way', 'Protection Standard', 'Source Pages', 'Review Status',
     ];
     headers.forEach((value, index) => { sheet.getCell(3, index + 1).value = value; });
     styleHeaderRow(sheet, 3, lastColumn);
 
     let rowNumber = 4;
-    (model.boardSections || []).forEach((board) => {
+    combinedBoardSections(model).filter((board) => board.families.length).forEach((board) => {
       sheet.mergeCells(rowNumber, 1, rowNumber, lastColumn);
       const boardCell = sheet.getCell(rowNumber, 1);
       boardCell.value = `${board.label} | ${board.total} device${board.total === 1 ? '' : 's'} | ${board.reviewCount} specification${board.reviewCount === 1 ? '' : 's'} to review`;
@@ -1057,18 +1109,18 @@
         rowNumber += 1;
         family.rows.forEach((item) => {
           const values = [
-            item.descriptions.join('; ') || item.label,
+            deliverableValue(item.descriptions.filter((value) => deliverableValue(value)).join('; ')),
             item.quantity,
-            item.rating == null ? NOT_SPECIFIED : item.rating,
-            item.pole,
-            item.curve,
-            item.tripUnit,
-            item.breakingCapacity,
-            item.protectionStandard,
-            item.rcdLabel,
-            item.afddLabel,
-            item.circuitLocators.join('; '),
-            item.sourcePages.join('; '),
+            item.rating == null ? null : item.rating,
+            deliverableValue(item.pole),
+            deliverableValue(item.curve),
+            deliverableValue(item.tripUnit),
+            deliverableValue(item.breakingCapacity),
+            deliverableValue(item.rcdLabel),
+            deliverableValue(item.afddLabel),
+            deliverableValue(item.circuitLocators.filter((value) => deliverableValue(value)).join('; ')),
+            deliverableValue(item.protectionStandard),
+            item.sourcePages.filter((value) => deliverableValue(value) && !/\bNot specified\b|\bUnclear\b/i.test(String(value))).join('; ') || null,
             item.reviewStatus,
           ];
           values.forEach((value, columnIndex) => { sheet.getCell(rowNumber, columnIndex + 1).value = value; });
@@ -1080,7 +1132,7 @@
         });
       });
     });
-    const widths = [36, 10, 14, 15, 14, 14, 16, 20, 18, 17, 28, 32, 17];
+    const widths = [36, 10, 14, 15, 14, 14, 16, 18, 17, 28, 20, 32, 17];
     widths.forEach((width, index) => { sheet.getColumn(index + 1).width = width; });
     sheet.pageSetup.printArea = `A1:${columnName(lastColumn)}${Math.max(3, rowNumber - 1)}`;
     sheet.pageSetup.printTitlesRow = '1:3';
@@ -1089,9 +1141,9 @@
 
   function createTakeOffWorksheet(workbook, model) {
     const sheet = workbook.addWorksheet("Device Take-Off", {
-      views: [{ state: "frozen", xSplit: 6, ySplit: 3, activeCell: "G4" }],
+      views: [{ state: "frozen", xSplit: 1, ySplit: 4, activeCell: "B5" }],
       pageSetup: {
-        paperSize: model.boards.length > 12 ? 8 : 9,
+        paperSize: 8,
         orientation: "landscape",
         fitToPage: true,
         fitToWidth: 1,
@@ -1099,116 +1151,74 @@
         margins: { left: 0.2, right: 0.2, top: 0.35, bottom: 0.35, header: 0.15, footer: 0.15 },
       },
     });
-    const boardStart = 7;
-    const totalColumn = boardStart + model.boards.length;
-    const applicationColumn = totalColumn + 1;
-    const sourceColumn = totalColumn + 2;
-    const confidenceColumn = totalColumn + 3;
-    const reviewColumn = totalColumn + 4;
-    const rcdColumn = totalColumn + 5;
-    const afddColumn = totalColumn + 6;
-    const notesColumn = totalColumn + 7;
-    const lastColumn = notesColumn;
-    addTitleRows(sheet, model, "Consolidated procurement take-off", lastColumn);
-    const headers = [
-      "Device Category",
-      "Device Description",
-      "Current Rating (A)",
-      "Pole Configuration",
-      "Tripping Curve",
-      "Breaking Capacity",
-      ...model.boards.map((board) => board.label),
-      "Total Quantity",
-      "Included Applications",
-      "Source Pages",
-      "Confidence",
-      "Review Status",
-      "RCD Protection",
-      "AFDD Protection",
-      "Missing Information / Notes",
-    ];
-    headers.forEach((value, index) => { sheet.getCell(3, index + 1).value = value; });
-    styleHeaderRow(sheet, 3, lastColumn);
+    const devices = deviceColumns(model);
+    const firstDeviceColumn = 2;
+    const totalColumn = firstDeviceColumn + devices.length;
+    const lastColumn = totalColumn;
+    addTitleRows(sheet, model, "Device specifications by board", lastColumn);
 
-    const reportRows = model.groups.flatMap((group) => group.rows);
-    reportRows.forEach((reportRow, index) => {
-      const rowNumber = index + 4;
-      const values = [
-        reportRow.group,
-        reportRow.label,
-        reportRow.rating == null ? NOT_SPECIFIED : reportRow.rating,
-        reportRow.pole,
-        reportRow.curve,
-        reportRow.breakingCapacity,
-        ...reportRow.quantities.map((quantity) => quantity || null),
-        null,
-        reportRow.purposes.join(", "),
-        reportRow.sourcePages.join("; "),
-        reportRow.confidence,
-        reportRow.reviewStatus,
-        rcdProtectionLabel(reportRow.rcdProtected, reportRow.rcdSensitivity),
-        afddProtectionLabel(reportRow.afdd),
-        reportRow.notes.join(" "),
-      ];
-      values.forEach((value, columnIndex) => { sheet.getCell(rowNumber, columnIndex + 1).value = value; });
-      if (model.boards.length) {
-        sheet.getCell(rowNumber, totalColumn).value = {
-          formula: `SUM(${columnName(boardStart)}${rowNumber}:${columnName(totalColumn - 1)}${rowNumber})`,
-          result: reportRow.total,
-        };
-      } else {
-        sheet.getCell(rowNumber, totalColumn).value = reportRow.total;
-      }
-      sheet.getCell(rowNumber, confidenceColumn).numFmt = "0%";
-      [4, 5, 6].forEach((column) => {
-        const missing = text(sheet.getCell(rowNumber, column).value);
-        if (missing === NOT_SPECIFIED || missing === UNCLEAR) {
-          sheet.getCell(rowNumber, column).fill = { type: "pattern", pattern: "solid", fgColor: { argb: XLSX_COLORS.amber } };
-        }
-      });
-      sheet.getCell(rowNumber, reviewColumn).fill = {
-        type: "pattern",
-        pattern: "solid",
-        fgColor: { argb: reportRow.reviewStatus === "Ready" ? XLSX_COLORS.green : XLSX_COLORS.red },
-      };
+    sheet.getCell(3, 1).value = 'Board Reference';
+    sheet.getCell(4, 1).value = 'Board Reference';
+    devices.forEach((device, index) => {
+      const column = firstDeviceColumn + index;
+      sheet.getCell(3, column).value = device.category;
+      sheet.getCell(4, column).value = deviceColumnHeader(device);
+      sheet.getCell(4, column).note = [
+        `Source pages: ${device.sourcePages.join('; ') || 'Open the report source window'}`,
+        `Review status: ${device.reviewStatus}`,
+      ].join('\n');
+    });
+    sheet.getCell(3, totalColumn).value = 'Board Total';
+    sheet.getCell(4, totalColumn).value = 'Board Total';
+    styleHeaderRow(sheet, 3, lastColumn, XLSX_COLORS.black);
+    styleHeaderRow(sheet, 4, lastColumn);
+    sheet.getRow(3).height = 24;
+    sheet.getRow(4).height = 108;
+    for (let column = 1; column <= lastColumn; column += 1) {
+      sheet.getCell(4, column).alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+    }
+    devices.forEach((device, index) => {
+      if (device.reviewStatus === 'Ready') return;
+      sheet.getCell(4, firstDeviceColumn + index).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: XLSX_COLORS.amber } };
     });
 
-    const totalRow = reportRows.length + 4;
-    sheet.getCell(totalRow, 1).value = "Grand Total";
-    for (let index = 0; index < model.boards.length; index += 1) {
-      const column = boardStart + index;
-      sheet.getCell(totalRow, column).value = {
-        formula: `SUM(${columnName(column)}4:${columnName(column)}${totalRow - 1})`,
-        result: model.boardTotals[index],
-      };
-    }
-    sheet.getCell(totalRow, totalColumn).value = model.boards.length
-      ? { formula: `SUM(${columnName(totalColumn)}4:${columnName(totalColumn)}${totalRow - 1})`, result: model.grandTotal }
-      : model.grandTotal;
-    styleDataRange(sheet, 4, totalRow, lastColumn);
+    model.boards.forEach((board, boardIndex) => {
+      const rowNumber = 5 + boardIndex;
+      sheet.getCell(rowNumber, 1).value = board.label;
+      devices.forEach((device, deviceIndex) => {
+        sheet.getCell(rowNumber, firstDeviceColumn + deviceIndex).value = Number(device.quantities[boardIndex]) || null;
+      });
+      const boardTotal = devices.reduce((sum, device) => sum + (Number(device.quantities[boardIndex]) || 0), 0);
+      sheet.getCell(rowNumber, totalColumn).value = devices.length
+        ? { formula: `SUM(B${rowNumber}:${columnName(totalColumn - 1)}${rowNumber})`, result: boardTotal }
+        : boardTotal;
+    });
+
+    const totalRow = 5 + model.boards.length;
+    sheet.getCell(totalRow, 1).value = 'All Boards Total';
+    devices.forEach((device, index) => {
+      const column = firstDeviceColumn + index;
+      sheet.getCell(totalRow, column).value = model.boards.length
+        ? { formula: `SUM(${columnName(column)}5:${columnName(column)}${totalRow - 1})`, result: device.total }
+        : device.total;
+    });
+    const combinedGrandTotal = devices.reduce((sum, device) => sum + (Number(device.total) || 0), 0);
+    sheet.getCell(totalRow, totalColumn).value = devices.length
+      ? { formula: `SUM(B${totalRow}:${columnName(totalColumn - 1)}${totalRow})`, result: combinedGrandTotal }
+      : combinedGrandTotal;
+
+    styleDataRange(sheet, 5, totalRow, lastColumn);
     for (let column = 1; column <= lastColumn; column += 1) {
       const cell = sheet.getCell(totalRow, column);
-      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: XLSX_COLORS.grey } };
-      cell.font = { name: "Montserrat", size: 9, bold: true, color: { argb: "FF000000" } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: XLSX_COLORS.grey } };
+      cell.font = { name: 'Montserrat', size: 9, bold: true, color: { argb: 'FF000000' } };
     }
-    sheet.autoFilter = { from: { row: 3, column: 1 }, to: { row: totalRow - 1, column: lastColumn } };
+    sheet.autoFilter = { from: { row: 4, column: 1 }, to: { row: Math.max(5, totalRow - 1), column: lastColumn } };
     sheet.getColumn(1).width = 24;
-    sheet.getColumn(2).width = 28;
-    sheet.getColumn(3).width = 14;
-    sheet.getColumn(4).width = 15;
-    sheet.getColumn(5).width = 14;
-    sheet.getColumn(6).width = 16;
-    for (let column = boardStart; column < totalColumn; column += 1) sheet.getColumn(column).width = 10;
-    sheet.getColumn(totalColumn).width = 12;
-    sheet.getColumn(applicationColumn).width = 24;
-    sheet.getColumn(sourceColumn).width = 34;
-    sheet.getColumn(confidenceColumn).width = 12;
-    sheet.getColumn(reviewColumn).width = 16;
-    sheet.getColumn(rcdColumn).width = 18;
-    sheet.getColumn(afddColumn).width = 17;
-    sheet.getColumn(notesColumn).width = 56;
+    for (let column = firstDeviceColumn; column < totalColumn; column += 1) sheet.getColumn(column).width = 21;
+    sheet.getColumn(totalColumn).width = 13;
     sheet.pageSetup.printArea = `A1:${columnName(lastColumn)}${totalRow}`;
-    sheet.pageSetup.printTitlesRow = "1:3";
+    sheet.pageSetup.printTitlesRow = "1:4";
     return sheet;
   }
 
@@ -1385,32 +1395,6 @@
 
     createBoardTakeOffWorksheet(workbook, model);
     createTakeOffWorksheet(workbook, model);
-    createFlatSheet(workbook, "Device Detail", [
-      "Consolidated Group ID", "Device Description", "Board", "Circuit / Way", "Quantity", "Current Rating (A)",
-      "Application / Purpose", "Circuit Description", "Pole Configuration", "Tripping Curve", "Breaking Capacity",
-      "Protection Standard", "Trip Unit", "RCD Protection", "RCD Sensitivity (mA)", "AFDD Protection", "Role",
-      "Source Document", "Page", "Source Region", "Source Text", "Confidence", "Extraction Method", "Review Status",
-    ], detailRows(model), [34, 28, 14, 14, 10, 14, 20, 36, 15, 14, 16, 20, 14, 18, 18, 17, 12, 28, 9, 24, 48, 12, 25, 16]);
-    createFlatSheet(workbook, "Review Required", [
-      "Scope", "Group / Source ID", "Device", "Field", "Issue", "Required Action", "Source Pages", "Confidence", "Status",
-    ], reviewRows(model), [20, 34, 28, 18, 36, 55, 36, 12, 18]);
-    createFlatSheet(workbook, "Assumptions and Qualifications", [
-      "Scope", "Group ID", "Device", "Qualification", "Applies To / Source", "Status",
-    ], qualificationRows(model), [18, 34, 28, 70, 42, 18]);
-    createFlatSheet(workbook, "Extraction Audit", [
-      "Audit ID", "Consolidated Group ID", "Source Record ID", "Field", "Original OCR / Source Text", "Normalised Value",
-      "Source Document", "Page", "Bounding Box", "Extraction Method", "Confidence", "Correction Applied", "Correction Reason", "Review Status",
-    ], auditRows(model), [34, 34, 22, 20, 55, 20, 28, 9, 24, 25, 12, 22, 42, 18]);
-    if (model.associated && model.associated.grandTotal) {
-      createMatrixWorksheet(workbook, model, {
-        sheetName: "Control Equipment",
-        title: "Control & Associated Equipment",
-        totalLabel: "Associated Equipment Total",
-        groups: model.associated.groups,
-        boardTotals: model.associated.boardTotals,
-        grandTotal: model.associated.grandTotal,
-      });
-    }
     return workbook;
   }
 

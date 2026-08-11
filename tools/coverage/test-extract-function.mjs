@@ -69,6 +69,8 @@ const co = coerceResult({
 check('coerce: ways_total "18" → 18', co.boards[0].ways_total === 18);
 check('coerce: empty "" → null', co.boards[0].fault_ka === null);
 check('coerce: device way "13" → 13', co.devices[0].way === 13);
+const opaqueWay = coerceResult({ boards: [], devices: [{ way: 'L7' }], feeds: [] });
+check('coerce: printed nonnumeric way "L7" stays L7', opaqueWay.devices[0].way === 'L7');
 check('coerce: cpc "SWA" stays string', co.devices[0].cpc_csa_mm2 === 'SWA');
 check('coerce: feed cable_csa "70" → 70', co.feeds[0].cable_csa_mm2 === 70);
 check('coerce: booleans untouched', co.devices[0].is_spare === false);
@@ -89,6 +91,9 @@ walk(EXTRACTION_SCHEMA, '$');
 check('prompt persists the P-code legend', EXTRACTION_SYSTEM_PROMPT.includes('P1=MCB'));
 check('prompt persists the spare phase-slot rule', /Never mark a whole way spare/.test(EXTRACTION_SYSTEM_PROMPT));
 check('prompt forbids counting', /NEVER count/.test(EXTRACTION_SYSTEM_PROMPT));
+check('prompt rejects schematic proximity inference', /NEVER infer a feed from proximity/.test(EXTRACTION_SYSTEM_PROMPT));
+check('prompt preserves nonnumeric ways', /L7, L8, P1, P2/.test(EXTRACTION_SYSTEM_PROMPT));
+check('prompt keeps schematic metadata out of quantities', /never take-off items/.test(EXTRACTION_SYSTEM_PROMPT));
 
 if (fail) { console.log(`\n${fail} failure(s)`); process.exit(1); }
 console.log('PASS: extract function validation, health probe, and schema invariants.');

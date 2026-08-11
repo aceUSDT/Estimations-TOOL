@@ -21,3 +21,5 @@ export default async function handler(req) {
   }
   return json(200, rec);
 }
+
+export const config = { path: '/api/extract-status' };

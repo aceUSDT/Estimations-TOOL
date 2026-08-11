@@ -157,11 +157,18 @@
     });
   }
 
-  function extractWayNumber(value) {
-    const match = String(value || '').trim().match(/^(?:(?:WAY|CCT|CKT|CIRCUIT)\s*[:#-]?\s*)?(\d{1,3})(?:\s*(?:[\/-]\s*)?L[123])?$/i);
-    if (!match) return null;
-    const way = Number(match[1]);
-    return way >= 1 && way <= 200 ? way : null;
+  function extractWayIdentifier(value) {
+    const source = String(value || '').trim().toUpperCase();
+    const explicitlyLabelled = /^(?:WAY|CCT|CKT|CIRCUIT)\b/i.test(source);
+    const labelled = source.replace(/^(?:WAY|CCT|CKT|CIRCUIT)\s*[:#-]?\s*/i, '').replace(/\s+/g, '');
+    const numericPhase = labelled.match(/^(\d{1,3})(?:[\/-]?L[123])?$/i);
+    if (numericPhase) {
+      const way = Number(numericPhase[1]);
+      return way >= 1 && way <= 200 ? way : null;
+    }
+    const opaque = labelled.match(/^([A-Z]{1,3}\d{1,3})$/)?.[1] || null;
+    if (!explicitlyLabelled && /^L[123]$/.test(opaque || '')) return null;
+    return opaque && Number(opaque.match(/\d+$/)?.[0]) <= 200 ? opaque : null;
   }
 
   function extractPhase(value) {
@@ -180,14 +187,21 @@
   }
 
   function findWayAnchors(words, pageWidth, options = {}) {
-    const candidates = horizontalWords(words).filter((word) => extractWayNumber(word.text) != null && word.cx <= pageWidth * 0.38);
+    const candidates = horizontalWords(words).filter((word) => extractWayIdentifier(word.text) != null && word.cx <= pageWidth * 0.38);
     const clusters = clusterByX(candidates, Math.max(5, pageWidth * 0.012));
     const scored = clusters.map((cluster) => {
       const sorted = cluster.words.slice().sort((a, b) => a.cy - b.cy);
-      const values = sorted.map((word) => extractWayNumber(word.text));
+      const values = sorted.map((word) => extractWayIdentifier(word.text));
       const unique = new Set(values).size;
       let consecutive = 0;
-      for (let i = 1; i < values.length; i += 1) if (values[i] === values[i - 1] + 1) consecutive += 1;
+      const sequencePart = (value) => {
+        const match = String(value).match(/^([A-Z]*)(\d+)$/);
+        return match ? { prefix: match[1], number: Number(match[2]) } : null;
+      };
+      for (let i = 1; i < values.length; i += 1) {
+        const prior = sequencePart(values[i - 1]); const current = sequencePart(values[i]);
+        if (prior && current && prior.prefix === current.prefix && current.number === prior.number + 1) consecutive += 1;
+      }
       const phaseSupport = sorted.filter((word) => words.some((other) => extractPhase(other.text)
         && other.cx > word.cx && other.cx - word.cx < pageWidth * 0.16 && Math.abs(other.cy - word.cy) < Math.max(18, word.height * 2))).length;
       const expectedBoost = Number.isFinite(options.expectedX)
@@ -199,7 +213,7 @@
     const anchors = scored[0]?.sorted || [];
     const byWay = new Map();
     for (const anchor of anchors) {
-      const way = extractWayNumber(anchor.text);
+      const way = extractWayIdentifier(anchor.text);
       if (!byWay.has(way)) byWay.set(way, []);
       byWay.get(way).push(anchor);
     }
@@ -625,12 +639,17 @@
     return String(cells[role]?.text || '').trim();
   }
 
+  function phaseValues(value) {
+    const source = String(value || '').toUpperCase().replace(/\s+/g, '');
+    if (/L1(?:-|–|—|\/|TO)L3|L1\/L2\/L3|3PH|THREEPHASE|TP&?N/.test(source)) return ['L1', 'L2', 'L3'];
+    return [...new Set((source.match(/L[123]/g) || []).map((phase) => phase.toUpperCase()))];
+  }
+
   function parseSpatialRow(cells, schemaConfidence, context = {}) {
-    const way = numberValue(cells.way, { max: 200 });
-    if (!way) return null;
+    const way = extractWayIdentifier(cellText(cells, 'way'));
+    if (way == null) return null;
     const allText = Object.values(cells).filter(Boolean).map((cell) => cell.text).join(' ');
-    const phases = (cellText(cells, 'phase').match(/L[123]/gi) || []).map((phase) => phase.toUpperCase());
-    const uniquePhases = [...new Set(phases)];
+    const uniquePhases = phaseValues(cellText(cells, 'phase'));
     const standardText = cellText(cells, 'device_standard');
     const deviceClassText = cellText(cells, 'device_class');
     const typeText = cellText(cells, 'trip_unit');
@@ -692,6 +711,7 @@
       protectionStandard: resolution.protectionStandard, protectionStandardCode: resolution.standardCode,
       sens: rcdMa, rcdProtected, afdd: afddIndicator === true, afddIndicated: afddIndicator, poles, ka,
       desc: description, circuitReference, circuitReferenceText: circuitText || null, circuitConfig,
+      associatedDevices: Core.extractAssociatedEquipment(description),
       cable: (liveCsa != null || cpcCsa != null || cableType || installMethod) ? {
         orig: [liveCsa != null ? `${liveCsa}mm2` : null, cpcCsa != null ? `CPC ${cpcCsa}mm2` : null, cableType].filter(Boolean).join(' '),
         size: liveCsa, cpc: cpcCsa, typeCode: cableType,
@@ -857,14 +877,16 @@
         : phaseWord.cy + Math.max(8, standardWord.height * 1.5);
       const nearestAnchor = wayAnchors.slice().sort((a, b) => Math.abs(a.cy - standardWord.cy) - Math.abs(b.cy - standardWord.cy))[0];
       if (!nearestAnchor) continue;
-      let way = extractWayNumber(nearestAnchor.text);
+      let way = extractWayIdentifier(nearestAnchor.text);
       let inferredWay = false;
       const lastAnchor = wayAnchors[wayAnchors.length - 1];
-      if (lastAnchor && nearestAnchor === lastAnchor && /^L1$/i.test(phaseWord.text) && standardWord.cy > lastAnchor.cy + 2) {
-        way = extractWayNumber(lastAnchor.text) + 1;
+      const lastWay = lastAnchor ? extractWayIdentifier(lastAnchor.text) : null;
+      if (lastAnchor && nearestAnchor === lastAnchor && Number.isInteger(lastWay)
+        && /^L1$/i.test(phaseWord.text) && standardWord.cy > lastAnchor.cy + 2) {
+        way = lastWay + 1;
         inferredWay = true;
       }
-      if (!Number.isInteger(way) || way < 1 || way > 200) continue;
+      if (way == null || (Number.isInteger(way) && (way < 1 || way > 200))) continue;
       const laneWords = words.filter((word) => word.cy >= laneTop && word.cy < laneBottom);
       const cells = columnCells(laneWords, schema);
       const wayWord = inferredWay
@@ -913,14 +935,18 @@
       rows.push(...parseSpatialWayRows(rowWords, wayAnchors[index], top, bottom, schema, context));
     }
     reconcileProtectionStandardRows(words, wayAnchors, rows, schema, context);
+    const governingNotes = Core.parseGoverningNotes(input.lines || []);
+    if (governingNotes.length) rows.forEach((row) => Object.assign(row, Core.applyGoverningNotes(row, governingNotes)));
     const observedRowCount = rows.length;
     const expectedWays = Number(header.header.ways_total);
-    if (input.materializeMissingWays !== false && Number.isInteger(expectedWays) && expectedWays > 0 && expectedWays <= 200) {
+    const usesOpaqueWays = rows.some((row) => typeof row.way === 'string' && !/^\d+$/.test(row.way));
+    if (input.materializeMissingWays !== false && !usesOpaqueWays && Number.isInteger(expectedWays) && expectedWays > 0 && expectedWays <= 200) {
       const present = new Set(rows.map((row) => Number(row.way)).filter(Number.isInteger));
       for (let way = 1; way <= expectedWays; way += 1) {
         if (!present.has(way)) rows.push(inferredHeaderWay(way, header));
       }
-      rows.sort((a, b) => Number(a.way) - Number(b.way) || String(a.phase || '').localeCompare(String(b.phase || '')));
+      rows.sort((a, b) => String(a.way).localeCompare(String(b.way), undefined, { numeric: true, sensitivity: 'base' })
+        || String(a.phase || '').localeCompare(String(b.phase || '')));
     }
     const classification = classifyBoardFamily(header.header, { devices: rows, policy: input.boardPolicy });
     const ref = header.header.board_ref || header.references.find((reference) => reference.role === 'primary_board')?.original || null;
@@ -1053,5 +1079,6 @@
     buildSpatialLayoutHint,
     deduplicateFeederRelationships,
     parseProtectionIndicator: indicatorValue,
+    extractWayIdentifier,
   });
 })(globalThis);

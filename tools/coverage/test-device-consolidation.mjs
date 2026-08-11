@@ -157,30 +157,15 @@ assert.equal(reconciliation.boardTotal, 21);
 assert.equal(reconciliation.groupTotal, 21);
 
 const workbook = Report.createExcelWorkbook(riverside, ExcelJS);
-for (const sheetName of [
-  "Device Take-Off",
-  "Device Detail",
-  "Review Required",
-  "Assumptions and Qualifications",
-  "Extraction Audit",
-]) {
-  assert.ok(workbook.getWorksheet(sheetName), `missing ${sheetName} sheet`);
-}
+assert.deepEqual(workbook.worksheets.map((worksheet) => worksheet.name), ["Board Take-Off", "Device Take-Off"]);
 
 const takeoff = workbook.getWorksheet("Device Take-Off");
 assert.equal(takeoff.getCell("A1").value, "Riverside Office Fit-Out");
-const takeoffValues = [];
-takeoff.eachRow((excelRow) => takeoffValues.push(excelRow.values));
-const deviceLine = takeoffValues.find((values) => values.includes("16A SPN MCB"));
-assert.ok(deviceLine, "consolidated Riverside line missing from workbook");
-assert.ok(deviceLine.includes("Not specified"), "missing properties must be visible");
-assert.ok(deviceLine.some((value) => value === 21 || value?.result === 21), "consolidated total must be exported");
-
-const detail = workbook.getWorksheet("Device Detail");
-assert.equal(detail.rowCount, riversideRows.length + 1);
-assert.ok(detail.getColumn(1).values.includes(consolidated.key));
-assert.ok(detail.getColumn(7).values.includes("Lighting"));
-assert.ok(detail.getColumn(7).values.includes("Mechanical"));
+assert.match(takeoff.getCell("B4").value, /MCB\n16A\nSPN/);
+assert.doesNotMatch(takeoff.getCell("B4").value, /Not specified|Unclear/i);
+assert.deepEqual([5, 6, 7, 8].map((rowNumber) => takeoff.getCell(rowNumber, 2).value), [5, 3, 5, 8]);
+assert.equal(takeoff.getCell("B9").value.result, 21);
+assert.equal(takeoff.getCell("C5").value.result, 5);
 
 const corrected = Report.buildModel({
   boards: { DB02: boards.DB02 },
@@ -207,16 +192,10 @@ const corrected = Report.buildModel({
 });
 assert.ok(corrected.groups[0].rows[0].reviewReasons.includes("An automatic OCR correction needs confirmation"));
 const correctionWorkbook = Report.createExcelWorkbook(corrected, ExcelJS);
-const auditValues = [];
-correctionWorkbook.getWorksheet("Extraction Audit").eachRow((excelRow) => auditValues.push(excelRow.values));
-const curveAudit = auditValues.find((values) => values.includes("Tripping Curve"));
-assert.ok(curveAudit, "corrected curve must appear in the extraction audit");
-assert.ok(curveAudit.includes("C"));
-assert.ok(curveAudit.includes("Electrical OCR context correction"));
-const rcdAudit = auditValues.find((values) => values.includes("RCD Protection"));
-assert.ok(rcdAudit, "RCD correction must appear in the extraction audit");
-assert.ok(rcdAudit.includes("RCD 30mA"));
-assert.ok(rcdAudit.includes("User correction in Viewer"));
+assert.deepEqual(correctionWorkbook.worksheets.map((worksheet) => worksheet.name), ["Board Take-Off", "Device Take-Off"]);
+const correctionEvidence = corrected.groups[0].rows[0].contributors[0];
+assert.ok(correctionEvidence.corrections.some((item) => item.field === "Tripping Curve" && item.corrected === "C"));
+assert.ok(correctionEvidence.corrections.some((item) => item.field === "RCD Protection" && item.corrected === "Yes"));
 
 const tampered = Report.buildModel({ boards, rows: riversideRows });
 tampered.groups[0].rows[0].total = 20;

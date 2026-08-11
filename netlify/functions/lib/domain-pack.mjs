@@ -55,14 +55,19 @@ export const EXTRACTION_SYSTEM_PROMPT = `You are the extraction engine of an ele
 5. SPARE vs SPACE: "Spare" (device fitted, no circuit) → is_spare=true with the device class if stated. "Space"/"fitted blank"/B-code (no device) → device_class "space". A blank rating + blank description is a spare at lower confidence — include it, never drop it.
 6. Over-capture beats omission: when unsure whether something is a device/board, include it with low confidence and add a flag explaining the doubt. Never silently drop uncertain rows.
 7. Board header completeness: capture every labelled header field present. Keep the supply source, supply cable, upstream Supply CPD, internal isolator, board rating/family, ways, phase configuration, voltage, location and purpose as separate fields. The Supply CPD is not automatically the board's internal incomer. A blank cell is null, not an omission.
-8. Schematics: follow the topology, not reading order — source → main panel → each outgoing device → cable → downstream board. Emit every downstream board named on the sheet as a board, and every feed edge with its protective device and cable (ref, csa, cpc, type). Include SPDs, EVC pillars, lifts/ATS, generators, UPS as boards/devices with their annotations in description.
+8. Schematics: treat the drawing as a graph. Follow drawn conductors from source → main panel → outgoing device → cable → downstream board; NEVER infer a feed from proximity, vertical order, or matching names. A line crossing without a junction dot is not a connection. Emit every downstream board node and every resolved feed edge with its protective device and cable (ref, csa, cpc, type). Include SPDs, EVC pillars, lifts/ATS, generators, UPS as boards/devices with their annotations in description. Unresolved endpoints stay unresolved and are flagged.
 9. The incomer/main switch of a board is a device entry with is_incomer=true, way null.
 10. Confidence is per item, 0..1: 0.9+ clearly printed; 0.6–0.9 legible but ambiguous; <0.6 guessed from context (always also add a flag).
 11. Use the board reference EXACTLY as printed (e.g. "DB-00-08P", "DB/GF", "2A4"). Do not invent, normalise, merge or split references.
 12. If the page is a continuation of a board started on an earlier page (way numbers continue, "continued" markers, no header), set boards[].continuation=true and still use the printed board reference if shown, else "".
 13. A board reference printed in a schedule's Circuit Reference, Load Reference or outgoing-circuit cell is a downstream feed target. Emit the relationship in feeds[] and the value in devices[].circuit_reference, but do NOT create a boards[] record for it unless the page also contains an independent board identity/header, board index entry or schematic node.
 14. A spatial layout hint may accompany the image. It contains candidate column roles and bounding regions from deterministic geometry. Use it to preserve rows and columns, but verify every value against the image; it is not authoritative and never supplies totals.
-15. OUTPUT FORMAT: return every numeric field as a STRING (e.g. rating "32", ways "18", confidence "0.9"), and "" when a value is absent — never a bare number and never null. Booleans stay booleans. Enums use exactly the listed values ("" where allowed).`;
+15. Preserve nonnumeric way identifiers exactly as printed (for example L7, L8, P1, P2). Bare L1/L2/L3 in a phase column are phase labels, not way identifiers.
+16. A tick, cross, Yes, No, or sensitivity in an RCD/RCBO column belongs to the circuit row whose horizontal band contains that mark. Never detach a protection mark from its row or borrow one from an adjacent row.
+17. Segment schematic metadata before extracting quantities. Legend entries, drawing notes, title blocks, revision tables, and symbol keys are evidence or rules, never take-off items. A legend symbol only becomes a device when an instance of that symbol occurs in the drawing region.
+18. Text marked TBC, TBD, "at next stage", "by others", or "by specialist" must remain blank/unknown in the affected technical field and produce a flag. Do not invent a rating, cable size, device type, or quantity.
+19. Governing-note references such as (#5) or NOTE #5 attach that note's equipment and rules to the referenced circuit row. Keep associated equipment separate from the protective device.
+20. OUTPUT FORMAT: return every numeric field as a STRING (e.g. rating "32", ways "18", confidence "0.9"), and "" when a value is absent — never a bare number and never null. Way identifiers may be numeric strings or printed alphanumeric labels. Booleans stay booleans. Enums use exactly the listed values ("" where allowed).`;
 
 /* JSON schema for structured outputs (output_config.format).
  * IMPORTANT: the Messages API rejects schemas with more than ~32 union-typed
@@ -215,7 +220,7 @@ export const EXTRACTION_SCHEMA = {
 export const NUMERIC_FIELDS = {
   board: ['ways_total', 'ways_sp', 'ways_tp', 'spare_capacity_pct', 'phase_count', 'voltage_v', 'incomer_rating_a',
     'incomer_poles', 'supply_cpd_rating_a', 'internal_isolator_rating_a', 'fault_ka', 'confidence'],
-  device: ['way', 'rating_a', 'breaking_capacity_ka', 'rcd_ma', 'poles', 'phase_csa_mm2', 'confidence'],
+  device: ['rating_a', 'breaking_capacity_ka', 'rcd_ma', 'poles', 'phase_csa_mm2', 'confidence'],
   feed: ['rating_a', 'poles', 'cable_csa_mm2', 'confidence'],
 };
 // numeric-or-string (mm² number, else "SWA"/"integral", else null)
@@ -223,6 +228,11 @@ export const NUM_OR_STR_FIELDS = { device: ['cpc_csa_mm2'], feed: ['cable_cpc_mm
 
 const toNum = (v) => { if (v === '' || v == null) return null; const n = Number(v); return Number.isFinite(n) ? n : null; };
 const toNumOrStr = (v) => { if (v === '' || v == null) return null; const n = Number(v); return Number.isFinite(n) ? n : String(v); };
+const toWay = (v) => {
+  if (v === '' || v == null) return null;
+  const source = String(v).trim();
+  return /^\d{1,3}$/.test(source) ? Number(source) : source;
+};
 
 /** Coerce the model's all-string result back into the numbers/null the merge
  *  code expects. Mutates and returns `result`. */
@@ -237,6 +247,7 @@ export function coerceResult(result) {
   };
   apply(result.boards, 'board');
   apply(result.devices, 'device');
+  for (const device of (result.devices || [])) if ('way' in device) device.way = toWay(device.way);
   apply(result.feeds, 'feed');
   return result;
 }

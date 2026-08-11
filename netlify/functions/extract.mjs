@@ -3,7 +3,7 @@
  * The browser posts one page (rendered image and/or text lines) — only after
  * the user has explicitly enabled online extraction — and this function runs
  * the Gemini extractor. Gemini is the ONLY runtime AI provider; the key lives
- * ONLY in a Netlify env var — never in the repo or browser.
+ * ONLY in a hosting environment variable — never in the repo or browser.
  *
  * Env vars:
  *   GEMINI_API_KEY   required — https://aistudio.google.com/apikey
@@ -29,11 +29,12 @@ export default async function handler(req) {
       providers: { gemini: status.gemini },
       primary: status.primary,
       model: GEMINI_MODEL,
+      executionMode: process.env.VERCEL ? 'sync' : 'background',
     });
   }
   if (req.method !== 'POST') return json(405, { error: 'POST only' });
   if (!providerStatus().configured) {
-    return json(503, { error: 'AI extraction is not configured: set GEMINI_API_KEY in the Netlify environment.' });
+    return json(503, { error: 'AI extraction is not configured: set GEMINI_API_KEY in the hosting environment.' });
   }
 
   let body;
@@ -56,7 +57,9 @@ export default async function handler(req) {
     if (err && err.http) return json(err.http, { error: err.message });
     const msg = err && err.message ? err.message : String(err);
     if (err && err.status === 429) return json(429, { error: 'Rate limited — retry shortly' });
-    if (err && err.status === 401) return json(503, { error: 'API key is invalid — rotate it in the Netlify environment' });
+    if (err && err.status === 401) return json(503, { error: 'API key is invalid — rotate it in the hosting environment' });
     return json(502, { error: `Extraction failed: ${msg}` });
   }
 }
+
+export const config = { path: '/api/extract' };

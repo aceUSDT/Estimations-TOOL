@@ -54,36 +54,38 @@ assert.equal(model.associated.groups[0].rows[0].label, "Contactor");
 const workbook = Report.createExcelWorkbook(model, ExcelJS);
 const sheet = workbook.getWorksheet("Device Take-Off");
 const boardSheet = workbook.getWorksheet("Board Take-Off");
-const controlSheet = workbook.getWorksheet("Control Equipment");
 assert.equal(workbook.worksheets[0].name, "Board Take-Off");
+assert.deepEqual(workbook.worksheets.map((worksheet) => worksheet.name), ["Board Take-Off", "Device Take-Off"]);
 assert.match(boardSheet.getCell("A4").value, /DB-2/);
 assert.equal(boardSheet.getCell("A5").value, "MCB | 2");
 assert.equal(boardSheet.getCell("B6").value, 2);
-assert.equal(boardSheet.getCell("I6").value, "RCD 30mA");
+assert.equal(boardSheet.getCell("H6").value, "RCD 30mA");
+assert.equal(boardSheet.getCell("K6").value, "BS EN 60898");
 assert.equal(sheet.getCell("A1").value, "Llangatwg Test");
-assert.equal(sheet.getCell("G3").value, "DB-2");
-assert.equal(sheet.getCell("H3").value, "DB-10");
-assert.equal(sheet.getCell("I3").value, "Total Quantity");
-assert.equal(sheet.getCell("I4").value.formula, "SUM(G4:H4)");
-assert.equal(sheet.getCell("G7").value.formula, "SUM(G4:G6)");
-assert.equal(sheet.getCell("E4").fill.fgColor.argb, "FFFFF2CC");
-assert.equal(sheet.getCell("A3").fill.fgColor.argb, "FFF7E0D1");
-assert.equal(sheet.views[0].ySplit, 3);
-assert.equal(workbook.getWorksheet("Device Detail").rowCount, 6);
-assert.ok(workbook.getWorksheet("Review Required"));
-assert.ok(workbook.getWorksheet("Assumptions and Qualifications"));
-assert.ok(workbook.getWorksheet("Extraction Audit"));
-assert.equal(controlSheet.getCell("A2").value, "Control & Associated Equipment");
-assert.equal(controlSheet.getCell("C5").value, 1);
+assert.equal(sheet.getCell("A4").value, "Board Reference");
+assert.match(sheet.getCell("B4").value, /MCB\n10A\nSPN/);
+assert.equal(sheet.getCell("B5").value, 2);
+assert.equal(sheet.getCell("B6").value, 1);
+assert.equal(sheet.getCell("F5").value.formula, "SUM(B5:E5)");
+assert.equal(sheet.getCell("B7").value.formula, "SUM(B5:B6)");
+assert.equal(sheet.getCell("B4").fill.fgColor.argb, "FFFFF2CC");
+assert.equal(sheet.getCell("A3").fill.fgColor.argb, "FF171717");
+assert.equal(sheet.getCell("A3").font.color.argb, "FFFFFFFF");
+assert.equal(sheet.views[0].ySplit, 4);
+for (const worksheet of workbook.worksheets) {
+  worksheet.eachRow((row) => row.eachCell((cell) => {
+    assert.doesNotMatch(String(cell.value?.result ?? cell.value ?? ''), /Not specified|Unclear|Not applicable/i);
+  }));
+}
 
 const buffer = await workbook.xlsx.writeBuffer();
+if (process.env.REPORT_XLSX_PATH) await fs.writeFile(process.env.REPORT_XLSX_PATH, Buffer.from(buffer));
 assert.equal(buffer[0], 0x50);
 assert.equal(buffer[1], 0x4b);
 const roundTrip = new ExcelJS.Workbook();
 await roundTrip.xlsx.load(buffer);
-assert.equal(roundTrip.getWorksheet("Device Take-Off").getCell("I4").value.formula, "SUM(G4:H4)");
-assert.equal(roundTrip.getWorksheet("Board Take-Off").getCell("I6").value, "RCD 30mA");
-assert.equal(roundTrip.getWorksheet("Control Equipment").getCell("C5").value, 1);
+assert.equal(roundTrip.getWorksheet("Device Take-Off").getCell("F5").value.formula, "SUM(B5:E5)");
+assert.equal(roundTrip.getWorksheet("Board Take-Off").getCell("H6").value, "RCD 30mA");
 
 const wideBoards = Object.fromEntries(Array.from({ length: 57 }, (_, index) => {
   const number = index + 1;
@@ -99,7 +101,20 @@ const wideWorkbook = Report.createExcelWorkbook(wideModel, ExcelJS);
 const wideBuffer = await wideWorkbook.xlsx.writeBuffer();
 const wideRoundTrip = new ExcelJS.Workbook();
 await wideRoundTrip.xlsx.load(wideBuffer);
-assert.equal(wideRoundTrip.getWorksheet("Device Take-Off").getCell("G4").value, 1);
-assert.equal(wideRoundTrip.getWorksheet("Device Take-Off").getCell("H4").value, null);
+assert.equal(wideRoundTrip.getWorksheet("Device Take-Off").getCell("B5").value, 1);
+assert.equal(wideRoundTrip.getWorksheet("Device Take-Off").getCell("B6").value, null);
+
+const excludedModel = Report.buildModel({
+  boards: {
+    MSDB1: { norm: "MSDB1", orig: "MSDB-1", type: "SB", inScope: false, outOfScopeReasons: ["MSDB_ASSEMBLY"] },
+    DB1: { norm: "DB1", orig: "DB-1", type: "DB", inScope: true },
+  },
+  rows: [
+    { boardNorm: "MSDB1", device: "Fuse", rating: 100, poles: 3, qty: 4, status: "confirmed", outOfScope: true },
+    { boardNorm: "DB1", device: "MCB", rating: 16, poles: 1, qty: 2, status: "confirmed" },
+  ],
+});
+assert.deepEqual(Array.from(excludedModel.boards, (board) => board.label), ["DB-1"]);
+assert.equal(excludedModel.grandTotal, 2);
 
 console.log("Report matrix and XLSX export: OK");

@@ -34,3 +34,5 @@ export default async function handler(req) {
   }
   return new Response(null, { status: 202 });
 }
+
+export const config = { path: '/api/extract-background' };
