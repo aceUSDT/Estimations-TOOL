@@ -1,0 +1,92 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 844" width="1240" height="844" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif">
+  <text x="40" y="46" font-size="27" font-weight="700" fill="#1a1a1c">V-09 · Blanks are computed, never read</text>
+  <text x="40" y="74" font-size="16" fill="#6e7078">No schedule states a blanking-plate quantity. It falls out of module capacity minus module usage — and it reconciles exactly against the quote.</text>
+
+  <!-- the formula -->
+  <rect x="40" y="98" width="1160" height="92" rx="10" fill="#f6f7fa" stroke="#d7d9e0"/>
+  <text x="62" y="126" font-size="15" font-weight="700" fill="#6e7078">the rule</text>
+  <text x="62" y="156" font-size="18" font-weight="700" fill="#1a1a1c">modules_available = Σ ways × poles per way</text>
+  <text x="600" y="156" font-size="18" font-weight="700" fill="#1a1a1c">modules_used = Σ device module width</text>
+  <text x="62" y="180" font-size="18" font-weight="700" fill="#155ca8">blanks  =  modules_available  −  modules_used</text>
+
+  <!-- module strip illustration -->
+  <text x="40" y="228" font-size="20" font-weight="700" fill="#1a1a1c">Why way count is the wrong unit</text>
+  <text x="40" y="252" font-size="15" fill="#6e7078">A TPN device occupies three single-pole module positions. A 4-way TPN board is twelve positions, not four.</text>
+
+  <g>
+    <text x="40" y="292" font-size="14" font-weight="700" fill="#6e7078">DB-B1  ·  JK104BGSPD  125A 4 WAY TPN BOARD</text>
+    <g>
+      <rect x="40"  y="304" width="34" height="46" fill="#1b7a3e" stroke="#fff" stroke-width="2"/>
+      <rect x="74"  y="304" width="34" height="46" fill="#e9eaef" stroke="#fff" stroke-width="2"/>
+      <rect x="108" y="304" width="34" height="46" fill="#e9eaef" stroke="#fff" stroke-width="2"/>
+      <rect x="142" y="304" width="34" height="46" fill="#e9eaef" stroke="#fff" stroke-width="2"/>
+      <rect x="176" y="304" width="34" height="46" fill="#e9eaef" stroke="#fff" stroke-width="2"/>
+      <rect x="210" y="304" width="34" height="46" fill="#e9eaef" stroke="#fff" stroke-width="2"/>
+      <rect x="244" y="304" width="34" height="46" fill="#e9eaef" stroke="#fff" stroke-width="2"/>
+      <rect x="278" y="304" width="34" height="46" fill="#e9eaef" stroke="#fff" stroke-width="2"/>
+      <rect x="312" y="304" width="34" height="46" fill="#e9eaef" stroke="#fff" stroke-width="2"/>
+      <rect x="346" y="304" width="34" height="46" fill="#e9eaef" stroke="#fff" stroke-width="2"/>
+      <rect x="380" y="304" width="34" height="46" fill="#e9eaef" stroke="#fff" stroke-width="2"/>
+      <rect x="414" y="304" width="34" height="46" fill="#e9eaef" stroke="#fff" stroke-width="2"/>
+    </g>
+    <text x="57" y="333" font-size="12" font-weight="700" fill="#fff" text-anchor="middle">R</text>
+    <text x="466" y="322" font-size="14" fill="#1b7a3e" font-weight="700">1 × ADB410U RCBO, 1 module</text>
+    <text x="466" y="342" font-size="14" fill="#6e7078">11 × JK01B single pole busbar blank</text>
+    <text x="820" y="332" font-size="15" font-weight="700" fill="#1a1a1c">4 ways × 3 poles = 12  −  1  =  11</text>
+    <rect x="1088" y="312" width="112" height="30" rx="6" fill="#1b7a3e"/>
+    <text x="1144" y="332" font-size="14" font-weight="700" fill="#fff" text-anchor="middle">quote: 11 ✓</text>
+  </g>
+
+  <!-- reconciliation table -->
+  <text x="40" y="404" font-size="20" font-weight="700" fill="#1a1a1c">Reconciled against every board in the issued quote</text>
+  <text x="40" y="428" font-size="14" fill="#6e7078">205696330-rev6 · South Stand St.Helens Redevelopment – Sub DB · Hager contractor quotation</text>
+
+  <g font-size="14">
+    <rect x="40" y="444" width="1160" height="32" rx="6" fill="#eceef4"/>
+    <text x="58"  y="465" font-weight="700" fill="#6e7078">board</text>
+    <text x="196" y="465" font-weight="700" fill="#6e7078">enclosure quoted</text>
+    <text x="620" y="465" font-weight="700" fill="#6e7078">ways × poles</text>
+    <text x="760" y="465" font-weight="700" fill="#6e7078">capacity</text>
+    <text x="880" y="465" font-weight="700" fill="#6e7078">modules used</text>
+    <text x="1010" y="465" font-weight="700" fill="#6e7078">computed</text>
+    <text x="1110" y="465" font-weight="700" fill="#6e7078">on the quote</text>
+
+    <rect x="40" y="480" width="1160" height="30" fill="#fafafc"/>
+    <text x="58" y="500" font-weight="700">DB-B1</text><text x="196" y="500">JK104BGSPD 125A 4 WAY TPN BOARD</text>
+    <text x="620" y="500">4 × 3</text><text x="760" y="500">12</text><text x="880" y="500">1</text>
+    <text x="1010" y="500" font-weight="700">11</text><text x="1110" y="500" fill="#1b7a3e" font-weight="700">11 ✓</text>
+
+    <rect x="40" y="510" width="1160" height="30" fill="#f4f5f8"/>
+    <text x="58" y="530" font-weight="700">DB-B2</text><text x="196" y="530">JK104BGSPD 125A 4 WAY TPN BOARD</text>
+    <text x="620" y="530">4 × 3</text><text x="760" y="530">12</text><text x="880" y="530">1</text>
+    <text x="1010" y="530" font-weight="700">11</text><text x="1110" y="530" fill="#1b7a3e" font-weight="700">11 ✓</text>
+
+    <rect x="40" y="540" width="1160" height="30" fill="#fafafc"/>
+    <text x="58" y="560" font-weight="700">DB-GLP</text><text x="196" y="560">JKD1812TM 125A POWER/LIGHTING BOARD 8/12</text>
+    <text x="620" y="560">(8+12) × 3</text><text x="760" y="560">60</text><text x="880" y="560">11</text>
+    <text x="1010" y="560" font-weight="700">49</text><text x="1110" y="560" fill="#1b7a3e" font-weight="700">49 ✓</text>
+
+    <rect x="40" y="570" width="1160" height="30" fill="#f4f5f8"/>
+    <text x="58" y="590" font-weight="700">DB-FLP</text><text x="196" y="590">JKD1812TM 125A POWER/LIGHTING BOARD 8/12</text>
+    <text x="620" y="590">(8+12) × 3</text><text x="760" y="590">60</text><text x="880" y="590">6</text>
+    <text x="1010" y="590" font-weight="700">54</text><text x="1110" y="590" fill="#1b7a3e" font-weight="700">54 ✓</text>
+
+    <rect x="40" y="600" width="1160" height="30" fill="#fafafc"/>
+    <text x="58" y="620" font-weight="700">DB-SLPK</text><text x="196" y="620">HQR_JFD1816BGTM 125A DUAL METERED TPN 8+16</text>
+    <text x="620" y="620">(8+16) × 3</text><text x="760" y="620">72</text><text x="880" y="620">10</text>
+    <text x="1010" y="620" font-weight="700">62</text><text x="1110" y="620" fill="#1b7a3e" font-weight="700">62 ✓</text>
+
+    <rect x="40" y="630" width="1160" height="30" fill="#f4f5f8"/>
+    <text x="58" y="650" font-weight="700">DBS panel</text><text x="196" y="650">JN212BG 250A 12 WAY 125A OUTGOERS GLAZED CE</text>
+    <text x="620" y="650">12 × 3</text><text x="760" y="650">36</text><text x="880" y="650">12  (4 MCCB × 3)</text>
+    <text x="1010" y="650" font-weight="700">24</text><text x="1110" y="650" fill="#1b7a3e" font-weight="700">24 ✓</text>
+  </g>
+
+  <rect x="40" y="682" width="1160" height="52" rx="9" fill="#eef7f1" stroke="#1b7a3e" stroke-width="2"/>
+  <text x="62" y="714" font-size="17" font-weight="700" fill="#1b7a3e">Six boards, six exact matches. This is a derived rule with evidence, not a heuristic.</text>
+
+  <rect x="40" y="748" width="1160" height="76" rx="9" fill="#fdf7ee" stroke="#b0700c" stroke-width="2"/>
+  <text x="62" y="774" font-size="16" font-weight="700" fill="#b0700c">Two ways to get it wrong</text>
+  <text x="62" y="796" font-size="14" fill="#1a1a1c">Counting ways instead of modules understates DB-B1 by 8.  ·  An equipped spare consumes a module; an unequipped one becomes a blank.</text>
+  <text x="62" y="816" font-size="14" fill="#1a1a1c">If the enclosure has not been selected, capacity is unknown — flag it, never emit zero.</text>
+</svg>

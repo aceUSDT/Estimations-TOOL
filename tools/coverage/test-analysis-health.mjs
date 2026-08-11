@@ -31,11 +31,12 @@ const row = (over = {}) => ({
   id: 'r', boardNorm: 'DB-01', fileId: 'f1', page: 1, device: 'MCB', qty: 1,
   status: 'pending', kind: 'schedule', way: 1, ...over,
 });
+const linkedBoard = (over = {}) => ({ parent: 'MAIN', ...over });
 
 test('healthy analysis ⇒ complete with no reasons', () => {
   const h = core.buildAnalysisHealth({
     coverage: { perBoard: [{ norm: 'DB-01', inScope: true, rowsCaptured: 12, capturedWays: 12, expectedWays: 12, unaccountedWays: 0 }], summary: { expectedWays: 12, capturedWays: 12 } },
-    boards: { 'DB-01': {} },
+    boards: { 'DB-01': linkedBoard() },
     rows: Array.from({ length: 12 }, (_, i) => row({ way: i + 1 })),
     pages: [page()],
     files: [{ id: 'f1', status: 'ready' }],
@@ -47,7 +48,7 @@ test('healthy analysis ⇒ complete with no reasons', () => {
 
 test('HUBERT REGRESSION: boards found + zero devices ⇒ failed, never complete', () => {
   const boards = {};
-  for (let i = 1; i <= 7; i++) boards[`DB-0${i}`] = {};
+  for (let i = 1; i <= 7; i++) boards[`DB-0${i}`] = linkedBoard();
   const h = core.buildAnalysisHealth({
     coverage: { perBoard: Object.keys(boards).map((n) => ({ norm: n, inScope: true, rowsCaptured: 0, capturedWays: 0, expectedWays: null, unaccountedWays: null })), summary: { expectedWays: 0, capturedWays: 0 } },
     boards,
@@ -64,7 +65,7 @@ test('HUBERT REGRESSION: boards found + zero devices ⇒ failed, never complete'
 test('schedule-looking pages with zero rows ⇒ incomplete even when other boards parsed', () => {
   const h = core.buildAnalysisHealth({
     coverage: { perBoard: [{ norm: 'DB-01', inScope: true, rowsCaptured: 12, capturedWays: 12, expectedWays: 12, unaccountedWays: 0 }], summary: { expectedWays: 12, capturedWays: 12 } },
-    boards: { 'DB-01': {} },
+    boards: { 'DB-01': linkedBoard() },
     rows: Array.from({ length: 12 }, (_, i) => row({ way: i + 1 })),
     pages: [page(), page({ page: 2, rowsParsed: 0, scheduleScore: 0.6 })],
     files: [{ id: 'f1', status: 'ready' }],
@@ -76,7 +77,7 @@ test('schedule-looking pages with zero rows ⇒ incomplete even when other board
 test('header promising more ways than captured ⇒ incomplete (WAYS_UNACCOUNTED)', () => {
   const h = core.buildAnalysisHealth({
     coverage: { perBoard: [{ norm: 'DB-01', inScope: true, rowsCaptured: 10, capturedWays: 10, expectedWays: 18, unaccountedWays: 8 }], summary: { expectedWays: 18, capturedWays: 10 } },
-    boards: { 'DB-01': {} },
+    boards: { 'DB-01': linkedBoard() },
     rows: Array.from({ length: 10 }, (_, i) => row({ way: i + 1 })),
     pages: [page({ rowsParsed: 10 })],
     files: [{ id: 'f1', status: 'ready' }],
@@ -94,7 +95,7 @@ test('active rows missing protection details block export until confirmed', () =
   };
   const h = core.buildAnalysisHealth({
     coverage: gapCoverage,
-    boards: { 'DB-01': {} },
+    boards: { 'DB-01': linkedBoard() },
     rows: [row(), row({ id: 'gap', way: 2, device: null, rating: null })],
     pages: [page({ rowsParsed: 2 })],
     files: [{ id: 'f1', status: 'ready' }],
@@ -106,7 +107,7 @@ test('active rows missing protection details block export until confirmed', () =
 test('pages awaiting OCR ⇒ incomplete (OCR_PENDING)', () => {
   const h = core.buildAnalysisHealth({
     coverage: { perBoard: [{ norm: 'DB-01', inScope: true, rowsCaptured: 5, capturedWays: 5, expectedWays: null, unaccountedWays: null }], summary: { expectedWays: 0, capturedWays: 0 } },
-    boards: { 'DB-01': {} },
+    boards: { 'DB-01': linkedBoard() },
     rows: [row()],
     pages: [page({ rowsParsed: 5 }), page({ page: 2, source: 'ocr_pending', needsOcr: true, rowsParsed: 0, scheduleScore: 0, scheduleSignals: [], type: 'unknown', textLines: 0 })],
     files: [{ id: 'f1', status: 'ready' }],
@@ -118,7 +119,7 @@ test('pages awaiting OCR ⇒ incomplete (OCR_PENDING)', () => {
 test('unreadable document ⇒ incomplete (DOCUMENT_UNREADABLE)', () => {
   const h = core.buildAnalysisHealth({
     coverage: { perBoard: [{ norm: 'DB-01', inScope: true, rowsCaptured: 5, capturedWays: 5, expectedWays: null, unaccountedWays: null }], summary: { expectedWays: 0, capturedWays: 0 } },
-    boards: { 'DB-01': {} },
+    boards: { 'DB-01': linkedBoard() },
     rows: [row()],
     pages: [page({ rowsParsed: 5 })],
     files: [{ id: 'f1', status: 'ready' }, { id: 'f2', status: 'error' }],
@@ -162,7 +163,7 @@ test('schedule scoring: prose specification page does NOT qualify', () => {
 test('diagnostic export contains NO document text, board names, or file names', () => {
   const health = core.buildAnalysisHealth({
     coverage: { perBoard: [{ norm: 'DB-KITCHEN-SECRET', inScope: true, rowsCaptured: 0, capturedWays: 0, expectedWays: 8, unaccountedWays: 8 }], summary: { expectedWays: 8, capturedWays: 0 } },
-    boards: { 'DB-KITCHEN-SECRET': {} },
+    boards: { 'DB-KITCHEN-SECRET': linkedBoard() },
     rows: [],
     pages: [page({ rowsParsed: 0 })],
     files: [{ id: 'f1', status: 'ready' }],
@@ -182,7 +183,7 @@ test('diagnostic export contains NO document text, board names, or file names', 
 });
 
 test('every reason emitted by the model has a stable message in HEALTH_REASONS', () => {
-  for (const code of ['ZERO_DEVICES_WITH_BOARDS', 'BOARD_ROWS_MISSING', 'WAYS_UNACCOUNTED', 'PROTECTION_DETAILS_MISSING', 'SCHEDULE_PAGE_UNPARSED', 'SCHEDULE_DOC_NO_BOARDS', 'PAGE_TEXT_UNRELIABLE', 'OCR_PENDING', 'DOCUMENT_UNREADABLE', 'NO_CONTENT']) {
+  for (const code of ['ZERO_DEVICES_WITH_BOARDS', 'DEVICE_COUNT_BELOW_BOARD_COUNT', 'BOARD_ROWS_MISSING', 'WAYS_UNACCOUNTED', 'WAYS_OVER_CAPACITY', 'BOARD_FEED_MISSING', 'PROTECTION_DETAILS_MISSING', 'SCHEDULE_PAGE_UNPARSED', 'SCHEDULE_DOC_NO_BOARDS', 'PAGE_TEXT_UNRELIABLE', 'OCR_PENDING', 'DOCUMENT_UNREADABLE', 'NO_CONTENT']) {
     assert.ok(core.HEALTH_REASONS[code], `missing message for ${code}`);
   }
 });

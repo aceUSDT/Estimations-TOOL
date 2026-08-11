@@ -25,7 +25,7 @@
     { role: 'rcd', patterns: [/^RCD$/, /RCD.*(?:YES|NO|PROTECT)/] },
     { role: 'rcd_ma', patterns: [/RCD.*OPERATING.*CURRENT/, /RCD.*\bMA\b/, /^\(?MA\)?$/] },
     { role: 'circuit_reference', patterns: [/CIRCUIT.*REFERENCE/, /LOAD.*REFERENCE/] },
-    { role: 'description', patterns: [/CIRCUIT.*DESCRIPTION/, /^DUTY$/, /^DESCRIPTION$/, /LOAD.*DESCRIPTION/] },
+    { role: 'description', patterns: [/CIRCUIT.*DESCRIPTION/, /^DUTY$/, /^DESCRIPTION$/, /^SERVING$/, /LOAD.*DESCRIPTION/] },
     { role: 'circuit_type', patterns: [/CIRCUIT.*TYPE/, /CIRCUIT.*CONFIG/, /^CONFIG(?:URATION)?$/] },
     { role: 'line_csa', patterns: [/(?:LIVE|LINE|PHASE).*\bMM/, /CONDUCTOR.*SIZE/] },
     { role: 'cpc_csa', patterns: [/\bCPC\b/, /EARTH.*(?:SIZE|CSA)/] },
@@ -158,10 +158,14 @@
   }
 
   function extractWayNumber(value) {
-    const match = String(value || '').trim().match(/^(?:(?:WAY|CCT|CKT|CIRCUIT)\s*[:#-]?\s*)?(\d{1,3})(?:\s*[\/-]\s*L[123])?$/i);
+    const match = String(value || '').trim().match(/^(?:(?:WAY|CCT|CKT|CIRCUIT)\s*[:#-]?\s*)?(\d{1,3})(?:\s*(?:[\/-]\s*)?L[123])?$/i);
     if (!match) return null;
     const way = Number(match[1]);
     return way >= 1 && way <= 200 ? way : null;
+  }
+
+  function extractPhase(value) {
+    return String(value || '').trim().match(/^(?:\d{1,3})?(L[123])$/i)?.[1]?.toUpperCase() || null;
   }
 
   function clusterByX(words, tolerance) {
@@ -184,7 +188,7 @@
       const unique = new Set(values).size;
       let consecutive = 0;
       for (let i = 1; i < values.length; i += 1) if (values[i] === values[i - 1] + 1) consecutive += 1;
-      const phaseSupport = sorted.filter((word) => words.some((other) => /^L[123]$/i.test(other.text)
+      const phaseSupport = sorted.filter((word) => words.some((other) => extractPhase(other.text)
         && other.cx > word.cx && other.cx - word.cx < pageWidth * 0.16 && Math.abs(other.cy - word.cy) < Math.max(18, word.height * 2))).length;
       const expectedBoost = Number.isFinite(options.expectedX)
         ? Math.max(-4, 7 - Math.abs(cluster.cx - Number(options.expectedX)) / Math.max(3, pageWidth * 0.01))
@@ -192,7 +196,15 @@
       return { ...cluster, sorted, score: unique * 2 + consecutive * 2 + phaseSupport + expectedBoost - (cluster.cx / pageWidth) };
     }).filter((cluster) => cluster.sorted.length >= (options.allowSingle ? 1 : 2));
     scored.sort((a, b) => b.score - a.score);
-    return scored[0]?.sorted || [];
+    const anchors = scored[0]?.sorted || [];
+    const byWay = new Map();
+    for (const anchor of anchors) {
+      const way = extractWayNumber(anchor.text);
+      if (!byWay.has(way)) byWay.set(way, []);
+      byWay.get(way).push(anchor);
+    }
+    return Array.from(byWay.values()).map((group) => group.find((word) => extractPhase(word.text) === 'L2') || group[0])
+      .sort((a, b) => a.cy - b.cy);
   }
 
   function median(values) {
@@ -277,18 +289,64 @@
 
     const tolerance = Math.max(5, pageWidth * 0.012);
     const standardX = repeatedX(dataWords, (word) => /^(?:BS\s*(?:EN\s*)?)?(?:60898|61009|61008|60947(?:[-/]?[23])?)$/i.test(word.text.replace(/\s/g, '')), tolerance);
-    const ratingX = selected.get('rating')?.x ?? null;
+    const headerRatingX = selected.get('rating')?.x ?? null;
+    const ratingDataX = repeatedX(dataWords, (word) => /^\d+(?:\.\d+)?\s*A$/i.test(word.text), tolerance);
+    const ratingX = Number.isFinite(headerRatingX) ? headerRatingX : ratingDataX;
+    const curveX = repeatedX(dataWords, (word) => {
+      if (Number.isFinite(standardX) && word.cx <= standardX) return false;
+      if (Number.isFinite(ratingX) && word.cx >= ratingX) return false;
+      return /^[BCD]$/i.test(word.text);
+    }, tolerance);
     const tripUnitX = repeatedX(dataWords, (word) => {
       if (Number.isFinite(standardX) && word.cx <= standardX) return false;
       if (Number.isFinite(ratingX) && word.cx >= ratingX) return false;
       return /^(?:TMD|TM-D|LSI|LSIG|MICROLOGIC|\d{1,2}\.\d+)$/i.test(word.text);
     }, tolerance);
+    const indicatorClusters = clusterByX(dataWords.filter((word) => indicatorValue(word.text) != null), tolerance)
+      .filter((cluster) => cluster.words.length >= 2);
+    const afddX = selected.get('afdd')?.x ?? null;
+    const rcdHeaderX = selected.get('rcd')?.x ?? null;
+    const rcdIndicatorCandidates = indicatorClusters.filter((cluster) => !Number.isFinite(afddX)
+      || cluster.cx > afddX + tolerance * 0.35);
+    rcdIndicatorCandidates.sort((left, right) => {
+      if (!Number.isFinite(rcdHeaderX)) return left.cx - right.cx;
+      return Math.abs(left.cx - rcdHeaderX) - Math.abs(right.cx - rcdHeaderX);
+    });
+    const rcdIndicatorX = rcdIndicatorCandidates[0]?.cx ?? null;
+    const rcdMaHeaderX = selected.get('rcd_ma')?.x ?? null;
+    const circuitReferenceX = selected.get('circuit_reference')?.x ?? pageWidth;
+    const rcdMaClusters = clusterByX(dataWords.filter((word) => {
+      if (Number.isFinite(rcdIndicatorX) && word.cx <= rcdIndicatorX + tolerance * 0.25) return false;
+      if (word.cx >= circuitReferenceX) return false;
+      const value = Number(String(word.text || '').match(/^\s*(\d+(?:\.\d+)?)\s*$/)?.[1]);
+      return Number.isFinite(value) && value >= 1 && value <= 1000;
+    }), tolerance).filter((cluster) => {
+      if (!Number.isFinite(rcdMaHeaderX)) return cluster.words.length >= 2;
+      return Math.abs(cluster.cx - rcdMaHeaderX) <= Math.max(24, pageWidth * 0.06);
+    });
+    rcdMaClusters.sort((left, right) => {
+      if (!Number.isFinite(rcdMaHeaderX)) return left.cx - right.cx;
+      return Math.abs(left.cx - rcdMaHeaderX) - Math.abs(right.cx - rcdMaHeaderX);
+    });
+    const rcdMaX = rcdMaClusters[0]?.cx ?? null;
+    const wayX = median(wayAnchors.map((word) => word.cx));
+    const phasePatternX = repeatedX(dataWords, (word) => extractPhase(word.text) != null, tolerance);
+    const descriptionX = selected.get('description')?.x ?? null;
+    const inferredDeviceClassX = repeatedX(dataWords, (word) => /^(?:MCB|RCBO|MCCB|ACB|RCD|FUSE|ISOLATOR)$/i.test(word.text), tolerance);
+    const deviceClassX = Number.isFinite(descriptionX) && Number.isFinite(inferredDeviceClassX)
+      && Math.abs(descriptionX - inferredDeviceClassX) < pageWidth * 0.08
+      ? null
+      : inferredDeviceClassX;
     const guesses = {
-      way: median(wayAnchors.map((word) => word.cx)),
-      phase: repeatedX(dataWords, (word) => /^L[123]$/i.test(word.text), tolerance),
+      way: wayX,
+      phase: Number.isFinite(phasePatternX) && Math.abs(phasePatternX - wayX) > tolerance ? phasePatternX : null,
       device_standard: standardX,
-      device_class: repeatedX(dataWords, (word) => /^(?:MCB|RCBO|MCCB|ACB|RCD|FUSE|ISOLATOR)$/i.test(word.text), tolerance),
+      device_class: deviceClassX,
       trip_unit: tripUnitX,
+      trip_curve: curveX,
+      rating: ratingDataX,
+      rcd: rcdIndicatorX,
+      rcd_ma: rcdMaX,
       circuit_reference: repeatedX(dataWords, (word) => Core.extractBoardReferences(word.text).length > 0, tolerance),
       circuit_type: repeatedX(dataWords, (word) => /^(?:RD|RG|RADIAL|RING)$/i.test(word.text), tolerance),
     };
@@ -296,7 +354,8 @@
       if (!Number.isFinite(x)) continue;
       const existing = selected.get(role);
       const disagrees = existing && Math.abs(existing.x - x) > Math.max(tolerance * 1.5, pageWidth * 0.018);
-      if (!existing || role === 'way' || disagrees) {
+      const authoritativeDataPattern = role === 'trip_curve' || role === 'rcd' || role === 'rcd_ma';
+      if (!existing || role === 'way' || authoritativeDataPattern || disagrees) {
         selected.set(role, {
           role,
           x,
@@ -337,7 +396,7 @@
       columns[index].right = index < columns.length - 1 ? (columns[index].x + columns[index + 1].x) / 2 : pageWidth;
     }
     const phaseColumn = columns.find((column) => column.role === 'phase');
-    const phaseWords = words.filter((word) => /^L[123]$/i.test(word.text)
+    const phaseWords = words.filter((word) => extractPhase(word.text)
       && (!phaseColumn || (word.cx >= phaseColumn.left && word.cx < phaseColumn.right)));
     const ys = wayAnchors.map((word) => word.cy);
     const phaseYs = phaseWords.map((word) => word.cy);
@@ -423,41 +482,55 @@
 
   function resolveProtectionDevice(fields = {}, context = {}) {
     const standard = protectionStandard(fields.standard || fields.protectionStandard);
-    const explicitText = `${fields.deviceClass || ''} ${fields.description || ''}`;
+    const explicitText = String(fields.deviceClass || '');
     const explicit = explicitText.match(/\b(AFDD\s*\+\s*RCBO|RCBO|MCCB|MCB|ACB|RCCB|RCD|FUSE|SWITCH\s+DISCONNECTOR|ISOLATOR)\b/i)?.[1]?.toUpperCase() || null;
     const tripUnit = String(fields.tripUnit || '').trim();
-    let device = null; let confidence = 0.55; const reasons = [];
+    let device = null; let confidence = 0.55; let classBasis = null; const reasons = [];
     if (standard.correctedFrom) reasons.push(`Normalised ${standard.correctedFrom} to ${standard.code}`);
     if (explicit) {
       device = explicit === 'RCCB' ? 'RCD' : explicit.replace(/\s+/g, ' ');
+      classBasis = 'explicit';
       confidence = 0.96; reasons.push('Explicit device class');
     } else if (standard.code === '60898') {
+      classBasis = 'bs_en';
       device = 'MCB'; confidence = 0.97; reasons.push('BS EN 60898');
     } else if (standard.code === '61009') {
+      classBasis = 'bs_en';
       device = 'RCBO'; confidence = 0.97; reasons.push('BS EN 61009');
     } else if (standard.code === '61008') {
+      classBasis = 'bs_en';
       device = 'RCD'; confidence = 0.97; reasons.push('BS EN 61008');
     } else if (standard.code === '60947-2') {
+      classBasis = 'bs_en';
       device = 'MCCB'; confidence = 0.97; reasons.push('BS EN 60947-2');
     } else if (standard.code === '60947-3') {
+      classBasis = 'bs_en';
       device = 'Isolator'; confidence = 0.97; reasons.push('BS EN 60947-3');
     } else if (standard.code === '60947' && (/^(?:\d+(?:\.\d+)?|TMD|TM-D|LSI|LSIG)$/i.test(tripUnit)
       || /MICROLOGIC|MCCB/i.test(context.boardProtectionText || ''))) {
+      classBasis = 'bs_en_context';
       device = 'MCCB'; confidence = 0.91; reasons.push('BS 60947 with MCCB trip-unit evidence');
+    } else if (fields.rcdProtected === true && Number(fields.rating) > 0 && !explicit) {
+      classBasis = 'derived_rcd';
+      device = fields.afdd === true ? 'AFDD+RCBO' : 'RCBO';
+      confidence = 0.9;
+      reasons.push('Rated outgoing CPD with explicit row-level RCD protection');
     }
     if (/^AFDD\s*\+\s*RCBO$/i.test(device || '')) device = 'AFDD+RCBO';
     const rcdProtected = fields.rcdProtected === true || Number(fields.sensitivityMa) > 0;
     if (device === 'MCB' && rcdProtected) {
       device = fields.afdd === true ? 'AFDD+RCBO' : 'RCBO';
+      classBasis = fields.afdd === true ? 'derived_rcd_afdd' : 'derived_rcd';
       confidence = Math.max(confidence, 0.94);
       reasons.push(fields.afdd === true
         ? 'MCB with row-level RCD and AFDD protection'
         : 'MCB with row-level RCD protection');
     } else if (device === 'RCBO' && fields.afdd === true) {
       device = 'AFDD+RCBO';
+      classBasis = 'derived_afdd';
       reasons.push('RCBO with row-level AFDD protection');
     }
-    return { device, confidence, reasons, standardCode: standard.code, protectionStandard: standard.label };
+    return { device, classBasis, confidence, reasons, standardCode: standard.code, protectionStandard: standard.label };
   }
 
   function classifyBoardFamily(header = {}, options = {}) {
@@ -569,17 +642,20 @@
     const circuitText = cellText(cells, 'circuit_reference');
     const detectedReference = Core.extractBoardReferences(circuitText)[0] || null;
     const circuitReference = detectedReference?.original || null;
-    const description = cellText(cells, 'description') || circuitText || '';
+    const descriptionCellText = cellText(cells, 'description');
+    const description = [deviceClassText, descriptionCellText].filter(Boolean).join(' ').trim() || circuitText || '';
     const spare = /\bSPARE\b/i.test(allText);
     const explicitSpace = /\b(?:SPACE|FITTED\s+BLANK|BLANK\s+WAY)\b/i.test(allText);
     const rcdMa = numberValue(cells.rcd_ma, { min: 1, max: 1000 });
     const rcdIndicator = indicatorValue(cells.rcd);
-    const rcdProtected = rcdIndicator === true || rcdMa != null ? true : rcdIndicator;
+    const textualRcdProtection = /\b(?:C\s*\/\s*W|WITH)\s+RCD\b/i.test(allText);
+    const rcdProtected = rcdIndicator === true || rcdMa != null || textualRcdProtection ? true : rcdIndicator;
     const afddIndicator = indicatorValue(cells.afdd);
     const resolution = resolveProtectionDevice({
       standard: standardText,
       deviceClass: deviceClassText,
       tripUnit,
+      rating,
       description,
       rcdProtected,
       sensitivityMa: rcdMa,
@@ -596,6 +672,8 @@
     const liveCsa = numberValue(cells.line_csa, { max: 1000 });
     const cpcCsa = numberValue(cells.cpc_csa, { max: 1000 });
     const cableType = cellText(cells, 'cable_type') || null;
+    const referenceMethod = cellText(cells, 'install_method') || null;
+    const installMethod = cableType || referenceMethod;
     const confidence = Math.min(resolution.confidence || 0.55, schemaConfidence || 0.55,
       ...Object.values(cells).filter(Boolean).map((cell) => Number(cell.confidence) || 0.6));
     const requiresReview = space || (!spare && (!resolution.device || rating == null
@@ -610,15 +688,17 @@
     if (rcdIndicator === false && rcdMa == null) protectionReasons.push('Explicit no-RCD indicator');
     if (afddIndicator === true) protectionReasons.push('Explicit AFDD indicator');
     return {
-      way, phase, rating, device: resolution.device, curve, tripUnit,
+      way, phase, rating, device: resolution.device, class_basis: resolution.classBasis, curve, tripUnit,
       protectionStandard: resolution.protectionStandard, protectionStandardCode: resolution.standardCode,
       sens: rcdMa, rcdProtected, afdd: afddIndicator === true, afddIndicated: afddIndicator, poles, ka,
       desc: description, circuitReference, circuitReferenceText: circuitText || null, circuitConfig,
-      cable: (liveCsa != null || cpcCsa != null || cableType) ? {
+      cable: (liveCsa != null || cpcCsa != null || cableType || installMethod) ? {
         orig: [liveCsa != null ? `${liveCsa}mm2` : null, cpcCsa != null ? `CPC ${cpcCsa}mm2` : null, cableType].filter(Boolean).join(' '),
         size: liveCsa, cpc: cpcCsa, typeCode: cableType,
+        install_method: installMethod, reference_method: referenceMethod,
       } : null,
-      spare, space, incomer: false, qty: space ? 0 : (resolution.device ? 1 : 0),
+      spare, space, incomer: false, qty: space ? 0 : (hasDeviceEvidence ? 1 : 0),
+      occupies_ways: poles === 3 ? 3 : 1,
       inferredDevice: resolution.confidence < 0.9,
       requiresReview,
       resolutionSource: 'spatial_column_schema',
@@ -641,6 +721,7 @@
         afdd: cells.afdd || source,
         circuitReference: cells.circuit_reference || cells.description || source,
         description: cells.description || cells.circuit_reference || source,
+        installMethod: cells.install_method || source,
       },
       conf: confidence,
     };
@@ -648,12 +729,12 @@
 
   function parseSpatialWayRows(rowWords, wayAnchor, top, bottom, schema, context) {
     const phaseColumn = schema.columns.find((column) => column.role === 'phase');
-    const phaseWords = rowWords.filter((word) => /^L[123]$/i.test(word.text)
+    const phaseWords = rowWords.filter((word) => extractPhase(word.text)
       && (!phaseColumn || (word.cx >= phaseColumn.left && word.cx < phaseColumn.right)))
       .sort((a, b) => a.cy - b.cy);
     const phases = [];
     for (const word of phaseWords) {
-      const phase = word.text.toUpperCase();
+      const phase = extractPhase(word.text);
       if (!phases.some((item) => item.phase === phase)) phases.push({ phase, word, cy: word.cy });
     }
     const phaseGaps = phases.slice(1).map((item, index) => item.cy - phases[index].cy).filter((gap) => gap > 2);
@@ -667,6 +748,7 @@
       : rowWords;
     const aggregateCells = columnCells(evidenceWords, schema);
     aggregateCells.way = sourceCell([wayAnchor], 'way');
+    if (phaseWords.length) aggregateCells.phase = sourceCell(phaseWords, 'phase');
     const aggregate = parseSpatialRow(aggregateCells, schema.confidence, context);
     if (!aggregate || phases.length < 2) return aggregate ? [aggregate] : [];
 
@@ -751,7 +833,7 @@
     if (!standardColumn) return [];
     const standardWords = words.filter((word) => protectionStandard(word.text).code
       && Math.abs(word.cx - standardColumn.x) <= Math.max(18, (standardColumn.right - standardColumn.left) * 0.75));
-    const phaseWords = words.filter((word) => /^L[123]$/i.test(word.text)
+    const phaseWords = words.filter((word) => extractPhase(word.text)
       && (!phaseColumn || (word.cx >= phaseColumn.left && word.cx < phaseColumn.right)))
       .sort((a, b) => a.cy - b.cy);
     const matchedStandardIds = new Set();

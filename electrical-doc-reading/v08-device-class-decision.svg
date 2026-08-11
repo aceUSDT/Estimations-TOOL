@@ -1,0 +1,93 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 900" width="1240" height="900" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif">
+  <defs>
+    <marker id="a2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#6e7078"/>
+    </marker>
+  </defs>
+
+  <text x="40" y="46" font-size="27" font-weight="700" fill="#1a1a1c">V-08 · Deriving device class</text>
+  <text x="40" y="74" font-size="16" fill="#6e7078">Stop at the first branch that resolves. Record which one did — that is <tspan font-weight="700">class_basis</tspan>, and it decides whether the device may be priced.</text>
+
+  <rect x="40" y="102" width="300" height="40" rx="20" fill="#1a1a1c"/>
+  <text x="190" y="128" font-size="15" font-weight="700" fill="#fff" text-anchor="middle">a way with a protective device</text>
+  <line x1="190" y1="142" x2="190" y2="168" stroke="#6e7078" stroke-width="2" marker-end="url(#a2)"/>
+
+  <rect x="40" y="172" width="540" height="56" rx="9" fill="#f2f6fc" stroke="#155ca8" stroke-width="2"/>
+  <text x="58" y="196" font-size="15" font-weight="700" fill="#155ca8">1 · explicit class string in a device column?</text>
+  <text x="58" y="217" font-size="12" fill="#6e7078">"MCB/C" · "RCBO" · "MCCB" · "AFDD\RCBO C 1P/20A/10kA/30mA/Class A"</text>
+  <rect x="620" y="180" width="250" height="40" rx="8" fill="#1b7a3e"/>
+  <text x="745" y="198" font-size="14" font-weight="700" fill="#fff" text-anchor="middle">use it</text>
+  <text x="745" y="214" font-size="12" fill="#d6ecdd" text-anchor="middle">class_basis = explicit</text>
+  <line x1="582" y1="200" x2="614" y2="200" stroke="#6e7078" stroke-width="2" marker-end="url(#a2)"/>
+  <line x1="190" y1="228" x2="190" y2="254" stroke="#6e7078" stroke-width="2" marker-end="url(#a2)"/>
+
+  <rect x="40" y="258" width="540" height="56" rx="9" fill="#f2f6fc" stroke="#155ca8" stroke-width="2"/>
+  <text x="58" y="282" font-size="15" font-weight="700" fill="#155ca8">2 · BS EN number present?</text>
+  <text x="58" y="303" font-size="12" fill="#6e7078">60898 → MCB · 61009 → RCBO · 61008 → RCCB · 60947-2 → MCCB/ACB</text>
+  <rect x="620" y="266" width="250" height="40" rx="8" fill="#1b7a3e"/>
+  <text x="745" y="284" font-size="14" font-weight="700" fill="#fff" text-anchor="middle">use the table</text>
+  <text x="745" y="300" font-size="12" fill="#d6ecdd" text-anchor="middle">class_basis = bs_en</text>
+  <line x1="582" y1="286" x2="614" y2="286" stroke="#6e7078" stroke-width="2" marker-end="url(#a2)"/>
+  <line x1="190" y1="314" x2="190" y2="340" stroke="#6e7078" stroke-width="2" marker-end="url(#a2)"/>
+
+  <rect x="40" y="344" width="540" height="56" rx="9" fill="#f2f6fc" stroke="#155ca8" stroke-width="2"/>
+  <text x="58" y="368" font-size="15" font-weight="700" fill="#155ca8">3 · RCD or AFDD indicated?</text>
+  <text x="58" y="389" font-size="12" fill="#6e7078">"✓ 30" · "c/w RCD" · "30 mA" · Trip Rating 0.03 A · AFDD "Y"</text>
+  <rect x="620" y="352" width="250" height="40" rx="8" fill="#1b7a3e"/>
+  <text x="745" y="370" font-size="13" font-weight="700" fill="#fff" text-anchor="middle">combination table below</text>
+  <text x="745" y="386" font-size="12" fill="#d6ecdd" text-anchor="middle">class_basis = derived_rcd</text>
+  <line x1="582" y1="372" x2="614" y2="372" stroke="#6e7078" stroke-width="2" marker-end="url(#a2)"/>
+  <line x1="190" y1="400" x2="190" y2="426" stroke="#6e7078" stroke-width="2" marker-end="url(#a2)"/>
+
+  <rect x="40" y="430" width="540" height="56" rx="9" fill="#f2f6fc" stroke="#155ca8" stroke-width="2"/>
+  <text x="58" y="454" font-size="15" font-weight="700" fill="#155ca8">4 · board header states an outgoing device type?</text>
+  <text x="58" y="475" font-size="12" fill="#6e7078">"24-Way, TPN, 125A, MCB dist.board" · "MCCB Panelboard" · form tick-box</text>
+  <rect x="620" y="438" width="250" height="40" rx="8" fill="#b0700c"/>
+  <text x="745" y="456" font-size="14" font-weight="700" fill="#fff" text-anchor="middle">inherit</text>
+  <text x="745" y="472" font-size="12" fill="#f7e6cc" text-anchor="middle">class_basis = board_type</text>
+  <line x1="582" y1="458" x2="614" y2="458" stroke="#6e7078" stroke-width="2" marker-end="url(#a2)"/>
+  <line x1="190" y1="486" x2="190" y2="512" stroke="#6e7078" stroke-width="2" marker-end="url(#a2)"/>
+
+  <rect x="40" y="516" width="830" height="62" rx="9" fill="#fdf4f4" stroke="#c62828" stroke-width="2.5"/>
+  <text x="58" y="542" font-size="16" font-weight="700" fill="#c62828">UNKNOWN — flag, do not price</text>
+  <text x="58" y="565" font-size="13" fill="#1a1a1c">class_basis = UNRESOLVED  ·  flag: class_unresolved  ·  surfaced in the review UI with its source crop</text>
+
+  <rect x="40" y="592" width="830" height="58" rx="9" fill="#fff" stroke="#c62828" stroke-width="2" stroke-dasharray="7 5"/>
+  <text x="58" y="617" font-size="15" font-weight="700" fill="#c62828">✗ never: "no class column, so assume MCB"</text>
+  <text x="58" y="638" font-size="13" fill="#1a1a1c">This is the defect that turned three 61009 / 30 mA RCBOs into "MCB 16A / MCB 6A / MCB 6A".</text>
+
+  <text x="40" y="700" font-size="20" font-weight="700" fill="#1a1a1c">Step 3 combination table</text>
+  <g font-size="13">
+    <rect x="40" y="714" width="1160" height="28" rx="6" fill="#eceef4"/>
+    <text x="56"  y="733" font-weight="700" fill="#6e7078">overcurrent</text>
+    <text x="160" y="733" font-weight="700" fill="#6e7078">RCD</text>
+    <text x="330" y="733" font-weight="700" fill="#6e7078">AFDD</text>
+    <text x="410" y="733" font-weight="700" fill="#6e7078">device</text>
+    <text x="700" y="733" font-weight="700" fill="#6e7078">seen in</text>
+
+    <rect x="40" y="744" width="1160" height="28" fill="#fafafc"/>
+    <text x="56" y="763">yes</text><text x="160" y="763">none</text><text x="330" y="763">no</text>
+    <text x="410" y="763" font-weight="700" fill="#1a1a1c">MCB (MCCB by rating/frame)</text>
+    <text x="700" y="763" fill="#6e7078">Main house &amp; Flats, way 1 — MCB/C 32 A</text>
+
+    <rect x="40" y="772" width="1160" height="28" fill="#eef7f1"/>
+    <text x="56" y="791">yes</text><text x="160" y="791">integral (own row)</text><text x="330" y="791">no</text>
+    <text x="410" y="791" font-weight="700" fill="#1b7a3e">RCBO</text>
+    <text x="700" y="791" fill="#6e7078">61009 + ✓ 30 mA  ·  Trimble "Trip Rating 0.03"</text>
+
+    <rect x="40" y="800" width="1160" height="28" fill="#fdf7ee"/>
+    <text x="56" y="819">yes</text><text x="160" y="819">shared (spans a block)</text><text x="330" y="819">no</text>
+    <text x="410" y="819" font-weight="700" fill="#b0700c">RCCB + N × MCB — count both</text>
+    <text x="700" y="819" fill="#6e7078">split-load consumer unit charts</text>
+
+    <rect x="40" y="828" width="1160" height="28" fill="#fafafc"/>
+    <text x="56" y="847">no</text><text x="160" y="847">yes</text><text x="330" y="847">no</text>
+    <text x="410" y="847" font-weight="700" fill="#1a1a1c">RCCB</text>
+    <text x="700" y="847" fill="#6e7078">61008</text>
+
+    <rect x="40" y="856" width="1160" height="28" fill="#eef7f1"/>
+    <text x="56" y="875">yes</text><text x="160" y="875">yes</text><text x="330" y="875">yes</text>
+    <text x="410" y="875" font-weight="700" fill="#1b7a3e">AFDD/RCBO combination unit</text>
+    <text x="700" y="875" fill="#6e7078">BES: 32 / B / 30 / Y  ·  ElectricalOM: AFDD\RCBO</text>
+  </g>
+</svg>

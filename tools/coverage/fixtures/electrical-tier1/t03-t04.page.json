@@ -1,0 +1,2522 @@
+{
+  "fixtureVersion": 1,
+  "source": {
+    "file": "KFH-QRL-BA-XX-SH-E-5001.pdf",
+    "page": 2
+  },
+  "pageWidth": 842.0,
+  "pageHeight": 595.22,
+  "rotation": 90,
+  "lines": [
+    {
+      "text": "KFH-QRL-BA-XX-SH-E-5001 - Distribution Board Schedule",
+      "bbox": [
+        52.071,
+        25.761,
+        374.273,
+        15.96
+      ],
+      "confidence": 1,
+      "extractionMethod": "Embedded text"
+    },
+    {
+      "text": "Project No: L001",
+      "bbox": [
+        53.271,
+        72.105,
+        150.177,
+        8.52
+      ],
+      "confidence": 1,
+      "extractionMethod": "Embedded text"
+    },
+    {
+      "text": "Project: Kensington Forum Hotel",
+      "bbox": [
+        53.271,
+        88.065,
+        184.891,
+        8.52
+      ],
+      "confidence": 1,
+      "extractionMethod": "Embedded text"
+    },
+    {
+      "text": "Revision: C02",
+      "bbox": [
+        53.271,
+        103.305,
+        148.377,
+        8.52
+      ],
+      "confidence": 1,
+      "extractionMethod": "Embedded text"
+    },
+    {
+      "text": "Issue Date: 03/02/2026",
+      "bbox": [
+        53.271,
+        118.545,
+        162.417,
+        8.52
+      ],
+      "confidence": 1,
+      "extractionMethod": "Embedded text"
+    },
+    {
+      "text": "Location Level B2 Reference: PPC-B2-01",
+      "bbox": [
+        53.271,
+        148.065,
+        581.12,
+        8.096
+      ],
+      "confidence": 1,
+      "extractionMethod": "Embedded text"
+    },
+    {
+      "text": "Type 400A, TPN, MCC/ CONTROL PANEL (TYPE TBC) Supply From LV-B1-02-N/ESS",
+      "bbox": [
+        53.271,
+        162.585,
+        590.849,
+        8.096
+      ],
+      "confidence": 1,
+      "extractionMethod": "Embedded text"
+    },
+    {
+      "text": "Circuit Circuit RCBO/ Cable Size mm2",
+      "bbox": [
+        62.511,
+        175.079,
+        585.341,
+        11.386
+      ],
+      "confidence": 1,
+      "extractionMethod": "Embedded text"
+    },
+    {
+      "text": "Location Serving CPD Cable Type",
+      "bbox": [
+        198.71,
+        183.705,
+        542.912,
+        8.04
+      ],
+      "confidence": 1,
+      "extractionMethod": "Embedded text"
+    },
+    {
+      "text": "Reference Type AFDD L&N CPC",
+      "bbox": [
+        55.911,
+        189.105,
+        589.421,
+        10.68
+      ],
+      "confidence": 1,
+      "extractionMethod": "Embedded text"
+    },
+    {
+      "text": "1L1 \\",
+      "bbox": [
+        67.911,
+        206.801,
+        51.178,
+        8.04
+      ],
+      "confidence": 1,
+      "extractionMethod": "Embedded text"
+    },
+    {
+      "text": "1L2 Radial Level B2 Plant room TPN Isolator for AHU/B1/04 25A 4.00 4.00 5C BS6724 SWA LSZH",
+      "bbox": [
+        67.911,
+        221.321,
+        694.054,
+        8.52
+      ],
+      "confidence": 1,
+      "extractionMethod": "Embedded text"
+    },
+    {
+      "text": "1L3 /",
+      "bbox": [
+        67.911,
+        236.801,
+        51.194,
+        8.04
+      ],
+      "confidence": 1,
+      "extractionMethod": "Embedded text"
+    },
+    {
+      "text": "2L1 \\",
+      "bbox": [
+        67.911,
+        251.801,
+        51.178,
+        8.04
+      ],
+      "confidence": 1,
+      "extractionMethod": "Embedded text"
+    },
+    {
+      "text": "2L2 Radial Level B2 Plant room TPN Isolator for HP/B1/006 40A c/w RCD 10.00 10.00 5C BS6724 SWA LSZH",
+      "bbox": [
+        67.911,
+        266.321,
+        694.053,
+        8.52
+      ],
+      "confidence": 1,
+      "extractionMethod": "Embedded text"
+    },
+    {
+      "text": "2L3 /",
+      "bbox": [
+        67.911,
+        281.801,
+        51.194,
+        8.04
+      ],
+      "confidence": 1,
+      "extractionMethod": "Embedded text"
+    },
+    {
+      "text": "3L1 \\",
+      "bbox": [
+        67.911,
+        296.801,
+        51.178,
+        8.04
+      ],
+      "confidence": 1,
+      "extractionMethod": "Embedded text"
+    },
+    {
+      "text": "3L2 Radial Level B2 Plant room TPN Isolator for HP/B1/001 35A c/w RCD 6.00 6.00 5C BS6724 SWA LSZH",
+      "bbox": [
+        67.911,
+        311.321,
+        694.053,
+        8.52
+      ],
+      "confidence": 1,
+      "extractionMethod": "Embedded text"
+    },
+    {
+      "text": "3L3 /",
+      "bbox": [
+        67.911,
+        326.801,
+        51.194,
+        8.04
+      ],
+      "confidence": 1,
+      "extractionMethod": "Embedded text"
+    },
+    {
+      "text": "4L1 \\",
+      "bbox": [
+        67.911,
+        341.801,
+        51.178,
+        8.04
+      ],
+      "confidence": 1,
+      "extractionMethod": "Embedded text"
+    },
+    {
+      "text": "4L2 Radial Level B2 Plant room TPN Isolator for WSHP/B1/005 40A 10.00 10.00 5C BS6724 SWA LSZH",
+      "bbox": [
+        67.911,
+        356.321,
+        694.053,
+        8.52
+      ],
+      "confidence": 1,
+      "extractionMethod": "Embedded text"
+    },
+    {
+      "text": "4L3 /",
+      "bbox": [
+        67.911,
+        371.801,
+        51.194,
+        8.04
+      ],
+      "confidence": 1,
+      "extractionMethod": "Embedded text"
+    },
+    {
+      "text": "5L1 \\",
+      "bbox": [
+        67.911,
+        386.801,
+        51.178,
+        8.04
+      ],
+      "confidence": 1,
+      "extractionMethod": "Embedded text"
+    },
+    {
+      "text": "5L2 Radial Level B2 Plant room TPN Isolator for P/B1/015 10A 2.50 2.50 5C BS6724 SWA LSZH",
+      "bbox": [
+        67.911,
+        401.321,
+        694.054,
+        8.52
+      ],
+      "confidence": 1,
+      "extractionMethod": "Embedded text"
+    },
+    {
+      "text": "5L3 /",
+      "bbox": [
+        67.911,
+        416.801,
+        51.194,
+        8.04
+      ],
+      "confidence": 1,
+      "extractionMethod": "Embedded text"
+    },
+    {
+      "text": "6L1",
+      "bbox": [
+        67.911,
+        431.801,
+        13.401,
+        8.04
+      ],
+      "confidence": 1,
+      "extractionMethod": "Embedded text"
+    },
+    {
+      "text": "6L2 POOL PLANT SPECIALIST EQUIPMENT ITEMS FROM THIS PANEL/ AS PACK 5",
+      "bbox": [
+        67.911,
+        446.265,
+        412.257,
+        8.576
+      ],
+      "confidence": 1,
+      "extractionMethod": "Embedded text"
+    },
+    {
+      "text": "6L3",
+      "bbox": [
+        67.911,
+        461.801,
+        13.401,
+        8.04
+      ],
+      "confidence": 1,
+      "extractionMethod": "Embedded text"
+    },
+    {
+      "text": "7L1",
+      "bbox": [
+        67.911,
+        476.801,
+        13.401,
+        8.04
+      ],
+      "confidence": 1,
+      "extractionMethod": "Embedded text"
+    },
+    {
+      "text": "7L2",
+      "bbox": [
+        67.911,
+        491.801,
+        13.401,
+        8.04
+      ],
+      "confidence": 1,
+      "extractionMethod": "Embedded text"
+    },
+    {
+      "text": "7L3",
+      "bbox": [
+        67.911,
+        506.801,
+        13.401,
+        8.04
+      ],
+      "confidence": 1,
+      "extractionMethod": "Embedded text"
+    },
+    {
+      "text": "8L1",
+      "bbox": [
+        67.911,
+        521.561,
+        13.401,
+        8.04
+      ],
+      "confidence": 1,
+      "extractionMethod": "Embedded text"
+    },
+    {
+      "text": "Quinnross London Ltd | Unit 5 Baden Place |Crosby Row | London | SE1 1YW Page 2 of 413",
+      "bbox": [
+        235.551,
+        558.765,
+        554.597,
+        11.843
+      ],
+      "confidence": 1,
+      "extractionMethod": "Embedded text"
+    }
+  ],
+  "words": [
+    {
+      "text": "KFH-QRL-BA-XX-SH-E-5001",
+      "bbox": [
+        52.071,
+        25.761,
+        176.217,
+        15.96
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "-",
+      "bbox": [
+        231.831,
+        25.761,
+        4.886,
+        15.96
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "Distribution",
+      "bbox": [
+        240.351,
+        25.761,
+        79.256,
+        15.96
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "Board",
+      "bbox": [
+        323.151,
+        25.761,
+        39.775,
+        15.96
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "Schedule",
+      "bbox": [
+        366.472,
+        25.761,
+        59.872,
+        15.96
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "Project",
+      "bbox": [
+        53.271,
+        72.585,
+        25.879,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "No:",
+      "bbox": [
+        81.231,
+        72.585,
+        12.468,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "L001",
+      "bbox": [
+        185.39,
+        72.105,
+        18.057,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "Project:",
+      "bbox": [
+        53.271,
+        88.545,
+        28.188,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "Kensington",
+      "bbox": [
+        150.11,
+        88.065,
+        41.225,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "Forum",
+      "bbox": [
+        193.43,
+        88.065,
+        23.286,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "Hotel",
+      "bbox": [
+        218.75,
+        88.065,
+        19.412,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "Revision:",
+      "bbox": [
+        53.271,
+        103.785,
+        33.348,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "C02",
+      "bbox": [
+        187.19,
+        103.305,
+        14.457,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "Issue",
+      "bbox": [
+        53.271,
+        119.025,
+        19.352,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "Date:",
+      "bbox": [
+        74.631,
+        119.025,
+        18.948,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "03/02/2026",
+      "bbox": [
+        173.15,
+        118.545,
+        42.537,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "Location",
+      "bbox": [
+        53.271,
+        148.065,
+        31.385,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "Level",
+      "bbox": [
+        203.751,
+        148.065,
+        19.172,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "B2",
+      "bbox": [
+        224.991,
+        148.065,
+        9.777,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "Reference:",
+      "bbox": [
+        342.471,
+        148.065,
+        39.228,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "PPC-B2-01",
+      "bbox": [
+        596.03,
+        148.121,
+        38.361,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "Type",
+      "bbox": [
+        53.271,
+        162.585,
+        17.912,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "400A,",
+      "bbox": [
+        132.351,
+        162.585,
+        21.043,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "TPN,",
+      "bbox": [
+        155.391,
+        162.585,
+        17.683,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "MCC/",
+      "bbox": [
+        175.071,
+        162.585,
+        20.645,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "CONTROL",
+      "bbox": [
+        197.751,
+        162.585,
+        36.4,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "PANEL",
+      "bbox": [
+        236.151,
+        162.585,
+        25.12,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "(TYPE",
+      "bbox": [
+        263.27,
+        162.585,
+        22.409,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "TBC)",
+      "bbox": [
+        287.75,
+        162.585,
+        18.2,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "Supply",
+      "bbox": [
+        342.47,
+        162.585,
+        24.678,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "From",
+      "bbox": [
+        369.23,
+        162.585,
+        18.846,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "LV-B1-02-N/ESS",
+      "bbox": [
+        586.19,
+        162.641,
+        57.93,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "Circuit",
+      "bbox": [
+        62.511,
+        178.425,
+        23.839,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "Circuit",
+      "bbox": [
+        105.23,
+        178.425,
+        23.839,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "RCBO/",
+      "bbox": [
+        551.631,
+        178.425,
+        24.125,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "Cable",
+      "bbox": [
+        590.631,
+        176.985,
+        20.672,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "Size",
+      "bbox": [
+        613.311,
+        176.985,
+        15.512,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "mm2",
+      "bbox": [
+        630.831,
+        175.079,
+        17.021,
+        9.946
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "Location",
+      "bbox": [
+        198.71,
+        183.705,
+        31.385,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "Serving",
+      "bbox": [
+        378.709,
+        183.705,
+        27.513,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "CPD",
+      "bbox": [
+        509.869,
+        183.705,
+        15.669,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "Cable",
+      "bbox": [
+        701.031,
+        183.705,
+        20.672,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "Type",
+      "bbox": [
+        723.711,
+        183.705,
+        17.912,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "Reference",
+      "bbox": [
+        55.911,
+        189.105,
+        36.992,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "Type",
+      "bbox": [
+        108.23,
+        189.105,
+        17.912,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "AFDD",
+      "bbox": [
+        553.551,
+        189.105,
+        20.349,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "L&N",
+      "bbox": [
+        596.031,
+        191.745,
+        15.279,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "CPC",
+      "bbox": [
+        629.631,
+        191.745,
+        15.701,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "1L1",
+      "bbox": [
+        67.911,
+        206.801,
+        13.401,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "\\",
+      "bbox": [
+        115.79,
+        206.801,
+        3.298,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "1L2",
+      "bbox": [
+        67.911,
+        221.801,
+        13.401,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "Radial",
+      "bbox": [
+        106.43,
+        221.801,
+        21.995,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "Level",
+      "bbox": [
+        178.79,
+        221.801,
+        18.755,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "B2",
+      "bbox": [
+        199.55,
+        221.801,
+        9.561,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "Plant",
+      "bbox": [
+        211.19,
+        221.801,
+        18.351,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "room",
+      "bbox": [
+        231.59,
+        221.801,
+        18.927,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "TPN",
+      "bbox": [
+        342.471,
+        221.321,
+        15.575,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "Isolator",
+      "bbox": [
+        360.111,
+        221.321,
+        27.079,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "for",
+      "bbox": [
+        389.271,
+        221.321,
+        10.039,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "AHU/B1/04",
+      "bbox": [
+        401.391,
+        221.321,
+        41.601,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "25A",
+      "bbox": [
+        510.83,
+        221.801,
+        14.365,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "4.00",
+      "bbox": [
+        595.91,
+        221.801,
+        15.801,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "4.00",
+      "bbox": [
+        629.749,
+        221.801,
+        15.801,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "5C",
+      "bbox": [
+        681.109,
+        221.801,
+        9.797,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "BS6724",
+      "bbox": [
+        692.989,
+        221.801,
+        28.041,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "SWA",
+      "bbox": [
+        723.109,
+        221.801,
+        17.125,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "LSZH",
+      "bbox": [
+        742.309,
+        221.801,
+        19.655,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "1L3",
+      "bbox": [
+        67.911,
+        236.801,
+        13.401,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "/",
+      "bbox": [
+        115.79,
+        236.801,
+        3.314,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "2L1",
+      "bbox": [
+        67.911,
+        251.801,
+        13.401,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "\\",
+      "bbox": [
+        115.79,
+        251.801,
+        3.298,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "2L2",
+      "bbox": [
+        67.911,
+        266.801,
+        13.401,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "Radial",
+      "bbox": [
+        106.43,
+        266.801,
+        21.995,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "Level",
+      "bbox": [
+        178.79,
+        266.801,
+        18.755,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "B2",
+      "bbox": [
+        199.55,
+        266.801,
+        9.561,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "Plant",
+      "bbox": [
+        211.19,
+        266.801,
+        18.351,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "room",
+      "bbox": [
+        231.59,
+        266.801,
+        18.927,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "TPN",
+      "bbox": [
+        342.831,
+        266.321,
+        15.575,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "Isolator",
+      "bbox": [
+        360.471,
+        266.321,
+        27.079,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "for",
+      "bbox": [
+        389.631,
+        266.321,
+        10.039,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "HP/B1/006",
+      "bbox": [
+        401.751,
+        266.321,
+        40.761,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "40A",
+      "bbox": [
+        510.83,
+        266.801,
+        14.365,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "c/w",
+      "bbox": [
+        548.39,
+        266.801,
+        13.601,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "RCD",
+      "bbox": [
+        563.99,
+        266.801,
+        15.477,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "10.00",
+      "bbox": [
+        593.63,
+        266.801,
+        20.361,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "10.00",
+      "bbox": [
+        627.469,
+        266.801,
+        20.361,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "5C",
+      "bbox": [
+        681.109,
+        266.801,
+        9.797,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "BS6724",
+      "bbox": [
+        692.989,
+        266.801,
+        28.04,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "SWA",
+      "bbox": [
+        723.109,
+        266.801,
+        17.125,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "LSZH",
+      "bbox": [
+        742.309,
+        266.801,
+        19.655,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "2L3",
+      "bbox": [
+        67.911,
+        281.801,
+        13.401,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "/",
+      "bbox": [
+        115.79,
+        281.801,
+        3.314,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "3L1",
+      "bbox": [
+        67.911,
+        296.801,
+        13.401,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "\\",
+      "bbox": [
+        115.79,
+        296.801,
+        3.298,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "3L2",
+      "bbox": [
+        67.911,
+        311.801,
+        13.401,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "Radial",
+      "bbox": [
+        106.43,
+        311.801,
+        21.995,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "Level",
+      "bbox": [
+        178.79,
+        311.801,
+        18.755,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "B2",
+      "bbox": [
+        199.55,
+        311.801,
+        9.561,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "Plant",
+      "bbox": [
+        211.19,
+        311.801,
+        18.351,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "room",
+      "bbox": [
+        231.59,
+        311.801,
+        18.927,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "TPN",
+      "bbox": [
+        342.831,
+        311.321,
+        15.575,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "Isolator",
+      "bbox": [
+        360.471,
+        311.321,
+        27.079,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "for",
+      "bbox": [
+        389.631,
+        311.321,
+        10.039,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "HP/B1/001",
+      "bbox": [
+        401.751,
+        311.321,
+        40.761,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "35A",
+      "bbox": [
+        510.83,
+        311.801,
+        14.365,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "c/w",
+      "bbox": [
+        548.39,
+        311.801,
+        13.601,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "RCD",
+      "bbox": [
+        563.99,
+        311.801,
+        15.477,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "6.00",
+      "bbox": [
+        595.91,
+        311.801,
+        15.801,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "6.00",
+      "bbox": [
+        629.749,
+        311.801,
+        15.801,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "5C",
+      "bbox": [
+        681.109,
+        311.801,
+        9.797,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "BS6724",
+      "bbox": [
+        692.989,
+        311.801,
+        28.04,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "SWA",
+      "bbox": [
+        723.109,
+        311.801,
+        17.125,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "LSZH",
+      "bbox": [
+        742.309,
+        311.801,
+        19.655,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "3L3",
+      "bbox": [
+        67.911,
+        326.801,
+        13.401,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "/",
+      "bbox": [
+        115.79,
+        326.801,
+        3.314,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "4L1",
+      "bbox": [
+        67.911,
+        341.801,
+        13.401,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "\\",
+      "bbox": [
+        115.79,
+        341.801,
+        3.298,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "4L2",
+      "bbox": [
+        67.911,
+        356.801,
+        13.401,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "Radial",
+      "bbox": [
+        106.43,
+        356.801,
+        21.995,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "Level",
+      "bbox": [
+        178.79,
+        356.801,
+        18.755,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "B2",
+      "bbox": [
+        199.55,
+        356.801,
+        9.561,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "Plant",
+      "bbox": [
+        211.19,
+        356.801,
+        18.351,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "room",
+      "bbox": [
+        231.59,
+        356.801,
+        18.927,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "TPN",
+      "bbox": [
+        336.95,
+        356.321,
+        15.575,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "Isolator",
+      "bbox": [
+        354.59,
+        356.321,
+        27.079,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "for",
+      "bbox": [
+        383.75,
+        356.321,
+        10.039,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "WSHP/B1/005",
+      "bbox": [
+        395.87,
+        356.321,
+        52.641,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "40A",
+      "bbox": [
+        510.83,
+        356.801,
+        14.365,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "10.00",
+      "bbox": [
+        593.63,
+        356.801,
+        20.361,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "10.00",
+      "bbox": [
+        627.469,
+        356.801,
+        20.361,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "5C",
+      "bbox": [
+        681.109,
+        356.801,
+        9.797,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "BS6724",
+      "bbox": [
+        692.989,
+        356.801,
+        28.041,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "SWA",
+      "bbox": [
+        723.109,
+        356.801,
+        17.124,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "LSZH",
+      "bbox": [
+        742.308,
+        356.801,
+        19.655,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "4L3",
+      "bbox": [
+        67.911,
+        371.801,
+        13.401,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "/",
+      "bbox": [
+        115.79,
+        371.801,
+        3.314,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "5L1",
+      "bbox": [
+        67.911,
+        386.801,
+        13.401,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "\\",
+      "bbox": [
+        115.79,
+        386.801,
+        3.298,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "5L2",
+      "bbox": [
+        67.911,
+        401.801,
+        13.401,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "Radial",
+      "bbox": [
+        106.43,
+        401.801,
+        21.995,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "Level",
+      "bbox": [
+        178.79,
+        401.801,
+        18.755,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "B2",
+      "bbox": [
+        199.55,
+        401.801,
+        9.561,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "Plant",
+      "bbox": [
+        211.19,
+        401.801,
+        18.351,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "room",
+      "bbox": [
+        231.59,
+        401.801,
+        18.927,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "TPN",
+      "bbox": [
+        345.71,
+        401.321,
+        15.575,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "Isolator",
+      "bbox": [
+        363.35,
+        401.321,
+        27.079,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "for",
+      "bbox": [
+        392.51,
+        401.321,
+        10.039,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "P/B1/015",
+      "bbox": [
+        404.63,
+        401.321,
+        35.001,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "10A",
+      "bbox": [
+        510.83,
+        401.801,
+        14.365,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "2.50",
+      "bbox": [
+        595.91,
+        401.801,
+        15.801,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "2.50",
+      "bbox": [
+        629.749,
+        401.801,
+        15.801,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "5C",
+      "bbox": [
+        681.109,
+        401.801,
+        9.797,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "BS6724",
+      "bbox": [
+        692.989,
+        401.801,
+        28.041,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "SWA",
+      "bbox": [
+        723.109,
+        401.801,
+        17.125,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "LSZH",
+      "bbox": [
+        742.309,
+        401.801,
+        19.655,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "5L3",
+      "bbox": [
+        67.911,
+        416.801,
+        13.401,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "/",
+      "bbox": [
+        115.79,
+        416.801,
+        3.314,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "6L1",
+      "bbox": [
+        67.911,
+        431.801,
+        13.401,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "6L2",
+      "bbox": [
+        67.911,
+        446.801,
+        13.401,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "POOL",
+      "bbox": [
+        193.071,
+        446.745,
+        20.56,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "PLANT",
+      "bbox": [
+        215.631,
+        446.745,
+        25.499,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "SPECIALIST",
+      "bbox": [
+        243.11,
+        446.745,
+        44.339,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "EQUIPMENT",
+      "bbox": [
+        292.79,
+        446.265,
+        45.179,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "ITEMS",
+      "bbox": [
+        339.95,
+        446.265,
+        23.907,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "FROM",
+      "bbox": [
+        365.87,
+        446.265,
+        22.167,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "THIS",
+      "bbox": [
+        390.11,
+        446.265,
+        17.907,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "PANEL/",
+      "bbox": [
+        410.03,
+        446.265,
+        28.085,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "AS",
+      "bbox": [
+        440.15,
+        446.265,
+        10.347,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "PACK",
+      "bbox": [
+        452.51,
+        446.265,
+        20.948,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "5",
+      "bbox": [
+        475.55,
+        446.265,
+        4.617,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "6L3",
+      "bbox": [
+        67.911,
+        461.801,
+        13.401,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "7L1",
+      "bbox": [
+        67.911,
+        476.801,
+        13.401,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "7L2",
+      "bbox": [
+        67.911,
+        491.801,
+        13.401,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "7L3",
+      "bbox": [
+        67.911,
+        506.801,
+        13.401,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "8L1",
+      "bbox": [
+        67.911,
+        521.561,
+        13.401,
+        8.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "Quinnross",
+      "bbox": [
+        235.551,
+        559.568,
+        49.86,
+        11.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "London",
+      "bbox": [
+        288.111,
+        559.568,
+        36.937,
+        11.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "Ltd",
+      "bbox": [
+        327.83,
+        559.568,
+        15.83,
+        11.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "|",
+      "bbox": [
+        346.43,
+        559.568,
+        2.695,
+        11.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "Unit",
+      "bbox": [
+        351.83,
+        559.568,
+        19.572,
+        11.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "5",
+      "bbox": [
+        374.15,
+        559.568,
+        6.208,
+        11.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "Baden",
+      "bbox": [
+        383.15,
+        559.568,
+        31.057,
+        11.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "Place",
+      "bbox": [
+        416.99,
+        559.568,
+        27.214,
+        11.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "|Crosby",
+      "bbox": [
+        446.99,
+        559.568,
+        36.905,
+        11.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "Row",
+      "bbox": [
+        486.71,
+        559.568,
+        21.375,
+        11.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "|",
+      "bbox": [
+        510.83,
+        559.568,
+        2.695,
+        11.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "London",
+      "bbox": [
+        516.229,
+        559.568,
+        36.937,
+        11.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "|",
+      "bbox": [
+        555.949,
+        559.568,
+        2.695,
+        11.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "SE1",
+      "bbox": [
+        561.349,
+        559.568,
+        19.048,
+        11.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "1YW",
+      "bbox": [
+        583.189,
+        559.568,
+        22.638,
+        11.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "Page",
+      "bbox": [
+        729.108,
+        558.765,
+        21.701,
+        11.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "2",
+      "bbox": [
+        753.348,
+        558.765,
+        5.6,
+        11.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "of",
+      "bbox": [
+        761.508,
+        558.765,
+        9.249,
+        11.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    },
+    {
+      "text": "413",
+      "bbox": [
+        773.268,
+        558.765,
+        16.88,
+        11.04
+      ],
+      "confidence": 1,
+      "rotation": 0
+    }
+  ]
+}

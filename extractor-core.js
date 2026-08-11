@@ -1544,8 +1544,11 @@
    * project once showed "7 boards / 0 devices" as a successful analysis. */
   const HEALTH_REASONS = {
     ZERO_DEVICES_WITH_BOARDS: 'Boards were identified but no device rows were captured anywhere',
+    DEVICE_COUNT_BELOW_BOARD_COUNT: 'Fewer protective devices were captured than boards',
     BOARD_ROWS_MISSING: 'Board has schedule evidence but zero captured device rows',
     WAYS_UNACCOUNTED: 'Board header promises more ways than were captured',
+    WAYS_OVER_CAPACITY: 'Captured populated and spare ways exceed the stated board capacity',
+    BOARD_FEED_MISSING: 'Board has no resolved feed edge and is not explicitly marked orphaned',
     PROTECTION_DETAILS_MISSING: 'Active circuit rows are missing a protective device or rating',
     SCHEDULE_PAGE_UNPARSED: 'Page looks like a schedule but produced no rows',
     SCHEDULE_DOC_NO_BOARDS: 'Schedule-type pages exist but no board reference was identified',
@@ -1605,6 +1608,9 @@
     const deviceRows = allRows.filter((r) => r.device && !r.space);
     const deviceCount = deviceRows.reduce((sum, r) => sum + (Number(r.qty) || 1), 0);
     const boardCount = Object.keys(boards || {}).length;
+    const inScopeBoardNorms = coverage
+      ? new Set((coverage.perBoard || []).filter((board) => board.inScope).map((board) => board.norm))
+      : null;
     const pageList = pages || [];
     const schedulePages = pageList.filter((pg) => (pg.scheduleScore || 0) >= 0.45 || COVERAGE_SCHEDULE_TYPES.has(pg.type));
 
@@ -1630,18 +1636,31 @@
         else if ((board.unaccountedWays || 0) > 0) {
           addReason('WAYS_UNACCOUNTED', { board: board.norm, expected: board.expectedWays, captured: board.capturedWays });
         }
+        if (board.expectedWays != null && Number(board.capturedWays || 0) > Number(board.expectedWays)) {
+          addReason('WAYS_OVER_CAPACITY', { board: board.norm, expected: board.expectedWays, captured: board.capturedWays });
+        }
         if ((board.incompleteProtectionRows || 0) > 0) {
           addReason('PROTECTION_DETAILS_MISSING', { board: board.norm, count: board.incompleteProtectionRows });
         }
       }
     }
+    for (const [norm, board] of Object.entries(boards || {})) {
+      if (inScopeBoardNorms && !inScopeBoardNorms.has(norm)) continue;
+      const hasFeed = Boolean(board && board.parent);
+      if (!hasFeed && !(board && board.orphaned === true)) addReason('BOARD_FEED_MISSING', { board: norm });
+    }
     if (boardCount === 0 && schedulePages.length > 0) addReason('SCHEDULE_DOC_NO_BOARDS', null);
     if (pageList.length === 0) addReason('NO_CONTENT', null);
     if (boardCount > 0 && deviceCount === 0) addReason('ZERO_DEVICES_WITH_BOARDS', null);
+    if (boardCount > 0 && deviceCount < boardCount) {
+      addReason('DEVICE_COUNT_BELOW_BOARD_COUNT', { boards: boardCount, devices: deviceCount });
+    }
 
     let state = 'complete';
     if (reasons.size > 0) state = 'incomplete';
     if (reasons.has('ZERO_DEVICES_WITH_BOARDS') || reasons.has('NO_CONTENT')
+      || reasons.has('DEVICE_COUNT_BELOW_BOARD_COUNT') || reasons.has('WAYS_OVER_CAPACITY')
+      || reasons.has('BOARD_FEED_MISSING')
       || (deviceCount === 0 && schedulePages.length > 0)) state = 'failed';
 
     return {
