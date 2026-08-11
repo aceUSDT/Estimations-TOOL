@@ -23,7 +23,7 @@
     { role: 'breaking_capacity', patterns: [/SHORT.*CIRCUIT.*CAPACITY/, /(?=.*\bSHORT\b)(?=.*\bCIRCUIT\b)(?=.*\bCAPACITY\b)/, /BREAKING.*CAPACITY/, /FAULT.*RATING/, /^KA$/] },
     { role: 'afdd', patterns: [/\bAFDD\b/, /\bAFFD\b/, /ARC.*FAULT/] },
     { role: 'rcd', patterns: [/^RCD$/, /RCD.*(?:YES|NO|PROTECT)/] },
-    { role: 'rcd_ma', patterns: [/RCD.*OPERATING.*CURRENT/, /RCD.*\bMA\b/, /^\(?MA\)?$/] },
+    { role: 'rcd_ma', patterns: [/RCD.*OPERATING.*CURRENT/, /RCD.*\bMA\b/, /EARTH.*FAULT.*(?:DEVICE|CURRENT|\bMA\b)/, /^\(?MA\)?$/] },
     { role: 'circuit_reference', patterns: [/CIRCUIT.*REFERENCE/, /LOAD.*REFERENCE/] },
     { role: 'description', patterns: [/CIRCUIT.*DESCRIPTION/, /^DUTY$/, /^DESCRIPTION$/, /^SERVING$/, /LOAD.*DESCRIPTION/] },
     { role: 'circuit_type', patterns: [/CIRCUIT.*TYPE/, /CIRCUIT.*CONFIG/, /^CONFIG(?:URATION)?$/] },
@@ -266,6 +266,8 @@
 
   function candidateMatches(candidate, definition) {
     const forms = [normaliseLabel(candidate.text), reversedLabel(candidate.text)];
+    if (definition.role === 'device_standard'
+      && forms.some((form) => /\bBS\s*7671\b|INSTALLATION\s+METHOD|REFERENCE\s+METHOD/.test(form))) return false;
     return definition.patterns.some((pattern) => forms.some((form) => pattern.test(form)));
   }
 
@@ -326,15 +328,21 @@
       if (!Number.isFinite(rcdHeaderX)) return left.cx - right.cx;
       return Math.abs(left.cx - rcdHeaderX) - Math.abs(right.cx - rcdHeaderX);
     });
-    const rcdIndicatorX = rcdIndicatorCandidates[0]?.cx ?? null;
+    const rcdIndicatorX = Number.isFinite(rcdHeaderX) ? (rcdIndicatorCandidates[0]?.cx ?? null) : null;
     const rcdMaHeaderX = selected.get('rcd_ma')?.x ?? null;
     const circuitReferenceX = selected.get('circuit_reference')?.x ?? pageWidth;
-    const rcdMaClusters = clusterByX(dataWords.filter((word) => {
+    const descriptionX = selected.get('description')?.x ?? null;
+    const numericClusters = clusterByX(dataWords.filter((word) => {
+      const value = Number(String(word.text || '').match(/^\s*(\d+(?:\.\d+)?)\s*$/)?.[1]);
+      return Number.isFinite(value);
+    }), tolerance).filter((cluster) => cluster.words.length >= 2);
+    const rcdMaClusters = (!Number.isFinite(rcdMaHeaderX) && !Number.isFinite(rcdIndicatorX) ? [] : numericClusters).filter((cluster) => cluster.words.some((word) => {
       if (Number.isFinite(rcdIndicatorX) && word.cx <= rcdIndicatorX + tolerance * 0.25) return false;
+      if (Number.isFinite(ratingX) && word.cx <= ratingX + tolerance * 0.75) return false;
       if (word.cx >= circuitReferenceX) return false;
       const value = Number(String(word.text || '').match(/^\s*(\d+(?:\.\d+)?)\s*$/)?.[1]);
-      return Number.isFinite(value) && value >= 1 && value <= 1000;
-    }), tolerance).filter((cluster) => {
+      return Number.isFinite(value) && value > 0 && value <= 1000;
+    })).filter((cluster) => {
       if (!Number.isFinite(rcdMaHeaderX)) return cluster.words.length >= 2;
       return Math.abs(cluster.cx - rcdMaHeaderX) <= Math.max(24, pageWidth * 0.06);
     });
@@ -343,9 +351,22 @@
       return Math.abs(left.cx - rcdMaHeaderX) - Math.abs(right.cx - rcdMaHeaderX);
     });
     const rcdMaX = rcdMaClusters[0]?.cx ?? null;
+    const breakingHeaderX = selected.get('breaking_capacity')?.x ?? null;
+    const protectionRight = Number.isFinite(descriptionX) ? descriptionX : circuitReferenceX;
+    const breakingCapacityClusters = numericClusters.filter((cluster) => {
+      const values = cluster.words.map((word) => Number(String(word.text || '').match(/^\s*(\d+(?:\.\d+)?)\s*$/)?.[1]));
+      if (!values.some((value) => Number.isFinite(value) && value > 0 && value <= 150)) return false;
+      if (Number.isFinite(ratingX) && cluster.cx <= ratingX + tolerance * 0.35) return false;
+      if (Number.isFinite(rcdMaX) && cluster.cx <= rcdMaX + tolerance * 0.35) return false;
+      return cluster.cx < protectionRight;
+    });
+    breakingCapacityClusters.sort((left, right) => {
+      if (!Number.isFinite(breakingHeaderX)) return left.cx - right.cx;
+      return Math.abs(left.cx - breakingHeaderX) - Math.abs(right.cx - breakingHeaderX);
+    });
+    const breakingCapacityX = breakingCapacityClusters[0]?.cx ?? null;
     const wayX = median(wayAnchors.map((word) => word.cx));
     const phasePatternX = repeatedX(dataWords, (word) => extractPhase(word.text) != null, tolerance);
-    const descriptionX = selected.get('description')?.x ?? null;
     const inferredDeviceClassX = repeatedX(dataWords, (word) => /^(?:MCB|RCBO|MCCB|ACB|RCD|FUSE|ISOLATOR)$/i.test(word.text), tolerance);
     const deviceClassX = Number.isFinite(descriptionX) && Number.isFinite(inferredDeviceClassX)
       && Math.abs(descriptionX - inferredDeviceClassX) < pageWidth * 0.08
@@ -361,6 +382,7 @@
       rating: ratingDataX,
       rcd: rcdIndicatorX,
       rcd_ma: rcdMaX,
+      breaking_capacity: breakingCapacityX,
       circuit_reference: repeatedX(dataWords, (word) => Core.extractBoardReferences(word.text).length > 0, tolerance),
       circuit_type: repeatedX(dataWords, (word) => /^(?:RD|RG|RADIAL|RING)$/i.test(word.text), tolerance),
     };
@@ -368,7 +390,8 @@
       if (!Number.isFinite(x)) continue;
       const existing = selected.get(role);
       const disagrees = existing && Math.abs(existing.x - x) > Math.max(tolerance * 1.5, pageWidth * 0.018);
-      const authoritativeDataPattern = role === 'trip_curve' || role === 'rcd' || role === 'rcd_ma';
+      const authoritativeDataPattern = role === 'device_class' || role === 'trip_curve' || role === 'rcd'
+        || role === 'rcd_ma' || role === 'breaking_capacity';
       if (!existing || role === 'way' || authoritativeDataPattern || disagrees) {
         selected.set(role, {
           role,
@@ -377,6 +400,18 @@
           source: existing ? 'header_data_reconciled' : (role === 'way' ? 'way_sequence' : 'data_pattern'),
         });
       }
+    }
+
+    const deviceClassColumn = selected.get('device_class');
+    const tripUnitColumn = selected.get('trip_unit');
+    if (deviceClassColumn && tripUnitColumn && !Number.isFinite(tripUnitX)
+      && Math.abs(deviceClassColumn.x - tripUnitColumn.x) <= tolerance * 1.5) {
+      selected.delete('trip_unit');
+    }
+    const standardColumn = selected.get('device_standard');
+    if (standardColumn && !Number.isFinite(standardX)
+      && /\bBS\s*7671\b|INSTALLATION\s+METHOD|REFERENCE\s+METHOD/i.test(String(standardColumn.evidence?.text || ''))) {
+      selected.delete('device_standard');
     }
 
     const columns = Array.from(selected.values()).filter((column) => Number.isFinite(column.x)).sort((a, b) => a.x - b.x);
@@ -653,8 +688,10 @@
     const standardText = cellText(cells, 'device_standard');
     const deviceClassText = cellText(cells, 'device_class');
     const typeText = cellText(cells, 'trip_unit');
-    const typeCurve = typeText.match(/^\s*([BCD])\s*$/i)?.[1]?.toUpperCase() || null;
-    const tripUnit = typeCurve ? null : (typeText || null);
+    const typeDevice = typeText.match(/^\s*(AFDD\s*\+\s*RCBO|RCBO|MCCB|MCB|ACB|RCCB|RCD|FUSE|ISOLATOR)\s*$/i)?.[1] || null;
+    const resolvedDeviceClassText = deviceClassText || typeDevice || '';
+    const typeCurve = typeDevice ? null : typeText.match(/^\s*([BCD])\s*$/i)?.[1]?.toUpperCase() || null;
+    const tripUnit = typeCurve || typeDevice ? null : (typeText || null);
     const curve = (cellText(cells, 'trip_curve').match(/\b[BCD]\b/i)?.[0] || typeCurve || '').toUpperCase() || null;
     const rating = numberValue(cells.rating, { max: 6300 });
     const ka = numberValue(cells.breaking_capacity, { max: 150 });
@@ -662,17 +699,18 @@
     const detectedReference = Core.extractBoardReferences(circuitText)[0] || null;
     const circuitReference = detectedReference?.original || null;
     const descriptionCellText = cellText(cells, 'description');
-    const description = [deviceClassText, descriptionCellText].filter(Boolean).join(' ').trim() || circuitText || '';
-    const spare = /\bSPARE\b/i.test(allText);
+    const description = descriptionCellText || circuitText || '';
+    const spareText = /\bSPARE\b/i.test(allText);
     const explicitSpace = /\b(?:SPACE|FITTED\s+BLANK|BLANK\s+WAY)\b/i.test(allText);
-    const rcdMa = numberValue(cells.rcd_ma, { min: 1, max: 1000 });
+    const rcdRaw = numberValue(cells.rcd_ma, { min: 0.001, max: 1000 });
+    const rcdMa = rcdRaw != null && rcdRaw < 1 ? Math.round(rcdRaw * 1000) : rcdRaw;
     const rcdIndicator = indicatorValue(cells.rcd);
     const textualRcdProtection = /\b(?:C\s*\/\s*W|WITH)\s+RCD\b/i.test(allText);
     const rcdProtected = rcdIndicator === true || rcdMa != null || textualRcdProtection ? true : rcdIndicator;
     const afddIndicator = indicatorValue(cells.afdd);
     const resolution = resolveProtectionDevice({
       standard: standardText,
-      deviceClass: deviceClassText,
+      deviceClass: resolvedDeviceClassText,
       tripUnit,
       rating,
       description,
@@ -680,10 +718,11 @@
       sensitivityMa: rcdMa,
       afdd: afddIndicator === true,
     }, context);
-    const hasDeviceEvidence = Boolean(resolution.device || rating != null || standardText || deviceClassText);
+    const hasDeviceEvidence = Boolean(resolution.device || rating != null || standardText || resolvedDeviceClassText);
+    const spareConflict = spareText && hasDeviceEvidence;
+    const spare = spareText && !hasDeviceEvidence;
     const space = explicitSpace || (!spare && !hasDeviceEvidence && !description);
-    const poles = uniquePhases.length >= 3 && [cells.rating, cells.device_standard, cells.device_class].filter(Boolean).length
-      ? 3
+    const poles = uniquePhases.length >= 3 && hasDeviceEvidence ? 3
       : (uniquePhases.length === 1 && hasDeviceEvidence ? 1 : null);
     const phase = poles === 3 ? '3PH' : (uniquePhases.length === 1 ? uniquePhases[0] : null);
     const circuitTypeRaw = cellText(cells, 'circuit_type').toUpperCase();
@@ -695,7 +734,7 @@
     const installMethod = cableType || referenceMethod;
     const confidence = Math.min(resolution.confidence || 0.55, schemaConfidence || 0.55,
       ...Object.values(cells).filter(Boolean).map((cell) => Number(cell.confidence) || 0.6));
-    const requiresReview = space || (!spare && (!resolution.device || rating == null
+    const requiresReview = space || spareConflict || (!spare && (!resolution.device || rating == null
       || ((resolution.device === 'RCBO' || resolution.device === 'AFDD+RCBO') && rcdMa == null))) || confidence < 0.78;
     const rowCells = Object.entries(cells)
       .filter(([role, cell]) => Boolean(cell) && !(context.phaseLane && role === 'way'))
@@ -706,8 +745,10 @@
     if (rcdMa != null) protectionReasons.push('RCD operating-current value present');
     if (rcdIndicator === false && rcdMa == null) protectionReasons.push('Explicit no-RCD indicator');
     if (afddIndicator === true) protectionReasons.push('Explicit AFDD indicator');
+    if (spareConflict) protectionReasons.push('SPARE text conflicts with populated device cells');
     return {
       way, phase, rating, device: resolution.device, class_basis: resolution.classBasis, curve, tripUnit,
+      poleConfiguration: poles === 3 ? 'TP' : poles === 1 ? 'SP' : null,
       protectionStandard: resolution.protectionStandard, protectionStandardCode: resolution.standardCode,
       sens: rcdMa, rcdProtected, afdd: afddIndicator === true, afddIndicated: afddIndicator, poles, ka,
       desc: description, circuitReference, circuitReferenceText: circuitText || null, circuitConfig,
@@ -768,7 +809,7 @@
       : rowWords;
     const aggregateCells = columnCells(evidenceWords, schema);
     aggregateCells.way = sourceCell([wayAnchor], 'way');
-    if (phaseWords.length) aggregateCells.phase = sourceCell(phaseWords, 'phase');
+    if (!phaseValues(aggregateCells.phase?.text).length && phaseWords.length) aggregateCells.phase = sourceCell(phaseWords, 'phase');
     const aggregate = parseSpatialRow(aggregateCells, schema.confidence, context);
     if (!aggregate || phases.length < 2) return aggregate ? [aggregate] : [];
 
@@ -938,6 +979,15 @@
     const governingNotes = Core.parseGoverningNotes(input.lines || []);
     if (governingNotes.length) rows.forEach((row) => Object.assign(row, Core.applyGoverningNotes(row, governingNotes)));
     const observedRowCount = rows.length;
+    const observedWays = new Set(rows.map((row) => row.way).filter((way) => way != null));
+    if (!schema.continuation && header.header.ways_total == null && observedWays.size) {
+      header.header.ways_total = observedWays.size;
+      header.evidence.ways_total = {
+        text: `${observedWays.size} distinct way identifiers in the schedule table`,
+        extractionMethod: 'Spatial table reconciliation',
+        confidence: 0.86,
+      };
+    }
     const expectedWays = Number(header.header.ways_total);
     const usesOpaqueWays = rows.some((row) => typeof row.way === 'string' && !/^\d+$/.test(row.way));
     if (input.materializeMissingWays !== false && !usesOpaqueWays && Number.isInteger(expectedWays) && expectedWays > 0 && expectedWays <= 200) {
@@ -1001,6 +1051,245 @@
         header: result.board.header,
       } : null,
       warnings: result.warnings || [],
+    };
+  }
+
+  function schematicPoleConfiguration(text) {
+    const source = String(text || '').toUpperCase().replace(/\s+/g, ' ');
+    const token = source.match(/\b(TPN|SPN|DPN|TP|DP|SP|4P|3P|2P|1P)\b/)?.[1] || null;
+    if (!token) return { poleConfiguration: null, poles: null };
+    const poles = token === 'TPN' || token === '4P' ? 4
+      : token === 'TP' || token === '3P' ? 3
+        : token === 'DPN' || token === 'DP' || token === '2P' ? 2 : 1;
+    return { poleConfiguration: token, poles };
+  }
+
+  function schematicCable(text) {
+    const source = String(text || '').replace(/\s+/g, ' ').trim();
+    const sizeMatch = source.match(/\b(\d+(?:\.\d+)?)\s*mm(?:2|\u00b2)?\b/i);
+    if (!sizeMatch) return source || null;
+    const coresMatch = source.match(/\b([234])\s*(?:C|CORE)\b/i);
+    const cpcMatch = source.match(/(?:\+|MIN(?:IMUM)?)\s*(\d+(?:\.\d+)?)\s*mm(?:2|\u00b2)?\s*CPC\b/i);
+    const typeMatch = source.match(/\b(XLPE(?:\s*\/\s*SWA)?(?:\s*\/\s*(?:LSZH|LSF))?|SWA|LSZH|LSF|PVC)\b/i);
+    return {
+      size: Number(sizeMatch[1]),
+      cores: coresMatch ? Number(coresMatch[1]) : null,
+      cpc: cpcMatch ? Number(cpcMatch[1]) : null,
+      typeCode: typeMatch ? typeMatch[1].replace(/\s+/g, '').toUpperCase() : null,
+      description: source,
+    };
+  }
+
+  function parseSpatialSchematicPage(input = {}) {
+    const words = collectSpatialWords(input);
+    const pageWidth = Number(input.pageWidth) || Math.max(1, ...words.map((word) => word.x1));
+    const pageHeight = Number(input.pageHeight) || Math.max(1, ...words.map((word) => word.y1));
+    if (words.length < 8) return { matched: false, confidence: 0, boards: [], feeds: [], devices: [], warnings: ['insufficient_spatial_text'] };
+
+    const boardCandidates = [];
+    const addBoardCandidate = (original, items) => {
+      const canonical = Core.canonicalBoardReference(original);
+      if (!canonical.normalised) return;
+      const cell = sourceCell(items, 'schematic_board_reference');
+      if (!cell) return;
+      const box = bboxObject(cell.bbox);
+      if (!box) return;
+      const candidate = {
+        ref: canonical.display || original,
+        norm: canonical.normalised,
+        sourceCell: cell,
+        bbox: cell.bbox,
+        cx: (box.x0 + box.x1) / 2,
+        cy: (box.y0 + box.y1) / 2,
+        labelAxis: (() => {
+          const first = normaliseWord(items?.[0]);
+          if (!first) return 'horizontal';
+          const angle = ((Number(first.rotation) % 360) + 360) % 360;
+          return (angle >= 55 && angle <= 125) || (angle >= 235 && angle <= 305) || first.height > first.width * 1.35
+            ? 'vertical' : 'horizontal';
+        })(),
+        confidence: cell.confidence,
+      };
+      const duplicate = boardCandidates.find((item) => item.norm === candidate.norm);
+      if (!duplicate) boardCandidates.push(candidate);
+    };
+    for (const word of words) {
+      Core.extractBoardReferences(word.text).forEach((reference) => addBoardCandidate(reference.original, [word]));
+      const lvs = word.text.match(/\bLVS[\s._/-]?\d+\b/gi) || [];
+      lvs.forEach((reference) => addBoardCandidate(reference, [word]));
+    }
+    for (const line of input.lines || []) {
+      const lineWords = (line?.words || []).map(normaliseWord).filter(Boolean);
+      if (!lineWords.length) continue;
+      Core.extractBoardReferences(line.text || '').forEach((reference) => addBoardCandidate(reference.original, lineWords));
+      const lvs = String(line.text || '').match(/\bLVS[\s._/-]?\d+\b/gi) || [];
+      lvs.forEach((reference) => addBoardCandidate(reference, lineWords));
+    }
+
+    const vertical = (word) => {
+      const angle = ((Number(word.rotation) % 360) + 360) % 360;
+      return (angle >= 55 && angle <= 125) || (angle >= 235 && angle <= 305) || word.height > word.width * 1.35;
+    };
+    const laneTolerance = Math.max(10, Math.min(26, Math.min(pageWidth, pageHeight) * 0.009));
+    const ratingWords = words.filter((word) => /^\s*\d{1,4}(?:\.\d+)?\s*A\s*$/i.test(word.text));
+    const coordinateRange = (items, field) => items.length
+      ? Math.max(...items.map((item) => item[field])) - Math.min(...items.map((item) => item[field])) : 0;
+    const laneAxis = coordinateRange(ratingWords, 'cx') >= coordinateRange(ratingWords, 'cy') ? 'x' : 'y';
+    const lanes = [];
+    for (const ratingWord of ratingWords) {
+      const axis = laneAxis;
+      const coordinate = axis === 'x' ? ratingWord.cx : ratingWord.cy;
+      if (lanes.some((lane) => lane.axis === axis && Math.abs(lane.coordinate - coordinate) <= laneTolerance)) continue;
+      const laneWords = words.filter((word) => Math.abs((axis === 'x' ? word.cx : word.cy) - coordinate) <= laneTolerance);
+      const laneText = laneWords.map((word) => word.text).join(' ');
+      const deviceWord = laneWords.find((word) => /^(?:MCCB|MCB|ACB|RCBO|RCCB)$/i.test(word.text))
+        || laneWords.find((word) => /^(?:FUSE|SWITCH\s*FUSE|FUSE\s*SWITCH)$/i.test(word.text));
+      if (!deviceWord) continue;
+      const device = /MCCB/i.test(deviceWord.text) ? 'MCCB'
+        : /RCBO/i.test(deviceWord.text) ? 'RCBO'
+          : /RCCB/i.test(deviceWord.text) ? 'RCCB'
+            : /ACB/i.test(deviceWord.text) ? 'ACB'
+              : /MCB/i.test(deviceWord.text) ? 'MCB' : 'Fuse';
+      const rating = Number(ratingWord.text.match(/\d+(?:\.\d+)?/)?.[0]);
+      const poleWord = laneWords.find((word) => /^(?:TPN|SPN|DPN|TP|DP|SP|4P|3P|2P|1P)$/i.test(word.text));
+      const pole = schematicPoleConfiguration(poleWord?.text || laneText);
+      const cableWords = laneWords.filter((word) => /(?:MM(?:2|\u00b2)?|XLPE|SWA|LSZH|LSF|PVC|CPC|CORE)/i.test(word.text));
+      const cableCell = sourceCell(cableWords, 'schematic_cable');
+      const cable = schematicCable(cableCell?.text || '');
+      const confidenceParts = [ratingWord.confidence, deviceWord.confidence];
+      if (poleWord) confidenceParts.push(poleWord.confidence);
+      if (cableCell) confidenceParts.push(cableCell.confidence);
+      lanes.push({
+        axis, coordinate, alongCoordinate: axis === 'x' ? ratingWord.cy : ratingWord.cx, words: laneWords, rating, device, ...pole, cable,
+        ratingCell: sourceCell([ratingWord], 'schematic_rating'),
+        deviceCell: sourceCell([deviceWord], 'schematic_device'),
+        poleCell: poleWord ? sourceCell([poleWord], 'schematic_poles') : null,
+        cableCell,
+        confidence: Math.min(0.88, confidenceParts.reduce((sum, value) => sum + value, 0) / confidenceParts.length),
+      });
+    }
+
+    let sourceBoards = boardCandidates.filter((board) => /^LVS/.test(board.norm));
+    if (!sourceBoards.length) sourceBoards = boardCandidates.filter((board) => /^(?:MSB|MDB|SMDB|PB)/.test(board.norm));
+    if (!sourceBoards.length) sourceBoards = boardCandidates.filter((board) => /^MAIN/.test(board.norm));
+    const targetBoards = boardCandidates.filter((board) => !sourceBoards.includes(board) && !/^(?:MAIN|MSB|MDB|SMDB|LVS)/.test(board.norm));
+    const boardMetadataDirection = (board, axis) => {
+      const boardCoordinate = axis === 'x' ? board.cx : board.cy;
+      const boardAlong = axis === 'x' ? board.cy : board.cx;
+      const candidates = words.filter((word) => /^(?:\[[^\]]{2,80}\]|\d{1,3}\s*(?:-|\s)?WAYS?|WAY\s*[-:]?\s*\d{1,3}\s*\+\s*\d{1,3})$/i.test(word.text.trim()))
+        .map((word) => ({ word, cross: axis === 'x' ? word.cx : word.cy, along: axis === 'x' ? word.cy : word.cx }))
+        .filter((item) => Math.abs(item.cross - boardCoordinate) <= laneTolerance * 2.5
+          && Math.abs(item.along - boardAlong) <= Math.max(90, (axis === 'x' ? pageHeight : pageWidth) * 0.16))
+        .sort((left, right) => Math.abs(left.cross - boardCoordinate) - Math.abs(right.cross - boardCoordinate));
+      const delta = candidates.length ? candidates[0].cross - boardCoordinate : 0;
+      return Math.abs(delta) >= 2 ? Math.sign(delta) : 0;
+    };
+    const matches = [];
+    for (const lane of lanes) {
+      for (const board of targetBoards) {
+        const boardCoordinate = lane.axis === 'x' ? board.cx : board.cy;
+        const signedDistance = lane.coordinate - boardCoordinate;
+        const direction = boardMetadataDirection(board, lane.axis);
+        if (direction && Math.sign(signedDistance) !== direction) continue;
+        const distance = Math.abs(signedDistance);
+        const maximum = lane.axis === 'x' ? Math.max(45, pageWidth * 0.035) : Math.max(35, pageHeight * 0.035);
+        if (distance <= maximum) matches.push({ lane, board, distance });
+      }
+    }
+    matches.sort((left, right) => left.distance - right.distance);
+    const assignedLanes = new Set();
+    const assignedBoards = new Set();
+    const feedMatches = [];
+    for (const match of matches) {
+      if (assignedLanes.has(match.lane) || assignedBoards.has(match.board.norm)) continue;
+      assignedLanes.add(match.lane);
+      assignedBoards.add(match.board.norm);
+      feedMatches.push(match);
+    }
+
+    const decorateBoard = (board) => {
+      const verticalLabel = board.labelAxis === 'vertical';
+      const sameLane = words.filter((word) => {
+        const crossDistance = verticalLabel ? Math.abs(word.cx - board.cx) : Math.abs(word.cy - board.cy);
+        const alongDistance = verticalLabel ? Math.abs(word.cy - board.cy) : Math.abs(word.cx - board.cx);
+        return crossDistance <= laneTolerance * 1.6 && alongDistance <= Math.max(90, (verticalLabel ? pageHeight : pageWidth) * 0.16);
+      });
+      const proximity = (word) => verticalLabel ? Math.abs(word.cx - board.cx) : Math.abs(word.cy - board.cy);
+      const locationWord = sameLane.filter((word) => /^\s*\[[^\]]{2,80}\]\s*$/.test(word.text)).sort((left, right) => proximity(left) - proximity(right))[0];
+      const wayWord = sameLane.filter((word) => /\b\d{1,3}\s*(?:-|\s)?WAYS?\b/i.test(word.text)).sort((left, right) => proximity(left) - proximity(right))[0];
+      const splitWayWord = sameLane.filter((word) => /\bWAY\s*[-:]?\s*\d{1,3}\s*\+\s*\d{1,3}\b/i.test(word.text)).sort((left, right) => proximity(left) - proximity(right))[0];
+      const wayText = splitWayWord?.text || wayWord?.text || '';
+      const split = wayText.match(/\bWAY\s*[-:]?\s*(\d{1,3})\s*\+\s*(\d{1,3})\b/i);
+      const single = wayText.match(/\b(\d{1,3})\s*(?:-|\s)?WAYS?\b/i);
+      const splitTotal = split && Number(split[1]) <= 48 && Number(split[2]) <= 48 ? Number(split[1]) + Number(split[2]) : null;
+      return {
+        ...board,
+        location: locationWord ? locationWord.text.replace(/^\s*\[|\]\s*$/g, '').trim() : null,
+        waysTotal: splitTotal || (single && Number(single[1]) <= 72 ? Number(single[1]) : null),
+        locationCell: locationWord ? sourceCell([locationWord], 'schematic_location') : null,
+        waysCell: (splitWayWord || wayWord) ? sourceCell([splitWayWord || wayWord], 'schematic_ways') : null,
+      };
+    };
+    const boards = boardCandidates.map(decorateBoard);
+    const feeds = feedMatches.map(({ lane, board }) => ({
+      fromRef: sourceBoards.slice().sort((left, right) => {
+        const leftDistance = Math.abs((lane.axis === 'x' ? left.cx : left.cy) - lane.coordinate)
+          + Math.abs((lane.axis === 'x' ? left.cy : left.cx) - lane.alongCoordinate) * 3;
+        const rightDistance = Math.abs((lane.axis === 'x' ? right.cx : right.cy) - lane.coordinate)
+          + Math.abs((lane.axis === 'x' ? right.cy : right.cx) - lane.alongCoordinate) * 3;
+        return leftDistance - rightDistance;
+      })[0]?.ref || null,
+      toRef: board.ref,
+      rating: lane.rating,
+      device: lane.device,
+      poles: lane.poles,
+      poleConfiguration: lane.poleConfiguration,
+      cable: lane.cable,
+      confidence: lane.confidence,
+      sourceCell: sourceCell([lane.ratingCell, lane.deviceCell, lane.poleCell, lane.cableCell]
+        .filter(Boolean).flatMap((cell) => cell.words || []), 'schematic_feeder'),
+      fieldSources: {
+        rating: lane.ratingCell,
+        device: lane.deviceCell,
+        poles: lane.poleCell,
+        cable: lane.cableCell,
+      },
+    }));
+    const devices = [];
+    for (const { lane, board } of feedMatches) {
+      const meter = lane.words.find((word) => /^(?:M|METER)$/i.test(word.text));
+      const spd = lane.words.find((word) => /^(?:SPD|1\s*\+\s*2|T1\s*\+\s*T2)$/i.test(word.text));
+      if (meter) devices.push({ boardRef: board.ref, device: 'Meter', desc: 'Schematic meter', confidence: Math.min(0.72, meter.confidence), sourceCell: sourceCell([meter], 'schematic_accessory') });
+      if (spd) devices.push({ boardRef: board.ref, device: 'SPD', desc: /1\s*\+\s*2/i.test(spd.text) ? 'Type 1+2 surge protection' : 'Surge protection', confidence: Math.min(0.72, spd.confidence), sourceCell: sourceCell([spd], 'schematic_accessory') });
+    }
+    for (const lane of lanes.filter((candidate) => !assignedLanes.has(candidate))) {
+      const spare = lane.words.find((word) => /^SPARE$/i.test(word.text));
+      const sourceBoard = sourceBoards.slice().sort((left, right) => {
+        const leftDistance = Math.abs((lane.axis === 'x' ? left.cx : left.cy) - lane.coordinate)
+          + Math.abs((lane.axis === 'x' ? left.cy : left.cx) - lane.alongCoordinate) * 3;
+        const rightDistance = Math.abs((lane.axis === 'x' ? right.cx : right.cy) - lane.coordinate)
+          + Math.abs((lane.axis === 'x' ? right.cy : right.cx) - lane.alongCoordinate) * 3;
+        return leftDistance - rightDistance;
+      })[0];
+      if (!spare || !sourceBoard) continue;
+      devices.push({ boardRef: sourceBoard.ref, device: lane.device, rating: lane.rating, poles: lane.poles,
+        poleConfiguration: lane.poleConfiguration, spare: true, desc: 'Spare outgoing way', confidence: lane.confidence,
+        sourceCell: sourceCell([spare], 'schematic_spare') });
+    }
+
+    const warnings = [];
+    if (!sourceBoards.length) warnings.push('schematic_source_board_not_resolved');
+    if (boardCandidates.length > 1 && !feeds.length) warnings.push('schematic_feeder_lanes_not_resolved');
+    if (lanes.some((lane) => !lane.cable)) warnings.push('schematic_feeder_cable_missing');
+    return {
+      matched: feeds.length > 0,
+      confidence: feeds.length ? feeds.reduce((sum, feed) => sum + feed.confidence, 0) / feeds.length : 0,
+      boards,
+      feeds,
+      devices,
+      warnings,
+      sourceBoards: sourceBoards.map((board) => board.norm),
+      laneCount: lanes.length,
     };
   }
 
@@ -1076,6 +1365,7 @@
     classifyBoardFamily,
     familyTypeCode,
     parseSpatialSchedulePage,
+    parseSpatialSchematicPage,
     buildSpatialLayoutHint,
     deduplicateFeederRelationships,
     parseProtectionIndicator: indicatorValue,

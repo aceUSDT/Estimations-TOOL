@@ -2,24 +2,35 @@
  * with no manual OCR click. Drives the real app in Chromium against a local
  * static server (?test=1 unlocks on localhost only).
  */
-import { chromium } from 'playwright-core';
+import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+
+const playwrightSpecifier = process.env.PLAYWRIGHT_CORE_PATH
+  ? pathToFileURL(process.env.PLAYWRIGHT_CORE_PATH).href
+  : 'playwright-core';
+const { chromium } = await import(playwrightSpecifier);
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..', '..');
-const FIXTURE = process.argv[2]
-  ? path.resolve(process.argv[2])
-  : path.join(ROOT, 'examples/db-schedules/simple/BC250847-E13_Distribution.pdf');
-const URL = 'http://127.0.0.1:8765/?test=1';
+const FIXTURES = process.argv.length > 2
+  ? process.argv.slice(2).map((fixture) => path.resolve(fixture))
+  : [path.join(ROOT, 'examples/db-schedules/simple/BC250847-E13_Distribution.pdf')];
+const URL = process.env.APP_URL || 'http://127.0.0.1:8765/?test=1';
 
-const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
+const executablePath = [
+  process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH,
+  '/opt/pw-browsers/chromium',
+  'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+  'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+].find((candidate) => candidate && fs.existsSync(candidate));
+if (!executablePath) throw new Error('No Chromium-compatible browser executable was found');
+const browser = await chromium.launch({ executablePath });
 const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
 const page = await ctx.newPage();
 
 /* Serve every CDN asset from local disk so the check is hermetic (the sandbox
  * proxy MITMs TLS, which Chromium rejects). Same files, same versions. */
-import fs from 'node:fs';
 const NM = path.join(HERE, 'node_modules');
 const VENDOR = path.join(HERE, 'vendor');
 const mime = (p) => p.endsWith('.wasm') ? 'application/wasm' : p.endsWith('.gz') ? 'application/gzip' : 'application/javascript';
@@ -51,34 +62,105 @@ try {
   await page.fill('#mName', 'AutoOCR check');
   await page.click('#mOk');
   await page.waitForFunction('state.cur && state.cur.name === "AutoOCR check"');
-  await page.setInputFiles('#fileInput', FIXTURE);
+  await page.setInputFiles('#fileInput', FIXTURES);
   console.log('file dropped; waiting for ingest + auto-OCR + analysis…');
   await page.waitForFunction(
-    'state.cur.files.length === 1 && state.cur.files[0].status === "ready"',
+    `state.cur.files.length === ${FIXTURES.length} && state.cur.files.every(file => file.status === "ready")`,
     null, { timeout: 120000 },
   );
-  const scanned = await page.evaluate('state.cur.files[0].pages.filter(p => !(p.lines||[]).length).length');
+  const scanned = await page.evaluate('state.cur.files.reduce((sum, file) => sum + file.pages.filter(p => !(p.lines||[]).length).length, 0)');
   console.log('pages without text after ingest (pre-OCR):', scanned);
   await page.waitForFunction(
-    'state.cur.files[0].pages.every(p => (p.lines||[]).length) && state.cur.analysis',
+    'state.cur.files.every(file => file.pages.every(p => (p.lines||[]).length)) && state.cur.analysis',
     null, { timeout: 300000 },
   );
   const res = await page.evaluate(`({
-    ocrReady: state.cur.files[0].ocrReady === true,
-    pageLines: state.cur.files[0].pages.map(p => (p.lines||[]).length),
-    pageTypes: state.cur.files[0].pages.map(p => p.type),
+    ocrReady: state.cur.files.every(file => file.ocrReady === true || file.pages.every(page => page.source !== 'ocr')),
+    pageLines: state.cur.files.flatMap(file => file.pages.map(p => (p.lines||[]).length)),
+    pageTypes: state.cur.files.flatMap(file => file.pages.map(p => p.type)),
     rows: state.cur.analysis.rows.length,
+    feeders: state.cur.analysis.feeders.length,
     boards: Object.keys(state.cur.analysis.boards),
     status: state.cur.status,
     coverage: state.cur.analysis.coverage ? {
       boards: state.cur.analysis.coverage.summary.boards,
       zeroRowPages: state.cur.analysis.coverage.zeroRowSchedulePages.length,
     } : null,
+    health: state.cur.analysis.health,
+    pageDiagnostics: state.cur.analysis.pageDiagnostics,
+    boardDetails: Object.fromEntries(Object.entries(state.cur.analysis.boards).filter(([key]) => {
+      const auditBoard = ${JSON.stringify(process.env.AUDIT_BOARD || '')};
+      return !auditBoard || key === auditBoard;
+    }).map(([key, board]) => [key, {
+      ref: board.orig,
+      type: board.type,
+      family: board.family,
+      header: board.header,
+      inScope: board.inScope,
+    }])),
+    rowDetails: ${process.env.AUDIT_ROWS === '1' ? `state.cur.analysis.rows.filter(row => {
+      const auditBoard = ${JSON.stringify(process.env.AUDIT_BOARD || '')};
+      return !auditBoard || row.boardNorm === auditBoard || String(row.circuitReference || '').replace(/[^A-Z0-9]/gi, '').toUpperCase() === auditBoard;
+    }).map(row => ({
+      id: row.id, boardNorm: row.boardNorm, way: row.way, phase: row.phase,
+      device: row.device, rating: row.rating, poles: row.poles,
+      rcdProtected: row.rcdProtected, sens: row.sens, afdd: row.afdd,
+      spare: row.spare, space: row.space, desc: row.desc,
+      requiresReview: row.requiresReview, status: row.status,
+      sourceKey: row.sourceKey, highlightBbox: row.highlightBbox,
+      resolutionSource: row.resolutionSource, resolutionReasons: row.resolutionReasons,
+    }))` : 'undefined'},
+    feederDetails: ${(process.env.AUDIT_ROWS === '1' || process.env.AUDIT_FEEDERS === '1') ? `state.cur.analysis.feeders.filter(feeder => {
+      const auditBoard = ${JSON.stringify(process.env.AUDIT_BOARD || '')};
+      return !auditBoard || feeder.from === auditBoard || feeder.to === auditBoard;
+    }).map(feeder => ({
+      from: feeder.from, to: feeder.to, device: feeder.device, rating: feeder.rating,
+      poles: feeder.poles, poleConfiguration: feeder.poleConfiguration,
+      cable: feeder.cable, confidence: feeder.conf, sourceRole: feeder.sourceRole,
+    }))` : 'undefined'},
+    spatialAudit: ${(process.env.AUDIT_ROWS === '1' || process.env.AUDIT_SCHEMA === '1') ? `(() => {
+      const pg = state.cur.files[0]?.pages?.[0];
+      if (!pg || !window.EstimationExtractorCore?.parseSpatialSchedulePage) return null;
+      const parsed = window.EstimationExtractorCore.parseSpatialSchedulePage({
+        lines: pg.lines || [], tableRows: pg.tableRows || [],
+        pageWidth: pg.w, pageHeight: pg.h, pageType: pg.type,
+      });
+      return {
+        matched: parsed.matched,
+        schema: parsed.schema?.columns?.map(column => ({
+          role: column.role, x: column.x, left: column.left, right: column.right,
+          source: column.source, evidence: column.evidence?.text || null,
+        })),
+        header: parsed.board?.header || null,
+        rows: parsed.rows?.slice(0, 4).map(row => ({
+          way: row.way, phase: row.phase, device: row.device, rating: row.rating,
+          rcdProtected: row.rcdProtected, sens: row.sens, poles: row.poles,
+          cells: Object.fromEntries(Object.entries(row.fieldSources || {}).map(([key, cell]) => [key, cell?.text || null])),
+        })),
+      };
+    })()` : 'undefined'},
+    textAudit: ${process.env.AUDIT_TEXT === '1' ? `(() => {
+      const pg = state.cur.files[0]?.pages?.[0];
+      const focusX = ${Number(process.env.AUDIT_FOCUS_X) || 'null'};
+      if (Number.isFinite(focusX)) {
+        return (pg?.lines || []).flatMap((line, lineIndex) => (line.words || []).map(word => ({
+          lineIndex, text: word.text, bbox: word.bbox, rotation: word.rotation,
+        }))).filter(word => {
+          const x = Number(word.bbox?.[0]);
+          return Number.isFinite(x) && x >= focusX - 70 && x <= focusX + 100;
+        }).sort((left, right) => Number(left.bbox?.[1]) - Number(right.bbox?.[1]));
+      }
+      return (pg?.lines || []).map((line, lineIndex) => ({
+        lineIndex, text: line.text, bbox: line.bbox,
+        words: (line.words || []).map(word => ({ text: word.text, bbox: word.bbox, rotation: word.rotation })),
+      })).filter(line => /DB-G9|250A|120mm|MCCB|LVS1|LV Schematic/i.test(line.text));
+    })()` : 'undefined'},
     coveragePanelText: document.querySelector('#covSummary') ? document.querySelector('#covSummary').textContent : null,
     reviewItems: (() => { setTab('review'); return document.querySelectorAll('#reviewList .rev-item').length; })(),
   })`);
   console.log(JSON.stringify(res, null, 2));
-  if (!res.ocrReady || !res.pageLines.every((n) => n > 0)) throw new Error('auto-OCR did not populate page lines');
+  if (!res.pageLines.every((n) => n > 0)) throw new Error('document ingestion did not populate page lines');
+  if (scanned > 0 && !res.ocrReady) throw new Error('auto-OCR did not populate scanned pages');
   if (!res.coverage) throw new Error('analysis.coverage missing — reconciliation pass did not run');
   console.log('\nPASS: auto-OCR ran, analysis completed, and the reconciliation/coverage pass populated analysis.coverage.');
 } finally {

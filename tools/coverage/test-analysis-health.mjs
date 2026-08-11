@@ -134,6 +134,27 @@ test('no pages at all ⇒ failed (NO_CONTENT)', () => {
   assert.ok(h.reasons.some((r) => r.code === 'NO_CONTENT'));
 });
 
+test('schematic pages use feeder health and never masquerade as empty schedules', () => {
+  const boards = {
+    LVS1: { norm: 'LVS1', orig: 'LVS1', pages: [{ fileId: 's1', page: 1 }] },
+    DBG9: { norm: 'DBG9', orig: 'DB-G9', pages: [{ fileId: 's1', page: 1 }], parent: 'LVS1' },
+  };
+  const rows = [{ id: 'srow', boardNorm: 'LVS1', fileId: 's1', page: 1, device: 'MCCB', rating: 250, qty: 1, status: 'pending', kind: 'schematic' }];
+  const coverage = core.buildCoverage({ boards, rows, pages: [{ fileId: 's1', page: 1, type: 'sld', text: 'LV SCHEMATIC DB-G9 250A MCCB' }] });
+  assert.equal(coverage.summary.boards, 0);
+  assert.equal(coverage.zeroRowSchedulePages.length, 0);
+  const healthy = core.buildAnalysisHealth({ coverage, boards, rows,
+    pages: [page({ fileId: 's1', type: 'sld', scheduleScore: 0.9, rowsParsed: 1 })],
+    files: [{ id: 's1', status: 'ready' }], feeders: [{ from: 'LVS1', to: 'DBG9', rating: 250 }] });
+  assert.equal(healthy.state, 'complete');
+  assert.ok(!healthy.reasons.some((reason) => reason.code === 'SCHEDULE_PAGE_UNPARSED'));
+  const missingFeeds = core.buildAnalysisHealth({ coverage, boards, rows,
+    pages: [page({ fileId: 's1', type: 'sld', scheduleScore: 0.9, rowsParsed: 1 })],
+    files: [{ id: 's1', status: 'ready' }], feeders: [] });
+  assert.equal(missingFeeds.state, 'failed');
+  assert.ok(missingFeeds.reasons.some((reason) => reason.code === 'SCHEMATIC_FEEDS_MISSING'));
+});
+
 test('schedule scoring: BAM-style schedule page scores as candidate', () => {
   const lines = [
     'DB REFERENCE: DB-01   18 WAY TP&N',
@@ -183,7 +204,7 @@ test('diagnostic export contains NO document text, board names, or file names', 
 });
 
 test('every reason emitted by the model has a stable message in HEALTH_REASONS', () => {
-  for (const code of ['ZERO_DEVICES_WITH_BOARDS', 'DEVICE_COUNT_BELOW_BOARD_COUNT', 'BOARD_ROWS_MISSING', 'WAYS_UNACCOUNTED', 'WAYS_OVER_CAPACITY', 'BOARD_FEED_MISSING', 'PROTECTION_DETAILS_MISSING', 'SCHEDULE_PAGE_UNPARSED', 'SCHEDULE_DOC_NO_BOARDS', 'PAGE_TEXT_UNRELIABLE', 'OCR_PENDING', 'DOCUMENT_UNREADABLE', 'NO_CONTENT']) {
+  for (const code of ['ZERO_DEVICES_WITH_BOARDS', 'DEVICE_COUNT_BELOW_BOARD_COUNT', 'BOARD_ROWS_MISSING', 'WAYS_UNACCOUNTED', 'WAYS_OVER_CAPACITY', 'BOARD_FEED_MISSING', 'PROTECTION_DETAILS_MISSING', 'SCHEDULE_PAGE_UNPARSED', 'SCHEDULE_DOC_NO_BOARDS', 'SCHEMATIC_FEEDS_MISSING', 'PAGE_TEXT_UNRELIABLE', 'OCR_PENDING', 'DOCUMENT_UNREADABLE', 'NO_CONTENT']) {
     assert.ok(core.HEALTH_REASONS[code], `missing message for ${code}`);
   }
 });

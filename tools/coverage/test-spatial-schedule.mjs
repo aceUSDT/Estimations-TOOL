@@ -263,4 +263,33 @@ assert.equal(feederResult.duplicates.length, 1);
 assert.equal(feederResult.feeders.find((feeder) => feeder.way === 4).poles, 3);
 assert.equal(feederResult.feeders.find((feeder) => feeder.way === 4).evidence.length, 2);
 
-console.log('PASS: spatial columns, contextual board identity, multi-phase grouping, feeder evidence, policy classification, and provenance.');
+const schematicWords = [
+  word('DB-A-01', 100, 360, 10, 42, -90), word('[Office]', 110, 360, 10, 42, -90), word('12-Way', 115, 360, 10, 42, -90),
+  word('DB-B-02', 200, 360, 10, 42, -90), word('[Kitchen]', 210, 360, 10, 42, -90), word('24-Way', 215, 360, 10, 42, -90),
+  word('125A', 130, 600, 20, 10), word('TPN', 132, 620, 16, 10), word('MCCB', 128, 640, 24, 10),
+  word('50mm2 4C XLPE/SWA/LSZH', 135, 450, 10, 120, -90), word('M', 138, 420, 4, 10),
+  word('250A', 230, 600, 20, 10), word('TPN', 232, 620, 16, 10), word('MCCB', 228, 640, 24, 10),
+  word('120mm2 4C XLPE/SWA/LSZH', 235, 450, 10, 120, -90), word('1+2', 233, 420, 14, 10),
+  word('LVS1 (Main LV Switchboard)', 50, 760, 160, 14),
+];
+const schematic = Core.parseSpatialSchematicPage({
+  lines: [{ text: 'LV SCHEMATIC' }],
+  words: schematicWords,
+  pageWidth: 900,
+  pageHeight: 820,
+  pageType: 'sld',
+});
+assert.equal(schematic.matched, true);
+assert.equal(schematic.feeds.length, 2);
+assert.deepEqual(schematic.feeds.map((feed) => [feed.fromRef, feed.toRef, feed.rating, feed.device, feed.poleConfiguration, feed.cable.size]), [
+  ['LVS1', 'DB-A-01', 125, 'MCCB', 'TPN', 50],
+  ['LVS1', 'DB-B-02', 250, 'MCCB', 'TPN', 120],
+]);
+assert.deepEqual(schematic.boards.filter((board) => /^DB/.test(board.norm)).map((board) => [board.norm, board.location, board.waysTotal]), [
+  ['DBA01', 'Office', 12],
+  ['DBB02', 'Kitchen', 24],
+]);
+assert.ok(schematic.devices.some((device) => device.boardRef === 'DB-A-01' && device.device === 'Meter'));
+assert.ok(schematic.devices.some((device) => device.boardRef === 'DB-B-02' && device.device === 'SPD'));
+
+console.log('PASS: spatial schedule columns, precise phase rows, schematic feeder lanes, policy classification, and provenance.');

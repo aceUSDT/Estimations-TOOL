@@ -1121,7 +1121,7 @@ const state = {
   reportMode: 'board',
   reviewFlow: {active:false,currentRowId:null,initialCount:0,moving:false,boardOrder:[],initialByBoard:{},rowOrderByBoard:{}},
 };
-const ANALYSIS_VERSION=9;
+const ANALYSIS_VERSION=10;
 const uid = () => 'x'+(state.nextId++)+'_'+Math.random().toString(36).slice(2,6);
 
 /* ====================== PERSISTENCE (IndexedDB) ====================== */
@@ -1508,6 +1508,10 @@ function detectCables(line){
 
 /* ==================== PAGE CLASSIFICATION ==================== */
 function classifyPage(text, pageIdx, totalPages){
+  if(window.EstimationExtractorCore?.classifyPageText){
+    const classified=window.EstimationExtractorCore.classifyPageText(text,pageIdx,totalPages);
+    return {type:classified.type,conf:classified.confidence,scores:classified.scores};
+  }
   const low = text.toLowerCase();
   const scores = {};
   const add=(t,n)=>scores[t]=(scores[t]||0)+n;
@@ -1829,7 +1833,7 @@ function openProject(id){
   setTab('docs');
   if(state.cur.analysis&&state.cur.analysis.version!==ANALYSIS_VERSION&&state.cur.files.some(file=>file.status==='ready')){
     setProcessingDock(STAGES[0],'Updating saved analysis',2,0);
-    setTimeout(()=>runAnalysis({auto:true}),0);
+    setTimeout(()=>runAnalysisWithRecovery({auto:true}),0);
   }
 }
 function renderProjHeader(){
@@ -1988,7 +1992,7 @@ function mapOcrWords(words,candidate){
     return {...word,bbox:{x0:Math.max(0,Math.min(...xs)),y0:Math.max(0,Math.min(...ys)),x1:Math.min(candidate.sourceWidth,Math.max(...xs)),y1:Math.min(candidate.sourceHeight,Math.max(...ys))}};
   }).filter(Boolean);
 }
-async function ocrPdfPage(f,pageNo,{reanalyze=true,quiet=false}={}){
+async function ocrPdfPage(f,pageNo,{reanalyze=true,quiet=false,forceRaster=false}={}){
   if (ocrBusy) throw new Error('OCR is already running');
   if (!f || (f.ext!=='pdf'&&!IMAGE_EXTS.has(f.ext)) || !rawStore[f.id]) throw new Error('The original document is not available for OCR');
   ocrBusy=true;
@@ -2024,7 +2028,7 @@ async function ocrPdfPage(f,pageNo,{reanalyze=true,quiet=false}={}){
     const embeddedLines=(pageRecord?.embeddedLines?.length?pageRecord.embeddedLines:pageRecord?.source!=='ocr'?pageRecord?.lines:[])||[];
     if(embeddedLines.length&&!pageRecord.embeddedLines)pageRecord.embeddedLines=embeddedLines;
     let plan=core.buildOcrCandidatePlan(metrics),attempts=[];
-    if(embeddedLines.length){
+    if(embeddedLines.length&&!forceRaster){
       const quality=core.assessPageText(embeddedLines,{expectedType,pageWidth:pageRecord.w,pageHeight:pageRecord.h});
       const embedded={id:'embedded-text',preprocessing:null,confidence:quality.score*100,text:embeddedLines.map(line=>line.text).join('\n'),
         lines:embeddedLines,expectedType,mappedWords:[]};
@@ -2072,7 +2076,7 @@ async function ocrPdfPage(f,pageNo,{reanalyze=true,quiet=false}={}){
     const remaining=f.pages.filter(x=>x.needsOcr).length;
     f.warn=remaining?`${remaining} page${remaining===1?'':'s'} still need OCR.`:null;
     saveProject(state.cur);renderDocs();renderPgclass();
-    if(reanalyze) await runAnalysis({auto:true});
+    if(reanalyze) await runAnalysisWithRecovery({auto:true});
     if(!quiet) toast(keptEmbedded?`Embedded text retained on page ${pageNo} after OCR comparison`:`OCR read ${lines.length} lines from page ${pageNo} using ${chosen.id.replace(/-/g,' ')}`);
     return lines;
   }finally{
@@ -2093,7 +2097,7 @@ async function ocrScannedPages(f,limit=20,{reanalyze=true,quiet=false}={}){
     catch(error){stopped={page:item.page,error};break;}
   }
   ocrProgressContext='';
-  if(done&&reanalyze) await runAnalysis({auto:true});
+  if(done&&reanalyze) await runAnalysisWithRecovery({auto:true});
   const remain=f.pages.filter(pg=>pg.needsOcr||!(pg.lines||[]).length).length;
   if(stopped)toast(`OCR stopped on page ${stopped.page}: ${stopped.error.message||stopped.error}. ${remain} page${remain===1?'':'s'} remain.`);
   else if(!quiet||remain) toast(`OCR completed ${done} page${done===1?'':'s'}${remain?`; ${remain} remain - run OCR scans again`:''}`);
@@ -2424,7 +2428,7 @@ async function handleFiles(list){
   setProcessingDock(STAGES[0],`${files.length} document${files.length===1?'':'s'} selected`,2,0);await paintProcessing();
   for (const f of files) await ingestFile(f);
   await autoOcrScannedFiles();
-  if (state.cur.files.some(f=>f.status==='ready')){ toast('Documents read — analysing…'); await runAnalysis({auto:true}); }
+  if (state.cur.files.some(f=>f.status==='ready')){ toast('Documents read — analysing…'); await runAnalysisWithRecovery({auto:true}); }
   else finishProcessing('No readable documents were available','failed',4000);
 }
 $('#fileInput').addEventListener('change', e=>{ handleFiles(e.target.files); e.target.value=''; });
@@ -2497,7 +2501,7 @@ function renderDocs(){
         inp.addEventListener('change', async ()=>{
           if (!inp.files.length) return;
           p.files=p.files.filter(x=>x.id!==f.id); await removeRawFile(f.id);
-          await ingestFile(inp.files[0]); await autoOcrScannedFiles(); await runAnalysis({auto:true});
+          await ingestFile(inp.files[0]); await autoOcrScannedFiles(); await runAnalysisWithRecovery({auto:true});
         });
         inp.click();
       }
@@ -2863,8 +2867,11 @@ async function runAnalysis(opts){
       // never by a single classifier label (SmartScreen addendum).
       const schedCandidate=core&&core.scoreScheduleCandidate
         ? core.scoreScheduleCandidate(lines) : {score:0,signals:[]};
-      const regularSchedule=pg.type!=='cable-schedule'
+      const schematicPage=pg.type==='sld'||pg.type==='schematic';
+      const regularSchedule=!schematicPage&&pg.type!=='cable-schedule'
         && (SCHEDULE_TYPES.has(pg.type) || (schedCandidate.score>=0.45&&schedCandidate.signals.length>=2));
+      const schematicSpatial=schematicPage&&core?.parseSpatialSchematicPage
+        ? core.parseSpatialSchematicPage({lines:pg.lines||[],tableRows:pg.tableRows||[],pageWidth:pg.w,pageHeight:pg.h,pageType:pg.type}) : null;
       const spatialAttempts=[];
       let spatial=regularSchedule&&core?.parseSpatialSchedulePage
         ? core.parseSpatialSchedulePage({lines:pg.lines||[],tableRows:pg.tableRows||[],pageWidth:pg.w,pageHeight:pg.h,pageType:pg.type}) : null;
@@ -2900,7 +2907,8 @@ async function runAnalysis(opts){
         scheduleScore:schedCandidate.score, scheduleSignals:schedCandidate.signals, rowsParsed:0,
         spatialContinuation,
         spatialConfidence:spatial?.confidence??null, spatialColumns:spatial?.schema?.columns?.map(column=>column.role)||[],
-        spatialWarnings:spatial?.warnings||[],extractionAttempts:spatialAttempts};
+        spatialWarnings:spatial?.warnings||[],extractionAttempts:spatialAttempts,
+        schematicFeeds:schematicSpatial?.feeds?.length||0,schematicWarnings:schematicSpatial?.warnings||[]};
       pageDiag.push(diagnostic);
       const pageRowStart=A.rows.length;
       let ctxBoard=null;
@@ -2921,6 +2929,24 @@ async function runAnalysis(opts){
         prevBoard=null;
         prevSpatialSchema=null;
         if(pg.type==='sld'||pg.type==='schematic')pageBoards.forEach(b=>regBoard(b,id,pageNo));
+        if(schematicSpatial){
+          schematicSpatial.boards.forEach(item=>{
+            const type=/^MAIN/.test(item.norm)?'MAIN':/^SMDB/.test(item.norm)?'SMDB':/^MDB/.test(item.norm)?'MDB':/^LVS/.test(item.norm)?'SB':'UNK';
+            regBoard({norm:item.norm,orig:item.ref,type},id,pageNo,false);
+            const board=A.boards[item.norm];
+            if(!board)return;
+            board.header=board.header||{};
+            board.headerEvidence=board.headerEvidence||{};
+            if(item.location&&!board.header.location){
+              board.header.location=item.location;
+              board.headerEvidence.location={text:item.location,bbox:item.locationCell?.bbox||item.bbox,confidence:item.locationCell?.confidence||item.confidence,extractionMethod:'Spatial schematic parser'};
+            }
+            if(item.waysTotal&&!board.header.ways_total){
+              board.header.ways_total=item.waysTotal;
+              board.headerEvidence.ways_total={text:item.waysCell?.text||`${item.waysTotal} ways`,bbox:item.waysCell?.bbox||item.bbox,confidence:item.waysCell?.confidence||item.confidence,extractionMethod:'Spatial schematic parser'};
+            }
+          });
+        }
       }
       if(isSched&&ctxBoard&&core?.extractBoardHeader){
         const localHeader=spatial?.board
@@ -2981,6 +3007,38 @@ async function runAnalysis(opts){
             conf:feed.confidence||0.7,sourceRole:'circuit_reference',spatial:true});
         });
       }
+      if(schematicSpatial?.matched){
+        schematicSpatial.feeds.forEach(feed=>{
+          const from=feed.fromRef?canonicalBoardRef(feed.fromRef).normalised:null;
+          const to=canonicalBoardRef(feed.toRef).normalised;
+          if(!to)return;
+          A.feeders.push({id:uid(),fileId:id,page:pageNo,line:null,from,to,cable:feed.cable||null,
+            way:null,device:feed.device||null,rating:feed.rating??null,poles:feed.poles??null,poleConfiguration:feed.poleConfiguration||null,
+            srcText:`Schematic feeder${from?' from '+feed.fromRef:''} to ${feed.toRef}`,bbox:feed.sourceCell?.bbox||feed.fieldSources?.rating?.bbox||null,
+            conf:feed.confidence||0.7,sourceRole:'schematic_feeder',fieldSources:feed.fieldSources||{},spatial:true,requiresReview:true});
+          const row={way:null,desc:`Feeder to ${feed.toRef}`,circuitReference:feed.toRef,device:feed.device||null,
+            rating:feed.rating??null,poles:feed.poles??null,poleConfiguration:feed.poleConfiguration||null,curve:null,sens:null,rcdProtected:null,
+            afdd:null,phase:feed.poles>=3?'3PH':feed.poles?'1PH':null,ka:null,cable:feed.cable||null,spare:false,space:false,incomer:false,qty:1,
+            srcText:`Schematic feeder${from?' from '+feed.fromRef:''} to ${feed.toRef}`,conf:feed.confidence||0.7,requiresReview:true,
+            sourceCell:feed.sourceCell||feed.fieldSources?.rating||null,fieldSources:{device:feed.fieldSources?.device,rating:feed.fieldSources?.rating,poles:feed.fieldSources?.poles}};
+          const trace=sourceTrace(row,row.sourceCell,pg,fl.name);
+          const record={id:uid(),boardNorm:from||to,fileId:id,page:pageNo,line:null,status:'pending',kind:'schematic',sourceRole:'schematic_feeder',
+            ...row,...trace,highlightBbox:row.sourceCell?.bbox||null,conf:trace.lineConfidence?Math.min(row.conf,trace.lineConfidence):row.conf};
+          record.sourceKey=stableRowSourceKey(record);A.rows.push(record);
+        });
+        schematicSpatial.devices.forEach(item=>{
+          const boardNorm=canonicalBoardRef(item.boardRef).normalised;
+          if(!boardNorm)return;
+          const row={way:null,desc:item.desc||'Schematic device',circuitReference:null,device:item.device||null,rating:item.rating??null,
+            poles:item.poles??null,poleConfiguration:item.poleConfiguration||null,curve:null,sens:null,rcdProtected:null,afdd:null,phase:item.poles>=3?'3PH':item.poles?'1PH':null,
+            ka:null,cable:null,spare:Boolean(item.spare),space:false,incomer:false,qty:1,srcText:item.sourceCell?.text||item.desc||item.device,
+            conf:item.confidence||0.65,requiresReview:true,sourceCell:item.sourceCell||null};
+          const trace=sourceTrace(row,row.sourceCell,pg,fl.name);
+          const record={id:uid(),boardNorm,fileId:id,page:pageNo,line:null,status:'pending',kind:'schematic',sourceRole:'schematic_accessory',
+            ...row,...trace,highlightBbox:row.sourceCell?.bbox||null,conf:trace.lineConfidence?Math.min(row.conf,trace.lineConfidence):row.conf};
+          record.sourceKey=stableRowSourceKey(record);A.rows.push(record);
+        });
+      }
       lines.forEach((t,li)=>{
         const lower=t.toLowerCase();
         if (f.ignore.length && f.ignore.some(w=>lower.includes(w))) return;
@@ -2994,13 +3052,13 @@ async function runAnalysis(opts){
             addScheduleRow(row,li);
           }
           if(!spatialMatched)parseFeeders(t, pageBoards, ctx.board).forEach(fd=>A.feeders.push({id:uid(),fileId:id,page:pageNo,line:li,...fd}));
-        } else if (pg.type==='sld'||pg.type==='schematic'||pg.type==='notes'){
+        } else if ((pg.type==='sld'||pg.type==='schematic'||pg.type==='notes')&&!schematicSpatial?.matched){
           const mainCtx = pageBoards.find(b=>b.type==='MAIN') || pageBoards.find(b=>b.type==='SMDB'||b.type==='MDB');
           parseFeeders(t, pageBoards, mainCtx?mainCtx.norm:null).forEach(fd=>A.feeders.push({id:uid(),fileId:id,page:pageNo,line:li,...fd}));
         } else if (pg.type==='legend'){
           const lg=parseLegendLine(t); if(lg) A.legend.push({...lg, fileId:id, page:pageNo});
         }
-        if (MENTION_TYPES.has(pg.type) && !isNoteLine(t)){
+        if (!isSched && MENTION_TYPES.has(pg.type) && !isNoteLine(t)){
           const dev=detectDeviceIn(t);
           if (dev && (ratingOf(t)!==null || /\d+\s*[x×]/i.test(t))){
             if (devFilter && !devFilter.has(dev.toUpperCase())) return;
@@ -3103,7 +3161,7 @@ async function runAnalysis(opts){
     const scopeFiles=f.fileIds.map(fid=>p.files.find(x=>x.id===fid)).filter(Boolean)
       .map(fl=>({id:fl.id,ext:fl.ext,status:fl.status,pages:fl.pages}));
     A.health=window.EstimationExtractorCore.buildAnalysisHealth({
-      coverage:A.coverage||null, boards:A.boards, rows:A.rows, pages:pageDiag, files:scopeFiles});
+      coverage:A.coverage||null, boards:A.boards, rows:A.rows, pages:pageDiag, files:scopeFiles, feeders:A.feeders});
     A.pageDiagnostics=pageDiag;
   }
   p.analysis=A;
@@ -3145,8 +3203,75 @@ async function runAnalysis(opts){
     $('#projView')?.removeAttribute('aria-busy');
   }
 }
-$('#anRunBtn').addEventListener('click', ()=>runAnalysis());
-$('#reanalyzeBtn').addEventListener('click', async ()=>{ setTab('analysis');setProcessingDock(STAGES[0],'Checking document text',2,0);await paintProcessing();await autoOcrScannedFiles();await runAnalysis(); });
+function analysisQualityScore(analysis){
+  if(!analysis)return -Infinity;
+  const stateScore={failed:0,incomplete:500,complete:1000}[analysis.health?.state]??0;
+  const coverage=Number(analysis.coverage?.summary?.pctComplete);
+  const parsed=(analysis.pageDiagnostics||[]).filter(page=>page.type!=='sld'&&page.type!=='schematic'&&(page.rowsParsed||0)>0).length;
+  const completeRows=(analysis.rows||[]).filter(row=>row.kind==='schedule'&&!row.space&&!row.spare&&row.device&&row.rating!=null).length;
+  const gaps=(analysis.health?.reasons||[]).reduce((sum,reason)=>sum+(Number(reason.count)||1),0);
+  return stateScore+(Number.isFinite(coverage)?coverage*2:0)+parsed*20+completeRows-gaps*5;
+}
+function recoveryCandidates(analysis,project){
+  const recoverable=new Set(['SCHEDULE_PAGE_UNPARSED','PROTECTION_DETAILS_MISSING','PAGE_TEXT_UNRELIABLE','OCR_PENDING']);
+  if(!(analysis?.health?.reasons||[]).some(reason=>recoverable.has(reason.code)))return [];
+  const keys=new Map();
+  const add=(fileId,page,reason)=>{
+    if(!fileId||!page)return;
+    const file=project.files.find(item=>item.id===fileId),record=file?.pages?.[page-1];
+    if(!record||record.type==='sld'||record.type==='schematic'||record.recovery?.analysisVersion===ANALYSIS_VERSION)return;
+    const key=`${fileId}#${page}`;
+    if(!keys.has(key))keys.set(key,{file,page,record,reasons:new Set()});
+    keys.get(key).reasons.add(reason);
+  };
+  (analysis.health.reasons||[]).forEach(reason=>{
+    if(!recoverable.has(reason.code))return;
+    (reason.refs||[]).forEach(ref=>{
+      if(ref.fileId&&ref.page)add(ref.fileId,ref.page,reason.code);
+      if(ref.board)(analysis.rows||[]).filter(row=>row.kind==='schedule'&&row.boardNorm===ref.board&&!row.space&&!row.spare&&(!row.device||row.rating==null))
+        .forEach(row=>add(row.fileId,row.page,reason.code));
+    });
+  });
+  (analysis.pageDiagnostics||[]).filter(page=>page.type!=='sld'&&page.type!=='schematic'&&(page.rowsParsed||0)===0&&page.scheduleScore>=0.45)
+    .forEach(page=>add(page.fileId,page.page,'SCHEDULE_PAGE_UNPARSED'));
+  return [...keys.values()].slice(0,3);
+}
+async function runAnalysisWithRecovery(opts={}){
+  const project=state.cur;
+  const first=await runAnalysis(opts);
+  if(!first||opts.noRecovery||state.cur!==project)return first;
+  const candidates=recoveryCandidates(first,project);
+  if(!candidates.length){first.recoveryLog=[];return first;}
+  const clone=value=>value==null?value:JSON.parse(JSON.stringify(value));
+  const firstStatus=project.status,firstScore=analysisQualityScore(first),snapshots=[];
+  setProcessingDock('Retrying low-confidence pages',`${candidates.length} page${candidates.length===1?'':'s'} selected by analysis health checks`,88,7);
+  await paintProcessing();
+  for(const candidate of candidates){
+    const pg=candidate.record;
+    snapshots.push({record:pg,data:{lines:clone(pg.lines),tableRows:clone(pg.tableRows),embeddedLines:clone(pg.embeddedLines),
+      textQuality:clone(pg.textQuality),ocr:clone(pg.ocr),source:pg.source,type:pg.type,sub_format:pg.sub_format,threeType:pg.threeType,
+      conf:pg.conf,needsOcr:pg.needsOcr}});
+    pg.recovery={analysisVersion:ANALYSIS_VERSION,attemptedAt:new Date().toISOString(),reasons:[...candidate.reasons]};
+    try{await ocrPdfPage(candidate.file,candidate.page,{reanalyze:false,quiet:true,forceRaster:true});}
+    catch(error){pg.recovery.error=error.message||String(error);}
+  }
+  const second=await runAnalysis({...opts,noRecovery:true});
+  const secondScore=analysisQualityScore(second);
+  if(second&&secondScore>firstScore){
+    second.recoveryLog=candidates.map(candidate=>({fileId:candidate.file.id,page:candidate.page,reasons:[...candidate.reasons],outcome:'accepted'}));
+    saveProject(project);return second;
+  }
+  snapshots.forEach(snapshot=>{
+    const recovery=snapshot.record.recovery;
+    Object.assign(snapshot.record,snapshot.data,{recovery:{...recovery,outcome:'rolled_back'}});
+  });
+  project.analysis=first;project.status=firstStatus;
+  first.recoveryLog=candidates.map(candidate=>({fileId:candidate.file.id,page:candidate.page,reasons:[...candidate.reasons],outcome:'rolled_back'}));
+  renderTakeoff();renderProjHeader();renderAnalysisControls();renderPgclass();saveProject(project);
+  return first;
+}
+$('#anRunBtn').addEventListener('click', ()=>runAnalysisWithRecovery());
+$('#reanalyzeBtn').addEventListener('click', async ()=>{ setTab('analysis');setProcessingDock(STAGES[0],'Checking document text',2,0);await paintProcessing();await autoOcrScannedFiles();await runAnalysisWithRecovery(); });
 
 
 /* ============================ RESULTS (DEVICES TAB) ============================ */
@@ -3194,6 +3319,12 @@ function setRowDecision(row,status,surface,note=''){
   if(!row)return;
   row.status=status;
   recordRowDecision(row,status==='confirmed'?'Approved':'Rejected',surface,note);
+}
+function undoRowDecision(row,surface){
+  if(!row)return;
+  const prior=row.status;
+  row.status='pending';
+  recordRowDecision(row,prior==='rejected'?'Rejection undone':'Approval undone',surface,'Returned to pending review');
 }
 function approveRows(rows,surface,note=''){
   let count=0;
@@ -3639,10 +3770,22 @@ function renderBoardDetail(){
   const b = norm==='__none__'?null:A.boards[norm];
   const label = norm==='__none__'?'No board reference (plans / general text)':boardLabel(norm);
   const location=b&&boardEvidenceLocation(norm);
-  head.innerHTML=`<button class="btn sm ghost" id="bdBack">‹ All boards</button> <b style="margin-left:6px">${esc(label)}</b>${location?'<button class="btn sm" id="bdViewSource" style="margin-left:auto">View source</button>':''}`;
+  const rows=activeRows().filter(r=>(r.boardNorm||'__none__')===norm);
+  const pendingRows=rows.filter(reviewDecisionPending);
+  head.innerHTML=`<button class="btn sm ghost" id="bdBack">‹ All boards</button> <b style="margin-left:6px">${esc(label)}</b>
+    <span style="margin-left:auto;display:flex;gap:7px;align-items:center;flex-wrap:wrap">
+      ${pendingRows.length?`<button class="btn sm primary" id="bdApproveRemaining">Approve remaining (${pendingRows.length})</button>`:''}
+      ${location?'<button class="btn sm" id="bdViewSource">View source</button>':''}</span>`;
   $('#bdBack').addEventListener('click', ()=>{ state.selectedBoard=null; renderTakeoff(); });
   $('#bdViewSource')?.addEventListener('click',()=>openBoardInViewer(norm));
-  const rows=activeRows().filter(r=>(r.boardNorm||'__none__')===norm);
+  $('#bdApproveRemaining')?.addEventListener('click',()=>openModal('Approve remaining rows',
+    `<p style="line-height:1.6">Approve all <b>${pendingRows.length}</b> remaining extracted row${pendingRows.length===1?'':'s'} for <b>${esc(label)}</b>?</p>
+     <p class="hint">Each decision is written to the board history and can be undone from its evidence row.</p>`,()=>{
+      const current=guidedReviewCurrentRow();
+      const count=approveRows(pendingRows,'Boards & Devices','Approved all remaining rows on '+label);
+      renderTakeoff();renderProjHeader();saveProject(p);toast(`${count} row${count===1?'':'s'} approved for ${label}`);
+      if(current&&(current.boardNorm||'__none__')===norm)scheduleGuidedAdvance(current,'Board approval saved');
+    },'Approve rows'));
   const devs=deviceTotals(rows)[norm]||{};
   const total=Object.entries(devs).filter(([k])=>countable(k)).reduce((s,[,v])=>s+v.qty,0);
   detail.innerHTML = (b? boardHealthHtml(norm,rows,b)+boardHeaderCard(b) : '<div class="p-body"><span class="hint">Rows with no detected board reference.</span></div>')
@@ -3691,7 +3834,7 @@ function renderHealthBanner(){
   const ocrBtn=$('#healthOcrBtn');
   if(ocrBtn)ocrBtn.addEventListener('click', async()=>{
     ocrBtn.disabled=true;
-    try{ await autoOcrScannedFiles(); await runAnalysis({auto:true}); }
+    try{ await autoOcrScannedFiles(); await runAnalysisWithRecovery({auto:true}); }
     finally{ ocrBtn.disabled=false; }
   });
   const diagBtn=$('#healthDiagBtn');
@@ -3731,12 +3874,12 @@ function evRowHtml(r){
     <td style="width:26px"></td>
     <td><div class="src">${esc(r.srcText)}</div>
       <div style="margin-top:3px;font-family:inherit">${bits.map(b=>`<span class="chip grey">${esc(b)}</span>`).join(' ')}
-      <span class="chip ${r.kind==='mention'?'purple':r.kind==='manual'?'blue':'cyan'}">${r.kind==='mention'?'plan mention':r.kind==='manual'?'added manually':'schedule row'}</span></div></td>
+      <span class="chip ${r.kind==='mention'?'purple':r.kind==='manual'?'blue':r.kind==='schematic'?'amber':'cyan'}">${r.kind==='mention'?'plan mention':r.kind==='manual'?'added manually':r.kind==='schematic'?'schematic evidence':'schedule row'}</span></div></td>
     <td style="white-space:nowrap">${esc(f?f.name:'?')} · p${r.page}</td>
     <td>${confChip(r.conf, r.status)}</td>
     <td style="white-space:nowrap"><div class="grow-actions">
       <button data-ev="jump" title="Show in document">View</button>
-      <button data-ev="ok" class="ok" title="Approve">✓</button>
+      ${r.status==='confirmed'?'<button data-ev="undo" title="Undo approval">↶</button>':'<button data-ev="ok" class="ok" title="Approve">✓</button>'}
       <button data-ev="edit" title="Correct">✎</button>
       <button data-ev="no" class="no" title="Reject">✕</button>
     </div></td></tr>`;
@@ -3751,9 +3894,10 @@ function bindEvActions(container, rows){
       if (a==='jump'){ jumpToEvidence(r); return; }
       if (a==='ok'){ setRowDecision(r,'confirmed','Boards & Devices'); }
       if (a==='no'){ setRowDecision(r,'rejected','Boards & Devices'); }
+      if (a==='undo'){ undoRowDecision(r,'Boards & Devices'); }
       if (a==='edit'){ openRowEditor(r); return; }
       renderTakeoff(); renderProjHeader(); saveProject(p);
-      scheduleGuidedAdvance(r,a==='ok'?'Approval saved':'Rejection saved');
+      if(a!=='undo')scheduleGuidedAdvance(r,a==='ok'?'Approval saved':'Rejection saved');
     }));
   });
 }
@@ -3765,7 +3909,7 @@ function deviceOptions(sel){
 function openRowEditor(r, isNew, surface='Boards & Devices'){
   const p=state.cur, A=p.analysis;
   const boards=Object.values(A.boards);
-  const poleValue=r.poleConfiguration||(r.poles===1?'SPN':r.poles===2?'DPN':r.poles===3?'TPN':r.poles===4?'4P':'');
+  const poleValue=r.poleConfiguration||(r.poles===1?'SP':r.poles===2?'DP':r.poles===3?'TP':r.poles===4?'4P':'');
   const rcdValue=r.rcdProtected===true?'yes':r.rcdProtected===false?'no':'';
   const afddSource=Object.prototype.hasOwnProperty.call(r,'afddIndicated')?r.afddIndicated:r.afdd;
   const afddValue=afddSource===true?'yes':afddSource===false?'no':'';
@@ -4098,6 +4242,16 @@ function exportBlockedByHealth(){
     setTab('analysis');
     return true;
   }
+  const model=currentReportModel();
+  if(model&&(model.reviewCount||model.unassignedQty||!model.reconciliation?.valid)){
+    const reasons=[];
+    if(model.reviewCount)reasons.push(`${model.reviewCount} specification${model.reviewCount===1?'':'s'} still need review`);
+    if(model.unassignedQty)reasons.push(`${model.unassignedQty} device${model.unassignedQty===1?' has':'s have'} no board reference`);
+    if(!model.reconciliation?.valid)reasons.push('report quantities do not reconcile');
+    toast('Export disabled — '+reasons.join('; ')+'. Open the report source windows to correct and approve them.');
+    setTab('reports');
+    return true;
+  }
   return false;
 }
 $('#reportCsvBtn').addEventListener('click',()=>{
@@ -4278,6 +4432,27 @@ function buildCrossReference(A,p,prev){
     usedSchedule.add(match.b.norm);
     const scb=match.b, h=scb.header||{};
     const feed=A.feeders.find(f=>f.to===scb.norm||f.to===sb.norm);
+    if(feed&&feed.rating!=null&&(h.board_rating_a==null||h.board_rating_a==='')){
+      h.board_rating_a=Number(feed.rating);
+      scb.header=h;
+      scb.headerEvidence=scb.headerEvidence||{};
+      scb.headerEvidence.board_rating_a={
+        text:`${feed.rating}A schematic feeder`,originalText:feed.srcText||`${feed.rating}A`,normalisedValue:`${feed.rating}A`,
+        bbox:feed.bbox||null,confidence:Math.min(0.82,Number(feed.conf)||0.72),extractionMethod:'Schematic-to-schedule reconciliation',
+        inferred:true,reviewStatus:'Review required',sourceFileId:feed.fileId||null,sourcePage:feed.page||null,
+      };
+      scb.boardRatingInferred=true;
+      scb.boardRatingInference={source:'schematic_feeder',fileId:feed.fileId||null,page:feed.page||null,rating:Number(feed.rating),confidence:Math.min(0.82,Number(feed.conf)||0.72)};
+      if(window.EstimationExtractorCore?.classifyBoardFamily){
+        const classification=window.EstimationExtractorCore.classifyBoardFamily(h,{devices:A.rows.filter(row=>row.boardNorm===scb.norm)});
+        scb.family=classification.family;scb.familyConfidence=classification.confidence;scb.familyReasons=classification.reasons;
+        scb.familyPolicy=classification.policyId;scb.familyReview=true;
+      }
+      const inferredId='inferred-rating|'+sb.norm+'|'+scb.norm;
+      out.push({id:inferredId,kind:'inferred_rating',schematicNorm:sb.norm,scheduleNorm:scb.norm,
+        message:`${scb.orig}: board rating inferred as ${feed.rating}A from the matched schematic feeder; confirm before export.`,
+        severity:'medium',detail:{schematicRating:feed.rating,sourceFileId:feed.fileId,sourcePage:feed.page},...carry(inferredId)});
+    }
     if (feed && feed.rating!=null && h.incomer_rating_a!=null && h.incomer_rating_a!==''){
       const same=Number(feed.rating)===Number(h.incomer_rating_a);
       const id='rating|'+sb.norm+'|'+scb.norm;
@@ -4503,10 +4678,12 @@ function pageDetections(f, pageNo){
       const countTitle=specKey
         ? `${specLabel}: ${counts.group} on ${boardName}; ${counts.board} counted device${counts.board===1?'':'s'} on this board`
         : `${specLabel} on ${boardName}`;
+      const decisionColor=r.status==='rejected'?'red':r.status==='pending'?'amber':r.edited?'blue':'spec';
+      const stateColor=r.status==='rejected'?'#d33c43':r.status==='pending'?'#c87d0e':r.edited?'#1668e3':specColor||'#0f8f5f';
       out.push({
         kind:'row',r,line:r.line,bbox:r.highlightBbox||r.bbox,
-        color:specColor?'spec':r.status==='rejected'?'red':r.status==='confirmed'?'green':'amber',
-        specKey,specColor,specLabel,counts,countTitle,
+        color:decisionColor,
+        specKey,specColor,stateColor,specLabel,counts,countTitle,
         label:(r.qty>1?r.qty+'x ':'')+specLabel+(r.rcdProtected===true?' · RCD'+(r.sens?' '+r.sens+'mA':''):'')+(r.afdd===true?' · AFDD':''),
       });
     });
@@ -4675,13 +4852,18 @@ function viewerDetectionCardHtml(d,index){
   const countText=d.specKey
     ? `${d.counts.group} matching ${d.specLabel} on this board · ${d.counts.board} counted device${d.counts.board===1?'':'s'} in board total`
     : 'This row is not counted as a protective device';
+  const stateChip=row.status==='rejected'?'<span class="chip red">Rejected</span>'
+    :row.status==='pending'?'<span class="chip amber">Pending</span>'
+      :row.edited?'<span class="chip blue">Corrected</span>':'<span class="chip green">Approved</span>';
+  const decisionAction=row.status==='pending'?'<button class="btn sm primary" data-action="approve">Approve</button>'
+    :`<button class="btn sm ghost" data-action="undo">${row.status==='rejected'?'Undo rejection':'Undo'}</button>${stateChip}`;
   return `<div class="det${current?' current':''}" data-i="${index}" data-row-id="${esc(row.id)}" aria-current="${current?'true':'false'}"
-      style="--spec-color:${d.specColor||'#8a95a5'}" title="${esc(d.countTitle)}">
+      style="--spec-color:${d.stateColor||d.specColor||'#8a95a5'}" title="${esc(d.countTitle)}">
     <div class="det-head"><div class="det-spec"><span class="det-spec-swatch" aria-hidden="true"></span><span class="det-primary">${esc(primary)}</span>
       ${row.rating!=null?`<span class="chip grey">${esc(row.rating)}A</span>`:''}${row.curve?`<span class="chip grey">${esc(row.curve)} curve</span>`:''}</div>
       <span class="det-actions">${row.boardNorm?'<button class="btn sm ghost" data-action="board">Board</button>':''}
         <button class="btn sm ghost" data-action="edit">Correct</button>
-        ${row.status!=='confirmed'?'<button class="btn sm primary" data-action="approve">Approve</button>':'<span class="chip green">Approved</span>'}</span></div>
+        ${decisionAction}</span></div>
     ${circuit?`<div class="det-circuit"><b>Circuit:</b> ${esc(circuit)}</div>`:''}
     ${description&&description!==circuit?`<div class="det-circuit">${esc(description)}</div>`:''}
     ${protection.length?`<div class="det-protection">${protection.join('')}</div>`:''}
@@ -4908,6 +5090,8 @@ async function renderViewer(){
         event.stopPropagation();
         if(button.dataset.action==='approve'){
           setRowDecision(d.r,'confirmed','Viewer');saveProject(p);renderProjHeader();renderViewer();toast(d.label+' approved');scheduleGuidedAdvance(d.r,'Approval saved');
+        }else if(button.dataset.action==='undo'){
+          undoRowDecision(d.r,'Viewer');saveProject(p);renderProjHeader();renderViewer();toast('Approval returned to pending review');
         }else if(button.dataset.action==='edit'){
           openRowEditor(d.r,false,'Viewer');
         }else if(button.dataset.action==='board'){

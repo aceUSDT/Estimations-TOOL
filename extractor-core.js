@@ -166,6 +166,7 @@
     const lower = source.toLowerCase();
     const scores = {};
     const add = (type, score) => { scores[type] = (scores[type] || 0) + score; };
+    const strongSchematicTitle = /\b(?:LV\s+SCHEMATIC|ELECTRICAL\s+SCHEMATIC|SINGLE[- ]LINE\s+(?:DIAGRAM|SCHEMATIC)|ONE[- ]LINE\s+DIAGRAM)\b/i.test(source);
     if (/drawing register|drawing list|drawing index|dwg register/.test(lower)) add('register', 8);
     if (/\blegend\b/.test(lower) && /symbol|description|abbrev/.test(lower)) add('legend', 5);
     if (/lighting (?:layout|plan|drawing)/.test(lower)) add('lighting-plan', 5);
@@ -173,6 +174,7 @@
     if (/fire.?alarm (?:layout|plan|drawing)|fire detection layout/.test(lower)) add('fire-plan', 5);
     if (/containment|cable tray layout|trunking layout|basket layout/.test(lower)) add('containment-plan', 5);
     if (/single.?line|schematic|busbar|incoming supply|main switchboard/.test(lower)) add('sld', 4);
+    if (strongSchematicTitle) add('sld', 14);
     if (/distribution board schedule|board schedule|db schedule/.test(lower)) add('db-schedule', 7);
     if (/main (?:panel|lv panel|switch\s?board).{0,30}schedule/.test(lower)) add('main-schedule', 7);
     if (/cable schedule/.test(lower)) add('cable-schedule', 7);
@@ -186,6 +188,10 @@
     if (codedRows >= 2 && phaseRows >= 3) add('db-schedule', 9);
     const boardCount = extractBoardReferences(source).length;
     if (boardCount >= 3 && /mccb|fuse|cable|connected from|connected to/i.test(source)) add('sld', 5);
+    const scheduleCandidate = scoreScheduleCandidate(source.split(/\r?\n/));
+    if (!strongSchematicTitle && scheduleCandidate.score >= 0.45 && scheduleCandidate.signals.length >= 3) {
+      add('db-schedule', 10);
+    }
     if (pageIndex === 0 && totalPages > 1 && /project|issued|revision/.test(lower) && !Object.keys(scores).length) add('cover', 3);
     let type = 'unknown';
     let best = 0;
@@ -1451,7 +1457,8 @@
     const ways = expectedWaysFromText(combined);
     if (ways) set('ways_total', ways.ways, ways.evidence);
     labelled('board_ref', /\b(?:DIST\s*\/\s*BD|DISTRIBUTION\s+BOARD|DB|BOARD)\s*(?:REF(?:ERENCE)?|IDENTITY)\b\s*[:=\-]?\s*(.+)$/i);
-    labelled('description', /\b(?:BOARD\s+DESCRIPTION|DESCRIPTION)\b\s*[:=\-]?\s*(.+)$/i);
+    labelled('description', /\bBOARD\s+DESCRIPTION\b\s*[:=\-]?\s*(.+)$/i);
+    labelled('description', /^DESCRIPTION\s*[:=\-]\s*(.+)$/i);
     labelled('location', /\bLOCATION\b\s*[:=\-]?\s*(.+)$/i);
     labelled('purpose', /\bPURPOSE\b\s*[:=\-]?\s*(.+)$/i);
     labelled('size_text', /\bSIZE\b\s*[:=\-]?\s*(.+)$/i);
@@ -1532,7 +1539,7 @@
   function buildCoverage({ boards, rows, pages }) {
     const pageMap = new Map();
     for (const pg of pages || []) pageMap.set(`${pg.fileId}#${pg.page}`, pg);
-    const scheduleRows = (rows || []).filter((r) => r && r.kind !== 'mention' && r.kind !== 'manual');
+    const scheduleRows = (rows || []).filter((r) => r && r.kind === 'schedule');
     const boardValues = Object.values(boards || {});
     const hasPrimaryMetadata = boardValues.some((board) =>
       (board.pages || []).some((ref) => ref && ref.primary));
@@ -1552,9 +1559,12 @@
     for (const board of boardValues) {
       let expected = null;
       let evidence = null;
-      const boardPages = hasPrimaryMetadata
+      const boardPages = (hasPrimaryMetadata
         ? (board.pages || []).filter((ref) => ref && ref.primary)
-        : (board.pages || []);
+        : (board.pages || [])).filter((ref) => {
+        const type = String(pageMap.get(`${ref.fileId}#${ref.page}`)?.type || '').toLowerCase();
+        return type !== 'sld' && type !== 'schematic';
+      });
       for (const ref of boardPages) {
         const pg = pageMap.get(`${ref.fileId}#${ref.page}`);
         const found = pg && expectedWaysFromText(pg.text);
@@ -1562,6 +1572,17 @@
           expected = found.ways;
           evidence = { fileId: ref.fileId, page: ref.page, text: found.evidence };
         }
+      }
+      const extractedWayCount = Number(board.header?.ways_total);
+      if (expected == null && Number.isInteger(extractedWayCount) && extractedWayCount > 0 && extractedWayCount <= 200) {
+        expected = extractedWayCount;
+        const source = board.headerEvidence?.ways_total || null;
+        evidence = {
+          fileId: boardPages[0]?.fileId || null,
+          page: boardPages[0]?.page || null,
+          text: String(source?.text || source || `${extractedWayCount} distinct schedule ways`),
+          method: source?.extractionMethod || 'Board header extraction',
+        };
       }
       const boardRows = scheduleRows.filter((r) => r.boardNorm === board.norm);
       const observedRows = boardRows.filter((row) => !row.inferredWay || row.status === 'confirmed');
@@ -1573,8 +1594,7 @@
       const unaccounted = expected != null ? Math.max(0, expected - ways.size) : null;
       const upstreamType = /^(?:MAIN|MDB|SMDB|MCC|SB|PB)$/.test(String(board.type || '').toUpperCase());
       const upstreamReference = /^(?:MAIN|MSB|SWB|SMDB|MDB|PB|MCC|MCP|GENERATOR)/i.test(String(board.orig || '').replace(/[\s._/\\-]+/g, ''));
-      const inScope = board.inScope !== false
-        && (hasPrimaryMetadata ? boardPages.length > 0 && !upstreamType && !upstreamReference : !upstreamType && !upstreamReference);
+      const inScope = board.inScope !== false && boardPages.length > 0 && !upstreamType && !upstreamReference;
       perBoard.push({
         norm: board.norm, orig: board.orig,
         expectedWays: expected, evidence,
@@ -1589,6 +1609,7 @@
     const zeroRowSchedulePages = [];
     for (const pg of pages || []) {
       if (!String(pg.text || '').trim()) continue;
+      if (String(pg.type || '').toLowerCase() === 'sld' || String(pg.type || '').toLowerCase() === 'schematic') continue;
       const pageKey = `${pg.fileId}#${pg.page}`;
       const primaryBoards = primaryBoardsByPage.get(pageKey);
       if (hasPrimaryMetadata && (!primaryBoards || !primaryBoards.size)) continue;
@@ -1670,6 +1691,7 @@
     PROTECTION_DETAILS_MISSING: 'Active circuit rows are missing a protective device or rating',
     SCHEDULE_PAGE_UNPARSED: 'Page looks like a schedule but produced no rows',
     SCHEDULE_DOC_NO_BOARDS: 'Schedule-type pages exist but no board reference was identified',
+    SCHEMATIC_FEEDS_MISSING: 'Schematic boards were identified but no feeder relationships were captured',
     PAGE_TEXT_UNRELIABLE: 'Page text is unreliable and OCR has not replaced it',
     OCR_PENDING: 'Page is still waiting for OCR',
     DOCUMENT_UNREADABLE: 'Document could not be read',
@@ -1770,7 +1792,7 @@
    * @param files    [{id, name, status}] all files that were in scope
    * @returns {state:'complete'|'incomplete'|'failed', reasons:[{code,message,count,refs}], counters}
    */
-  function buildAnalysisHealth({ coverage, boards, rows, pages, files }) {
+  function buildAnalysisHealth({ coverage, boards, rows, pages, files, feeders }) {
     const reasons = new Map();
     const addReason = (code, ref) => {
       if (!reasons.has(code)) reasons.set(code, { code, message: HEALTH_REASONS[code] || code, count: 0, refs: [] });
@@ -1789,7 +1811,14 @@
       ? inScopeBoardNorms.size
       : Object.values(boards || {}).filter((board) => board?.inScope !== false).length;
     const pageList = pages || [];
-    const schedulePages = pageList.filter((pg) => (pg.scheduleScore || 0) >= 0.45 || COVERAGE_SCHEDULE_TYPES.has(pg.type));
+    const schematicPages = pageList.filter((pg) => pg.type === 'sld' || pg.type === 'schematic');
+    const schedulePages = pageList.filter((pg) => pg.type !== 'sld' && pg.type !== 'schematic'
+      && ((pg.scheduleScore || 0) >= 0.45 || COVERAGE_SCHEDULE_TYPES.has(pg.type)));
+    const pageTypeByKey = new Map(pageList.map((pg) => [`${pg.fileId}#${pg.page}`, pg.type]));
+    const schematicBoardNorms = Object.entries(boards || {}).filter(([, board]) => (board?.pages || []).some((ref) => {
+      const type = pageTypeByKey.get(`${ref.fileId}#${ref.page}`);
+      return type === 'sld' || type === 'schematic';
+    })).map(([norm]) => norm);
 
     for (const file of files || []) {
       if (file.status === 'error') addReason('DOCUMENT_UNREADABLE', { fileId: file.id });
@@ -1827,6 +1856,9 @@
       if (!hasFeed && !(board && board.orphaned === true)) addReason('BOARD_FEED_MISSING', { board: norm });
     }
     if (boardCount === 0 && schedulePages.length > 0) addReason('SCHEDULE_DOC_NO_BOARDS', null);
+    if (schematicPages.length > 0 && schematicBoardNorms.length > 1 && !(feeders || []).some((feeder) => feeder?.to)) {
+      addReason('SCHEMATIC_FEEDS_MISSING', { boards: schematicBoardNorms.length });
+    }
     if (pageList.length === 0) addReason('NO_CONTENT', null);
     if (boardCount > 0 && deviceCount === 0) addReason('ZERO_DEVICES_WITH_BOARDS', null);
     if (boardCount > 0 && deviceCount < boardCount) {
@@ -1837,7 +1869,7 @@
     if (reasons.size > 0) state = 'incomplete';
     if (reasons.has('ZERO_DEVICES_WITH_BOARDS') || reasons.has('NO_CONTENT')
       || reasons.has('DEVICE_COUNT_BELOW_BOARD_COUNT') || reasons.has('WAYS_OVER_CAPACITY')
-      || reasons.has('BOARD_FEED_MISSING')
+      || reasons.has('BOARD_FEED_MISSING') || reasons.has('SCHEMATIC_FEEDS_MISSING')
       || (deviceCount === 0 && schedulePages.length > 0)) state = 'failed';
 
     return {

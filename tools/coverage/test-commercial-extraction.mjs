@@ -67,6 +67,61 @@ assert.equal(phaseSpan.rows[0].phase, '3PH');
 assert.equal(phaseSpan.rows[0].poles, 3);
 assert.equal(phaseSpan.rows[0].occupies_ways, 3);
 
+const perryfieldsText = [
+  'PROJECT NAME Perryfields Academy PROJECT NUMBER 11274 Board reference DB-G9 Location Kitchen',
+  'COMPONENTS DUTY CABLES',
+  'Way Phase Type AFDD? T-C characteristic (Note 4) In (A) Earth fault device (mA) Breaking Capacity (kA) Load description',
+  '1 L1-L3 RCBO No C 32 30 10 Servery Counter (28) (#5)',
+  '2 L1-L3 MCB No C 25 10 Dishwasher (39) (#5)',
+  '3 L1-L3 RCBO No C 20 30 10 Bratt Pan (58) (#5)',
+].join('\n');
+assert.equal(Core.classifyPageText(perryfieldsText).type, 'db-schedule', 'a structured board table must outrank incidental specification text');
+assert.equal(Core.classifyPageText('Legend\nSymbol Description\nProject Perryfields Academy\nTitle LV Schematic\nMCCB Panelboard').type, 'sld', 'an explicit schematic title must outrank its embedded legend');
+
+const perryfieldsWords = [
+  word('Way', 68, 28, 8), word('Phase', 81, 28, 8),
+  word('Circuit protective device', 88, 28, 7), word('Type', 97, 28, 7),
+  word('AFDD?', 112, 28, 8), word('T-C characteristic (Note 4)', 128, 28, 8),
+  word('In (A)', 145, 28, 8), word('Earth fault device (mA)', 162, 28, 8),
+  word('Breaking Capacity (kA)', 179, 28, 8), word('Load description', 207, 28, 20),
+];
+[
+  [1, 'RCBO', 32, 30, 'Servery Counter (28) (#5)'],
+  [2, 'MCB', 25, null, 'Dishwasher (39) (#5)'],
+  [3, 'RCBO', 20, 30, 'Bratt Pan (58) (#5)'],
+].forEach(([way, device, rating, sensitivity, description], index) => {
+  const y = 92 + index * 34;
+  perryfieldsWords.push(
+    word(String(way), 69, y, 5), word('L1- L3', 80, y, 9), word(device, 97, y, 9),
+    word('No', 112, y, 7), word('C', 130, y, 5), word(String(rating), 146, y, 7),
+  );
+  if (sensitivity != null) perryfieldsWords.push(word(String(sensitivity), 163, y, 7));
+  perryfieldsWords.push(word('10', 180, y, 7), word(description, 207, y, 100));
+});
+const perryfields = Core.parseSpatialSchedulePage({
+  lines: perryfieldsText.split('\n').map((text) => ({ text })),
+  words: perryfieldsWords,
+  pageWidth: 360,
+  pageHeight: 230,
+  pageType: 'db-schedule',
+});
+assert.equal(perryfields.matched, true);
+assert.deepEqual(perryfields.rows.map((row) => [row.way, row.device, row.rating, row.phase, row.poles, row.sens]), [
+  [1, 'RCBO', 32, '3PH', 3, 30],
+  [2, 'MCB', 25, '3PH', 3, null],
+  [3, 'RCBO', 20, '3PH', 3, 30],
+]);
+assert.equal(perryfields.rows[0].ka, 10, 'the 30mA earth-fault value must not displace the 10kA breaking capacity');
+assert.equal(perryfields.board.header.ways_total, 3, 'distinct printed ways provide a reconciled board count when the header omits it');
+
+const derivedCoverage = Core.buildCoverage({
+  boards: { DBG9: { norm: 'DBG9', orig: 'DB-G9', type: 'DB', header: perryfields.board.header, pages: [{ fileId: 'perry', page: 1, primary: true }] } },
+  rows: perryfields.rows.map((row) => ({ ...row, boardNorm: 'DBG9', fileId: 'perry', page: 1, kind: 'schedule', status: 'pending' })),
+  pages: [{ fileId: 'perry', page: 1, text: perryfieldsText, type: 'db-schedule' }],
+});
+assert.equal(derivedCoverage.perBoard[0].expectedWays, 3);
+assert.equal(derivedCoverage.perBoard[0].capturedWays, 3);
+
 const sectionScope = Core.buildDocumentExtractionScope([
   { page: 1, type: 'cover', text: 'Project cover' },
   { page: 2, type: 'register', text: 'DOCUMENT CONTENTS\nCircuit Charts' },

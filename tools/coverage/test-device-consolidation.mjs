@@ -190,7 +190,8 @@ const corrected = Report.buildModel({
     afdd: false,
   })],
 });
-assert.ok(corrected.groups[0].rows[0].reviewReasons.includes("An automatic OCR correction needs confirmation"));
+assert.ok(!corrected.groups[0].rows[0].reviewReasons.includes("An automatic OCR correction needs confirmation"),
+  "an approved correction remains in the audit trail without permanently blocking release");
 const correctionWorkbook = Report.createExcelWorkbook(corrected, ExcelJS);
 assert.deepEqual(correctionWorkbook.worksheets.map((worksheet) => worksheet.name), ["Board Take-Off", "Device Take-Off"]);
 const correctionEvidence = corrected.groups[0].rows[0].contributors[0];

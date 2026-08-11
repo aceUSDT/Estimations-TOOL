@@ -20,6 +20,8 @@ deployment check has been performed.
 | EX-08 | Classify 400 A and larger assemblies as panelboards under the project policy while retaining stated source evidence and review flags. | `test-spatial-schedule.mjs` |
 | EX-09 | Record and exclude MSDB nodes and boards with four or more fuse/BS88 outgoings from take-off totals without deleting their evidence. | `test-commercial-extraction.mjs`, `test-reconciliation.mjs`, `test-report-core.mjs` |
 | EX-10 | Refuse incoherent results, including boards with zero devices, fewer devices than in-scope boards, excess captured ways, missing protection fields, or missing feed evidence. | `test-analysis-health.mjs`, `test-electrical-coherence.mjs` |
+| EX-11 | Read schematic board references, feed direction, source section, ratings, poles, protective devices, cable construction, meters, SPD, spares, and locations; use that evidence to fill only missing schedule fields with visible provenance. | `test-spatial-schedule.mjs`, `test-commercial-extraction.mjs` |
+| EX-12 | Run bounded raster-OCR recovery only on affected pages, accept a retry only when its health score improves, and restore the original result otherwise. | `verify-auto-ocr.mjs`, `test-analysis-health.mjs` |
 
 ## Review and correction workflow
 
@@ -31,6 +33,8 @@ deployment check has been performed.
 | RV-04 | The Go to Board selector always reflects the board represented by the current page or guided-review row. | `verify-viewer-linked-review.mjs` |
 | RV-05 | Corrections are available in full-screen mode, remain resizable, update report data immediately, and create field-level audit entries. | `test-ui-contract.mjs`, `verify-viewer-linked-review.mjs` |
 | RV-06 | Full-screen viewer, collapsible/resizable thumbnail and evidence panels, mobile layout, row counts, and specification colours remain usable without overlap. | `verify-viewer-linked-review.mjs`, desktop/mobile screenshots |
+| RV-07 | The operator can approve all remaining rows on one board after confirmation; every row receives its own audit entry and remains individually undoable. | `verify-viewer-linked-review.mjs` |
+| RV-08 | Pending, approved specifications, corrected rows, and rejected rows use stable, distinct colours without changing extraction identity or counts. | `verify-viewer-linked-review.mjs` |
 
 ## Reports
 

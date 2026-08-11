@@ -36,7 +36,7 @@ assert.deepEqual(Array.from(model.groups, (group) => group.name), ["MCBs", "RCBO
 assert.equal(model.groups[0].rows[0].label, "10A SPN MCB");
 assert.deepEqual(Array.from(model.groups[0].rows[0].quantities), [2, 1]);
 assert.deepEqual(Array.from(model.groups[0].rows[0].purposes), ["Lighting"]);
-assert.equal(model.groups[0].rows[1].label, "20A TPN MCB");
+assert.equal(model.groups[0].rows[1].label, "20A TP MCB");
 assert.deepEqual(Array.from(model.groups[0].rows[1].purposes), ["Mechanical"]);
 assert.equal(model.groups[0].rows[0].curve, "Not specified");
 assert.equal(model.groups[0].rows[0].breakingCapacity, "Not specified");

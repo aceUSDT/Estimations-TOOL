@@ -111,11 +111,11 @@
     if (source === UNCLEAR.toUpperCase()) return UNCLEAR;
     const poles = Number(value);
     if (poles === 4) return "4P";
-    if (poles === 3) return "TPN";
+    if (poles === 3) return "TP";
     if (poles === 2) return "DPN";
     if (poles === 1) return "SPN";
     const phase = text(row && row.phase).toUpperCase();
-    if (phase === "3PH" || phase === "L1L2L3") return "TPN";
+    if (phase === "3PH" || phase === "L1L2L3") return "TP";
     return row && row.polesUnclear ? UNCLEAR : UNCLEAR;
   }
 
@@ -679,9 +679,14 @@
         reportRow.notes.push(QUALIFICATIONS.poles);
         reportRow.reviewReasons.push("Pole configuration is unclear");
       }
+      if (reportRow.contributors.every((item) => item.description === NOT_SPECIFIED)) {
+        reportRow.reviewReasons.push("Circuit description is missing");
+      }
       if (reportRow.confidence < 0.8) reportRow.reviewReasons.push("One or more source values have low confidence");
       if (reportRow.contributors.some((item) => item.reviewStatus !== "Approved")) reportRow.reviewReasons.push("One or more source records need review");
-      if (reportRow.contributors.some((item) => item.corrections.length)) reportRow.reviewReasons.push("An automatic OCR correction needs confirmation");
+      if (reportRow.contributors.some((item) => item.reviewStatus !== "Approved" && item.corrections.length)) {
+        reportRow.reviewReasons.push("An automatic OCR correction needs confirmation");
+      }
     });
 
     markSpecificationConflicts(Array.from(grouped.values()));
