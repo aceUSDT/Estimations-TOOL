@@ -1760,6 +1760,45 @@
     return null;
   }
 
+  const AI_RECOVERY_PRIORITY = Object.freeze({
+    'schedule-rows-missing': 0,
+    'schedule-protection-fields-missing': 1,
+    'schedule-coverage-gap': 2,
+    'schematic-topology-missing': 3,
+  });
+
+  function planAiRecoveryJobs(jobs = [], options = {}) {
+    const requestedLimit = Number(options.maxPages);
+    const maxPages = Number.isFinite(requestedLimit)
+      ? Math.max(0, Math.min(10, Math.floor(requestedLimit))) : 3;
+    const seen = new Set();
+    const ranked = [];
+    (jobs || []).forEach((job, index) => {
+      const key = `${job?.id || job?.fileId || ''}#${Number(job?.pageNo || job?.page || 0)}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      ranked.push({
+        job,
+        index,
+        priority: AI_RECOVERY_PRIORITY[job?.reason] ?? 9,
+        unresolvedRatio: Number(job?.unresolvedRatio) || 0,
+        candidateScore: Number(job?.candidateScore) || 0,
+        page: Number(job?.pageNo || job?.page || 0),
+      });
+    });
+    ranked.sort((left, right) => left.priority - right.priority
+      || right.unresolvedRatio - left.unresolvedRatio
+      || right.candidateScore - left.candidateScore
+      || left.page - right.page
+      || left.index - right.index);
+    return {
+      selected: ranked.slice(0, maxPages).map((entry) => entry.job),
+      deferred: ranked.slice(maxPages).map((entry) => entry.job),
+      eligible: ranked.length,
+      maxPages,
+    };
+  }
+
   function buildDocumentExtractionScope(pages, options = {}) {
     const longDocumentThreshold = Number(options.longDocumentThreshold) || 80;
     const pageList = (pages || []).map((page, index) => {
@@ -1980,6 +2019,7 @@
     HEALTH_REASONS,
     scoreScheduleCandidate,
     selectAiRecoveryReason,
+    planAiRecoveryJobs,
     buildDocumentExtractionScope,
     buildAnalysisHealth,
     buildDiagnosticExport,

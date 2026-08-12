@@ -1,18 +1,21 @@
 /* End-to-end check for WS0.4 client integration: with the extraction endpoint
  * mocked (Playwright route interception), dropping a PDF must trigger the AI
  * pass — page rendered + POSTed — and the returned boards/devices/feeds must
- * merge into the analysis as review-pending rows. No API key involved; this
- * tests everything except Claude itself.
+ * merge into the analysis as review-pending rows. No API key is involved.
  */
-import { chromium } from 'playwright-core';
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+
+const playwrightSpecifier = process.env.PLAYWRIGHT_CORE_PATH
+  ? pathToFileURL(process.env.PLAYWRIGHT_CORE_PATH).href
+  : 'playwright-core';
+const { chromium } = await import(playwrightSpecifier);
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..', '..');
 const FIXTURE = path.join(ROOT, 'examples/db-schedules/simple/BC250847-E13_Distribution.pdf');
-const URL = 'http://127.0.0.1:8765/?test=1';
+const URL = process.env.APP_URL || 'http://127.0.0.1:8765/?test=1';
 
 const MOCK_RESULT = {
   classification: { type: 'db_schedule', sub_format: 'simple', confidence: 0.9 },
@@ -34,7 +37,14 @@ const MOCK_RESULT = {
   flags: [{ kind: 'uncertain', message: 'Handwritten note near way 4 partially legible' }],
 };
 
-const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
+const executablePath = [
+  process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH,
+  '/opt/pw-browsers/chromium',
+  'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+  'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+].find((candidate) => candidate && fs.existsSync(candidate));
+if (!executablePath) throw new Error('No Chromium-compatible browser executable was found');
+const browser = await chromium.launch({ executablePath });
 const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
 const page = await ctx.newPage();
 page.on('pageerror', (e) => console.log('[pageerror]', String(e).slice(0, 300)));
@@ -57,9 +67,9 @@ await page.route(/https:\/\/(cdnjs\.cloudflare\.com|cdn\.jsdelivr\.net|tessdata\
 // mock the serverless extraction endpoint
 let postCount = 0;
 let sawImage = false;
-await page.route('**/.netlify/functions/extract', async (route) => {
+await page.route('**/api/extract', async (route) => {
   if (route.request().method() === 'GET') {
-    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ status: 'ok', configured: true, model: 'mock-model' }) });
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ status: 'ok', configured: true, executionMode: 'sync', model: 'mock-model' }) });
     return;
   }
   postCount++;
@@ -76,8 +86,18 @@ try {
   await page.click('#mOk');
   await page.waitForFunction('state.cur && state.cur.name === "AI merge check"');
   await page.setInputFiles('#fileInput', FIXTURE);
-  console.log('file dropped; waiting for OCR + analysis + mocked AI pass…');
-  await page.waitForFunction('state.cur.analysis && state.cur.analysis.aiPages != null', null, { timeout: 300000 });
+  console.log('file dropped; waiting for deterministic analysis…');
+  await page.waitForFunction('state.cur.analysis && !analysisBusy', null, { timeout: 300000 });
+  await page.evaluate(async () => {
+    appSettings.onlineExtraction = true;
+    appSettings.onlineConsent = true;
+    aiProbePromise = null;
+    window.__aiStatus = 'checking';
+    // This test exercises the merge path. The fixture is otherwise fully
+    // resolved by the deterministic parser and correctly needs no recovery.
+    window.EstimationExtractorCore.selectAiRecoveryReason = () => 'schedule-rows-missing';
+    await runAnalysisWithRecovery({ noRecovery: true });
+  });
   const res = await page.evaluate(`({
     aiStatus: window.__aiStatus,
     aiPages: state.cur.analysis.aiPages,
@@ -96,6 +116,7 @@ try {
   const fails = [];
   if (!res.aiStatus.startsWith('active')) fails.push('probe did not report active');
   if (postCount < 1) fails.push('no POST reached the endpoint');
+  if (postCount > 3) fails.push(`enhanced pass exceeded its 3-page budget (${postCount})`);
   if (!sawImage) fails.push('no page image in the POST payload');
   if (res.aiRows < 5) fails.push(`expected ≥5 AI rows, got ${res.aiRows}`);
   if (!res.boards.includes('DBE13')) fails.push('AI board not merged');

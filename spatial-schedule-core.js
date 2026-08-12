@@ -954,16 +954,20 @@
     const distinctWays = new Set((rows || []).map((row) => row.way).filter((way) => way != null));
     const populatedRows = (rows || []).filter((row) => row.way != null
       && (row.device || row.rating != null || row.protectionStandard || row.circuitReference || row.desc || row.spare || row.space));
-    const reasons = [];
-    if (!roles.has('way') || wayAnchors.length < minimumWays || distinctWays.size < minimumWays) reasons.push('way_sequence_missing');
-    if (!roles.has('rating')) reasons.push('rating_column_missing');
-    if (!roles.has('device_standard') && !roles.has('device_class')) reasons.push('device_column_missing');
-    if (!roles.has('circuit_reference') && !roles.has('description')) reasons.push('circuit_column_missing');
-    if (!populatedRows.length) reasons.push('no_bounded_schedule_rows');
-    if (Number(schema?.confidence || 0) < 0.62) reasons.push('column_schema_low_confidence');
+    const blockingReasons = [];
+    const reviewReasons = [];
+    if (!roles.has('way') || wayAnchors.length < minimumWays || distinctWays.size < minimumWays) blockingReasons.push('way_sequence_missing');
+    if (!roles.has('rating')) blockingReasons.push('rating_column_missing');
+    if (!roles.has('circuit_reference') && !roles.has('description')) blockingReasons.push('circuit_column_missing');
+    if (!populatedRows.length) blockingReasons.push('no_bounded_schedule_rows');
+    if (Number(schema?.confidence || 0) < 0.62) blockingReasons.push('column_schema_low_confidence');
+    if (!roles.has('device_standard') && !roles.has('device_class')) reviewReasons.push('device_column_missing');
+    const reasons = [...blockingReasons, ...reviewReasons];
     return {
-      accepted: reasons.length === 0,
+      accepted: blockingReasons.length === 0,
       reasons,
+      blockingReasons,
+      reviewReasons,
       roles: [...roles],
       wayAnchors: wayAnchors.length,
       distinctWays: distinctWays.size,
@@ -1032,7 +1036,8 @@
     const grid = assessScheduleGrid(schema, observedRows, wayAnchors, minimumWays);
     if (!ref) warnings.push('primary_board_not_resolved');
     if (schema.confidence < 0.72) warnings.push('column_schema_review_required');
-    grid.reasons.forEach((reason) => warnings.push(`unproven_schedule_grid:${reason}`));
+    grid.blockingReasons.forEach((reason) => warnings.push(`unproven_schedule_grid:${reason}`));
+    grid.reviewReasons.forEach((reason) => warnings.push(`schedule_grid_review:${reason}`));
     if (rows.some((row) => row.inferredWay)) warnings.push('header_way_without_printed_row');
     if (rows.some((row) => row.requiresReview)) warnings.push('row_review_required');
     return {

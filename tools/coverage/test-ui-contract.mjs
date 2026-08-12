@@ -19,7 +19,15 @@ const required = [
   'host.requestFullscreen',
   "document.addEventListener('fullscreenchange'",
   'function syncViewerLayout()',
-  'const ANALYSIS_VERSION=11;',
+  'const ANALYSIS_VERSION=12;',
+  'id="processingCancelBtn"',
+  'const AI_RECOVERY_MAX_PAGES=3;',
+  'const AI_RECOVERY_PAGE_TIMEOUT_MS=25000;',
+  'const AI_RECOVERY_TOTAL_BUDGET_MS=45000;',
+  'appSettings.onlineExtraction&&!auto',
+  'noRecovery:true,noAi:true',
+  '!opts.recoverLowConfidence',
+  "(!state.cur.analysis||state.cur.analysis.version!==ANALYSIS_VERSION)",
   'function recoveryCandidates(',
   'async function runAnalysisWithRecovery(',
   'core.parseSpatialSchematicPage(',
@@ -63,6 +71,7 @@ assert.ok(!html.includes('id="vAssistBoard"'), 'viewer must not contain a duplic
 assert.ok(!html.includes('Match rows'), 'ambiguous Match rows command must not return');
 assert.ok(!html.includes('Approve checked rows'), 'bulk approval must not claim rows are checked');
 assert.ok(!html.includes("slice(0,90)"), 'viewer source evidence must not be silently truncated');
+assert.ok(!html.includes('setTimeout(()=>controller.abort(),240000)'), 'enhanced extraction must not retain a four-minute per-page wait');
 assert.ok(!/kind:'schematic'[\s\S]{0,500}A\.rows\.push/.test(html), 'schematic topology must not be inserted into take-off rows');
 
 const markup = html.slice(0, html.indexOf('<script'));

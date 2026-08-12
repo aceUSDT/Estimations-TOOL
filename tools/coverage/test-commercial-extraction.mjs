@@ -136,6 +136,19 @@ assert.equal(Core.selectAiRecoveryReason({ pageType: 'db-schedule', scheduleCand
 assert.equal(Core.selectAiRecoveryReason({ pageType: 'legend', scheduleCandidate: { score: 0.9, signals: ['device-tokens', 'rating-tokens'] },
   scheduleRows: [], expectedWays: 0 }), null, 'legend and drawing vocabulary must not trigger expensive schedule AI');
 
+const recoveryPlan = Core.planAiRecoveryJobs(Array.from({ length: 40 }, (_, index) => ({
+  id: 'perryfields',
+  pageNo: index + 1,
+  reason: index === 19 ? 'schedule-rows-missing' : index < 10 ? 'schedule-protection-fields-missing' : 'schedule-coverage-gap',
+  unresolvedRatio: index / 40,
+  candidateScore: 0.9,
+})), { maxPages: 3 });
+assert.equal(recoveryPlan.eligible, 40);
+assert.equal(recoveryPlan.selected.length, 3, 'a large document must never create an unbounded enhanced-extraction batch');
+assert.equal(recoveryPlan.deferred.length, 37);
+assert.equal(recoveryPlan.selected[0].pageNo, 20, 'a page with no deterministic rows has first recovery priority');
+assert.deepEqual(recoveryPlan.selected.slice(1).map((job) => job.pageNo), [10, 9], 'remaining pages are ordered by unresolved protection evidence');
+
 const derivedCoverage = Core.buildCoverage({
   boards: { DBG9: { norm: 'DBG9', orig: 'DB-G9', type: 'DB', header: perryfields.board.header, pages: [{ fileId: 'perry', page: 1, primary: true }] } },
   rows: perryfields.rows.map((row) => ({ ...row, boardNorm: 'DBG9', fileId: 'perry', page: 1, kind: 'schedule', status: 'pending' })),

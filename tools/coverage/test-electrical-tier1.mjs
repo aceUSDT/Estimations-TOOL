@@ -83,6 +83,7 @@ test('T-02 reports BS EN 61009 rows as 30 mA RCBOs', async () => {
 test('T-03 groups a three-phase bracket as one 25 A device occupying three ways', async () => {
   const result = await parseFixture('t03-t04');
   assert.equal(result.matched, true, 'Quinnross page 2 must reach the production spatial schedule parser');
+  assert.ok(result.grid.reviewReasons.includes('device_column_missing'), 'an indirect protection layout must be retained with an explicit review reason');
 
   const wayOne = result.rows.filter((row) => Number(row.way) === 1);
   assert.equal(wayOne.length, 1, 'way 1 L1/L2/L3 must be one grouped circuit');

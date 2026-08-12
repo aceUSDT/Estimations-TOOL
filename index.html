@@ -120,6 +120,10 @@
   .processing-track{height:6px;background:#e5ebf1;overflow:hidden;}
   .processing-fill{display:block;width:0;height:100%;background:var(--brand);transition:width .2s ease;}
   .processing-position{min-width:72px;text-align:right;font-size:11px;font-weight:800;color:var(--txt2);white-space:nowrap;}
+  .processing-cancel{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;padding:0;border:1px solid var(--line);
+    background:#fff;color:var(--txt2);font-size:18px;line-height:1;cursor:pointer;}
+  .processing-cancel:hover{border-color:var(--red);color:var(--red);background:#fff5f5;}
+  .processing-cancel[hidden]{display:none;}
   .processing-steps{display:flex;align-items:center;gap:4px;}
   .processing-step{width:22px;height:5px;border:0;background:#d7e0e9;}
   .processing-step.done{border-color:var(--green);background:var(--green);}
@@ -663,6 +667,7 @@
       <div style="display:flex;align-items:center;gap:10px">
         <div class="processing-steps" id="processingSteps" aria-hidden="true"></div>
         <span class="processing-position" id="processingPosition">Step 1 of 7</span>
+        <button type="button" class="processing-cancel" id="processingCancelBtn" aria-label="Stop analysis" title="Stop analysis" hidden>&times;</button>
       </div>
     </div>
   </div>
@@ -1121,7 +1126,7 @@ const state = {
   reportMode: 'board',
   reviewFlow: {active:false,currentRowId:null,initialCount:0,moving:false,boardOrder:[],initialByBoard:{},rowOrderByBoard:{}},
 };
-const ANALYSIS_VERSION=11;
+const ANALYSIS_VERSION=12;
 const uid = () => 'x'+(state.nextId++)+'_'+Math.random().toString(36).slice(2,6);
 
 /* ====================== PERSISTENCE (IndexedDB) ====================== */
@@ -1850,8 +1855,8 @@ function openProject(id){
   state.selectedBoard=null;
   renderProjHeader(); renderDocs(); renderPgclass(); renderAnalysisControls(); renderResults();
   setTab('docs');
-  if(state.cur.analysis&&state.cur.analysis.version!==ANALYSIS_VERSION&&state.cur.files.some(file=>file.status==='ready')){
-    setProcessingDock(STAGES[0],'Updating saved analysis',2,0);
+  if(state.cur.files.some(file=>file.status==='ready')&&(!state.cur.analysis||state.cur.analysis.version!==ANALYSIS_VERSION)){
+    setProcessingDock(STAGES[0],state.cur.analysis?'Updating saved analysis':'Completing interrupted analysis',2,0);
     setTimeout(()=>runAnalysisWithRecovery({auto:true}),0);
   }
 }
@@ -2150,17 +2155,23 @@ const AI_STATUS_ENDPOINT='/api/extract-status';
 let aiProbePromise=null;
 window.__aiStatus='unknown';
 window.__aiExecutionMode='background';
+const AI_RECOVERY_MAX_PAGES=3;
+const AI_RECOVERY_PAGE_TIMEOUT_MS=25000;
+const AI_RECOVERY_TOTAL_BUDGET_MS=45000;
+const AI_PROBE_TIMEOUT_MS=5000;
 function aiExtractReady(){
   if(!appSettings.onlineExtraction){window.__aiStatus='local only';return Promise.resolve(false);}
   if (!aiProbePromise){
-    aiProbePromise=fetch(AI_EXTRACT_ENDPOINT,{method:'GET'}).then(async r=>{
+    const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),AI_PROBE_TIMEOUT_MS);
+    aiProbePromise=fetch(AI_EXTRACT_ENDPOINT,{method:'GET',signal:controller.signal}).then(async r=>{
       if(!r.ok){ window.__aiStatus='off — extraction endpoint not reachable'; return false; }
       const j=await r.json();
       if(!j.configured){ window.__aiStatus='not configured — set GEMINI_API_KEY in the hosting environment'; return false; }
       window.__aiExecutionMode=j.executionMode||'background';
       window.__aiStatus='active ('+(j.model||'Gemini')+')';
       return true;
-    }).catch(()=>{ window.__aiStatus='off — extraction endpoint not reachable'; return false; });
+    }).catch(()=>{ window.__aiStatus='off — extraction endpoint not reachable'; return false; })
+      .finally(()=>clearTimeout(timer));
   }
   return aiProbePromise;
 }
@@ -2168,7 +2179,26 @@ const AI_DEVICE_MAP={MCB:'MCB',RCBO:'RCBO',MCCB:'MCCB',ACB:'ACB',RCD:'RCD',SPD:'
   afdd_rcbo:'AFDD+RCBO',switch_disconnector:'Isolator',isolator:'Isolator',contactor:'Contactor',
   time_clock:'Time clock',photocell:'Photocell',relay:'Relay',timer:'Timer',starter:'Starter',
   overload:'Overload',transformer:'Transformer',dali_controller:'DALI controller',meter:'Meter'};
-async function aiExtractPage(f,pageNo,pg){
+const abortableDelay=(ms,signal)=>new Promise((resolve,reject)=>{
+  if(signal?.aborted){reject(new DOMException('Analysis stopped','AbortError'));return;}
+  const timer=setTimeout(done,Math.max(0,ms));
+  function done(){signal?.removeEventListener('abort',cancel);resolve();}
+  function cancel(){clearTimeout(timer);signal?.removeEventListener('abort',cancel);reject(new DOMException('Analysis stopped','AbortError'));}
+  signal?.addEventListener('abort',cancel,{once:true});
+});
+async function fetchWithTimeout(url,init={},timeoutMs=AI_RECOVERY_PAGE_TIMEOUT_MS,parentSignal=null){
+  const controller=new AbortController();
+  const cancel=()=>controller.abort(parentSignal?.reason);
+  if(parentSignal?.aborted)cancel();
+  else parentSignal?.addEventListener('abort',cancel,{once:true});
+  const timer=setTimeout(()=>controller.abort(),Math.max(1,timeoutMs));
+  try{return await fetch(url,{...init,signal:controller.signal});}
+  finally{clearTimeout(timer);parentSignal?.removeEventListener('abort',cancel);}
+}
+async function aiExtractPage(f,pageNo,pg,{signal=null,timeoutMs=AI_RECOVERY_PAGE_TIMEOUT_MS}={}){
+  const deadline=Date.now()+Math.max(1,timeoutMs);
+  const remaining=()=>Math.max(1,deadline-Date.now());
+  if(signal?.aborted)throw new DOMException('Analysis stopped','AbortError');
   let image_base64=null;
   if (f.ext==='pdf'&&rawStore[f.id]){
     const lib=await loadPdfjs();
@@ -2183,6 +2213,7 @@ async function aiExtractPage(f,pageNo,pg){
     await page.render({canvasContext:cv.getContext('2d',{alpha:false}),viewport:vp}).promise;
     image_base64=cv.toDataURL('image/jpeg',0.85).split(',')[1];
   }
+  if(signal?.aborted)throw new DOMException('Analysis stopped','AbortError');
   const core=window.EstimationExtractorCore;
   const topologyOnly=pg.type==='sld'||pg.type==='schematic';
   const spatial=!topologyOnly&&core?.parseSpatialSchedulePage?core.parseSpatialSchedulePage({lines:pg.lines||[],tableRows:pg.tableRows||[],
@@ -2191,25 +2222,25 @@ async function aiExtractPage(f,pageNo,pg){
   const payload={filename:f.name,page_number:pageNo,image_base64,media_type:'image/jpeg',
     text_lines:(pg.lines||[]).map(l=>l.text).slice(0,400),layout_hint:layoutHint,hints:{type:pg.type}};
   if(window.__aiExecutionMode==='sync'){
-    const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),240000);
-    try{
-      const response=await fetch(AI_EXTRACT_ENDPOINT,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(payload),signal:controller.signal});
-      const result=await response.json().catch(()=>({}));
-      if(!response.ok)throw new Error(result.error||('HTTP '+response.status));
-      return result;
-    }finally{clearTimeout(timer);}
+    const response=await fetchWithTimeout(AI_EXTRACT_ENDPOINT,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(payload)},remaining(),signal);
+    const result=await response.json().catch(()=>({}));
+    if(!response.ok)throw new Error(result.error||('HTTP '+response.status));
+    return result;
   }
   const jobId=uid()+'_'+Date.now();
-  const r=await fetch(AI_BG_ENDPOINT,{method:'POST',headers:{'content-type':'application/json'},
-    body:JSON.stringify({...payload,job_id:jobId})});
+  const r=await fetchWithTimeout(AI_BG_ENDPOINT,{method:'POST',headers:{'content-type':'application/json'},
+    body:JSON.stringify({...payload,job_id:jobId})},remaining(),signal);
   if(!r.ok && r.status!==202){ const err=await r.json().catch(()=>({})); throw new Error(err.error||('HTTP '+r.status)); }
-  for(let i=0;i<70;i++){                                   // poll up to ~3 min
-    await new Promise(res=>setTimeout(res,2500));
-    let s; try{ s=await fetch(AI_STATUS_ENDPOINT+'?id='+encodeURIComponent(jobId)).then(x=>x.json()); }catch(e){ continue; }
+  while(Date.now()<deadline){
+    await abortableDelay(Math.min(2500,remaining()),signal);
+    let s; try{
+      const statusResponse=await fetchWithTimeout(AI_STATUS_ENDPOINT+'?id='+encodeURIComponent(jobId),{},Math.min(5000,remaining()),signal);
+      s=await statusResponse.json();
+    }catch(e){if(signal?.aborted)throw e;continue;}
     if(s.status==='done') return s;   // {result, verification?, provider, model}
     if(s.status==='error') throw new Error(s.error||'extraction failed');
   }
-  throw new Error('Document extraction timed out (>3 min)');
+  throw new DOMException('Enhanced extraction page deadline reached','TimeoutError');
 }
 function mergeAiResult(A,out,fileId,pageNo,pageType){
   if(!out) return;
@@ -2291,7 +2322,7 @@ function mergeAiResult(A,out,fileId,pageNo,pageType){
   });
   (out.flags||[]).forEach(fl=>{ (A.aiFlags=A.aiFlags||[]).push({fileId, page:pageNo, kind:fl.kind, message:fl.message}); });
 }
-async function runAiExtraction(A,f,p,pageSet,automaticScopes){
+async function runAiExtraction(A,f,p,pageSet,automaticScopes,{signal=null}={}){
   if(!(await aiExtractReady())) return;
   const jobs=[];
   A.aiSelectionLog=[];
@@ -2311,20 +2342,44 @@ async function runAiExtraction(A,f,p,pageSet,automaticScopes){
       const schematicFeedCount=A.feeders.filter(feeder=>feeder.fileId===id&&feeder.page===pageNo&&feeder.sourceRole==='schematic_feeder').length;
       const reason=window.EstimationExtractorCore?.selectAiRecoveryReason({pageType:pg.type,scheduleRows:rowsHere,
         scheduleCandidate,expectedWays,schematicFeedCount,boardReferenceCount:pageBoards.length})||null;
-      if(reason){jobs.push({fl,id,pg,pageNo,reason});A.aiSelectionLog.push({fileId:id,page:pageNo,reason});}
+      const activeRows=rowsHere.filter(row=>!row.space&&!row.spare);
+      const unresolved=activeRows.filter(row=>!row.device||row.rating==null).length;
+      if(reason)jobs.push({fl,id,pg,pageNo,reason,candidateScore:scheduleCandidate.score,
+        unresolvedRatio:activeRows.length?unresolved/activeRows.length:1});
     });
   }
-  if(!jobs.length) return;
-  toast('Extracting '+jobs.length+' page'+(jobs.length===1?'':'s')+'…');
-  A.aiPages=0; A.aiErrors=0;
-  const CONC=2;
-  for (let i=0;i<jobs.length;i+=CONC){
-    await Promise.all(jobs.slice(i,i+CONC).map(async j=>{
-      try{ const resp=await aiExtractPage(j.fl,j.pageNo,j.pg);
-        mergeAiResult(A, resp&&resp.result?resp.result:resp, j.id, j.pageNo, j.pg.type); A.aiPages++; }
-      catch(e){ console.warn('AI extraction failed on '+j.fl.name+' p'+j.pageNo+':', e.message); A.aiErrors++; }
-    }));
-  }
+  const plan=window.EstimationExtractorCore?.planAiRecoveryJobs
+    ? window.EstimationExtractorCore.planAiRecoveryJobs(jobs,{maxPages:AI_RECOVERY_MAX_PAGES})
+    : {selected:jobs.slice(0,AI_RECOVERY_MAX_PAGES),deferred:jobs.slice(AI_RECOVERY_MAX_PAGES),eligible:jobs.length,maxPages:AI_RECOVERY_MAX_PAGES};
+  A.aiSelectionLog=[...plan.selected.map(job=>({fileId:job.id,page:job.pageNo,reason:job.reason,selected:true})),
+    ...plan.deferred.map(job=>({fileId:job.id,page:job.pageNo,reason:job.reason,selected:false}))];
+  A.aiPages=0;A.aiErrors=0;A.aiTimedOut=0;A.aiDeferred=plan.deferred.length;
+  A.aiRecovery={eligible:plan.eligible,selected:plan.selected.length,deferred:plan.deferred.length,
+    maxPages:plan.maxPages,pageTimeoutMs:AI_RECOVERY_PAGE_TIMEOUT_MS,totalBudgetMs:AI_RECOVERY_TOTAL_BUDGET_MS};
+  if(!plan.selected.length)return;
+  toast(`Enhanced recovery checking ${plan.selected.length} priority page${plan.selected.length===1?'':'s'}`);
+  const deadline=Date.now()+AI_RECOVERY_TOTAL_BUDGET_MS;
+  const queue=[...plan.selected];
+  let completed=0;
+  const worker=async()=>{
+    while(queue.length&&Date.now()<deadline){
+      if(signal?.aborted)throw new DOMException('Analysis stopped','AbortError');
+      const job=queue.shift(),remaining=Math.max(1,deadline-Date.now());
+      renderStages(4,false,`Enhanced recovery ${completed+1} of ${plan.selected.length} | ${job.fl.name} p${job.pageNo}`);
+      await paintProcessing();
+      try{
+        const resp=await aiExtractPage(job.fl,job.pageNo,job.pg,{signal,timeoutMs:Math.min(AI_RECOVERY_PAGE_TIMEOUT_MS,remaining)});
+        mergeAiResult(A,resp&&resp.result?resp.result:resp,job.id,job.pageNo,job.pg.type);A.aiPages++;
+      }catch(error){
+        if(signal?.aborted)throw error;
+        if(error?.name==='TimeoutError'||error?.name==='AbortError')A.aiTimedOut++;
+        else A.aiErrors++;
+        console.warn('Enhanced extraction skipped '+job.fl.name+' p'+job.pageNo+':',error.message);
+      }finally{completed++;}
+    }
+  };
+  await Promise.all(Array.from({length:Math.min(2,queue.length)},()=>worker()));
+  if(queue.length){A.aiDeferred+=queue.length;A.aiRecovery.deferred+=queue.length;}
   if (A.aiErrors) toast(A.aiErrors+' page(s) could not be extracted — other results were kept');
 }
 
@@ -2713,7 +2768,7 @@ $('#anPreviewBtn').addEventListener('click', ()=>{
 /* ============================ ANALYSIS PIPELINE ============================ */
 const STAGES=['Preparing documents','Checking page types','Finding board references','Reading board schedules','Reading protection devices','Linking supply relationships','Checking completeness'];
 const STAGE_DETAILS=['Confirming readable source pages','Separating schedules, schematics, and specifications','Locating board identities and header evidence','Reconstructing ways and table rows','Capturing incomers, ratings, curves, RCD, and poles','Mapping supplied-from and feeder evidence','Reconciling ways, rows, and review items'];
-let processingHideTimer=null,analysisBusy=false;
+let processingHideTimer=null,analysisBusy=false,analysisAbortController=null;
 function setProcessingDock(stage,detail,progress,activeIdx=0,stateName='running'){
   const dock=$('#processingDock');if(!dock)return;
   if(processingHideTimer){clearTimeout(processingHideTimer);processingHideTimer=null;}
@@ -2722,6 +2777,7 @@ function setProcessingDock(stage,detail,progress,activeIdx=0,stateName='running'
   $('#processingDetail').textContent=detail||'';
   $('#processingFill').style.width=Math.max(0,Math.min(100,Number(progress)||0))+'%';
   const pos=$('#processingPosition');if(pos)pos.textContent=stateName==='complete'?'Complete':stateName==='failed'?'Stopped':`Step ${Math.min(activeIdx+1,STAGES.length)} of ${STAGES.length}`;
+  const cancel=$('#processingCancelBtn');if(cancel)cancel.hidden=!(analysisBusy&&stateName==='running');
   $('#processingSteps').innerHTML=STAGES.map((label,index)=>{
     const cls=stateName==='complete'||index<activeIdx?'done':index===activeIdx?'run':'';
     return `<span class="processing-step ${cls}" title="${esc(label)}"></span>`;
@@ -2748,6 +2804,12 @@ function renderStages(activeIdx, doneAll, detail=''){
   }
 }
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+function stopActiveAnalysis(){
+  if(!analysisBusy)return;
+  analysisAbortController?.abort();
+  const detail=$('#processingDetail');if(detail)detail.textContent='Stopping analysis and keeping the last saved result';
+}
+$('#processingCancelBtn').addEventListener('click',stopActiveAnalysis);
 const SCHEDULE_TYPES=new Set(['db-schedule','main-schedule','equipment-schedule','cable-schedule']);
 const MENTION_TYPES=new Set(['lighting-plan','power-plan','fire-plan','containment-plan','unknown','spec']);
 function stableRowSourceKey(row){
@@ -2822,6 +2884,7 @@ async function runAnalysis(opts){
   if (!f.fileIds.length){ toast('No readable documents selected');finishProcessing('No readable documents were selected','failed',4000);return; }
   if(analysisBusy){toast('Analysis is already running');return null;}
   analysisBusy=true;
+  const runController=new AbortController();analysisAbortController=runController;
   const analysisButtons=[$('#reanalyzeBtn'),$('#anRunBtn')].filter(Boolean);
   analysisButtons.forEach(button=>button.disabled=true);
   $('#projView')?.setAttribute('aria-busy','true');
@@ -3115,9 +3178,13 @@ async function runAnalysis(opts){
   // Workstream 0 §0.0 — genuine AI extraction across all dialects + schematics
   // (regex pass above stays as the fast pre-pass; AI rows go to review, never
   // overriding a slot the schedule parser already filled).
-  if (appSettings.onlineExtraction&&!(opts&&opts.noAi)){
-    try{ await runAiExtraction(A, f, p, pageSet, automaticScopes); }catch(e){ console.warn('AI extraction unavailable:', e.message); }
+  if (appSettings.onlineExtraction&&!auto&&!(opts&&opts.noAi)){
+    try{ await runAiExtraction(A,f,p,pageSet,automaticScopes,{signal:runController.signal}); }
+    catch(error){if(runController.signal.aborted)throw error;console.warn('AI extraction unavailable:',error.message);}
+  }else if(appSettings.onlineExtraction&&auto){
+    A.aiRecovery={status:'deferred-automatic-run',eligible:0,selected:0,deferred:0,maxPages:AI_RECOVERY_MAX_PAGES};
   }
+  if(runController.signal.aborted)throw new DOMException('Analysis stopped','AbortError');
   if(window.EstimationExtractorCore?.reconcileCombinedProtection){
     A.rows=A.rows.map(row=>window.EstimationExtractorCore.reconcileCombinedProtection(row));
   }
@@ -3222,11 +3289,14 @@ async function runAnalysis(opts){
   return A;
   }catch(error){
     console.error('Analysis failed:',error);
-    finishProcessing(error.message||'The analysis could not be completed','failed',5000);
-    toast('Analysis stopped: '+(error.message||'Unknown error'));
+    const stopped=runController.signal.aborted||error?.name==='AbortError';
+    finishProcessing(stopped?'Stopped by user; the last saved result was kept':(error.message||'The analysis could not be completed'),'failed',5000);
+    toast(stopped?'Analysis stopped; your previous saved result is unchanged':'Analysis stopped: '+(error.message||'Unknown error'));
     return null;
   }finally{
     analysisBusy=false;
+    if(analysisAbortController===runController)analysisAbortController=null;
+    const cancel=$('#processingCancelBtn');if(cancel)cancel.hidden=true;
     analysisButtons.forEach(button=>button.disabled=false);
     $('#projView')?.removeAttribute('aria-busy');
   }
@@ -3267,7 +3337,10 @@ function recoveryCandidates(analysis,project){
 async function runAnalysisWithRecovery(opts={}){
   const project=state.cur;
   const first=await runAnalysis(opts);
-  if(!first||opts.noRecovery||state.cur!==project)return first;
+  if(!first||opts.noRecovery||!opts.recoverLowConfidence||state.cur!==project){
+    if(first&&!opts.noRecovery)first.recoveryLog=[];
+    return first;
+  }
   const candidates=recoveryCandidates(first,project);
   if(!candidates.length){first.recoveryLog=[];return first;}
   const clone=value=>value==null?value:JSON.parse(JSON.stringify(value));
@@ -3283,7 +3356,7 @@ async function runAnalysisWithRecovery(opts={}){
     try{await ocrPdfPage(candidate.file,candidate.page,{reanalyze:false,quiet:true,forceRaster:true});}
     catch(error){pg.recovery.error=error.message||String(error);}
   }
-  const second=await runAnalysis({...opts,noRecovery:true});
+  const second=await runAnalysis({...opts,noRecovery:true,noAi:true});
   const secondScore=analysisQualityScore(second);
   if(second&&secondScore>firstScore){
     second.recoveryLog=candidates.map(candidate=>({fileId:candidate.file.id,page:candidate.page,reasons:[...candidate.reasons],outcome:'accepted'}));
