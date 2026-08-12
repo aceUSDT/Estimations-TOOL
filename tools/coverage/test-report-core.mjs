@@ -23,6 +23,7 @@ const model = Report.buildModel({
     { id: "r5", boardNorm: "DB2", device: "MCB", rating: 40, poles: 1, qty: 7, status: "rejected", conf: 0.2 },
     { id: "r6", boardNorm: "DB2", device: "MCB", rating: 16, poles: 1, qty: 3, kind: "mention", status: "pending", conf: 0.4 },
     { id: "r7", boardNorm: null, device: "MCB", rating: 16, poles: 1, qty: 1, status: "confirmed", conf: 1 },
+    { id: "topology-only", boardNorm: "DB2", device: "MCCB", rating: 250, poles: 3, qty: 20, kind: "schematic", sourceRole: "schematic_feeder", status: "confirmed", conf: 1 },
   ],
 });
 

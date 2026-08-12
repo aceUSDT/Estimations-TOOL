@@ -139,17 +139,17 @@ test('schematic pages use feeder health and never masquerade as empty schedules'
     LVS1: { norm: 'LVS1', orig: 'LVS1', pages: [{ fileId: 's1', page: 1 }] },
     DBG9: { norm: 'DBG9', orig: 'DB-G9', pages: [{ fileId: 's1', page: 1 }], parent: 'LVS1' },
   };
-  const rows = [{ id: 'srow', boardNorm: 'LVS1', fileId: 's1', page: 1, device: 'MCCB', rating: 250, qty: 1, status: 'pending', kind: 'schematic' }];
+  const rows = [];
   const coverage = core.buildCoverage({ boards, rows, pages: [{ fileId: 's1', page: 1, type: 'sld', text: 'LV SCHEMATIC DB-G9 250A MCCB' }] });
   assert.equal(coverage.summary.boards, 0);
   assert.equal(coverage.zeroRowSchedulePages.length, 0);
   const healthy = core.buildAnalysisHealth({ coverage, boards, rows,
-    pages: [page({ fileId: 's1', type: 'sld', scheduleScore: 0.9, rowsParsed: 1 })],
+    pages: [page({ fileId: 's1', type: 'sld', scheduleScore: 0.9, rowsParsed: 0 })],
     files: [{ id: 's1', status: 'ready' }], feeders: [{ from: 'LVS1', to: 'DBG9', rating: 250 }] });
   assert.equal(healthy.state, 'complete');
   assert.ok(!healthy.reasons.some((reason) => reason.code === 'SCHEDULE_PAGE_UNPARSED'));
   const missingFeeds = core.buildAnalysisHealth({ coverage, boards, rows,
-    pages: [page({ fileId: 's1', type: 'sld', scheduleScore: 0.9, rowsParsed: 1 })],
+    pages: [page({ fileId: 's1', type: 'sld', scheduleScore: 0.9, rowsParsed: 0 })],
     files: [{ id: 's1', status: 'ready' }], feeders: [] });
   assert.equal(missingFeeds.state, 'failed');
   assert.ok(missingFeeds.reasons.some((reason) => reason.code === 'SCHEMATIC_FEEDS_MISSING'));

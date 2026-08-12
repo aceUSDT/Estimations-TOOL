@@ -62,6 +62,7 @@ try {
   await page.fill('#mName', 'AutoOCR check');
   await page.click('#mOk');
   await page.waitForFunction('state.cur && state.cur.name === "AutoOCR check"');
+  const analysisStartedAt = Date.now();
   await page.setInputFiles('#fileInput', FIXTURES);
   console.log('file dropped; waiting for ingest + auto-OCR + analysis…');
   await page.waitForFunction(
@@ -78,9 +79,12 @@ try {
     ocrReady: state.cur.files.every(file => file.ocrReady === true || file.pages.every(page => page.source !== 'ocr')),
     pageLines: state.cur.files.flatMap(file => file.pages.map(p => (p.lines||[]).length)),
     pageTypes: state.cur.files.flatMap(file => file.pages.map(p => p.type)),
+    classificationAudit: state.cur.files.flatMap(file => file.pages.map(page => window.EstimationExtractorCore.classifyPageText((page.lines || []).map(line => line.text).join('\\n')))),
     rows: state.cur.analysis.rows.length,
     feeders: state.cur.analysis.feeders.length,
+    schematicDevices: (state.cur.analysis.schematicDevices || []).length,
     boards: Object.keys(state.cur.analysis.boards),
+    takeoffBoards: Object.values(state.cur.analysis.boards).filter(board => board.inScope !== false).length,
     status: state.cur.status,
     coverage: state.cur.analysis.coverage ? {
       boards: state.cur.analysis.coverage.summary.boards,
@@ -158,10 +162,28 @@ try {
     coveragePanelText: document.querySelector('#covSummary') ? document.querySelector('#covSummary').textContent : null,
     reviewItems: (() => { setTab('review'); return document.querySelectorAll('#reviewList .rev-item').length; })(),
   })`);
+  res.elapsedMs = Date.now() - analysisStartedAt;
   console.log(JSON.stringify(res, null, 2));
   if (!res.pageLines.every((n) => n > 0)) throw new Error('document ingestion did not populate page lines');
   if (scanned > 0 && !res.ocrReady) throw new Error('auto-OCR did not populate scanned pages');
   if (!res.coverage) throw new Error('analysis.coverage missing — reconciliation pass did not run');
+  const exactExpectation = (name, actual) => {
+    if (process.env[name] == null) return;
+    if (actual !== Number(process.env[name])) throw new Error(`${name} expected ${process.env[name]}, received ${actual}`);
+  };
+  const maximumExpectation = (name, actual) => {
+    if (process.env[name] == null) return;
+    if (actual > Number(process.env[name])) throw new Error(`${name} expected at most ${process.env[name]}, received ${actual}`);
+  };
+  const minimumExpectation = (name, actual) => {
+    if (process.env[name] == null) return;
+    if (actual < Number(process.env[name])) throw new Error(`${name} expected at least ${process.env[name]}, received ${actual}`);
+  };
+  exactExpectation('EXPECT_ROWS', res.rows);
+  exactExpectation('EXPECT_REVIEW_ITEMS', res.reviewItems);
+  exactExpectation('EXPECT_TAKEOFF_BOARDS', res.takeoffBoards);
+  maximumExpectation('EXPECT_MAX_ELAPSED_MS', res.elapsedMs);
+  minimumExpectation('EXPECT_MIN_FEEDERS', res.feeders);
   console.log('\nPASS: auto-OCR ran, analysis completed, and the reconciliation/coverage pass populated analysis.coverage.');
 } finally {
   await browser.close();

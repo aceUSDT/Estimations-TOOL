@@ -114,6 +114,28 @@ assert.deepEqual(perryfields.rows.map((row) => [row.way, row.device, row.rating,
 assert.equal(perryfields.rows[0].ka, 10, 'the 30mA earth-fault value must not displace the 10kA breaking capacity');
 assert.equal(perryfields.board.header.ways_total, 3, 'distinct printed ways provide a reconciled board count when the header omits it');
 
+const unprovenGrid = Core.parseSpatialSchedulePage({
+  lines: [{ text: 'LV SCHEMATIC' }],
+  words: [
+    word('Way', 20, 20), word('Device', 90, 20), word('Rating (A)', 160, 20),
+    word('1', 20, 70), word('MCCB', 90, 70), word('125', 160, 70),
+    word('2', 20, 100), word('MCCB', 90, 100), word('250', 160, 100),
+  ],
+  pageWidth: 300,
+  pageHeight: 160,
+  pageType: 'sld',
+});
+assert.equal(unprovenGrid.matched, false, 'a protection list without a circuit/description column is not a proven schedule grid');
+assert.ok(unprovenGrid.grid.reasons.includes('circuit_column_missing'));
+assert.equal(Core.isTakeoffEvidenceRow({ kind: 'schematic', sourceRole: 'schematic_feeder' }), false);
+assert.equal(Core.isTakeoffEvidenceRow({ kind: 'schedule' }), true);
+assert.equal(Core.selectAiRecoveryReason({ pageType: 'sld', schematicFeedCount: 25, boardReferenceCount: 30 }), null);
+assert.equal(Core.selectAiRecoveryReason({ pageType: 'sld', schematicFeedCount: 0, boardReferenceCount: 3 }), 'schematic-topology-missing');
+assert.equal(Core.selectAiRecoveryReason({ pageType: 'db-schedule', scheduleCandidate: { score: 0.9, signals: ['way-sequence', 'column-header'] },
+  scheduleRows: perryfields.rows, expectedWays: 3 }), null);
+assert.equal(Core.selectAiRecoveryReason({ pageType: 'legend', scheduleCandidate: { score: 0.9, signals: ['device-tokens', 'rating-tokens'] },
+  scheduleRows: [], expectedWays: 0 }), null, 'legend and drawing vocabulary must not trigger expensive schedule AI');
+
 const derivedCoverage = Core.buildCoverage({
   boards: { DBG9: { norm: 'DBG9', orig: 'DB-G9', type: 'DB', header: perryfields.board.header, pages: [{ fileId: 'perry', page: 1, primary: true }] } },
   rows: perryfields.rows.map((row) => ({ ...row, boardNorm: 'DBG9', fileId: 'perry', page: 1, kind: 'schedule', status: 'pending' })),
@@ -139,6 +161,7 @@ const scoped = Core.applyBoardScope({
   MSDB01: { norm: 'MSDB01', orig: 'A0.MSDB.01', type: 'SB' },
   DBFUSE: { norm: 'DBFUSE', orig: 'DB-FUSE', type: 'DB' },
   DBOK: { norm: 'DBOK', orig: 'DB-OK', type: 'DB' },
+  DBSCHEMATIC: { norm: 'DBSCHEMATIC', orig: 'DB-SCHEMATIC', type: 'DB', takeoffEligible: false, schematicEvidence: true },
 }, [
   ...Array.from({ length: 4 }, (_, index) => ({ id: `f${index}`, boardNorm: 'DBFUSE', device: 'Fuse', qty: 1, status: 'confirmed' })),
   { id: 'ok', boardNorm: 'DBOK', device: 'MCB', qty: 1, status: 'confirmed' },
@@ -148,6 +171,8 @@ assert.ok(scoped.boards.MSDB01.outOfScopeReasons.includes('MSDB_ASSEMBLY'));
 assert.equal(scoped.boards.DBFUSE.inScope, false);
 assert.ok(scoped.boards.DBFUSE.outOfScopeReasons.includes('FOUR_OR_MORE_FUSE_OUTGOINGS'));
 assert.equal(scoped.boards.DBOK.inScope, true);
+assert.equal(scoped.boards.DBSCHEMATIC.inScope, false);
+assert.ok(scoped.boards.DBSCHEMATIC.outOfScopeReasons.includes('SCHEMATIC_ONLY'));
 assert.equal(scoped.rows.filter((row) => row.outOfScope).length, 4);
 
 console.log('PASS: note links, alphanumeric ways, phase spans, document scoping, and take-off exclusions');

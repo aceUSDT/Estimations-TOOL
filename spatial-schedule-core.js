@@ -949,6 +949,28 @@
     return recovered;
   }
 
+  function assessScheduleGrid(schema, rows, wayAnchors, minimumWays) {
+    const roles = new Set((schema?.columns || []).map((column) => column.role));
+    const distinctWays = new Set((rows || []).map((row) => row.way).filter((way) => way != null));
+    const populatedRows = (rows || []).filter((row) => row.way != null
+      && (row.device || row.rating != null || row.protectionStandard || row.circuitReference || row.desc || row.spare || row.space));
+    const reasons = [];
+    if (!roles.has('way') || wayAnchors.length < minimumWays || distinctWays.size < minimumWays) reasons.push('way_sequence_missing');
+    if (!roles.has('rating')) reasons.push('rating_column_missing');
+    if (!roles.has('device_standard') && !roles.has('device_class')) reasons.push('device_column_missing');
+    if (!roles.has('circuit_reference') && !roles.has('description')) reasons.push('circuit_column_missing');
+    if (!populatedRows.length) reasons.push('no_bounded_schedule_rows');
+    if (Number(schema?.confidence || 0) < 0.62) reasons.push('column_schema_low_confidence');
+    return {
+      accepted: reasons.length === 0,
+      reasons,
+      roles: [...roles],
+      wayAnchors: wayAnchors.length,
+      distinctWays: distinctWays.size,
+      populatedRows: populatedRows.length,
+    };
+  }
+
   function parseSpatialSchedulePage(input = {}) {
     const words = collectSpatialWords(input);
     const pageWidth = Number(input.pageWidth || input.width || Math.max(1, ...words.map((word) => word.x1)));
@@ -978,7 +1000,8 @@
     reconcileProtectionStandardRows(words, wayAnchors, rows, schema, context);
     const governingNotes = Core.parseGoverningNotes(input.lines || []);
     if (governingNotes.length) rows.forEach((row) => Object.assign(row, Core.applyGoverningNotes(row, governingNotes)));
-    const observedRowCount = rows.length;
+    const observedRows = rows.slice();
+    const observedRowCount = observedRows.length;
     const observedWays = new Set(rows.map((row) => row.way).filter((way) => way != null));
     if (!schema.continuation && header.header.ways_total == null && observedWays.size) {
       header.header.ways_total = observedWays.size;
@@ -1006,15 +1029,18 @@
       sourceCell: row.fieldSources.circuitReference,
     })) : [];
     const warnings = [];
+    const grid = assessScheduleGrid(schema, observedRows, wayAnchors, minimumWays);
     if (!ref) warnings.push('primary_board_not_resolved');
     if (schema.confidence < 0.72) warnings.push('column_schema_review_required');
+    grid.reasons.forEach((reason) => warnings.push(`unproven_schedule_grid:${reason}`));
     if (rows.some((row) => row.inferredWay)) warnings.push('header_way_without_printed_row');
     if (rows.some((row) => row.requiresReview)) warnings.push('row_review_required');
     return {
-      matched: rows.length >= minimumWays && schema.confidence >= 0.58,
+      matched: grid.accepted,
       confidence: Math.min(schema.confidence, ref ? 0.98 : 0.65),
       words: words.length,
       schema,
+      grid,
       table: {
         bbox: unionBox(words.filter((word) => word.cy >= schema.headerBand[1] && word.cy <= schema.dataBand[1] + schema.dataBand[3])),
         rowCount: rows.length,
@@ -1365,6 +1391,7 @@
     classifyBoardFamily,
     familyTypeCode,
     parseSpatialSchedulePage,
+    assessScheduleGrid,
     parseSpatialSchematicPage,
     buildSpatialLayoutHint,
     deduplicateFeederRelationships,

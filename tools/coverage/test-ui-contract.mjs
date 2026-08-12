@@ -19,7 +19,7 @@ const required = [
   'host.requestFullscreen',
   "document.addEventListener('fullscreenchange'",
   'function syncViewerLayout()',
-  'const ANALYSIS_VERSION=10;',
+  'const ANALYSIS_VERSION=11;',
   'function recoveryCandidates(',
   'async function runAnalysisWithRecovery(',
   'core.parseSpatialSchematicPage(',
@@ -55,12 +55,15 @@ const required = [
   'function syncViewerDetectionList(rowId',
   'data-row-id=',
   'reconcileCombinedProtection(row)',
+  'schematicDevices:[]',
+  'function isTakeoffEvidenceRow(row)',
 ];
 required.forEach((value) => assert.ok(html.includes(value), `missing UI contract: ${value}`));
 assert.ok(!html.includes('id="vAssistBoard"'), 'viewer must not contain a duplicate board selector');
 assert.ok(!html.includes('Match rows'), 'ambiguous Match rows command must not return');
 assert.ok(!html.includes('Approve checked rows'), 'bulk approval must not claim rows are checked');
 assert.ok(!html.includes("slice(0,90)"), 'viewer source evidence must not be silently truncated');
+assert.ok(!/kind:'schematic'[\s\S]{0,500}A\.rows\.push/.test(html), 'schematic topology must not be inserted into take-off rows');
 
 const markup = html.slice(0, html.indexOf('<script'));
 const ids = [...markup.matchAll(/\bid="([^"]+)"/g)].map((match) => match[1]);

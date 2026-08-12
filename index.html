@@ -1121,7 +1121,7 @@ const state = {
   reportMode: 'board',
   reviewFlow: {active:false,currentRowId:null,initialCount:0,moving:false,boardOrder:[],initialByBoard:{},rowOrderByBoard:{}},
 };
-const ANALYSIS_VERSION=10;
+const ANALYSIS_VERSION=11;
 const uid = () => 'x'+(state.nextId++)+'_'+Math.random().toString(36).slice(2,6);
 
 /* ====================== PERSISTENCE (IndexedDB) ====================== */
@@ -1515,6 +1515,7 @@ function classifyPage(text, pageIdx, totalPages){
   const low = text.toLowerCase();
   const scores = {};
   const add=(t,n)=>scores[t]=(scores[t]||0)+n;
+  const strongSchematicTitle=/\b(?:LV\s+SCHEMATIC|ELECTRICAL\s+SCHEMATIC|SINGLE[- ]LINE\s+(?:DIAGRAM|SCHEMATIC)|ONE[- ]LINE\s+DIAGRAM)\b/i.test(text);
   if (/drawing register|drawing list|drawing index|dwg register/.test(low)) add('register',8);
   if (/\blegend\b/.test(low) && /symbol|description|abbrev/.test(low)) add('legend',5);
   if (/lighting (?:layout|plan|drawing)/.test(low)) add('lighting-plan',5);
@@ -1522,6 +1523,7 @@ function classifyPage(text, pageIdx, totalPages){
   if (/fire.?alarm (?:layout|plan|drawing)|fire detection layout/.test(low)) add('fire-plan',5);
   if (/containment|cable tray layout|trunking layout|basket layout/.test(low)) add('containment-plan',5);
   if (/single.?line|schematic|busbar|incoming supply|main switchboard/.test(low)) add('sld',4);
+  if (strongSchematicTitle) add('sld',14);
   if (/distribution board schedule|board schedule|db schedule/.test(low)) add('db-schedule',6);
   if (/main (?:panel|lv panel|switch\s?board).{0,30}schedule/.test(low)) add('main-schedule',6);
   if (/cable schedule/.test(low)) add('cable-schedule',6);
@@ -1742,13 +1744,30 @@ function ensureProjectState(p){
   if(!Array.isArray(p.approvalLog))p.approvalLog=[];
   return p;
 }
+function isSchematicTopologyEvidence(row){
+  return window.EstimationExtractorCore?.isSchematicTopologyEvidence
+    ? window.EstimationExtractorCore.isSchematicTopologyEvidence(row)
+    : Boolean(row)&&(row.kind==='schematic'||String(row.sourceRole||'').startsWith('schematic_'));
+}
+function isTakeoffEvidenceRow(row){
+  return window.EstimationExtractorCore?.isTakeoffEvidenceRow
+    ? window.EstimationExtractorCore.isTakeoffEvidenceRow(row)
+    : Boolean(row)&&!isSchematicTopologyEvidence(row)&&['schedule','ai','manual','mention'].includes(row.kind);
+}
+function isCountedDeviceRow(row){
+  return isTakeoffEvidenceRow(row)&&!row.outOfScope&&row.status!=='rejected'&&!row.space&&Boolean(row.device)
+    &&(row.kind!=='mention'||row.status==='confirmed');
+}
+function isPendingReviewRow(row){
+  return isTakeoffEvidenceRow(row)&&!row.outOfScope&&row.status!=='confirmed'&&row.status!=='rejected';
+}
 function projStats(p){
   const docs=p.files.length;
   const pages=p.files.reduce((a,f)=>a+(f.pages?f.pages.length:0),0);
   const a=p.analysis;
   const boards=a?Object.values(a.boards).filter(board=>board.inScope!==false).length:0;
-  const devices=a?a.rows.filter(r=>!r.outOfScope&&r.status!=='rejected'&&!r.space&&r.device&&(r.kind!=='mention'||r.status==='confirmed')).reduce((s,r)=>s+(r.qty||1),0):0;
-  const review=a?a.rows.filter(r=>!r.outOfScope&&r.status==='pending'&&(r.requiresReview||r.conf<0.8)).length:0;
+  const devices=a?a.rows.filter(isCountedDeviceRow).reduce((s,r)=>s+(r.qty||1),0):0;
+  const review=a?a.rows.filter(isPendingReviewRow).length:0;
   return {docs,pages,boards,devices,review};
 }
 /* ============================ HOME / PROJECT CARDS ============================ */
@@ -2165,7 +2184,8 @@ async function aiExtractPage(f,pageNo,pg){
     image_base64=cv.toDataURL('image/jpeg',0.85).split(',')[1];
   }
   const core=window.EstimationExtractorCore;
-  const spatial=core?.parseSpatialSchedulePage?core.parseSpatialSchedulePage({lines:pg.lines||[],tableRows:pg.tableRows||[],
+  const topologyOnly=pg.type==='sld'||pg.type==='schematic';
+  const spatial=!topologyOnly&&core?.parseSpatialSchedulePage?core.parseSpatialSchedulePage({lines:pg.lines||[],tableRows:pg.tableRows||[],
     pageWidth:pg.w,pageHeight:pg.h,pageType:pg.type}):null;
   const layoutHint=spatial?.matched&&core?.buildSpatialLayoutHint?core.buildSpatialLayoutHint(spatial):null;
   const payload={filename:f.name,page_number:pageNo,image_base64,media_type:'image/jpeg',
@@ -2191,8 +2211,9 @@ async function aiExtractPage(f,pageNo,pg){
   }
   throw new Error('Document extraction timed out (>3 min)');
 }
-function mergeAiResult(A,out,fileId,pageNo){
+function mergeAiResult(A,out,fileId,pageNo,pageType){
   if(!out) return;
+  const topologyOnly=pageType==='sld'||pageType==='schematic';
   (out.boards||[]).forEach(b=>{
     if(!b.ref) return;
     const canonical=canonicalBoardRef(b.ref), norm=canonical.normalised; if(!norm) return;
@@ -2201,14 +2222,15 @@ function mergeAiResult(A,out,fileId,pageNo){
       A.boards[norm]={norm, orig:canonical.display, type:det?det.type:'UNK', pages:[], parent:null, parentConf:0, manual:false};
     }
     const e=A.boards[norm];
-    if(!e.pages.some(x=>x.fileId===fileId&&x.page===pageNo)) e.pages.push({fileId,page:pageNo});
+    if(!e.pages.some(x=>x.fileId===fileId&&x.page===pageNo)) e.pages.push({fileId,page:pageNo,sourceRole:topologyOnly?'schematic':'ai'});
+    if(topologyOnly){e.schematicEvidence=true;if(!e.scheduleEvidence)e.takeoffEligible=false;}
     e.header=Object.assign(e.header||{}, Object.fromEntries(Object.entries(b).filter(([k,v])=>v!==null&&v!==''&&k!=='ref'&&k!=='confidence')));
     if (b.fed_from_ref && !e.manual){
       const fb=canonicalBoardRef(b.fed_from_ref).normalised;
       if (fb && fb!==norm && 0.75>(e.parentConf||0)){ e.parent=fb; e.parentConf=0.75; }
     }
   });
-  (out.devices||[]).forEach(d=>{
+  if(!topologyOnly)(out.devices||[]).forEach(d=>{
     const bn=d.board_ref?canonicalBoardRef(d.board_ref).normalised:null;
     const space=d.device_class==='space';
     const spare=d.is_spare||d.device_class==='spare';
@@ -2272,6 +2294,7 @@ function mergeAiResult(A,out,fileId,pageNo){
 async function runAiExtraction(A,f,p,pageSet,automaticScopes){
   if(!(await aiExtractReady())) return;
   const jobs=[];
+  A.aiSelectionLog=[];
   for (const id of f.fileIds){
     const fl=p.files.find(x=>x.id===id); if(!fl||fl.status!=='ready') continue;
     fl.pages.forEach((pg,pi)=>{
@@ -2279,10 +2302,16 @@ async function runAiExtraction(A,f,p,pageSet,automaticScopes){
       if (pageSet && !pageSet.has(pageNo)) return;
       const automaticScope=automaticScopes?.get(id);
       if(!pageSet&&automaticScope?.enforced&&!automaticScope.pageSet.has(pageNo))return;
-      const rowsHere=A.rows.filter(r=>r.fileId===id&&r.page===pageNo&&r.kind==='schedule').length;
-      // recall-first: any schedule/schematic/unknown page, plus any page the regex pass left empty
-      if (SCHEDULE_TYPES.has(pg.type)||pg.type==='sld'||pg.type==='schematic'||pg.type==='unknown'||rowsHere===0)
-        jobs.push({fl,id,pg,pageNo});
+      const rowsHere=A.rows.filter(r=>r.fileId===id&&r.page===pageNo&&r.kind==='schedule');
+      const pageBoards=[...new Set((pg.lines||[]).flatMap(line=>detectBoards(line.text).map(board=>board.norm)))];
+      const rowBoards=[...new Set(rowsHere.map(row=>row.boardNorm).filter(Boolean))];
+      const expectedWays=Math.max(0,...[...new Set([...pageBoards,...rowBoards])]
+        .map(norm=>Number(A.boards[norm]?.header?.ways_total)||0));
+      const scheduleCandidate=window.EstimationExtractorCore?.scoreScheduleCandidate((pg.lines||[]).map(line=>line.text))||{score:0,signals:[]};
+      const schematicFeedCount=A.feeders.filter(feeder=>feeder.fileId===id&&feeder.page===pageNo&&feeder.sourceRole==='schematic_feeder').length;
+      const reason=window.EstimationExtractorCore?.selectAiRecoveryReason({pageType:pg.type,scheduleRows:rowsHere,
+        scheduleCandidate,expectedWays,schematicFeedCount,boardReferenceCount:pageBoards.length})||null;
+      if(reason){jobs.push({fl,id,pg,pageNo,reason});A.aiSelectionLog.push({fileId:id,page:pageNo,reason});}
     });
   }
   if(!jobs.length) return;
@@ -2292,7 +2321,7 @@ async function runAiExtraction(A,f,p,pageSet,automaticScopes){
   for (let i=0;i<jobs.length;i+=CONC){
     await Promise.all(jobs.slice(i,i+CONC).map(async j=>{
       try{ const resp=await aiExtractPage(j.fl,j.pageNo,j.pg);
-        mergeAiResult(A, resp&&resp.result?resp.result:resp, j.id, j.pageNo); A.aiPages++; }
+        mergeAiResult(A, resp&&resp.result?resp.result:resp, j.id, j.pageNo, j.pg.type); A.aiPages++; }
       catch(e){ console.warn('AI extraction failed on '+j.fl.name+' p'+j.pageNo+':', e.message); A.aiErrors++; }
     }));
   }
@@ -2532,7 +2561,7 @@ function renderPgclass(){
     const subChip = (subFmt && PAGE_TYPES[subFmt] && subFmt!==THREE_TO_FINE[cur])
       ? `<div class="sub" style="margin-top:3px">sub-format: ${esc(PAGE_TYPES[subFmt])}</div>` : '';
     const boardsOn=[]; pg.lines.forEach(l=>detectBoards(l.text).forEach(b=>{ if(!boardsOn.includes(b.orig)) boardsOn.push(b.orig); }));
-    const rows=A? A.rows.filter(r=>r.fileId===f.id&&r.page===i+1&&r.kind!=='manual').length : 0;
+    const rows=A? A.rows.filter(r=>isTakeoffEvidenceRow(r)&&r.fileId===f.id&&r.page===i+1&&r.kind!=='manual').length : 0;
     const quality=pg.ocr?.qualityScore??pg.textQuality?.score,qualityText=Number.isFinite(quality)?' '+Math.round(quality*100)+'%':'';
     const sourceLabel=pg.source==='native_text'?'Text'+qualityText:pg.source==='ocr'?'OCR'+qualityText:'OCR queued';
     tr.innerHTML=`<td class="num">${i+1}</td>
@@ -2801,7 +2830,7 @@ async function runAnalysis(opts){
   const boardFilter=f.boards.length?new Set(f.boards):null;
   const devFilter=f.devices.length?new Set(f.devices.map(d=>d.toUpperCase())):null;
   const prev=p.analysis;
-  const A={ version:ANALYSIS_VERSION, ranAt: todayStr(), boards:{}, rows:[], cables:[], feeders:[], legend:[], filters:f, documentScopes:{} };
+  const A={ version:ANALYSIS_VERSION, ranAt: todayStr(), boards:{}, rows:[], cables:[], feeders:[], schematicDevices:[], legend:[], filters:f, documentScopes:{} };
   const pageTotal=f.fileIds.reduce((sum,id)=>sum+(p.files.find(file=>file.id===id)?.pages?.length||0),0);
   const showAnalysisStage=async(index,detail)=>{
     renderStages(index,false,detail);
@@ -2835,15 +2864,19 @@ async function runAnalysis(opts){
   });
   await showAnalysisStage(2,'Locating distribution-board references');
 
-  const regBoard=(b,fileId,pageNo,primary=false)=>{
+  const regBoard=(b,fileId,pageNo,primary=false,sourceRole=primary?'schedule':'reference')=>{
     if(!A.boards[b.norm]) A.boards[b.norm]={norm:b.norm, orig:b.orig, type:b.type, pages:[], parent:null, parentConf:0, manual:false};
     const e=A.boards[b.norm];
     const pageRef=e.pages.find(x=>x.fileId===fileId&&x.page===pageNo);
-    if (!pageRef) e.pages.push({fileId,page:pageNo,section:b.section||null,primary:Boolean(primary)});
+    if (!pageRef) e.pages.push({fileId,page:pageNo,section:b.section||null,primary:Boolean(primary),sourceRole});
     else {
       if(b.section) pageRef.section=b.section;
       if(primary) pageRef.primary=true;
+      if(primary||pageRef.sourceRole==='reference')pageRef.sourceRole=sourceRole;
     }
+    if(sourceRole==='schematic')e.schematicEvidence=true;
+    if(primary){e.scheduleEvidence=true;e.takeoffEligible=true;e.schematicOnly=false;}
+    else if(sourceRole==='schematic'&&!e.scheduleEvidence){e.takeoffEligible=false;e.schematicOnly=true;}
     if(primary&&b.type&&b.type!=='UNK')e.type=b.type;
     if (String(b.orig||'').length>String(e.orig||'').length) e.orig=b.orig;
   };
@@ -2861,6 +2894,10 @@ async function runAnalysis(opts){
       if(!pageSet&&automaticScope?.enforced&&!automaticScope.pageSet.has(pageNo))return;
       const lines=(pg.lines||[]).map(l=>l.text);
       const core=window.EstimationExtractorCore;
+      if(!pg.typeManual&&core?.classifyPageText){
+        const classified=core.classifyPageText(lines.join('\n'),pi,fl.pages.length);
+        pg.type=classified.type;pg.sub_format=classified.type;pg.threeType=toThreeType(classified.type);pg.conf=classified.confidence;
+      }
       const pageBoards=[];
       lines.forEach(t=>detectBoards(t).forEach(b=>{ if(!pageBoards.some(x=>x.norm===b.norm)) pageBoards.push(b); }));
       // Multi-signal schedule candidacy: a page qualifies by what is ON it,
@@ -2928,11 +2965,11 @@ async function runAnalysis(opts){
       } else {
         prevBoard=null;
         prevSpatialSchema=null;
-        if(pg.type==='sld'||pg.type==='schematic')pageBoards.forEach(b=>regBoard(b,id,pageNo));
+        if(pg.type==='sld'||pg.type==='schematic')pageBoards.forEach(b=>regBoard(b,id,pageNo,false,'schematic'));
         if(schematicSpatial){
           schematicSpatial.boards.forEach(item=>{
             const type=/^MAIN/.test(item.norm)?'MAIN':/^SMDB/.test(item.norm)?'SMDB':/^MDB/.test(item.norm)?'MDB':/^LVS/.test(item.norm)?'SB':'UNK';
-            regBoard({norm:item.norm,orig:item.ref,type},id,pageNo,false);
+            regBoard({norm:item.norm,orig:item.ref,type},id,pageNo,false,'schematic');
             const board=A.boards[item.norm];
             if(!board)return;
             board.header=board.header||{};
@@ -3015,28 +3052,19 @@ async function runAnalysis(opts){
           A.feeders.push({id:uid(),fileId:id,page:pageNo,line:null,from,to,cable:feed.cable||null,
             way:null,device:feed.device||null,rating:feed.rating??null,poles:feed.poles??null,poleConfiguration:feed.poleConfiguration||null,
             srcText:`Schematic feeder${from?' from '+feed.fromRef:''} to ${feed.toRef}`,bbox:feed.sourceCell?.bbox||feed.fieldSources?.rating?.bbox||null,
-            conf:feed.confidence||0.7,sourceRole:'schematic_feeder',fieldSources:feed.fieldSources||{},spatial:true,requiresReview:true});
-          const row={way:null,desc:`Feeder to ${feed.toRef}`,circuitReference:feed.toRef,device:feed.device||null,
-            rating:feed.rating??null,poles:feed.poles??null,poleConfiguration:feed.poleConfiguration||null,curve:null,sens:null,rcdProtected:null,
-            afdd:null,phase:feed.poles>=3?'3PH':feed.poles?'1PH':null,ka:null,cable:feed.cable||null,spare:false,space:false,incomer:false,qty:1,
-            srcText:`Schematic feeder${from?' from '+feed.fromRef:''} to ${feed.toRef}`,conf:feed.confidence||0.7,requiresReview:true,
-            sourceCell:feed.sourceCell||feed.fieldSources?.rating||null,fieldSources:{device:feed.fieldSources?.device,rating:feed.fieldSources?.rating,poles:feed.fieldSources?.poles}};
-          const trace=sourceTrace(row,row.sourceCell,pg,fl.name);
-          const record={id:uid(),boardNorm:from||to,fileId:id,page:pageNo,line:null,status:'pending',kind:'schematic',sourceRole:'schematic_feeder',
-            ...row,...trace,highlightBbox:row.sourceCell?.bbox||null,conf:trace.lineConfidence?Math.min(row.conf,trace.lineConfidence):row.conf};
-          record.sourceKey=stableRowSourceKey(record);A.rows.push(record);
+            conf:feed.confidence||0.7,sourceRole:'schematic_feeder',fieldSources:feed.fieldSources||{},spatial:true});
         });
         schematicSpatial.devices.forEach(item=>{
           const boardNorm=canonicalBoardRef(item.boardRef).normalised;
           if(!boardNorm)return;
-          const row={way:null,desc:item.desc||'Schematic device',circuitReference:null,device:item.device||null,rating:item.rating??null,
+          const evidence={way:null,desc:item.desc||'Schematic device',circuitReference:null,device:item.device||null,rating:item.rating??null,
             poles:item.poles??null,poleConfiguration:item.poleConfiguration||null,curve:null,sens:null,rcdProtected:null,afdd:null,phase:item.poles>=3?'3PH':item.poles?'1PH':null,
             ka:null,cable:null,spare:Boolean(item.spare),space:false,incomer:false,qty:1,srcText:item.sourceCell?.text||item.desc||item.device,
-            conf:item.confidence||0.65,requiresReview:true,sourceCell:item.sourceCell||null};
-          const trace=sourceTrace(row,row.sourceCell,pg,fl.name);
-          const record={id:uid(),boardNorm,fileId:id,page:pageNo,line:null,status:'pending',kind:'schematic',sourceRole:'schematic_accessory',
-            ...row,...trace,highlightBbox:row.sourceCell?.bbox||null,conf:trace.lineConfidence?Math.min(row.conf,trace.lineConfidence):row.conf};
-          record.sourceKey=stableRowSourceKey(record);A.rows.push(record);
+            conf:item.confidence||0.65,sourceCell:item.sourceCell||null};
+          const trace=sourceTrace(evidence,evidence.sourceCell,pg,fl.name);
+          A.schematicDevices.push({id:uid(),boardNorm,fileId:id,page:pageNo,line:null,kind:'schematic',sourceRole:'schematic_accessory',
+            nonTakeoff:true,...evidence,...trace,highlightBbox:evidence.sourceCell?.bbox||null,
+            conf:trace.lineConfidence?Math.min(evidence.conf,trace.lineConfidence):evidence.conf});
         });
       }
       lines.forEach((t,li)=>{
@@ -3173,14 +3201,14 @@ async function runAnalysis(opts){
       if(state.viewer.assist?.markupId===m.id)state.viewer.assist.results=matched.rows;
     });
   }
-  const rev=A.rows.filter(r=>!r.outOfScope&&r.status==='pending'&&(r.requiresReview||r.conf<0.8)).length;
+  const rev=A.rows.filter(isPendingReviewRow).length;
    const health=A.health||{state:'complete',reasons:[]};
   // "Analysed" is EARNED: a run that misses evidence must say so (never a
   // green badge over 7 boards / 0 devices again).
   p.status = health.state==='failed' ? 'Analysis failed'
     : health.state==='incomplete' ? 'Incomplete'
     : rev? 'Needs review':'Analysed';
-  const deviceCount=A.rows.filter(r=>!r.outOfScope&&r.status!=='rejected'&&!r.space&&r.device&&(r.kind!=='mention'||r.status==='confirmed')).reduce((sum,row)=>sum+(Number(row.qty)||1),0);
+  const deviceCount=A.rows.filter(isCountedDeviceRow).reduce((sum,row)=>sum+(Number(row.qty)||1),0);
   const scopedBoardCount=Object.values(A.boards).filter(board=>board.inScope!==false).length;
   const completeDetail=`${deviceCount} devices | ${scopedBoardCount} boards | ${rev} review items`;
   renderStages(7,true,completeDetail);
@@ -3281,7 +3309,7 @@ const boardLabel = norm => {
 };
 function activeRows(){
   const p=state.cur;
-  return p&&p.analysis? p.analysis.rows.filter(r=>r.status!=='rejected') : [];
+  return p&&p.analysis? p.analysis.rows.filter(r=>isTakeoffEvidenceRow(r)&&r.status!=='rejected') : [];
 }
 function deviceTotals(rows, exclSpare){
   // by board → device → {qty, rows[]}
@@ -3336,7 +3364,7 @@ function approveRows(rows,surface,note=''){
   return count;
 }
 function reviewDecisionPending(row){
-  return Boolean(row)&&!row.outOfScope&&row.status!=='confirmed'&&row.status!=='rejected';
+  return isPendingReviewRow(row);
 }
 function guidedBoardName(key){return key==='__none__'?'Unassigned rows':boardLabel(key);}
 function reviewSourceTuple(row){
@@ -3627,9 +3655,9 @@ function renderResults(){
   }
   const rows=activeRows();
   const by=deviceTotals(rows);
-  const totDev=rows.filter(r=>!r.outOfScope&&r.device&&!r.space&&(r.kind!=='mention'||r.status==='confirmed')).reduce((s,r)=>s+(r.qty||1),0);
-  const rev=A.rows.filter(r=>!r.outOfScope&&r.status==='pending').length;
-  const confd=A.rows.filter(r=>!r.outOfScope&&r.status==='confirmed').length;
+  const totDev=rows.filter(isCountedDeviceRow).reduce((s,r)=>s+(r.qty||1),0);
+  const rev=A.rows.filter(isPendingReviewRow).length;
+  const confd=A.rows.filter(r=>isTakeoffEvidenceRow(r)&&!r.outOfScope&&r.status==='confirmed').length;
   const coverage=A.coverage?.summary?.pctComplete;
   const decisions=ensureProjectState(p).approvalLog.length;
   sum.innerHTML=[
@@ -3993,7 +4021,7 @@ function openRowEditor(r, isNew, surface='Boards & Devices'){
 $('#bulkApproveBtn').addEventListener('click', ()=>{
   const p=state.cur; if(!p||!p.analysis) return;
   const guided=guidedReviewCurrentRow();
-  const eligible=p.analysis.rows.filter(r=>!r.outOfScope&&r.status==='pending'&&!r.requiresReview&&r.conf>=0.8);
+  const eligible=p.analysis.rows.filter(r=>isPendingReviewRow(r)&&!r.requiresReview&&r.conf>=0.8);
   const n=approveRows(eligible,'Boards & Devices','High-confidence batch approval');
   renderTakeoff(); renderProjHeader(); saveProject(p);
   toast(n+' high-confidence rows approved');
@@ -4282,10 +4310,10 @@ $('#reportXlsxBtn').addEventListener('click',async()=>{
 
 /* ============================ BOARDS TAB ============================ */
 function boardDeviceCount(norm){
-  return activeRows().filter(r=>r.boardNorm===norm&&!r.outOfScope&&r.device&&!r.space&&(r.kind!=='mention'||r.status==='confirmed')).reduce((s,r)=>s+(r.qty||1),0);
+  return activeRows().filter(r=>r.boardNorm===norm&&isCountedDeviceRow(r)).reduce((s,r)=>s+(r.qty||1),0);
 }
 function boardReviewCount(norm){
-  return state.cur?.analysis?.rows?.filter(row=>row.boardNorm===norm&&!row.outOfScope&&row.status==='pending').length||0;
+  return state.cur?.analysis?.rows?.filter(row=>row.boardNorm===norm&&isPendingReviewRow(row)).length||0;
 }
 function renderBoards(){
   const p=state.cur; if(!p) return;
@@ -4523,11 +4551,11 @@ function renderReview(){
   const A=p.analysis;
   if (!A){ host.innerHTML='<div class="empty"><div class="ico">✓</div>Nothing to review.</div>'; return; }
   const items=[];
-  A.rows.filter(r=>!r.outOfScope&&r.status==='pending'&&(r.requiresReview||r.conf<0.8)).forEach(r=>items.push({kind:'row',r,conf:r.conf}));
+  A.rows.filter(isPendingReviewRow).forEach(r=>items.push({kind:'row',r,conf:r.conf}));
   p.files.filter(f=>f.status==='ready'&&!f.native&&f.pages.some(pg=>!(pg.lines||[]).length)).forEach(f=>items.push({kind:'scan',f}));
   Object.values(A.boards).filter(b=>b.inScope!==false&&!b.parent&&!b.manual&&b.type!=='MAIN').forEach(b=>items.push({kind:'orphan',b}));
   if (A.coverage){
-    A.coverage.perBoard.filter(b=>(b.unaccountedWays||0)>0).forEach(b=>items.push({kind:'gap',g:b,conf:0}));
+    A.coverage.perBoard.filter(b=>b.inScope!==false&&(b.unaccountedWays||0)>0).forEach(b=>items.push({kind:'gap',g:b,conf:0}));
     A.coverage.zeroRowSchedulePages.forEach(z=>items.push({kind:'zeropage',z,conf:0.1}));
   }
   if (!items.length){ host.innerHTML='<div class="empty"><div class="ico">✓</div>Nothing to review — all results are confirmed or high confidence.</div>'; return; }
@@ -4669,11 +4697,12 @@ function viewerFile(){
 function pageDetections(f, pageNo){
   const p=state.cur, A=p.analysis; const out=[];
   if (A){
-    const colourMap=buildSpecificationColorMap(A.rows);
-    A.rows.forEach(r=>{
+    const takeoffRows=A.rows.filter(isTakeoffEvidenceRow);
+    const colourMap=buildSpecificationColorMap(takeoffRows);
+    takeoffRows.forEach(r=>{
       if(r.fileId!==f.id||r.page!==pageNo)return;
       const specKey=deviceSpecificationKey(r),specColor=colourMap.get(specKey)||null;
-      const counts=viewerSpecificationCounts(r,specKey,A.rows),specLabel=deviceSpecificationLabel(r);
+      const counts=viewerSpecificationCounts(r,specKey,takeoffRows),specLabel=deviceSpecificationLabel(r);
       const boardName=r.boardNorm?boardLabel(r.boardNorm):'unassigned board';
       const countTitle=specKey
         ? `${specLabel}: ${counts.group} on ${boardName}; ${counts.board} counted device${counts.board===1?'':'s'} on this board`

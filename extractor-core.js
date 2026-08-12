@@ -1398,6 +1398,15 @@
     return null;
   }
 
+  function isSchematicTopologyEvidence(row) {
+    return Boolean(row) && (row.kind === 'schematic' || String(row.sourceRole || '').startsWith('schematic_'));
+  }
+
+  function isTakeoffEvidenceRow(row) {
+    return Boolean(row) && !isSchematicTopologyEvidence(row)
+      && ['schedule', 'ai', 'manual', 'mention'].includes(row.kind);
+  }
+
   function applyBoardScope(boards, rows) {
     const scopedBoards = {};
     const rowList = (rows || []).map((row) => ({ ...row }));
@@ -1409,6 +1418,7 @@
         .reduce((sum, row) => sum + Math.max(1, Number(row.qty) || 1), 0);
       const reference = `${norm} ${board.orig || ''}`.replace(/[\s._/\\-]+/g, '').toUpperCase();
       const reasons = [];
+      if (board.takeoffEligible === false && !board.scheduleEvidence && !board.manual) reasons.push('SCHEMATIC_ONLY');
       if (reference.includes('MSDB')) reasons.push('MSDB_ASSEMBLY');
       if (fuseOutgoings >= 4) reasons.push('FOUR_OR_MORE_FUSE_OUTGOINGS');
       board.inScope = reasons.length === 0;
@@ -1726,6 +1736,30 @@
     return { score: Number(score.toFixed(2)), signals };
   }
 
+  function selectAiRecoveryReason(input = {}) {
+    const pageType = String(input.pageType || 'unknown').toLowerCase();
+    const scheduleRows = Array.isArray(input.scheduleRows) ? input.scheduleRows : [];
+    const schematic = pageType === 'sld' || pageType === 'schematic';
+    if (schematic) {
+      return Number(input.schematicFeedCount || 0) === 0 && Number(input.boardReferenceCount || 0) >= 2
+        ? 'schematic-topology-missing' : null;
+    }
+    const scheduleTypes = new Set(['db-schedule', 'main-schedule', 'equipment-schedule']);
+    if (!scheduleTypes.has(pageType) && pageType !== 'unknown') return null;
+    const candidate = input.scheduleCandidate || { score: 0, signals: [] };
+    if (Number(candidate.score || 0) < 0.45 || (candidate.signals || []).length < 2) return null;
+    if (!scheduleRows.length) return 'schedule-rows-missing';
+    const activeRows = scheduleRows.filter((row) => !row.space && !row.spare);
+    const unresolved = activeRows.filter((row) => !row.device || row.rating == null);
+    if (activeRows.length && unresolved.length / activeRows.length >= 0.35) return 'schedule-protection-fields-missing';
+    const expectedWays = Number(input.expectedWays || 0);
+    const capturedWays = new Set(scheduleRows.map((row) => row.way).filter((way) => way != null)).size;
+    if (expectedWays > 0 && capturedWays < expectedWays && (expectedWays - capturedWays) / expectedWays >= 0.2) {
+      return 'schedule-coverage-gap';
+    }
+    return null;
+  }
+
   function buildDocumentExtractionScope(pages, options = {}) {
     const longDocumentThreshold = Number(options.longDocumentThreshold) || 80;
     const pageList = (pages || []).map((page, index) => {
@@ -1945,6 +1979,7 @@
     buildCoverage,
     HEALTH_REASONS,
     scoreScheduleCandidate,
+    selectAiRecoveryReason,
     buildDocumentExtractionScope,
     buildAnalysisHealth,
     buildDiagnosticExport,
@@ -1968,6 +2003,8 @@
     noteReferences,
     parseGoverningNotes,
     applyGoverningNotes,
+    isSchematicTopologyEvidence,
+    isTakeoffEvidenceRow,
     applyBoardScope,
     aggregateDevices,
     finalizeScheduleContext,
