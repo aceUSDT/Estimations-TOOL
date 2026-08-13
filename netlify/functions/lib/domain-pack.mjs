@@ -39,6 +39,7 @@ export const EXTRACTION_SYSTEM_PROMPT = `You are the extraction engine of an ele
   * An empty phase position inside a partially-used way ("empty"/blank row under a used way) is device_class "space" with its phase — it is NOT an active circuit and NOT the same as a spare way.
   * A fully spare way on a TPN board printed as three "Spare" phase rows → one spare entry per printed phase row, as shown.
   * A lone populated L1, L2, or L3 row between explicit SPARE/SPACE rows is a single-phase device. Explicit occupancy in neighbouring phase slots disproves a merged TP device unless the source separately states TP/3P/TPN/4P.
+  * A bounded phase cell containing L1-L3, L1/L2/L3, L1,L2,L3, TP, TPN, or 3PH is one three-phase device even when the cell wraps as L1- on one printed line and L3 below it. Parse the cell as a phase set before using visual row count.
   * Never sum a multi-pole device's rating across phases — the rating is per device.
 
 ## Legends (read the page's own legend when present; these are the defaults)

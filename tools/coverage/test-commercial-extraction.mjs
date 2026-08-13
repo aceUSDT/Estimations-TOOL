@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 
 await import('../../extractor-core.js');
 await import('../../spatial-schedule-core.js');
@@ -67,6 +68,71 @@ assert.equal(phaseSpan.rows[0].phase, '3PH');
 assert.equal(phaseSpan.rows[0].poles, 3);
 assert.equal(phaseSpan.rows[0].occupies_ways, 3);
 
+const wrappedPhaseSpan = Core.parseSpatialSchedulePage({
+  lines: [
+    { text: 'DISTRIBUTION BOARD SCHEDULE' },
+    { text: 'Board Reference: DB-WRAPPED-PHASE-SPAN' },
+    { text: 'Size: 2 WAY TPN' },
+  ],
+  words: (() => {
+    const words = [
+      word('Way', 10, 28), word('Phase', 60, 28), word('Type', 120, 28),
+      word('Rating (A)', 220, 28), word('Description', 300, 28),
+    ];
+    const devices = [
+      ['RCBO', 32], ['MCB', 25], ['MCB', 25], ['RCBO', 25], ['RCBO', 20],
+      ['RCBO', 16], ['RCBO', 32], ['RCBO', 32], ['RCBO', 16], ['RCBO', 32],
+    ];
+    devices.forEach(([device, rating], index) => {
+      const way = index + 1;
+      const y = 84 + index * 22;
+      words.push(
+        word(String(way), 12, y), word('L1-', 62, y - 5), word('L3', 62, y + 5),
+        word(device, 125, y), word(String(rating), 225, y), word(`Kitchen equipment ${way}`, 302, y, 90),
+      );
+    });
+    return words;
+  })(),
+  pageWidth: 430,
+  pageHeight: 320,
+  pageType: 'db-schedule',
+  allowSingleWay: true,
+});
+assert.equal(wrappedPhaseSpan.rows.length, 10);
+assert.deepEqual(wrappedPhaseSpan.rows.map((row) => [row.way, row.phase, row.poles, row.poleConfiguration, row.occupies_ways]),
+  Array.from({ length: 10 }, (_, index) => [index + 1, '3PH', 3, 'TP', 3]),
+  'ways 1-10 with wrapped L1- / L3 phase cells are one explicit three-phase device per visual row');
+assert.ok(wrappedPhaseSpan.rows.every((row) => row.fieldSources.phase.originalText === 'L1- L3'));
+
+const capturedPerryfieldsFixture = new URL('../../.codex-tmp/perryfields-page.json', import.meta.url);
+if (fs.existsSync(capturedPerryfieldsFixture)) {
+  const capturedPage = JSON.parse(fs.readFileSync(capturedPerryfieldsFixture, 'utf8'));
+  const captured = Core.parseSpatialSchedulePage({
+    lines: capturedPage.lines,
+    words: capturedPage.lines.flatMap((line) => line.words || []),
+    pageWidth: capturedPage.width,
+    pageHeight: capturedPage.height,
+    pageType: 'db-schedule',
+    materializeMissingWays: false,
+  });
+  const capturedWays = captured.rows.filter((row) => Number(row.way) >= 1 && Number(row.way) <= 10);
+  assert.equal(capturedWays.length, 10, 'the captured DB-G9 page must retain one row for each of ways 1-10');
+  assert.ok(capturedWays.every((row) => row.phase === '3PH' && row.poles === 3
+    && row.poleConfiguration === 'TP' && row.occupies_ways === 3),
+  'the captured DB-G9 L1- / L3 rows must all remain three-phase');
+}
+
+for (const notation of ['L1-L3', 'L1 - L3', 'L1/L2/L3', 'L1,L2,L3', 'L1+L2+L3', 'L1L2L3', '3PH', '3 PHASE', 'THREE PHASE']) {
+  const evidence = Core.explicitPhaseEvidence(notation);
+  assert.equal(evidence?.phase, '3PH', `${notation} must resolve as explicit three-phase evidence`);
+  assert.equal(evidence?.poles, 3);
+}
+for (const lookalike of ['L1', 'L2', 'L3', 'L1/L3', 'DB-L1-L3', 'L1 lighting L3 store', 'L1 SPARE L2 MCB L3 SPARE']) {
+  assert.equal(Core.explicitPhaseEvidence(lookalike), null, `${lookalike} must not become a three-phase device`);
+}
+assert.equal(Core.explicitPhaseEvidence('Board TPN L2 MCB 10A', { strongOnly: true }), null,
+  'broad OCR row text must not use a board TPN label as phase-span evidence');
+
 const perryfieldsText = [
   'PROJECT NAME Perryfields Academy PROJECT NUMBER 11274 Board reference DB-G9 Location Kitchen',
   'COMPONENTS DUTY CABLES',
@@ -110,6 +176,44 @@ const boardReferenceToken = Core.reconcilePoleEvidence({
 });
 assert.equal(boardReferenceToken.poles, 1, 'SP inside a board reference must not become explicit pole evidence');
 assert.equal(boardReferenceToken.poleConfiguration, 'SP');
+
+const recoveredPhaseSpan = Core.reconcilePoleEvidence({
+  phase: 'L3', device: 'MCB', rating: 25, poles: 1, poleConfiguration: 'SP',
+  phaseSlotIndependent: true, sharedPhaseSpan: false,
+  fieldSources: { phase: { originalText: 'L1- L3', text: 'L1- L3' } },
+  srcText: '2 L1- L3 MCB No C 25 10 Dishwasher', conf: 0.99,
+});
+assert.deepEqual([
+  recoveredPhaseSpan.phase, recoveredPhaseSpan.poles, recoveredPhaseSpan.poleConfiguration,
+  recoveredPhaseSpan.occupies_ways, recoveredPhaseSpan.phaseSlotIndependent, recoveredPhaseSpan.sharedPhaseSpan,
+], ['3PH', 3, 'TP', 3, false, true]);
+assert.equal(recoveredPhaseSpan.poleEvidenceBasis, 'source_phase_range');
+assert.match(recoveredPhaseSpan.poleReconciliation.reason, /phase span/i);
+
+const aiPhaseSpan = Core.reconcilePoleEvidence({
+  phase: 'L1L2L3', device: 'RCBO', rating: 32, poles: 1, poleConfiguration: 'SP',
+  srcText: 'L1L2L3 RCBO C 32A', conf: 0.9,
+});
+assert.deepEqual([aiPhaseSpan.phase, aiPhaseSpan.poles, aiPhaseSpan.poleConfiguration, aiPhaseSpan.occupies_ways], ['3PH', 3, 'TP', 3]);
+
+const correctedPhaseSpan = Core.reconcilePoleEvidence({
+  phase: 'L2', device: 'MCB', rating: 25, poles: 1, poleConfiguration: 'SP',
+  fieldSources: { phase: { originalText: 'L1- L3', text: 'L1- L3' } },
+  corrections: [
+    { field: 'Phase', original: '3PH', corrected: 'L2', reason: 'User correction' },
+    { field: 'Pole Configuration', original: 'TP', corrected: 'SP', reason: 'User correction' },
+  ],
+});
+assert.deepEqual([correctedPhaseSpan.phase, correctedPhaseSpan.poles, correctedPhaseSpan.poleConfiguration], ['L2', 1, 'SP'],
+  'an explicit user correction must take precedence over source phase-span automation');
+
+const inFlightCorrection = Core.reconcilePoleEvidence({
+  phase: 'L2', device: 'MCB', rating: 25, poles: 1, poleConfiguration: 'SP',
+  poleEvidenceBasis: 'user_correction', phaseEvidenceBasis: 'user_correction',
+  fieldSources: { phase: { originalText: 'L1- L3', text: 'L1- L3' } },
+});
+assert.deepEqual([inFlightCorrection.phase, inFlightCorrection.poles, inFlightCorrection.poleConfiguration], ['L2', 1, 'SP'],
+  'source evidence must not overwrite an in-flight correction before its audit entry is appended');
 
 const perryfieldsWords = [
   word('Way', 68, 28, 8), word('Phase', 81, 28, 8),

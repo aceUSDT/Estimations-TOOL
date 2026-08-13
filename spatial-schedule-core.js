@@ -696,8 +696,10 @@
   }
 
   function phaseValues(value) {
+    const explicit = Core.explicitPhaseEvidence?.(value);
+    if (explicit?.phases?.length === 3) return explicit.phases.slice();
     const source = String(value || '').toUpperCase().replace(/\s+/g, '');
-    if (/L1(?:-|–|—|\/|TO)L3|L1\/L2\/L3|3PH|THREEPHASE|TP&?N/.test(source)) return ['L1', 'L2', 'L3'];
+    if (/L1(?:-|–|—|TO)L3|L1\/L2\/L3|3PH|THREEPHASE|TP&?N/.test(source)) return ['L1', 'L2', 'L3'];
     return [...new Set((source.match(/L[123]/g) || []).map((phase) => phase.toUpperCase()))];
   }
 
@@ -946,7 +948,18 @@
       : rowWords;
     const aggregateCells = columnCells(evidenceWords, schema);
     aggregateCells.way = sourceCell([wayAnchor], 'way');
-    if (phaseWords.length) aggregateCells.phase = interpretedPhaseCell(phases);
+    if (phaseWords.length) {
+      const printedPhaseCell = aggregateCells.phase;
+      const interpreted = interpretedPhaseCell(phases);
+      // Narrow phase cells often wrap L1-L3 as separate "L1-" and "L3"
+      // text fragments. Preserve that complete bounded cell instead of
+      // replacing it with the one fragment recognised as a physical lane.
+      const printedValues = phaseValues(printedPhaseCell?.text);
+      const interpretedValues = phaseValues(interpreted?.text);
+      aggregateCells.phase = printedValues.length >= 3 && interpretedValues.length < 3
+        ? printedPhaseCell
+        : interpreted;
+    }
     const aggregate = parseSpatialRow(aggregateCells, schema.confidence, context);
     const aggregateCorrection = aggregateCells.phase?.correction;
     const aggregateRepair = aggregateCorrection ? {

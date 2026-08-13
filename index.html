@@ -1134,7 +1134,7 @@ const state = {
   reportMode: 'board',
   reviewFlow: {active:false,currentRowId:null,initialCount:0,moving:false,boardOrder:[],initialByBoard:{},rowOrderByBoard:{}},
 };
-const ANALYSIS_VERSION=18;
+const ANALYSIS_VERSION=19;
 const uid = () => 'x'+(state.nextId++)+'_'+Math.random().toString(36).slice(2,6);
 
 /* ====================== PERSISTENCE (IndexedDB) ====================== */
@@ -2306,7 +2306,8 @@ function mergeAiResult(A,out,fileId,pageNo,pageType){
       return;
     }
     const aiSourceText=d.source_text||d.description||'';
-    const aiPhase=d.phase&&d.phase!=='L1L2L3'?d.phase:(d.phase==='L1L2L3'?'3PH':null);
+    const aiPhaseEvidence=window.EstimationExtractorCore?.explicitPhaseEvidence?.(d.phase);
+    const aiPhase=aiPhaseEvidence?'3PH':(d.phase&&d.phase!=='L1L2L3'?d.phase:(d.phase==='L1L2L3'?'3PH':null));
     const aiRow={id:uid(), boardNorm:bn, fileId, page:pageNo, line:null, status:'pending', kind:'ai',
       way:d.way??null, phase:aiPhase,
       desc:d.description||'', device, rating:d.rating_a??null, poles:d.poles??null, poleConfiguration:d.pole_configuration||null,
@@ -2318,6 +2319,7 @@ function mergeAiResult(A,out,fileId,pageNo,pageType){
         construction:typeof d.cpc_csa_mm2==='string'?d.cpc_csa_mm2:null, typeCode:d.cable_type||null, installMethod:d.install_method||null}:null,
       circuitConfig:d.circuit_config||null, spare, space, incomer:!!d.is_incomer, isSpd:!!d.is_spd,
       phaseSlotIndependent:/^L[123]$/i.test(String(aiPhase||'')), sharedPhaseSpan:aiPhase==='3PH',
+      phaseEvidenceExplicit:Boolean(aiPhaseEvidence), phaseEvidenceBasis:aiPhaseEvidence?`ai_${aiPhaseEvidence.basis}`:null,
       poleEvidenceExplicit:/\b(?:SPN|DPN|TPN|TP\s*&\s*N|SP|DP|TP|[1-4]P|SINGLE[- ]POLE|DOUBLE[- ]POLE|TRIPLE[- ]POLE|THREE[- ]POLE|FOUR[- ]POLE)\b/i.test(aiSourceText),
       qty:space?0:1, srcText:(d.description||d.device_class||'Device')+(d.way!=null?' (way '+d.way+(d.phase?'/'+d.phase:'')+')':''),
       conf:Math.max(0.2,Math.min(0.95,Number(d.confidence)||0.6))};
@@ -4208,7 +4210,13 @@ function openRowEditor(r, isNew, surface='Boards & Devices'){
     const nextWay=wayOrNull();if(nextWay===undefined)return false;
     r.boardNorm=$('#eBoard').value||null;
     r.way=nextWay;
-    r.phase=$('#ePhase').value||null;
+    const nextPhase=$('#ePhase').value||null;
+    const phaseChanged=String(before.phase||'')!==String(nextPhase||'');
+    r.phase=nextPhase;
+    if(phaseChanged||isNew){
+      r.phaseEvidenceExplicit=Boolean(r.phase);
+      r.phaseEvidenceBasis=r.phase?'user_correction':null;
+    }
     r.device=nextDevice;
     r.qty=Math.max(1,parseInt($('#eQty').value,10)||1);
     r.rating=numberOrNull('#eRat');

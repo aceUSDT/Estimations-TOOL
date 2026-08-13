@@ -113,6 +113,28 @@ try {
     await renderViewer();
   }, poleGuardId);
 
+  const phaseSpanId = await page.evaluate(async () => {
+    const source = pageDetections(viewerFile(), state.viewer.page).find((item) => item.kind === 'row' && item.r.boardNorm)?.r;
+    const guarded = window.EstimationExtractorCore.reconcileCombinedProtection({
+      ...source,
+      id: 'viewer-wrapped-phase-span', way: 'T-5', phase: 'L3',
+      device: 'MCB', rating: 25, poles: 1, poleConfiguration: 'SP', occupies_ways: 1,
+      phaseSlotIndependent: true, sharedPhaseSpan: false, poleEvidenceExplicit: false,
+      fieldSources: { ...source?.fieldSources, phase: { originalText: 'L1- L3', text: 'L1- L3' } },
+      status: 'confirmed', desc: 'Dishwasher', srcText: 'T-5 L1- L3 MCB C 25 Dishwasher',
+    });
+    state.cur.analysis.rows.push(guarded);
+    await renderViewer();
+    return guarded.id;
+  });
+  const phaseSpanCard = page.locator(`#vDetList .det[data-row-id="${phaseSpanId}"]`);
+  assert.match(await phaseSpanCard.textContent(), /\bTP\b/, 'wrapped L1-L3 evidence must render as TP');
+  assert.doesNotMatch(await phaseSpanCard.textContent(), /\bSP\b/, 'wrapped L1-L3 evidence must not render as SP');
+  await page.evaluate(async (rowId) => {
+    state.cur.analysis.rows = state.cur.analysis.rows.filter((row) => row.id !== rowId);
+    await renderViewer();
+  }, phaseSpanId);
+
   const documentRows = page.locator('#vStage [data-row-id]');
   assert.ok(await documentRows.count() > 1, 'document rows must be interactive');
   const linkedId = await documentRows.nth(1).getAttribute('data-row-id');

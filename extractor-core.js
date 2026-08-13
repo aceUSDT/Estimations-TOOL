@@ -198,25 +198,99 @@
     return null;
   }
 
+  function explicitPhaseEvidence(value, { strongOnly = false } = {}) {
+    const source = String(value || '').toUpperCase()
+      .replace(/[\u2013\u2014\u2212]/g, '-')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!source) return null;
+    const boundaryStart = '(?:^|[\\s(:,;\\[])';
+    const boundaryEnd = '(?=$|[\\s),;:\\]])';
+    const range = new RegExp(`${boundaryStart}L1\\s*(?:-|TO)\\s*L3${boundaryEnd}`).test(source);
+    const listed = new RegExp(`${boundaryStart}L1\\s*[-/,+&|]\\s*L2\\s*[-/,+&|]\\s*L3${boundaryEnd}`).test(source);
+    const compact = new RegExp(`${boundaryStart}L1L2L3${boundaryEnd}`).test(source);
+    const spaced = !strongOnly
+      && new RegExp(`${boundaryStart}L1\\s+L2\\s+L3${boundaryEnd}`).test(source);
+    const phaseLabel = new RegExp(`${boundaryStart}(?:3\\s*PH(?:ASE)?|PHASE\\s*3|THREE\\s+PHASE)${boundaryEnd}`).test(source);
+    const poleLabel = explicitPoleEvidence(source);
+    const threePoleLabel = !strongOnly && poleLabel && poleLabel.poles >= 3 && poleLabel.poles <= 4;
+    if (!(range || listed || compact || spaced || phaseLabel || threePoleLabel)) return null;
+    return {
+      phase: '3PH',
+      phases: ['L1', 'L2', 'L3'],
+      poles: threePoleLabel ? poleLabel.poles : 3,
+      configuration: threePoleLabel ? poleLabel.configuration : 'TP',
+      basis: range ? 'phase_range'
+        : (listed || compact || spaced ? 'phase_set' : (phaseLabel ? 'phase_label' : 'pole_label')),
+      originalText: String(value || '').trim(),
+    };
+  }
+
   /**
    * Keep phase occupancy and pole classification coherent after every
-   * extraction route. A bounded L1/L2/L3 slot proves a single-phase position
-   * unless the source itself, shared-span geometry, or a user correction
-   * explicitly proves a multi-pole device.
+   * extraction route. A bounded L1/L2/L3 slot proves a single-phase position,
+   * while an explicit phase set or range proves one multi-pole device even
+   * when that phase cell wraps over multiple printed lines.
    */
   function reconcilePoleEvidence(row) {
     if (!row) return row;
     const next = { ...row };
     const phase = String(next.phase || '').toUpperCase().replace(/\s+/g, '');
-    const singlePhaseSlot = next.phaseSlotIndependent === true
-      || (/^L[123]$/.test(phase) && next.sharedPhaseSpan !== true);
-    if (!singlePhaseSlot) return next;
-
-    const userCorrected = Array.isArray(next.corrections)
-      && next.corrections.some((item) => String(item?.field || '').toLowerCase() === 'pole configuration');
+    const corrections = Array.isArray(next.corrections) ? next.corrections : [];
+    const poleCorrected = corrections.some((item) => String(item?.field || '').toLowerCase() === 'pole configuration');
+    const phaseCorrected = corrections.some((item) => String(item?.field || '').toLowerCase() === 'phase');
+    const userCorrected = poleCorrected || phaseCorrected
+      || next.poleEvidenceBasis === 'user_correction'
+      || next.phaseEvidenceBasis === 'user_correction';
+    const phaseFieldText = next.fieldSources?.phase?.originalText || next.fieldSources?.phase?.text || '';
+    const phaseEvidence = explicitPhaseEvidence(phaseFieldText)
+      || explicitPhaseEvidence(next.phase)
+      || explicitPhaseEvidence(next.phaseSourceText)
+      || explicitPhaseEvidence(next.srcText, { strongOnly: true });
     const sourcePoleText = next.fieldSources?.poles?.originalText || next.fieldSources?.poles?.text
       || next.poleSourceText || next.srcText || '';
     const sourceEvidence = explicitPoleEvidence(sourcePoleText);
+    if (!userCorrected && phaseEvidence) {
+      const sourceConflict = sourceEvidence && sourceEvidence.poles < 3;
+      const resolvedPole = sourceEvidence && sourceEvidence.poles >= 3 ? sourceEvidence : phaseEvidence;
+      const configuration = String(next.poleConfiguration || next.poleConfig || next.pole || '').toUpperCase();
+      const poleCount = Number(next.poles);
+      const differs = phase !== '3PH' || poleCount !== resolvedPole.poles
+        || configuration !== resolvedPole.configuration || next.occupies_ways !== Math.min(3, resolvedPole.poles);
+      next.phase = '3PH';
+      next.poles = resolvedPole.poles;
+      next.poleConfiguration = resolvedPole.configuration;
+      next.occupies_ways = Math.min(3, resolvedPole.poles);
+      next.poleEvidenceExplicit = true;
+      next.phaseEvidenceExplicit = true;
+      next.poleEvidenceBasis = phaseFieldText ? `source_${phaseEvidence.basis}` : phaseEvidence.basis;
+      next.sharedPhaseSpan = true;
+      next.phaseSlotIndependent = false;
+      if (differs || sourceConflict) {
+        const reason = sourceConflict
+          ? 'Explicit three-phase span conflicts with a single-pole source label and requires review'
+          : 'Explicit phase span establishes one three-phase outgoing device';
+        next.poleReconciliation = {
+          original: configuration || (Number.isFinite(poleCount) ? `${poleCount}P` : null),
+          corrected: resolvedPole.configuration,
+          reason,
+          phaseEvidence: phaseEvidence.originalText,
+        };
+        const reasons = Array.isArray(next.resolutionReasons) ? [...next.resolutionReasons] : [];
+        if (!reasons.includes(reason)) reasons.push(reason);
+        next.resolutionReasons = reasons;
+        if (sourceConflict) {
+          next.requiresReview = true;
+          const confidence = Number(next.conf);
+          next.conf = Math.min(Number.isFinite(confidence) ? confidence : 0.72, 0.72);
+        }
+      }
+      return next;
+    }
+
+    const singlePhaseSlot = next.phaseSlotIndependent === true
+      || (/^L[123]$/.test(phase) && next.sharedPhaseSpan !== true);
+    if (!singlePhaseSlot) return next;
     const explicit = next.poleEvidenceExplicit === true || userCorrected || Boolean(sourceEvidence);
     const configuration = String(next.poleConfiguration || next.poleConfig || next.pole || '').toUpperCase();
     const poleCount = Number(next.poles);
@@ -2252,6 +2326,7 @@
     occupancyLabel,
     scheduleOccupancyLabel,
     reconcileRowOccupancy,
+    explicitPhaseEvidence,
     reconcilePoleEvidence,
     hasFittedProtectionDevice,
     hasProtectionEvidence,
