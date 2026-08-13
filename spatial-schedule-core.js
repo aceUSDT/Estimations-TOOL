@@ -616,7 +616,8 @@
       reasons.push(`${policy.id}: ${rating}A meets panelboard threshold`);
       if (/DISTRIBUTION\s+BOARD/.test(text)) requiresReview = true;
     } else {
-      const active = devices.filter((row) => row && !row.space && !row.spare);
+      const active = devices.filter((row) => Core.isPopulatedProtectionRow
+        ? Core.isPopulatedProtectionRow(row) : row && !row.space && !row.spare);
       const finalCircuitRatio = active.length ? active.filter((row) => !row.circuitReference && Number(row.rating) <= 63).length / active.length : 0;
       if (Number.isFinite(rating) && rating <= policy.consumerUnitMaxAmps && phaseConfig === 'SPN' && finalCircuitRatio >= 0.65) {
         family = 'consumer_unit'; confidence = 0.78; reasons.push('Single-phase final-circuit context within consumer-unit policy');
@@ -715,8 +716,11 @@
     const circuitReference = detectedReference?.original || null;
     const descriptionCellText = cellText(cells, 'description');
     const description = descriptionCellText || circuitText || '';
-    const spareText = /\bSPARE\b/i.test(allText);
-    const explicitSpace = /\b(?:SPACE|FITTED\s+BLANK|BLANK\s+WAY)\b/i.test(allText);
+    const occupancyLabels = new Set([
+      descriptionCellText, circuitText, deviceClassText, standardText, typeText,
+    ].map((value) => Core.occupancyLabel?.(value)).filter(Boolean));
+    const spareText = occupancyLabels.has('spare');
+    const explicitSpace = occupancyLabels.has('space');
     const rcdRaw = numberValue(cells.rcd_ma, { min: 0.001, max: 1000 });
     const rcdMa = rcdRaw != null && rcdRaw < 1 ? Math.round(rcdRaw * 1000) : rcdRaw;
     const rcdIndicator = indicatorValue(cells.rcd);
@@ -734,8 +738,8 @@
       afdd: afddIndicator === true,
     }, context);
     const hasDeviceEvidence = Boolean(resolution.device || rating != null || standardText || resolvedDeviceClassText);
-    const spareConflict = spareText && hasDeviceEvidence;
-    const spare = spareText && !hasDeviceEvidence;
+    const occupancyConflict = occupancyLabels.size > 1;
+    const spare = spareText;
     const space = explicitSpace || (!spare && !hasDeviceEvidence && !description);
     const poles = uniquePhases.length >= 3 && hasDeviceEvidence ? 3
       : (uniquePhases.length === 1 && hasDeviceEvidence ? 1 : null);
@@ -749,7 +753,7 @@
     const installMethod = cableType || referenceMethod;
     const confidence = Math.min(resolution.confidence || 0.55, schemaConfidence || 0.55,
       ...Object.values(cells).filter(Boolean).map((cell) => Number(cell.confidence) || 0.6));
-    const requiresReview = space || spareConflict || (!spare && (!resolution.device || rating == null
+    const requiresReview = space || occupancyConflict || (!spare && (!resolution.device || rating == null
       || ((resolution.device === 'RCBO' || resolution.device === 'AFDD+RCBO') && rcdMa == null))) || confidence < 0.78;
     const rowCells = Object.entries(cells)
       .filter(([role, cell]) => Boolean(cell) && !(context.phaseLane && role === 'way'))
@@ -760,8 +764,9 @@
     if (rcdMa != null) protectionReasons.push('RCD operating-current value present');
     if (rcdIndicator === false && rcdMa == null) protectionReasons.push('Explicit no-RCD indicator');
     if (afddIndicator === true) protectionReasons.push('Explicit AFDD indicator');
-    if (spareConflict) protectionReasons.push('SPARE text conflicts with populated device cells');
-    return {
+    if (spareText && hasDeviceEvidence) protectionReasons.push('Explicit fitted-spare label with populated device cells');
+    if (occupancyConflict) protectionReasons.push('Conflicting SPARE and SPACE occupancy cells');
+    const row = {
       way, phase, rating, device: resolution.device, class_basis: resolution.classBasis, curve, tripUnit,
       poleConfiguration: poles === 3 ? 'TP' : poles === 1 ? 'SP' : null,
       protectionStandard: resolution.protectionStandard, protectionStandardCode: resolution.standardCode,
@@ -801,6 +806,7 @@
       },
       conf: confidence,
     };
+    return Core.reconcileRowOccupancy ? Core.reconcileRowOccupancy(row) : row;
   }
 
   function physicalPhaseLanes(words, schema) {
@@ -1308,7 +1314,8 @@
           rows: recovered.rows?.length || 0,
         });
         if (recovered.matched && recovered.rows?.length) {
-          const activeRows = recovered.rows.filter((row) => !row.space && !row.spare);
+          const activeRows = recovered.rows.filter((row) => Core.isPopulatedProtectionRow
+            ? Core.isPopulatedProtectionRow(row) : !row.space && !row.spare);
           const completeRows = activeRows.filter((row) => row.device && row.rating != null);
           const unresolvedPhaseRows = recovered.rows.filter((row) => row.phaseConflict).length;
           const completeness = activeRows.length ? completeRows.length / activeRows.length : 1;

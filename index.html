@@ -1126,7 +1126,7 @@ const state = {
   reportMode: 'board',
   reviewFlow: {active:false,currentRowId:null,initialCount:0,moving:false,boardOrder:[],initialByBoard:{},rowOrderByBoard:{}},
 };
-const ANALYSIS_VERSION=15;
+const ANALYSIS_VERSION=16;
 const uid = () => 'x'+(state.nextId++)+'_'+Math.random().toString(36).slice(2,6);
 
 /* ====================== PERSISTENCE (IndexedDB) ====================== */
@@ -1589,8 +1589,9 @@ function parseScheduleLine(line, ctx){
   const protection = window.EstimationExtractorCore && window.EstimationExtractorCore.parseProtectionTableLine(line, ctx);
   if (protection) return protection;
   const wayM = line.match(/^\s*(?:way|cct|ckt|circuit)?\s*[:#]?\s*(\d{1,3})\b/i);
-  const spare = /\bspare\b/i.test(line);
-  const space = /\bspace\b/i.test(line);
+  const occupancy=window.EstimationExtractorCore?.scheduleOccupancyLabel?.(line)||null;
+  const spare = occupancy==='spare';
+  const space = occupancy==='space';
   const device = detectDeviceIn(line);
   const rating = ratingOf(line);
   const isIncomer = /\bincomer\b|\bincoming\b|\bmain switch\b/i.test(line);
@@ -1760,7 +1761,9 @@ function isTakeoffEvidenceRow(row){
     : Boolean(row)&&!isSchematicTopologyEvidence(row)&&['schedule','ai','manual','mention'].includes(row.kind);
 }
 function isCountedDeviceRow(row){
-  return isTakeoffEvidenceRow(row)&&!row.outOfScope&&row.status!=='rejected'&&!row.space&&Boolean(row.device)
+  const fitted=window.EstimationExtractorCore?.isCountableProtectionDevice
+    ? window.EstimationExtractorCore.isCountableProtectionDevice(row) : Boolean(row?.device);
+  return isTakeoffEvidenceRow(row)&&!row.outOfScope&&row.status!=='rejected'&&fitted
     &&(!['mention','ai'].includes(row.kind)||row.status==='confirmed');
 }
 function isPendingReviewRow(row){
@@ -2385,7 +2388,8 @@ async function runAiExtraction(A,f,p,pageSet,{signal=null}={}){
       const schematicFeedCount=A.feeders.filter(feeder=>feeder.fileId===id&&feeder.page===pageNo&&feeder.sourceRole==='schematic_feeder').length;
       const reason=window.EstimationExtractorCore?.selectAiRecoveryReason({pageType:pg.type,scheduleRows:rowsHere,
         scheduleCandidate,expectedWays,schematicFeedCount,boardReferenceCount:pageBoards.length})||null;
-      const activeRows=rowsHere.filter(row=>!row.space&&!row.spare);
+      const activeRows=rowsHere.filter(row=>window.EstimationExtractorCore?.isPopulatedProtectionRow
+        ? window.EstimationExtractorCore.isPopulatedProtectionRow(row) : !row.space&&!row.spare);
       const unresolved=activeRows.filter(row=>!row.device||row.rating==null).length;
       if(reason)jobs.push({fl,id,pg,pageNo,reason,candidateScore:scheduleCandidate.score,
         unresolvedRatio:activeRows.length?unresolved/activeRows.length:1});
@@ -3167,7 +3171,7 @@ async function runAnalysis(opts){
         if(row.sens!=null)row.rcdProtected=true;
         if(/AFDD/i.test(String(row.device||''))){row.afdd=true;row.afddIndicated=true;}
         if (boardFilter && (!ctx.board || !boardFilter.has(ctx.board))) return;
-        if (devFilter && row.device && !devFilter.has(row.device.toUpperCase()) && !row.spare && !row.space && !row.incomer) return;
+        if (devFilter && row.device && !devFilter.has(row.device.toUpperCase()) && !row.incomer) return;
         const evidenceLine=row.sourceCell||(Number.isInteger(line)?pg.lines[line]:null);
         const trace=sourceTrace(row,evidenceLine,pg,fl.name);
         const confidence=trace.lineConfidence?Math.min(Number(row.conf??1),trace.lineConfidence):row.conf;
@@ -3385,7 +3389,8 @@ function analysisQualityScore(analysis){
   const stateScore={failed:0,incomplete:500,complete:1000}[analysis.health?.state]??0;
   const coverage=Number(analysis.coverage?.summary?.pctComplete);
   const parsed=(analysis.pageDiagnostics||[]).filter(page=>page.type!=='sld'&&page.type!=='schematic'&&(page.rowsParsed||0)>0).length;
-  const completeRows=(analysis.rows||[]).filter(row=>row.kind==='schedule'&&!row.space&&!row.spare&&row.device&&row.rating!=null).length;
+  const completeRows=(analysis.rows||[]).filter(row=>row.kind==='schedule'
+    &&window.EstimationExtractorCore?.isCountableProtectionDevice?.(row)&&row.rating!=null).length;
   const gaps=(analysis.health?.reasons||[]).reduce((sum,reason)=>sum+(Number(reason.count)||1),0);
   return stateScore+(Number.isFinite(coverage)?coverage*2:0)+parsed*20+completeRows-gaps*5;
 }
@@ -3405,7 +3410,8 @@ function recoveryCandidates(analysis,project){
     if(!recoverable.has(reason.code))return;
     (reason.refs||[]).forEach(ref=>{
       if(ref.fileId&&ref.page)add(ref.fileId,ref.page,reason.code);
-      if(ref.board)(analysis.rows||[]).filter(row=>row.kind==='schedule'&&row.boardNorm===ref.board&&!row.space&&!row.spare&&(!row.device||row.rating==null))
+      if(ref.board)(analysis.rows||[]).filter(row=>row.kind==='schedule'&&row.boardNorm===ref.board
+        &&window.EstimationExtractorCore?.isPopulatedProtectionRow?.(row)&&(!row.device||row.rating==null))
         .forEach(row=>add(row.fileId,row.page,reason.code));
     });
   });
@@ -3470,12 +3476,12 @@ function deviceTotals(rows, exclSpare){
     const bn=r.boardNorm||'__none__';
     by[bn]=by[bn]||{};
     let key;
-    if (r.space) key='(Fitted blank / space ways)';
-    else if (r.spare && !r.device) key='(Unpopulated spare ways)';
-    else if (!r.device) key='(Unclassified)';
-    else if (r.kind==='mention' && r.status!=='confirmed') key='(Plan mentions — confirm to count: '+r.device+')';
+    if (r.device&&r.kind==='mention' && r.status!=='confirmed') key='(Plan mentions — confirm to count: '+r.device+')';
     else if (r.kind==='ai' && r.status!=='confirmed') key='(AI recovery candidates — confirm to count: '+r.device+')';
-    else key=r.device + (r.incomer?' (incomer)':'');
+    else if (r.device) key=r.device + (r.incomer?' (incomer)':'');
+    else if (r.space) key='(Fitted blank / space ways)';
+    else if (r.spare) key='(Unpopulated spare ways)';
+    else key='(Unclassified)';
     by[bn][key]=by[bn][key]||{qty:0, rows:[]};
     by[bn][key].qty += r.qty||1;
     by[bn][key].rows.push(r);
@@ -3761,7 +3767,7 @@ function hashText(value){
 }
 function deviceColor(name){return DEVICE_PALETTE[hashText(name)%DEVICE_PALETTE.length];}
 function deviceSpecificationKey(row){
-  if(!row||!row.device||row.space||row.spare)return '';
+  if(!row||!row.device)return '';
   return [
     String(row.device).toUpperCase(),
     row.rating??'',
@@ -3775,10 +3781,11 @@ function deviceSpecificationKey(row){
 }
 function deviceSpecificationLabel(row){
   if(!row)return 'Unclassified row';
+  if(row.device)return [row.rating!=null?row.rating+'A':null,row.curve?row.curve+' curve':null,row.device]
+    .filter(Boolean).join(' ');
   if(row.spare)return 'Spare way';
   if(row.space)return 'Space way';
-  return [row.rating!=null?row.rating+'A':null,row.curve?row.curve+' curve':null,row.device||'Unclassified device']
-    .filter(Boolean).join(' ');
+  return 'Unclassified device';
 }
 function buildSpecificationColorMap(rows){
   const keys=[...new Set((rows||[]).map(deviceSpecificationKey).filter(Boolean))].sort();
@@ -3795,7 +3802,10 @@ function buildSpecificationColorMap(rows){
   return map;
 }
 function countedRowQuantity(row){
-  return row&&row.status!=='rejected'&&!row.space&&!row.spare&&row.device?Math.max(1,Number(row.qty)||1):0;
+  if(!isCountedDeviceRow(row))return 0;
+  return window.EstimationExtractorCore?.protectionDeviceQuantity
+    ? window.EstimationExtractorCore.protectionDeviceQuantity(row)
+    : row.device?Math.max(1,Number(row.qty)||1):0;
 }
 function viewerSpecificationCounts(row,key,rows){
   if(!row||!key)return {group:0,board:0};
@@ -3890,7 +3900,8 @@ function boardPhaseConfig(norm){
   const h=A.boards[norm].header||{};
   if (['SPN','TPN','mixed','ambiguous'].includes(h.phase_config)) return {v:h.phase_config, src:'extracted'};
   if ((+h.ways_tp||0)>0 || (+h.incomer_poles||0)>=3 || /TP\s*&?\s*N|3\s*P(H|\b)|THREE\s*PHASE/i.test(String(h.board_type_text||''))) return {v:'TPN', src:'header'};
-  const rows=A.rows.filter(r=>r.boardNorm===norm && r.status!=='rejected' && !r.space);
+  const rows=A.rows.filter(r=>r.boardNorm===norm&&r.status!=='rejected'
+    &&(window.EstimationExtractorCore?.isPopulatedProtectionRow?.(r)||(!r.space&&!r.spare)));
   if (!rows.length) return null;
   const ph=new Set(rows.map(r=>r.phase).filter(x=>x&&x!=='3PH'));
   if (rows.some(r=>r.phase==='3PH'||(r.poles||0)>=3) || ph.size>=2) return {v:'TPN', src:'inferred'};
@@ -3955,7 +3966,8 @@ function openBoardInViewer(norm){
 }
 function boardHealthHtml(norm,rows,b){
   const A=state.cur.analysis,coverage=A.coverage?.perBoard?.find(item=>item.norm===norm);
-  const active=rows.filter(row=>!row.space&&!row.spare);
+  const active=rows.filter(row=>window.EstimationExtractorCore?.isPopulatedProtectionRow
+    ? window.EstimationExtractorCore.isPopulatedProtectionRow(row) : !row.space&&!row.spare);
   const incomplete=coverage?.incompleteProtectionRows??active.filter(row=>!row.device||row.rating==null).length;
   const missingWays=coverage?.unaccountedWays||0;
   const header=b?.header||{},headerFields=['ways_total','fed_from_ref','location','incomer_class','incomer_rating_a','fault_ka'];
@@ -5080,6 +5092,9 @@ function viewerDetectionCardHtml(d,index){
   if(row.afdd===true)protection.push('<span class="chip purple">AFDD</span>');
   else if(row.afdd===false)protection.push('<span class="chip grey">No AFDD</span>');
   if(row.protectionStandard)protection.push(`<span class="chip grey">${esc(row.protectionStandard)}</span>`);
+  if(row.spare&&row.device)protection.push('<span class="chip amber">Fitted spare</span>');
+  if(row.occupancy==='fitted_spare_unresolved')protection.push('<span class="chip amber">Fitted spare · device unresolved</span>');
+  if(row.occupancyConflict)protection.push('<span class="chip amber">Occupancy conflict · review required</span>');
   if(row.poleConfiguration||row.poles)protection.push(`<span class="chip grey">${esc(row.poleConfiguration||row.poles+'P')}</span>`);
   if(row.ka!=null)protection.push(`<span class="chip grey">${esc(row.ka)}kA</span>`);
   const countText=d.specKey

@@ -160,6 +160,68 @@ assert.deepEqual(perryfieldsPrefixedWays.rows.map((row) => [row.way, row.phase, 
   ['L-2', 'L2', 'MCB', 10],
   ['L-2', 'L3', 'MCB', 10],
 ]);
+const openSpaceCircuit = perryfieldsPrefixedWays.rows.find((row) => row.desc === 'Ltg: Open Space');
+assert.equal(openSpaceCircuit.space, false, 'the word Space inside a populated load description must not create an empty way');
+assert.equal(openSpaceCircuit.spare, false);
+assert.equal(Core.isCountableProtectionDevice(openSpaceCircuit), true);
+assert.equal(Core.protectionDeviceQuantity(openSpaceCircuit), 1);
+
+assert.equal(Core.occupancyLabel('SPACE'), 'space');
+assert.equal(Core.occupancyLabel('Fitted blank way'), 'space');
+assert.equal(Core.occupancyLabel('SPARE'), 'spare');
+assert.equal(Core.occupancyLabel('SP; ARE'), 'spare');
+assert.equal(Core.occupancyLabel('SPARE 0'), 'spare');
+assert.equal(Core.scheduleOccupancyLabel('1/L1 - - - - - - - - SPARE'), 'spare',
+  'placeholder-only cells before a final occupancy label must remain readable');
+assert.equal(Core.scheduleOccupancyLabel('5 L2 - - FITTED BLANK'), 'space');
+assert.equal(Core.parseProtectionTableLine(
+  '1/L1 - - - - - - - - SPARE',
+  { headerText: 'Way Phase Type Rating Protection Load description' },
+).spare, true);
+assert.equal(Core.parseKnownScheduleLine('1/L1 - - - - - - - - SPARE').spare, true);
+for (const description of ['Open Space next to dining', 'Spare office lighting', 'Blank Canvas room', 'Future Skills classroom']) {
+  assert.equal(Core.occupancyLabel(description), null, `${description} is a circuit description, not an occupancy label`);
+}
+assert.equal(Core.scheduleOccupancyLabel('5 L2 MCB C 10 Open Space next to dining'), null,
+  'a populated row description containing Space must not be treated as an empty way');
+
+const flattenedOpenSpace = Core.parseProtectionTableLine(
+  '5 L2 MCB No C 10 15 Ltg: Open Space next to dining Radial 1.5 1 1 E',
+  { headerText: 'Way Phase Type AFDD Characteristic Rating Protection Load description' },
+);
+assert.equal(flattenedOpenSpace.device, 'MCB');
+assert.equal(flattenedOpenSpace.space, false);
+
+const fittedSpare = Core.reconcileRowOccupancy({
+  device: 'MCB', rating: 10, curve: 'C', spare: true, space: false, qty: 1, conf: 0.94,
+});
+assert.equal(fittedSpare.occupancy, 'fitted_spare');
+assert.equal(Core.isCountableProtectionDevice(fittedSpare), true, 'a fitted spare protective device remains part of the take-off');
+
+const unresolvedFittedSpare = Core.reconcileRowOccupancy({
+  device: null, rating: 16, curve: 'C', spare: true, space: false, qty: 1, conf: 0.94,
+});
+assert.equal(unresolvedFittedSpare.occupancy, 'fitted_spare_unresolved');
+assert.equal(unresolvedFittedSpare.qty, 0, 'an unresolved device must not enter procurement totals');
+assert.equal(unresolvedFittedSpare.requiresReview, true);
+assert.equal(Core.isPopulatedProtectionRow(unresolvedFittedSpare), true,
+  'partial protection evidence on a spare row must remain in extraction-health checks');
+assert.equal(Core.isCountableProtectionDevice(unresolvedFittedSpare), false);
+
+const conflictingSpace = Core.reconcileRowOccupancy({
+  device: 'MCB', rating: 10, curve: 'C', spare: false, space: true, qty: 0, conf: 0.94,
+});
+assert.equal(conflictingSpace.space, false);
+assert.equal(conflictingSpace.qty, 1);
+assert.equal(conflictingSpace.requiresReview, true);
+assert.match(conflictingSpace.occupancyConflict.reason, /populated protective-device evidence/i);
+assert.equal(Core.reconcileRowOccupancy({ device: 'MCB', space: true, conf: 0.2 }).conf, 0.2,
+  'occupancy reconciliation must never raise low source confidence');
+const unresolvedSpace = Core.reconcileRowOccupancy({ device: null, rating: 20, space: true, spare: false, conf: 0.9 });
+assert.equal(unresolvedSpace.space, true, 'partial evidence alone must not invent a fitted device');
+assert.equal(unresolvedSpace.requiresReview, true);
+assert.equal(Core.isPopulatedProtectionRow(unresolvedSpace), true);
+assert.equal(Core.isCountableProtectionDevice(unresolvedSpace), false);
 
 const unprovenGrid = Core.parseSpatialSchedulePage({
   lines: [{ text: 'LV SCHEMATIC' }],
@@ -235,4 +297,4 @@ assert.equal(scoped.boards.DBSCHEMATIC.inScope, false);
 assert.ok(scoped.boards.DBSCHEMATIC.outOfScopeReasons.includes('SCHEMATIC_ONLY'));
 assert.equal(scoped.rows.filter((row) => row.outOfScope).length, 4);
 
-console.log('PASS: note links, alphanumeric ways, phase spans, document scoping, and take-off exclusions');
+console.log('PASS: note links, alphanumeric ways, phase spans, bounded occupancy labels, document scoping, and take-off exclusions');

@@ -59,6 +59,38 @@ try {
   assert.match(await page.locator(`#vDetList .det[data-row-id="${stateRows.corrected}"]`).getAttribute('style'), /#1668e3/, 'corrected rows must be blue');
   assert.match(await page.locator(`#vDetList .det[data-row-id="${stateRows.rejected}"]`).getAttribute('style'), /#d33c43/, 'rejected rows must be red');
 
+  const occupancyPeerIds = await page.evaluate(async () => {
+    const A = state.cur.analysis;
+    const file = viewerFile();
+    const boardNorm = pageDetections(file, state.viewer.page).find((item) => item.kind === 'row' && item.r.boardNorm)?.r.boardNorm;
+    const base = {
+      boardNorm, fileId: file.id, page: state.viewer.page, line: null, kind: 'schedule', status: 'confirmed',
+      device: 'MCB', rating: 10, curve: 'C', poleConfiguration: 'SP', poles: 1, ka: 15,
+      rcdProtected: false, afdd: false, spare: false, space: false, qty: 1, conf: 0.98,
+    };
+    const peers = [
+      { ...base, id: 'viewer-colour-peer-1', way: 'T-1', phase: 'L1', desc: 'Food Room', srcText: 'MCB C 10 Food Room' },
+      { ...base, id: 'viewer-colour-open-space', way: 'T-2', phase: 'L2', desc: 'Open Space next to dining', srcText: 'MCB C 10 Open Space next to dining' },
+      { ...base, id: 'viewer-colour-peer-3', way: 'T-3', phase: 'L3', desc: 'Food Prep', srcText: 'MCB C 10 Food Prep' },
+    ];
+    A.rows.push(...peers);
+    await renderViewer();
+    return peers.map((row) => row.id);
+  });
+  const occupancyPeerCards = occupancyPeerIds.map((id) => page.locator(`#vDetList .det[data-row-id="${id}"]`));
+  const occupancyPeerColours = await Promise.all(occupancyPeerCards.map((card) => card.evaluate((element) => element.style.getPropertyValue('--spec-color'))));
+  assert.equal(new Set(occupancyPeerColours).size, 1, 'identical MCB specifications must keep one colour even when a room name contains Space');
+  assert.doesNotMatch(await occupancyPeerCards[1].locator('.det-count').textContent(), /not counted/i);
+  assert.match(await occupancyPeerCards[1].locator('.det-count').textContent(), /counted device/i);
+  if (shotsDir) {
+    await occupancyPeerCards[1].scrollIntoViewIfNeeded();
+    await page.screenshot({ path: join(shotsDir, 'viewer-occupancy-peer-colours.png'), fullPage: false });
+  }
+  await page.evaluate(async (ids) => {
+    state.cur.analysis.rows = state.cur.analysis.rows.filter((row) => !ids.includes(row.id));
+    await renderViewer();
+  }, occupancyPeerIds);
+
   const documentRows = page.locator('#vStage [data-row-id]');
   assert.ok(await documentRows.count() > 1, 'document rows must be interactive');
   const linkedId = await documentRows.nth(1).getAttribute('data-row-id');

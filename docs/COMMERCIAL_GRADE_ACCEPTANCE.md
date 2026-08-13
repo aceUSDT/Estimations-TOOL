@@ -24,6 +24,7 @@ deployment check has been performed.
 | EX-12 | Run bounded raster-OCR recovery only on affected pages, accept a retry only when its health score improves, and restore the original result otherwise. | `verify-auto-ocr.mjs`, `test-analysis-health.mjs` |
 | EX-13 | Build a document-local layout catalogue so damaged or cropped pages can reuse a compatible schema learned from earlier or later pages, including scaled and mirrored layouts. | `test-spatial-schedule.mjs`, `test-ui-contract.mjs` |
 | EX-14 | Reconcile authored source contradictions only when same-document geometry and electrical invariants corroborate the repair; retain printed evidence, cap confidence, and require review. Otherwise remain unresolved. | `test-spatial-schedule.mjs`, `test-extract-function.mjs`, `test-agent-team.mjs` |
+| EX-15 | Interpret spare/space as bounded occupancy cells, never as words inside load descriptions; populated device evidence remains countable, partial protection evidence cannot bypass review, and any true occupancy conflict stays visible across Viewer, health, reports, and totals. | `test-commercial-extraction.mjs`, `test-report-core.mjs`, `verify-viewer-linked-review.mjs` |
 
 ## Review and correction workflow
 

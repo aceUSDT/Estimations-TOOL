@@ -91,6 +91,9 @@ function walk(schema, where) {
 walk(EXTRACTION_SCHEMA, '$');
 check('prompt persists the P-code legend', EXTRACTION_SYSTEM_PROMPT.includes('P1=MCB'));
 check('prompt persists the spare phase-slot rule', /Never mark a whole way spare/.test(EXTRACTION_SYSTEM_PROMPT));
+check('prompt bounds occupancy labels instead of reading room names as empty ways', /Open Space next to dining/.test(EXTRACTION_SYSTEM_PROMPT)
+  && /bounded cell values/.test(EXTRACTION_SYSTEM_PROMPT)
+  && /require review rather than deleting the device/.test(EXTRACTION_SYSTEM_PROMPT));
 check('prompt forbids counting', /NEVER count/.test(EXTRACTION_SYSTEM_PROMPT));
 check('prompt rejects schematic proximity inference', /NEVER infer a feed from proximity/.test(EXTRACTION_SYSTEM_PROMPT));
 check('prompt preserves nonnumeric ways', /L7, L8, P1, P2/.test(EXTRACTION_SYSTEM_PROMPT));

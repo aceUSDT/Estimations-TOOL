@@ -118,4 +118,17 @@ const excludedModel = Report.buildModel({
 assert.deepEqual(Array.from(excludedModel.boards, (board) => board.label), ["DB-1"]);
 assert.equal(excludedModel.grandTotal, 2);
 
+const occupancyModel = Report.buildModel({
+  boards: { DB1: { norm: "DB1", orig: "DB-1", type: "DB", inScope: true } },
+  rows: [
+    { id: "fitted-spare", boardNorm: "DB1", device: "MCB", rating: 6, poles: 1, desc: "Spare", spare: true, space: false, qty: 1, status: "confirmed", conf: 1 },
+    { id: "space-description", boardNorm: "DB1", device: "MCB", rating: 10, curve: "C", poles: 1, desc: "Open Space next to dining", spare: false, space: false, qty: 1, status: "confirmed", conf: 1 },
+    { id: "empty-space", boardNorm: "DB1", device: null, rating: null, desc: "Space", spare: false, space: true, qty: 0, status: "confirmed", conf: 1 },
+    { id: "pending-ai", boardNorm: "DB1", device: "MCB", rating: 20, poles: 1, kind: "ai", qty: 1, status: "pending", conf: 0.7 },
+  ],
+});
+assert.equal(occupancyModel.grandTotal, 2);
+assert.equal(occupancyModel.boardSections[0].total, 2);
+assert.deepEqual(Array.from(occupancyModel.groups[0].rows, (row) => row.rating), [6, 10]);
+
 console.log("Report matrix and XLSX export: OK");

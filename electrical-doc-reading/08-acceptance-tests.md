@@ -25,6 +25,27 @@ else:
 
 Guards source-error reconciliation. Evidence must come from the same document.
 
+### T-00A · Occupancy words inside load names do not erase devices
+**Source:** populated row `MCB | C | 10A | Ltg: Open Space next to dining` between peer 10A C-curve MCB rows.
+
+```text
+assert row.device.class.value == "MCB"
+assert row.space is False
+assert row.device_count == 1
+assert viewer.specification_colour == peer_mcb.specification_colour
+assert viewer.message does not contain "not counted"
+
+for exact_cell in ["SPACE", "FITTED BLANK", "BLANK WAY"]:
+    assert exact_cell is an unpopulated space
+
+for description in ["Open Space next to dining", "Spare office lighting", "Blank Canvas room"]:
+    assert description is not an occupancy label
+```
+
+If an exact occupancy cell conflicts with populated protection columns, keep the
+fitted device, preserve the conflict, lower confidence, and require review.
+Guards bounded occupancy parsing and cross-surface count/colour consistency.
+
 ### T-01 · Rating bound to the correct column
 **Source:** DB schedule row `L2 | 60898 | C | 32 | 10 | × | × | POWER FOR CONDENSER | Rd | 6 | 6 | A | C/E | 0.4 | 0.68`
 

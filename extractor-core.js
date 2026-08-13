@@ -53,6 +53,137 @@
     return { legend, explicitCodes: [...explicitCodes] };
   }
 
+  const OCCUPANCY_LABELS = Object.freeze({
+    spare: new Set(['SPARE', 'SPARE WAY', 'UNUSED', 'UNUSED WAY', 'FUTURE', 'FUTURE WAY']),
+    space: new Set(['SPACE', 'SPACE WAY', 'FITTED BLANK', 'FITTED BLANK WAY', 'BLANK', 'BLANK WAY', 'EMPTY', 'EMPTY WAY', 'NOT USED']),
+  });
+
+  function occupancyLabel(value) {
+    const label = String(value || '')
+      .toUpperCase()
+      .replace(/[\u2010-\u2015_/]+/g, ' ')
+      .replace(/[|:;,.()[\]{}]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (/^SP\s*ARE(?:\s+WAY)?(?:\s+0)?$/.test(label)) return 'spare';
+    if (OCCUPANCY_LABELS.spare.has(label)) return 'spare';
+    if (OCCUPANCY_LABELS.space.has(label)) return 'space';
+    return null;
+  }
+
+  function scheduleOccupancyLabel(value) {
+    let payload = String(value || '').replace(/\s+/g, ' ').trim();
+    payload = payload.replace(/^\s*(?:(?:WAY|CCT|CKT|CIRCUIT)\s*[:#-]?\s*)?\d{1,3}(?:\s*[/-]\s*L[123])?\b\s*/i, '');
+    payload = payload.replace(/^L[123]\b\s*/i, '');
+    const direct = occupancyLabel(payload);
+    if (direct) return direct;
+
+    // Flattened PDF text commonly represents empty table cells as dashes before
+    // the final occupancy cell. Only discard placeholder-only prefixes; words
+    // before SPACE/SPARE indicate a genuine circuit description.
+    const withoutPlaceholders = payload
+      .replace(/^(?:(?:[-\u2013\u2014_]+|N\/?A|NIL)\s*)+/i, '')
+      .trim();
+    return withoutPlaceholders === payload ? null : occupancyLabel(withoutPlaceholders);
+  }
+
+  function hasFittedProtectionDevice(row) {
+    return Boolean(String(row?.device || '').trim());
+  }
+
+  function hasProtectionEvidence(row) {
+    if (!row) return false;
+    const hasValue = (value) => value != null && String(value).trim() !== '';
+    return hasFittedProtectionDevice(row)
+      || hasValue(row.rating)
+      || hasValue(row.protectionStandard)
+      || hasValue(row.protectionStandardCode)
+      || hasValue(row.tripUnit)
+      || hasValue(row.curve)
+      || hasValue(row.ka)
+      || hasValue(row.sens)
+      || row.rcdProtected === true
+      || row.afdd === true
+      || /^P[1-5]$/i.test(String(row.protectionCode || '').trim());
+  }
+
+  function protectionDeviceQuantity(row) {
+    return hasFittedProtectionDevice(row) ? Math.max(1, Number(row?.qty) || 1) : 0;
+  }
+
+  function isCountableProtectionDevice(row) {
+    return protectionDeviceQuantity(row) > 0;
+  }
+
+  function isPopulatedProtectionRow(row) {
+    return Boolean(row) && (hasProtectionEvidence(row) || (!row.space && !row.spare));
+  }
+
+  function reconcileRowOccupancy(row) {
+    if (!row) return row;
+    const next = { ...row };
+    const fittedDevice = hasFittedProtectionDevice(next);
+    const unresolvedProtection = !fittedDevice && hasProtectionEvidence(next);
+    const reasons = Array.isArray(next.resolutionReasons) ? [...next.resolutionReasons] : [];
+
+    if (next.space === true && fittedDevice) {
+      const reason = 'Populated protective-device evidence overrides an apparent SPACE label';
+      next.space = false;
+      next.occupancyConflict = {
+        printed: 'SPACE',
+        interpreted: next.spare === true ? 'fitted_spare' : 'fitted_device',
+        reason,
+      };
+      next.requiresReview = true;
+      const confidence = Number(next.conf);
+      next.conf = Math.min(Number.isFinite(confidence) ? confidence : 0.84, 0.84);
+      if (!reasons.includes(reason)) reasons.push(reason);
+    }
+
+    if (next.space === true && unresolvedProtection) {
+      const reason = 'SPACE row contains protection evidence that requires classification review';
+      next.occupancyConflict = {
+        printed: 'SPACE',
+        interpreted: 'unresolved_protection_evidence',
+        reason,
+      };
+      next.requiresReview = true;
+      const confidence = Number(next.conf);
+      next.conf = Math.min(Number.isFinite(confidence) ? confidence : 0.65, 0.65);
+      if (!reasons.includes(reason)) reasons.push(reason);
+    }
+
+    if (next.spare === true && unresolvedProtection) {
+      const reason = 'SPARE row contains protection evidence but its device class is unresolved';
+      next.requiresReview = true;
+      const confidence = Number(next.conf);
+      next.conf = Math.min(Number.isFinite(confidence) ? confidence : 0.72, 0.72);
+      if (!reasons.includes(reason)) reasons.push(reason);
+    }
+
+    if (next.space === true && next.spare === true && !fittedDevice) {
+      const reason = 'Conflicting SPARE and SPACE occupancy labels require review';
+      next.requiresReview = true;
+      const confidence = Number(next.conf);
+      next.conf = Math.min(Number.isFinite(confidence) ? confidence : 0.55, 0.55);
+      next.occupancyConflict = { printed: 'SPARE + SPACE', interpreted: null, reason };
+      if (!reasons.includes(reason)) reasons.push(reason);
+    }
+
+    if (fittedDevice) {
+      next.qty = protectionDeviceQuantity(next);
+      next.occupancy = next.spare === true ? 'fitted_spare' : 'fitted_device';
+    } else if (next.space === true) {
+      next.qty = 0;
+      next.occupancy = 'space';
+    } else if (next.spare === true) {
+      next.qty = 0;
+      next.occupancy = unresolvedProtection ? 'fitted_spare_unresolved' : 'unpopulated_spare';
+    }
+    next.resolutionReasons = reasons;
+    return next;
+  }
+
   function normaliseInstallMethod(value) {
     return value ? value.replace(/\s+/g, '').replace(/,+/g, ',') : null;
   }
@@ -223,7 +354,7 @@
       || DEFAULT_PROTECTION_LEGEND[protectionCode]
       || {};
     const { description, cable } = parseTrailingCable(match[5]);
-    const spare = /\bspare\b/i.test(description);
+    const spare = occupancyLabel(description) === 'spare';
     const space = protectionCode === 'B' || Boolean(resolved.fittedBlank);
     const placeholder = /\b(TBC|TBD|GUESS|UNKNOWN)\b|\?\?/i.test(description);
 
@@ -502,7 +633,7 @@
         phase: phaseLine[2].toUpperCase(),
         payload,
         row,
-        spare: /\bsp\s*;?\s*are\b/i.test(payload),
+        spare: occupancyLabel(payload) === 'spare',
         blank: !payload,
       });
     }
@@ -598,7 +729,7 @@
       const way = Number(slash[1]);
       const phase = slash[2].toUpperCase();
       const body = slash[3].trim();
-      if (/^spare\b|\bspare$/i.test(body)) return dialectSpareRow(text, way, phase);
+      if (scheduleOccupancyLabel(text) === 'spare') return dialectSpareRow(text, way, phase);
 
       const syntegral = body.match(/^(\d+(?:\.\d+)?)\s+([BCD])\s+(\d+(?:\.\d+)?|-)\s+(YES|NO)\s+(\d+)\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?|SWA)\s+(RAD|RING)\s+(.+)$/i);
       if (syntegral) {
@@ -837,8 +968,9 @@
 
     const header = String(context.headerText || '');
     const protectionHeader = /\b(?:PROTECTION|PROTECTIVE|DEVICE|RATING|AMPS?|CURVE|TRIP|RCD|RCBO|MCB|BREAKING|kA|POLES?)\b/i.test(header);
-    const spare = /\bSPARE\b/i.test(text);
-    const space = /\b(?:SPACE|FITTED\s+BLANK|BLANK\s+WAY)\b/i.test(text);
+    const occupancy = scheduleOccupancyLabel(text);
+    const spare = occupancy === 'spare';
+    const space = occupancy === 'space';
     const standardSequence = parseProtectionStandardSequence(text);
     const explicitDevice = explicitProtectionDevice(text);
     const explicitRating = text.match(/\b(\d+(?:\.\d+)?)\s*A(?:MPS?)?\b/i);
@@ -921,7 +1053,7 @@
    */
   function reconcileCombinedProtection(row) {
     if (!row) return row;
-    const next = { ...row };
+    const next = reconcileRowOccupancy(row);
     const rcdProtected = next.rcdProtected === true || next.sens != null
       ? true
       : (next.rcdProtected === false ? false : null);
@@ -949,7 +1081,8 @@
   function aggregateDevices(rows) {
     const totals = new Map();
     for (const row of rows || []) {
-      if (!row || row.space || !row.device || row.qty === 0) continue;
+      const quantity = protectionDeviceQuantity(row);
+      if (!row || !quantity) continue;
       const key = [
         row.device,
         row.rating ?? '',
@@ -971,7 +1104,7 @@
         });
       }
       const total = totals.get(key);
-      total.quantity += row.qty || 1;
+      total.quantity += quantity;
       total.evidence.push({ way: row.way, phase: row.phase, source: row.srcText });
     }
     return [...totals.values()];
@@ -1034,14 +1167,14 @@
     const device = normaliseAssistedDevice(seed.device);
     const rating = Number(seed.rating);
     const matches = (rows || []).filter((row) => {
-      if (!row || row.status === 'rejected' || row.space || !row.device) return false;
+      if (!row || row.status === 'rejected' || !isCountableProtectionDevice(row)) return false;
       if (boardNorm && row.boardNorm !== boardNorm) return false;
       if (fileId && row.fileId !== fileId) return false;
       return normaliseAssistedDevice(row.device) === device && Number(row.rating) === rating;
     });
     return {
       rows: matches,
-      quantity: matches.reduce((sum, row) => sum + (Number(row.qty) || 1), 0),
+      quantity: matches.reduce((sum, row) => sum + protectionDeviceQuantity(row), 0),
     };
   }
 
@@ -1599,7 +1732,7 @@
       const ways = new Set(observedRows.filter((r) => r.way != null).map((r) => `${r.boardSection || ''}:${r.way}`));
       const inferredWays = new Set(boardRows.filter((row) => row.inferredWay && row.status !== 'confirmed' && row.way != null)
         .map((row) => `${row.boardSection || ''}:${row.way}`));
-      const protectionRows = boardRows.filter((r) => !r.space && !r.spare && r.status !== 'rejected');
+      const protectionRows = boardRows.filter((r) => isPopulatedProtectionRow(r) && r.status !== 'rejected');
       const incompleteProtectionRows = protectionRows.filter((r) => r.status !== 'confirmed' && (!r.device || r.rating == null)).length;
       const unaccounted = expected != null ? Math.max(0, expected - ways.size) : null;
       const upstreamType = /^(?:MAIN|MDB|SMDB|MCC|SB|PB)$/.test(String(board.type || '').toUpperCase());
@@ -1749,7 +1882,7 @@
     const candidate = input.scheduleCandidate || { score: 0, signals: [] };
     if (Number(candidate.score || 0) < 0.45 || (candidate.signals || []).length < 2) return null;
     if (!scheduleRows.length) return 'schedule-rows-missing';
-    const activeRows = scheduleRows.filter((row) => !row.space && !row.spare);
+    const activeRows = scheduleRows.filter(isPopulatedProtectionRow);
     const unresolved = activeRows.filter((row) => !row.device || row.rating == null);
     if (activeRows.length && unresolved.length / activeRows.length >= 0.35) return 'schedule-protection-fields-missing';
     const expectedWays = Number(input.expectedWays || 0);
@@ -1875,8 +2008,8 @@
     };
 
     const allRows = (rows || []).filter((r) => r && r.status !== 'rejected' && !r.outOfScope);
-    const deviceRows = allRows.filter((r) => r.device && !r.space);
-    const deviceCount = deviceRows.reduce((sum, r) => sum + (Number(r.qty) || 1), 0);
+    const deviceRows = allRows.filter(isCountableProtectionDevice);
+    const deviceCount = deviceRows.reduce((sum, r) => sum + protectionDeviceQuantity(r), 0);
     const inScopeBoardNorms = coverage
       ? new Set((coverage.perBoard || []).filter((board) => board.inScope).map((board) => board.norm))
       : null;
@@ -2027,6 +2160,14 @@
     toThreeType,
     DEFAULT_PROTECTION_LEGEND,
     parseProtectionLegend,
+    occupancyLabel,
+    scheduleOccupancyLabel,
+    reconcileRowOccupancy,
+    hasFittedProtectionDevice,
+    hasProtectionEvidence,
+    protectionDeviceQuantity,
+    isCountableProtectionDevice,
+    isPopulatedProtectionRow,
     parseTrailingCable,
     normaliseBoardReference,
     canonicalBoardReference,

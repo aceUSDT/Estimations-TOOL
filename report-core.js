@@ -230,11 +230,10 @@
   }
 
   function includeRow(row) {
-    if (!row || row.status === "rejected" || row.outOfScope || row.space || !row.device) return false;
+    if (!row || row.status === "rejected" || row.outOfScope || !row.device) return false;
     if (row.kind === "schematic" || String(row.sourceRole || "").startsWith("schematic_")) return false;
-    if (row.spare && !row.device) return false;
-    if (row.kind === "mention" && row.status !== "confirmed") return false;
-    return Number(row.qty || 1) > 0;
+    if ((row.kind === "mention" || row.kind === "ai") && row.status !== "confirmed") return false;
+    return Math.max(1, Number(row.qty) || 1) > 0;
   }
 
   const ASSOCIATED_DEFS = [
