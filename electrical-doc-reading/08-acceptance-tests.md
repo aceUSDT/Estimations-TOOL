@@ -10,6 +10,21 @@ known defects from returning.
 
 These reproduce failures that have already happened in production.
 
+### T-00 · Authored phase-label error is reconciled, not hidden
+**Source:** a TPN way drawn as three physical phase lanes but printed `L1 / L1 / L1`.
+
+```text
+if a neighbouring way or the same board header proves a three-phase sequence:
+    assert phases == ["L1", "L2", "L3"]
+    assert every changed phase retains original_text == "L1"
+    assert every changed phase is review_required and confidence < 0.85
+else:
+    assert source_phase_labels_unresolved
+    assert no replacement phase is invented
+```
+
+Guards source-error reconciliation. Evidence must come from the same document.
+
 ### T-01 · Rating bound to the correct column
 **Source:** DB schedule row `L2 | 60898 | C | 32 | 10 | × | × | POWER FOR CONDENSER | Rd | 6 | 6 | A | C/E | 0.4 | 0.68`
 

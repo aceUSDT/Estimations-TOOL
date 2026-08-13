@@ -95,6 +95,9 @@ check('prompt forbids counting', /NEVER count/.test(EXTRACTION_SYSTEM_PROMPT));
 check('prompt rejects schematic proximity inference', /NEVER infer a feed from proximity/.test(EXTRACTION_SYSTEM_PROMPT));
 check('prompt preserves nonnumeric ways', /L7, L8, P1, P2/.test(EXTRACTION_SYSTEM_PROMPT));
 check('prompt keeps schematic metadata out of quantities', /never take-off items/.test(EXTRACTION_SYSTEM_PROMPT));
+check('prompt reconciles authored source errors without silent repair', /SOURCE ERRORS/.test(EXTRACTION_SYSTEM_PROMPT)
+  && /printed value and the inferred value/.test(EXTRACTION_SYSTEM_PROMPT)
+  && /leave the value unresolved/.test(EXTRACTION_SYSTEM_PROMPT));
 
 if (fail) { console.log(`\n${fail} failure(s)`); process.exit(1); }
 console.log('PASS: extract function validation, health probe, and schema invariants.');

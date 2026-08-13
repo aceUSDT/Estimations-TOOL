@@ -41,6 +41,8 @@ assert.equal(team.result.devices.length, 1, 'primary extraction remains authorit
 assert.equal(team.verification.status, 'done');
 assert.equal(team.verification.mismatches[0].kind, 'missing_in_primary');
 assert.match(masterPrompt, /missing_in_primary/);
+assert.match(masterPrompt, /authored source contradictions/);
+assert.match(masterPrompt, /printed and inferred values/);
 assert.equal(team.master.status, 'reviewed');
 assert.equal(team.master.missed.length, 1);
 

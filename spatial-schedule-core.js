@@ -190,7 +190,10 @@
   }
 
   function findWayAnchors(words, pageWidth, options = {}) {
-    const candidates = horizontalWords(words).filter((word) => extractWayIdentifier(word.text) != null && word.cx <= pageWidth * 0.38);
+    // A way column is commonly on the left, but mirrored and right-to-left
+    // schedules place it elsewhere. Score every repeated candidate column and
+    // let phase/sequence evidence decide instead of imposing a page-side rule.
+    const candidates = horizontalWords(words).filter((word) => extractWayIdentifier(word.text) != null);
     const clusters = clusterByX(candidates, Math.max(5, pageWidth * 0.012));
     const scored = clusters.map((cluster) => {
       const sorted = cluster.words.slice().sort((a, b) => a.cy - b.cy);
@@ -206,11 +209,14 @@
         if (prior && current && prior.prefix === current.prefix && current.number === prior.number + 1) consecutive += 1;
       }
       const phaseSupport = sorted.filter((word) => words.some((other) => extractPhase(other.text)
-        && other.cx > word.cx && other.cx - word.cx < pageWidth * 0.16 && Math.abs(other.cy - word.cy) < Math.max(18, word.height * 2))).length;
+        && Math.abs(other.cx - word.cx) > Math.max(2, pageWidth * 0.003)
+        && Math.abs(other.cx - word.cx) < pageWidth * 0.16
+        && Math.abs(other.cy - word.cy) < Math.max(18, word.height * 2))).length;
       const expectedBoost = Number.isFinite(options.expectedX)
         ? Math.max(-4, 7 - Math.abs(cluster.cx - Number(options.expectedX)) / Math.max(3, pageWidth * 0.01))
         : 0;
-      return { ...cluster, sorted, score: unique * 2 + consecutive * 2 + phaseSupport + expectedBoost - (cluster.cx / pageWidth) };
+      const edgeDistance = Math.min(cluster.cx, Math.max(0, pageWidth - cluster.cx)) / Math.max(1, pageWidth);
+      return { ...cluster, sorted, score: unique * 2 + consecutive * 2 + phaseSupport + expectedBoost - edgeDistance * 1.25 };
     }).filter((cluster) => cluster.sorted.length >= (options.allowSingle ? 1 : 2));
     scored.sort((a, b) => b.score - a.score);
     const anchors = scored[0]?.sorted || [];
@@ -359,6 +365,12 @@
     const breakingCapacityClusters = numericClusters.filter((cluster) => {
       const values = cluster.words.map((word) => Number(String(word.text || '').match(/^\s*(\d+(?:\.\d+)?)\s*$/)?.[1]));
       if (!values.some((value) => Number.isFinite(value) && value > 0 && value <= 150)) return false;
+      if (!Number.isFinite(breakingHeaderX)) {
+        const nearestHeader = [...selected.values()].filter((column) => column.source === 'header' && Number.isFinite(column.x))
+          .sort((left, right) => Math.abs(left.x - cluster.cx) - Math.abs(right.x - cluster.cx))[0];
+        if (nearestHeader && nearestHeader.role !== 'breaking_capacity'
+          && Math.abs(nearestHeader.x - cluster.cx) <= Math.max(18, pageWidth * 0.04)) return false;
+      }
       if (Number.isFinite(ratingX) && cluster.cx <= ratingX + tolerance * 0.35) return false;
       if (Number.isFinite(rcdMaX) && cluster.cx <= rcdMaX + tolerance * 0.35) return false;
       return cluster.cx < protectionRight;
@@ -791,16 +803,122 @@
     };
   }
 
-  function parseSpatialWayRows(rowWords, wayAnchor, top, bottom, schema, context) {
+  function physicalPhaseLanes(words, schema) {
     const phaseColumn = schema.columns.find((column) => column.role === 'phase');
-    const phaseWords = rowWords.filter((word) => extractPhase(word.text)
+    const candidates = words.filter((word) => extractPhase(word.text)
       && (!phaseColumn || (word.cx >= phaseColumn.left && word.cx < phaseColumn.right)))
-      .sort((a, b) => a.cy - b.cy);
-    const phases = [];
-    for (const word of phaseWords) {
-      const phase = extractPhase(word.text);
-      if (!phases.some((item) => item.phase === phase)) phases.push({ phase, word, cy: word.cy });
+      .sort((a, b) => a.cy - b.cy || b.confidence - a.confidence);
+    const medianHeight = median(candidates.map((word) => word.height)) || 8;
+    const tolerance = Math.max(2, Math.min(6, medianHeight * 0.42));
+    const lanes = [];
+    for (const word of candidates) {
+      const lane = lanes.find((item) => Math.abs(item.cy - word.cy) <= tolerance);
+      if (!lane) {
+        lanes.push({ cy: word.cy, words: [word], word, printedPhase: extractPhase(word.text) });
+        continue;
+      }
+      lane.words.push(word);
+      lane.cy = lane.words.reduce((sum, item) => sum + item.cy, 0) / lane.words.length;
+      if (word.confidence > lane.word.confidence) {
+        lane.word = word;
+        lane.printedPhase = extractPhase(word.text);
+      }
     }
+    return lanes.sort((a, b) => a.cy - b.cy);
+  }
+
+  function inferPhaseLaneModel(words, wayAnchors, schema, boardHeader = {}) {
+    const ys = wayAnchors.map((word) => word.cy);
+    const sequences = new Map();
+    for (let index = 0; index < wayAnchors.length; index += 1) {
+      const top = index ? (ys[index - 1] + ys[index]) / 2 : schema.dataBand[1];
+      const bottom = index < wayAnchors.length - 1
+        ? (ys[index] + ys[index + 1]) / 2
+        : schema.dataBand[1] + schema.dataBand[3];
+      const lanes = physicalPhaseLanes(words.filter((word) => word.cy >= top && word.cy < bottom), schema);
+      const labels = lanes.map((lane) => lane.printedPhase);
+      if (labels.length !== 3 || new Set(labels).size !== 3 || labels.some((label) => !/^L[123]$/.test(label || ''))) continue;
+      const key = labels.join('|');
+      sequences.set(key, (sequences.get(key) || 0) + 1);
+    }
+    const dominant = [...sequences.entries()].sort((left, right) => right[1] - left[1])[0] || null;
+    const phaseColumnEvidence = schema.columns.find((column) => column.role === 'phase')?.evidence?.text || '';
+    const explicitColumnSequence = phaseValues(phaseColumnEvidence);
+    const headerText = Object.values(boardHeader || {}).filter((value) => typeof value === 'string').join(' ');
+    const headerSupportsThreePhase = boardHeader.phase_count === 3 || boardHeader.phase_config === 'TPN'
+      || /\b(?:TPN|TP\s*&\s*N|3\s*PHASE|THREE\s*PHASE)\b/i.test(headerText);
+    return {
+      expectedSequence: dominant ? dominant[0].split('|')
+        : (explicitColumnSequence.length === 3 ? explicitColumnSequence : ['L1', 'L2', 'L3']),
+      sequenceSupport: dominant ? dominant[1] : 0,
+      explicitColumnSequence: explicitColumnSequence.length === 3,
+      headerSupportsThreePhase,
+    };
+  }
+
+  function reconcilePhaseLanes(lanes, context = {}) {
+    const model = context.phaseLaneModel || {};
+    const expected = Array.isArray(model.expectedSequence) && model.expectedSequence.length === 3
+      ? model.expectedSequence : ['L1', 'L2', 'L3'];
+    const printed = lanes.map((lane) => lane.printedPhase);
+    const repeatedLabels = new Set(printed).size < printed.length;
+    const supported = Number(model.sequenceSupport || 0) > 0 || Boolean(model.explicitColumnSequence);
+    const repair = lanes.length === 3 && repeatedLabels && supported
+      && printed.some((label, index) => label !== expected[index]);
+    const unresolvedConflict = lanes.length === 3 && repeatedLabels && !repair;
+    return lanes.map((lane, index) => ({
+      ...lane,
+      phase: repair ? expected[index] : lane.printedPhase,
+      phaseRepair: repair && lane.printedPhase !== expected[index] ? {
+        original: lane.printedPhase,
+        inferred: expected[index],
+        reason: model.sequenceSupport
+          ? `Three physical phase lanes conflict with the repeated printed labels; ${expected.join('/')} is the dominant sequence elsewhere on this page`
+          : `Three physical phase lanes conflict with the repeated printed labels; the phase-column header explicitly defines ${expected.join('/')}`,
+        confidence: model.sequenceSupport ? 0.84 : 0.76,
+      } : null,
+      phaseConflict: unresolvedConflict ? {
+        original: printed.join('/'),
+        reason: `Three physical phase lanes contain conflicting repeated labels (${printed.join('/')}); no same-document evidence proves a replacement sequence`,
+        confidence: 0.55,
+      } : null,
+    }));
+  }
+
+  function interpretedPhaseCell(lanes) {
+    const cell = sourceCell(lanes.flatMap((lane) => lane.words || [lane.word]), 'phase');
+    if (!cell) return null;
+    const repairs = lanes.map((lane) => lane.phaseRepair).filter(Boolean);
+    if (!repairs.length) return cell;
+    cell.originalText = lanes.map((lane) => lane.printedPhase).join(' ');
+    cell.text = lanes.map((lane) => lane.phase).join(' ');
+    cell.extractionMethod = 'Spatial table parser + structural phase reconciliation';
+    cell.correction = {
+      original: cell.originalText,
+      corrected: cell.text,
+      reason: repairs[0].reason,
+      confidence: Math.min(...repairs.map((repair) => repair.confidence)),
+    };
+    cell.confidence = Math.min(Number(cell.confidence) || cell.correction.confidence, cell.correction.confidence);
+    return cell;
+  }
+
+  function applyPhaseReconciliation(row, repair, conflict, phaseCell) {
+    if (!row || (!repair && !conflict)) return row;
+    if (repair) row.phaseRepair = { ...repair };
+    if (conflict) row.phaseConflict = { ...conflict };
+    const issue = repair || conflict;
+    row.requiresReview = true;
+    row.conf = Math.min(Number(row.conf) || issue.confidence, issue.confidence);
+    row.resolutionReasons = [...(row.resolutionReasons || []), issue.reason];
+    row.fieldSources = { ...(row.fieldSources || {}), phase: phaseCell || row.fieldSources?.phase };
+    return row;
+  }
+
+  function parseSpatialWayRows(rowWords, wayAnchor, top, bottom, schema, context) {
+    const physicalLanes = physicalPhaseLanes(rowWords, schema);
+    const phases = reconcilePhaseLanes(physicalLanes, context);
+    const phaseWords = phases.flatMap((item) => item.words || [item.word]);
     const phaseGaps = phases.slice(1).map((item, index) => item.cy - phases[index].cy).filter((gap) => gap > 2);
     const phaseSpacing = median(phaseGaps)
       || Math.max(8, Number(schema.rowSpacing || 0) / 3)
@@ -812,8 +930,17 @@
       : rowWords;
     const aggregateCells = columnCells(evidenceWords, schema);
     aggregateCells.way = sourceCell([wayAnchor], 'way');
-    if (!phaseValues(aggregateCells.phase?.text).length && phaseWords.length) aggregateCells.phase = sourceCell(phaseWords, 'phase');
+    if (phaseWords.length) aggregateCells.phase = interpretedPhaseCell(phases);
     const aggregate = parseSpatialRow(aggregateCells, schema.confidence, context);
+    const aggregateCorrection = aggregateCells.phase?.correction;
+    const aggregateRepair = aggregateCorrection ? {
+      original: aggregateCorrection.original,
+      inferred: aggregateCorrection.corrected,
+      reason: aggregateCorrection.reason,
+      confidence: aggregateCorrection.confidence,
+    } : null;
+    const aggregateConflict = phases.find((item) => item.phaseConflict)?.phaseConflict || null;
+    applyPhaseReconciliation(aggregate, aggregateRepair, aggregateConflict, aggregateCells.phase);
     if (!aggregate || phases.length < 2) return aggregate ? [aggregate] : [];
 
     const phaseRows = phases.map((item, index) => {
@@ -822,8 +949,9 @@
       const laneWords = evidenceWords.filter((word) => word.cy >= laneTop && word.cy < laneBottom);
       const cells = columnCells(laneWords, schema);
       cells.way = sourceCell([wayAnchor], 'way');
-      cells.phase = sourceCell([item.word], 'phase');
-      return parseSpatialRow(cells, schema.confidence, { ...context, phaseLane: true, laneTop, laneBottom });
+      cells.phase = interpretedPhaseCell([item]);
+      const row = parseSpatialRow(cells, schema.confidence, { ...context, phaseLane: true, laneTop, laneBottom });
+      return applyPhaseReconciliation(row, item.phaseRepair, item.phaseConflict, cells.phase);
     }).filter(Boolean);
     const meaningful = phaseRows.filter((row) => !row.space || row.spare);
     const technical = phaseRows.filter((row) => row.device || row.rating != null || row.protectionStandard
@@ -995,7 +1123,10 @@
       return { matched: false, confidence: schema?.confidence || 0, words: words.length, schema, rows: [], feeds: [], references: [], warnings: ['way_column_not_resolved'] };
     }
     const header = extractSpatialBoardHeader(input, words, schema);
-    const context = { boardProtectionText: header.header.supply_cpd_details || '' };
+    const context = {
+      boardProtectionText: header.header.supply_cpd_details || '',
+      phaseLaneModel: inferPhaseLaneModel(words, wayAnchors, schema, header.header),
+    };
     const ys = wayAnchors.map((word) => word.cy);
     const rows = [];
     for (let index = 0; index < wayAnchors.length; index += 1) {
@@ -1042,6 +1173,8 @@
     grid.blockingReasons.forEach((reason) => warnings.push(`unproven_schedule_grid:${reason}`));
     grid.reviewReasons.forEach((reason) => warnings.push(`schedule_grid_review:${reason}`));
     if (rows.some((row) => row.inferredWay)) warnings.push('header_way_without_printed_row');
+    if (rows.some((row) => row.phaseRepair)) warnings.push('source_phase_labels_reconciled');
+    if (rows.some((row) => row.phaseConflict)) warnings.push('source_phase_labels_unresolved');
     if (rows.some((row) => row.requiresReview)) warnings.push('row_review_required');
     return {
       matched: grid.accepted,
@@ -1086,6 +1219,117 @@
       } : null,
       warnings: result.warnings || [],
     };
+  }
+
+  function scaleSpatialSchemaHint(schema, sourceWidth, sourceHeight, targetWidth, targetHeight) {
+    if (!schema?.columns?.length) return null;
+    const fromWidth = Number(sourceWidth);
+    const fromHeight = Number(sourceHeight);
+    const toWidth = Number(targetWidth);
+    const toHeight = Number(targetHeight);
+    if (![fromWidth, fromHeight, toWidth, toHeight].every((value) => Number.isFinite(value) && value > 0)) return null;
+    const xScale = toWidth / fromWidth;
+    const yScale = toHeight / fromHeight;
+    const scaleBand = (band) => Array.isArray(band) && band.length >= 4
+      ? [Number(band[0]) * xScale, Number(band[1]) * yScale, Number(band[2]) * xScale, Number(band[3]) * yScale]
+      : null;
+    return {
+      ...schema,
+      columns: schema.columns.map((column) => ({
+        ...column,
+        x: Number(column.x) * xScale,
+        left: Number.isFinite(Number(column.left)) ? Number(column.left) * xScale : undefined,
+        right: Number.isFinite(Number(column.right)) ? Number(column.right) * xScale : undefined,
+      })),
+      headerBand: scaleBand(schema.headerBand),
+      dataBand: scaleBand(schema.dataBand),
+      rowSpacing: Number(schema.rowSpacing || 0) * yScale,
+      scaledFrom: { width: fromWidth, height: fromHeight },
+    };
+  }
+
+  function parseSpatialScheduleDocument(pageInputs = [], options = {}) {
+    const pages = (pageInputs || []).map((input, index) => ({
+      ...input,
+      documentPage: Number(input.documentPage || input.page || index + 1),
+    }));
+    const independent = pages.map((input) => {
+      const strict = parseSpatialSchedulePage(input);
+      const attempts = [{ strategy: 'geometry-strict', matched: Boolean(strict.matched && strict.rows?.length), rows: strict.rows?.length || 0 }];
+      let result = strict;
+      if ((!strict.matched || !strict.rows?.length) && input.allowSingleWay) {
+        const permissive = parseSpatialSchedulePage({ ...input, allowSingleWay: true, materializeMissingWays: false });
+        attempts.push({ strategy: 'geometry-single-way', matched: Boolean(permissive.matched && permissive.rows?.length), rows: permissive.rows?.length || 0 });
+        if (permissive.matched && permissive.rows?.length) result = permissive;
+      }
+      return { input, result, attempts };
+    });
+    const catalogue = independent.filter((entry) => entry.result?.matched && entry.result.rows?.length && entry.result.schema?.columns?.length)
+      .map((entry) => ({
+        page: entry.input.documentPage,
+        width: Number(entry.input.pageWidth || entry.input.width),
+        height: Number(entry.input.pageHeight || entry.input.height),
+        schema: entry.result.schema,
+        confidence: Number(entry.result.confidence || entry.result.schema.confidence || 0),
+      }));
+    const limit = Math.max(1, Math.min(6, Number(options.maxSchemaCandidates) || 4));
+    const outputs = independent.map((entry) => {
+      if (entry.result?.matched && entry.result.rows?.length) return { ...entry, schemaSourcePage: entry.input.documentPage };
+      const width = Number(entry.input.pageWidth || entry.input.width);
+      const height = Number(entry.input.pageHeight || entry.input.height);
+      const aspect = width / Math.max(1, height);
+      const hints = catalogue.map((candidate) => ({
+        ...candidate,
+        aspectDelta: Math.abs(aspect - candidate.width / Math.max(1, candidate.height)),
+        pageDistance: Math.abs(entry.input.documentPage - candidate.page),
+      })).filter((candidate) => candidate.aspectDelta <= Math.max(0.12, aspect * 0.16))
+        .sort((left, right) => left.aspectDelta - right.aspectDelta
+          || right.confidence - left.confidence || left.pageDistance - right.pageDistance)
+        .slice(0, limit);
+      const candidates = [];
+      for (const hint of hints) {
+        const targetRoles = new Set((entry.result?.schema?.columns || []).map((column) => column.role));
+        const hintRoles = new Set((hint.schema?.columns || []).map((column) => column.role));
+        const overlap = [...targetRoles].filter((role) => hintRoles.has(role)).length;
+        const roleCompatibility = targetRoles.size ? overlap / targetRoles.size : 1;
+        if (targetRoles.size >= 3 && roleCompatibility < 0.6) continue;
+        const schemaHint = scaleSpatialSchemaHint(hint.schema, hint.width, hint.height, width, height);
+        if (!schemaHint) continue;
+        const recovered = parseSpatialSchedulePage({
+          ...entry.input,
+          schemaHint,
+          allowSingleWay: true,
+          materializeMissingWays: false,
+        });
+        entry.attempts.push({
+          strategy: 'geometry-document-schema',
+          sourcePage: hint.page,
+          matched: false,
+          rows: recovered.rows?.length || 0,
+        });
+        if (recovered.matched && recovered.rows?.length) {
+          const activeRows = recovered.rows.filter((row) => !row.space && !row.spare);
+          const completeRows = activeRows.filter((row) => row.device && row.rating != null);
+          const unresolvedPhaseRows = recovered.rows.filter((row) => row.phaseConflict).length;
+          const completeness = activeRows.length ? completeRows.length / activeRows.length : 1;
+          const transferAccepted = Number(recovered.confidence || 0) >= 0.62
+            && Number(recovered.grid?.populatedRows || 0) > 0
+            && completeness >= 0.5
+            && unresolvedPhaseRows <= Math.max(1, Math.floor(recovered.rows.length * 0.5));
+          entry.attempts[entry.attempts.length - 1].matched = transferAccepted;
+          entry.attempts[entry.attempts.length - 1].completeness = Number(completeness.toFixed(2));
+          if (transferAccepted) candidates.push({ result: recovered, hint, completeness });
+        }
+      }
+      candidates.sort((left, right) => Number(right.result.confidence || 0) - Number(left.result.confidence || 0)
+        || Number(right.completeness || 0) - Number(left.completeness || 0)
+        || Number(right.result.grid?.populatedRows || 0) - Number(left.result.grid?.populatedRows || 0)
+        || left.hint.pageDistance - right.hint.pageDistance);
+      return candidates.length
+        ? { ...entry, result: candidates[0].result, schemaSourcePage: candidates[0].hint.page }
+        : { ...entry, schemaSourcePage: null };
+    });
+    return { pages: outputs, catalogue };
   }
 
   function schematicPoleConfiguration(text) {
@@ -1406,9 +1650,11 @@
     classifyBoardFamily,
     familyTypeCode,
     parseSpatialSchedulePage,
+    parseSpatialScheduleDocument,
     assessScheduleGrid,
     parseSpatialSchematicPage,
     buildSpatialLayoutHint,
+    scaleSpatialSchemaHint,
     deduplicateFeederRelationships,
     parseProtectionIndicator: indicatorValue,
     extractWayIdentifier,

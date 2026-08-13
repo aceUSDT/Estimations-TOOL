@@ -1126,7 +1126,7 @@ const state = {
   reportMode: 'board',
   reviewFlow: {active:false,currentRowId:null,initialCount:0,moving:false,boardOrder:[],initialByBoard:{},rowOrderByBoard:{}},
 };
-const ANALYSIS_VERSION=14;
+const ANALYSIS_VERSION=15;
 const uid = () => 'x'+(state.nextId++)+'_'+Math.random().toString(36).slice(2,6);
 
 /* ====================== PERSISTENCE (IndexedDB) ====================== */
@@ -2895,12 +2895,19 @@ function sourceTrace(row,line,pg,fileName){
     if(field==='Breaking Capacity')return /kA\b/i.test(value);
     return false;
   });
+  const inferredCorrectionFor=(field)=>{
+    if(field!=='Phase')return null;
+    if(row?.phaseRepair)return {corrected:row.phaseRepair.inferred,reason:row.phaseRepair.reason,original:row.phaseRepair.original,conflict:false};
+    if(row?.phaseConflict)return {corrected:null,reason:row.phaseConflict.reason,original:row.phaseConflict.original,conflict:true};
+    return null;
+  };
   const evidence=(field,normalised)=>{
     const source=fieldSource(field),sourceConfidence=Number.isFinite(Number(source?.confidence))?Number(source.confidence):confidence;
-    const correction=correctionFor(field);
+    const correction=correctionFor(field)||inferredCorrectionFor(field);
     return {originalText:source?.originalText||source?.text||line.originalText||line.text,normalisedValue:normalised??'Not specified',bbox:source?.bbox||line.bbox||null,confidence:sourceConfidence,
       method:source?.extractionMethod||line.extractionMethod||(pg?.source==='ocr'?'OCR':'Embedded text / deterministic parser'),
-      correction:correction?.corrected||null,correctionReason:correction?.reason||null,reviewStatus:correction?'Review required':'Pending'};
+      correction:correction?.corrected||source?.correction?.corrected||null,correctionReason:correction?.reason||source?.correction?.reason||null,
+      evidenceConflict:Boolean(correction?.conflict),reviewStatus:(correction||source?.correction)?'Review required':'Pending'};
   };
   return {fileName,bbox:line.bbox||null,originalOcrText:line.originalText||line.text,corrections,
     extractionMethod:line.extractionMethod||(pg?.source==='ocr'?'OCR':'Embedded text / deterministic parser'),
@@ -2969,6 +2976,27 @@ async function runAnalysis(opts){
     });
     governingNotesByFile.set(id,[...byLabel.values()]);
   });
+  const documentSpatialByFile=new Map();
+  f.fileIds.forEach(id=>{
+    const fl=p.files.find(x=>x.id===id),core=window.EstimationExtractorCore;
+    if(!fl||!core?.parseSpatialScheduleDocument)return;
+    const candidates=[];
+    fl.pages.forEach((pg,pi)=>{
+      const pageNo=pi+1;if(pageSet&&!pageSet.has(pageNo))return;
+      const lines=(pg.lines||[]).map(line=>line.text);
+      const sched=core.scoreScheduleCandidate?core.scoreScheduleCandidate(lines):{score:0,signals:[]};
+      const schematic=pg.type==='sld'||pg.type==='schematic';
+      const headerEvidence=hasScheduleBoardHeader(lines);
+      const spatialEvidence=core.collectSpatialWords?core.collectSpatialWords({lines:pg.lines||[],tableRows:pg.tableRows||[]}).length>=8:false;
+      const regular=!schematic&&pg.type!=='cable-schedule'
+        &&(SCHEDULE_TYPES.has(pg.type)||(sched.score>=0.45&&sched.signals.length>=2)||(headerEvidence&&spatialEvidence));
+      if(!regular)return;
+      candidates.push({documentPage:pageNo,lines:pg.lines||[],tableRows:pg.tableRows||[],pageWidth:pg.w,pageHeight:pg.h,
+        pageType:pg.type,allowSingleWay:sched.score>=0.55&&sched.signals.length>=2});
+    });
+    const parsed=core.parseSpatialScheduleDocument(candidates,{maxSchemaCandidates:4});
+    documentSpatialByFile.set(id,new Map(parsed.pages.map(entry=>[entry.input.documentPage,entry])));
+  });
   await showAnalysisStage(2,'Locating distribution-board references');
 
   const regBoard=(b,fileId,pageNo,primary=false,sourceRole=primary?'schedule':'reference')=>{
@@ -3010,14 +3038,20 @@ async function runAnalysis(opts){
       const schedCandidate=core&&core.scoreScheduleCandidate
         ? core.scoreScheduleCandidate(lines) : {score:0,signals:[]};
       const schematicPage=pg.type==='sld'||pg.type==='schematic';
+      const documentSpatial=documentSpatialByFile.get(id)?.get(pageNo)||null;
       const regularSchedule=!schematicPage&&pg.type!=='cable-schedule'
-        && (SCHEDULE_TYPES.has(pg.type) || (schedCandidate.score>=0.45&&schedCandidate.signals.length>=2));
+        && (SCHEDULE_TYPES.has(pg.type) || (schedCandidate.score>=0.45&&schedCandidate.signals.length>=2)
+          || Boolean(documentSpatial?.result?.matched&&documentSpatial.result.rows?.length));
+      if(documentSpatial?.result?.matched&&documentSpatial.result.rows?.length&&schedCandidate.score<0.45){
+        schedCandidate.score=0.45;
+        if(!schedCandidate.signals.includes('document-schema'))schedCandidate.signals.push('document-schema');
+      }
       const schematicSpatial=schematicPage&&core?.parseSpatialSchematicPage
         ? core.parseSpatialSchematicPage({lines:pg.lines||[],tableRows:pg.tableRows||[],pageWidth:pg.w,pageHeight:pg.h,pageType:pg.type}) : null;
-      const spatialAttempts=[];
-      let spatial=regularSchedule&&core?.parseSpatialSchedulePage
-        ? core.parseSpatialSchedulePage({lines:pg.lines||[],tableRows:pg.tableRows||[],pageWidth:pg.w,pageHeight:pg.h,pageType:pg.type}) : null;
-      if(regularSchedule&&core?.parseSpatialSchedulePage){
+      const spatialAttempts=documentSpatial?.attempts?.map(attempt=>({...attempt}))||[];
+      let spatial=documentSpatial?.result||(regularSchedule&&core?.parseSpatialSchedulePage
+        ? core.parseSpatialSchedulePage({lines:pg.lines||[],tableRows:pg.tableRows||[],pageWidth:pg.w,pageHeight:pg.h,pageType:pg.type}) : null);
+      if(regularSchedule&&core?.parseSpatialSchedulePage&&!documentSpatial){
         spatialAttempts.push({strategy:'geometry-strict',matched:Boolean(spatial?.matched&&spatial.rows?.length),rows:spatial?.rows?.length||0});
         const hasPrintedBoardHeader=hasScheduleBoardHeader(lines);
         if((!spatial?.matched||!spatial.rows?.length)&&prevSpatialSchema&&!hasPrintedBoardHeader){
@@ -3048,6 +3082,7 @@ async function runAnalysis(opts){
         textQualityUnreliable:Boolean(pg.textQuality&&pg.textQuality.reliable===false&&!pg.ocr),
         scheduleScore:schedCandidate.score, scheduleSignals:schedCandidate.signals, rowsParsed:0,
         spatialContinuation,
+        spatialSchemaSourcePage:documentSpatial?.schemaSourcePage??null,
         spatialConfidence:spatial?.confidence??null, spatialColumns:spatial?.schema?.columns?.map(column=>column.role)||[],
         spatialWarnings:spatial?.warnings||[],extractionAttempts:spatialAttempts,
         schematicFeeds:schematicSpatial?.feeds?.length||0,schematicWarnings:schematicSpatial?.warnings||[]};

@@ -218,6 +218,117 @@ for (let index = 1; index < wayOneHighlights.length; index += 1) {
   assert.ok(prior[1] + prior[3] <= current[1], 'single-phase review highlights must not overlap adjacent rows');
 }
 
+// Source drawings can contain authored errors. Three physical phase lanes must
+// survive repeated labels, and a repair is allowed only when the same page or
+// board header supplies corroborating structural evidence.
+const damagedPhaseWords = phaseRowWords.map((item) => {
+  const [x, y] = item.bbox;
+  if (x === 47 && [175, 195, 215].includes(y)) return { ...item, text: 'L1' };
+  return { ...item };
+});
+const damagedPhases = Core.parseSpatialSchedulePage({
+  lines: [
+    { text: 'DISTRIBUTION BOARD SCHEDULE' },
+    { text: 'Board Reference: DB-TEST-DAMAGED' },
+    { text: 'Size: 2 WAY TPN' },
+  ],
+  words: damagedPhaseWords,
+  pageWidth: 430,
+  pageHeight: 300,
+  pageType: 'db-schedule',
+});
+const repairedWay = damagedPhases.rows.filter((row) => row.way === 2);
+assert.deepEqual(repairedWay.map((row) => row.phase), ['L1', 'L2', 'L3']);
+assert.equal(repairedWay[1].phaseRepair.original, 'L1');
+assert.equal(repairedWay[1].phaseRepair.inferred, 'L2');
+assert.equal(repairedWay[1].fieldSources.phase.originalText, 'L1');
+assert.equal(repairedWay[1].requiresReview, true);
+assert.ok(repairedWay[1].conf <= 0.84);
+assert.match(repairedWay[1].resolutionReasons.join(' '), /physical phase lanes/i);
+assert.ok(damagedPhases.warnings.includes('source_phase_labels_reconciled'));
+
+const uncorroboratedDamage = Core.parseSpatialSchedulePage({
+  lines: [{ text: 'DISTRIBUTION BOARD SCHEDULE' }, { text: 'Board Reference: DB-AMBIGUOUS' }, { text: 'Size: 2 WAY TPN' }],
+  words: phaseRowWords.map((item) => item.bbox[0] === 47 && item.bbox[1] >= 100 ? { ...item, text: 'L1' } : { ...item }),
+  pageWidth: 430,
+  pageHeight: 300,
+  pageType: 'db-schedule',
+});
+const unresolvedRows = uncorroboratedDamage.rows.filter((row) => row.way === 2);
+assert.ok(unresolvedRows.length >= 1);
+assert.ok(unresolvedRows.every((row) => !row.phaseRepair && row.phaseConflict));
+assert.ok(unresolvedRows.every((row) => row.requiresReview && row.conf <= 0.55));
+assert.ok(uncorroboratedDamage.warnings.includes('source_phase_labels_unresolved'));
+
+// A damaged or cropped early page may need a column schema learned from a
+// later healthy page in the same document. Coordinates are deliberately scaled
+// to prove that reuse is normalised, not tied to one page size.
+const sourcePageWords = [
+  word('Way', 10, 25), word('Phase', 45, 25), word('Device BS (EN)', 90, 25),
+  word('Type', 145, 25), word('Rating (A)', 180, 25), word('Circuit Reference', 225, 25),
+  word('1', 12, 90), word('L1', 47, 80), word('L2', 47, 90), word('L3', 47, 100),
+  word('60898', 94, 90), word('C', 148, 90), word('20', 184, 90), word('LOAD-1', 225, 90),
+  word('2', 12, 150), word('L1', 47, 140), word('L2', 47, 150), word('L3', 47, 160),
+  word('61009', 94, 150), word('C', 148, 150), word('32', 184, 150), word('LOAD-2', 225, 150),
+];
+const scaleWord = (item, scale) => ({
+  ...item,
+  bbox: item.bbox.map((value) => value * scale),
+});
+const croppedFirstPage = sourcePageWords.filter((item) => item.bbox[1] > 30 && item.bbox[1] <= 110)
+  .map((item) => scaleWord(item, 1.25));
+const adaptiveDocument = Core.parseSpatialScheduleDocument([
+  {
+    documentPage: 1,
+    lines: [{ text: 'Board Reference: DB-ADAPT-01' }],
+    words: croppedFirstPage,
+    pageWidth: 325,
+    pageHeight: 275,
+    pageType: 'db-schedule',
+  },
+  {
+    documentPage: 2,
+    lines: [{ text: 'DISTRIBUTION BOARD SCHEDULE' }, { text: 'Board Reference: DB-ADAPT-02' }],
+    words: sourcePageWords,
+    pageWidth: 260,
+    pageHeight: 220,
+    pageType: 'db-schedule',
+  },
+]);
+const adaptiveFirst = adaptiveDocument.pages.find((entry) => entry.input.documentPage === 1);
+assert.equal(adaptiveFirst.result.matched, true);
+assert.equal(adaptiveFirst.schemaSourcePage, 2);
+assert.ok(adaptiveFirst.attempts.some((attempt) => attempt.strategy === 'geometry-document-schema' && attempt.matched));
+assert.equal(adaptiveFirst.result.rows.find((row) => row.way === 1)?.rating, 20);
+
+const unrelatedWords = [
+  word('1', 12, 90), word('L1', 47, 90), word('NOTES', 100, 90),
+  word('2', 12, 150), word('L2', 47, 150), word('REVISION', 100, 150),
+];
+const rejectedTransfer = Core.parseSpatialScheduleDocument([
+  { documentPage: 1, lines: [{ text: 'Board Reference: DB-UNPROVEN' }], words: unrelatedWords, pageWidth: 260, pageHeight: 220, pageType: 'db-schedule' },
+  { documentPage: 2, lines: [{ text: 'Board Reference: DB-ADAPT-02' }], words: sourcePageWords, pageWidth: 260, pageHeight: 220, pageType: 'db-schedule' },
+]);
+const unprovenPage = rejectedTransfer.pages.find((entry) => entry.input.documentPage === 1);
+assert.equal(unprovenPage.result.matched, false, 'schema transfer must remain fail-closed when protection cells do not reconcile');
+assert.equal(unprovenPage.schemaSourcePage, null);
+
+// Mirrored schedules are valid layouts too; the way column is discovered by
+// sequence and phase support rather than a hard-coded left-page position.
+const mirroredCompact = compactWords.map((item) => {
+  const [x, y, width, height] = item.bbox;
+  return { ...item, bbox: [520 - x - width, y, width, height] };
+});
+const mirrored = Core.parseSpatialSchedulePage({
+  lines: [{ text: 'DISTRIBUTION BOARD SCHEDULE' }, { text: 'Board Reference: DB-MIRROR-01' }],
+  words: mirroredCompact,
+  pageWidth: 520,
+  pageHeight: 220,
+  pageType: 'db-schedule',
+});
+assert.equal(mirrored.matched, true);
+assert.deepEqual(mirrored.rows.map((row) => [row.way, row.rating]), [[1, 16], [2, 32]]);
+
 const correctedStandard = Core.resolveProtectionDevice({ standard: '60974', tripUnit: 'TMD' });
 assert.equal(correctedStandard.device, 'MCCB');
 assert.equal(correctedStandard.standardCode, '60947');
@@ -305,4 +416,4 @@ assert.deepEqual(schematic.boards.filter((board) => /^DB/.test(board.norm)).map(
 assert.ok(schematic.devices.some((device) => device.boardRef === 'DB-A-01' && device.device === 'Meter'));
 assert.ok(schematic.devices.some((device) => device.boardRef === 'DB-B-02' && device.device === 'SPD'));
 
-console.log('PASS: spatial schedule columns, precise phase rows, schematic feeder lanes, policy classification, and provenance.');
+console.log('PASS: adaptive spatial schedules, damaged phase repair, precise rows, schematic feeder lanes, policy classification, and provenance.');

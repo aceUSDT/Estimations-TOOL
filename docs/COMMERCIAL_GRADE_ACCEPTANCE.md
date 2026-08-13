@@ -22,6 +22,8 @@ deployment check has been performed.
 | EX-10 | Refuse incoherent results, including boards with zero devices, fewer devices than in-scope boards, excess captured ways, missing protection fields, or missing feed evidence. | `test-analysis-health.mjs`, `test-electrical-coherence.mjs` |
 | EX-11 | Read schematic board references, feed direction, source section, ratings, poles, protective devices, cable construction, meters, SPD, spares, and locations; use that evidence to fill only missing schedule fields with visible provenance. | `test-spatial-schedule.mjs`, `test-commercial-extraction.mjs` |
 | EX-12 | Run bounded raster-OCR recovery only on affected pages, accept a retry only when its health score improves, and restore the original result otherwise. | `verify-auto-ocr.mjs`, `test-analysis-health.mjs` |
+| EX-13 | Build a document-local layout catalogue so damaged or cropped pages can reuse a compatible schema learned from earlier or later pages, including scaled and mirrored layouts. | `test-spatial-schedule.mjs`, `test-ui-contract.mjs` |
+| EX-14 | Reconcile authored source contradictions only when same-document geometry and electrical invariants corroborate the repair; retain printed evidence, cap confidence, and require review. Otherwise remain unresolved. | `test-spatial-schedule.mjs`, `test-extract-function.mjs`, `test-agent-team.mjs` |
 
 ## Review and correction workflow
 
