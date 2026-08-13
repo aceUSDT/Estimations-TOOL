@@ -114,6 +114,36 @@ assert.deepEqual(perryfields.rows.map((row) => [row.way, row.device, row.rating,
 assert.equal(perryfields.rows[0].ka, 10, 'the 30mA earth-fault value must not displace the 10kA breaking capacity');
 assert.equal(perryfields.board.header.ways_total, 3, 'distinct printed ways provide a reconciled board count when the header omits it');
 
+const mcbOnlyWords = perryfieldsWords.slice(0, 10);
+[
+  [1, 'BU Classroom: FCU/HRU'],
+  [2, 'Intervention/Circulation'],
+  [3, 'Kitchen: MVHR-001'],
+].forEach(([way, description], index) => {
+  const y = 92 + index * 34;
+  mcbOnlyWords.push(
+    word(String(way), 69, y, 5), word('L'+(index+1), 80, y, 9), word('MCB', 97, y, 9),
+    word('No', 112, y, 7), word('C', 130, y, 5), word('20', 146, y, 7),
+    word('10', 180, y, 7), word(description, 207, y, 100),
+  );
+});
+const mcbOnly = Core.parseSpatialSchedulePage({
+  lines: [
+    { text: 'Board reference DB-G2-MHW' },
+    { text: 'Way Phase Type AFDD? T-C characteristic In (A) Earth fault device (mA) Breaking Capacity (kA) Load description' },
+  ],
+  words: mcbOnlyWords,
+  pageWidth: 360,
+  pageHeight: 230,
+  pageType: 'db-schedule',
+});
+assert.equal(mcbOnly.matched, true);
+assert.deepEqual(mcbOnly.rows.map((row) => [row.device, row.rating, row.sens, row.ka]), [
+  ['MCB', 20, null, 10],
+  ['MCB', 20, null, 10],
+  ['MCB', 20, null, 10],
+], 'a blank earth-fault column must not borrow adjacent 10kA values and turn explicit MCBs into RCBOs');
+
 const perryfieldsPrefixedWayWords = [
   word('Way', 20, 28), word('Phase', 52, 28), word('Type', 82, 28),
   word('AFDD?', 108, 28), word('Characteristic', 132, 28), word('In (A)', 160, 28),

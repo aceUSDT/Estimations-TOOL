@@ -150,6 +150,14 @@ const rcdProtection = groupedRows([
 assert.equal(rcdProtection.length, 2, "RCD-protected and unprotected MCBs must remain separate procurement specifications");
 assert.deepEqual(Array.from(rcdProtection, (item) => item.rcdProtected).sort(), [false, true]);
 
+const hiddenMetadataVariants = groupedRows([
+  row("meta1", "DB02", 1, { way: 1, curve: "C", ka: 10, rcdProtected: false, afdd: false, protectionStandard: "BS EN 60898", tripUnit: "Thermal magnetic" }),
+  row("meta2", "DB02", 2, { way: 2, curve: "C", ka: 10, rcdProtected: false, afdd: false, protectionStandard: "60898-1", tripUnit: null }),
+]);
+assert.equal(hiddenMetadataVariants.length, 1, "supporting standard and trip-unit text must not duplicate an otherwise identical device column");
+assert.equal(hiddenMetadataVariants[0].total, 3);
+assert.equal(hiddenMetadataVariants[0].contributors.length, 2, "every source must remain available beneath the consolidated device");
+
 const reconciliation = Report.validateModel(riverside);
 assert.equal(reconciliation.valid, true);
 assert.equal(reconciliation.sourceTotal, 21);

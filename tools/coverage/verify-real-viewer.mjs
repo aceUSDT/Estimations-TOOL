@@ -88,7 +88,7 @@ try {
       health: state.cur.analysis.health,
     };
   });
-  assert.equal(extraction.analysisVersion, 13, 'real project must use the current analysis model');
+  assert.equal(extraction.analysisVersion, 17, 'real project must use the current analysis model');
   assert.ok(extraction.scheduleRows > 0, 'schedule rows must be extracted before opening Viewer');
   assert.ok(extraction.firstId && extraction.firstBoard, 'guided review must have a first schedule row');
   assert.equal(extraction.firstPage, 1, 'guided review must begin on the earliest schedule page');

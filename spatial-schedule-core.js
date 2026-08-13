@@ -339,19 +339,25 @@
     });
     const rcdIndicatorX = Number.isFinite(rcdHeaderX) ? (rcdIndicatorCandidates[0]?.cx ?? null) : null;
     const rcdMaHeaderX = selected.get('rcd_ma')?.x ?? null;
+    const breakingHeaderX = selected.get('breaking_capacity')?.x ?? null;
     const circuitReferenceX = selected.get('circuit_reference')?.x ?? pageWidth;
     const descriptionX = selected.get('description')?.x ?? null;
     const numericClusters = clusterByX(dataWords.filter((word) => {
       const value = Number(String(word.text || '').match(/^\s*(\d+(?:\.\d+)?)\s*$/)?.[1]);
       return Number.isFinite(value);
     }), tolerance).filter((cluster) => cluster.words.length >= 2);
-    const rcdMaClusters = (!Number.isFinite(rcdMaHeaderX) && !Number.isFinite(rcdIndicatorX) ? [] : numericClusters).filter((cluster) => cluster.words.some((word) => {
+    const rcdMaAnchorX = Number.isFinite(rcdMaHeaderX) ? rcdMaHeaderX : rcdIndicatorX;
+    const rcdMaClusters = (!Number.isFinite(rcdMaAnchorX) ? [] : numericClusters).filter((cluster) => cluster.words.some((word) => {
       if (Number.isFinite(rcdIndicatorX) && word.cx <= rcdIndicatorX + tolerance * 0.25) return false;
       if (Number.isFinite(ratingX) && word.cx <= ratingX + tolerance * 0.75) return false;
       if (word.cx >= circuitReferenceX) return false;
       const value = Number(String(word.text || '').match(/^\s*(\d+(?:\.\d+)?)\s*$/)?.[1]);
       return Number.isFinite(value) && value > 0 && value <= 1000;
     })).filter((cluster) => {
+      // Blank RCD cells frequently sit beside populated kA cells. Do not
+      // borrow the adjacent breaking-capacity cluster as RCD sensitivity.
+      if (Number.isFinite(breakingHeaderX)
+        && Math.abs(cluster.cx - breakingHeaderX) + tolerance * 0.2 <= Math.abs(cluster.cx - rcdMaAnchorX)) return false;
       if (!Number.isFinite(rcdMaHeaderX)) return cluster.words.length >= 2;
       return Math.abs(cluster.cx - rcdMaHeaderX) <= Math.max(24, pageWidth * 0.06);
     });
@@ -360,7 +366,6 @@
       return Math.abs(left.cx - rcdMaHeaderX) - Math.abs(right.cx - rcdMaHeaderX);
     });
     const rcdMaX = rcdMaClusters[0]?.cx ?? null;
-    const breakingHeaderX = selected.get('breaking_capacity')?.x ?? null;
     const protectionRight = Number.isFinite(descriptionX) ? descriptionX : circuitReferenceX;
     const breakingCapacityClusters = numericClusters.filter((cluster) => {
       const values = cluster.words.map((word) => Number(String(word.text || '').match(/^\s*(\d+(?:\.\d+)?)\s*$/)?.[1]));

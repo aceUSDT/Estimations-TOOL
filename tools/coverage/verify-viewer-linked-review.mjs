@@ -136,22 +136,73 @@ try {
 
   await page.locator('#vFullscreen').click();
   await page.waitForFunction(() => state.viewer.fullscreen === true);
-  await page.locator('#vDetList .det.current [data-action="edit"]').click();
+  const correctionRowId = await page.evaluate(() => {
+    const current = guidedReviewCurrentRow();
+    const row = {
+      ...current,
+      id: 'viewer-explicit-mcb-correction',
+      device: 'RCBO',
+      rcdProtected: true,
+      sens: 10,
+      ka: null,
+      status: 'pending',
+      edited: false,
+      corrections: [],
+      srcText: 'L1 MCB No C 20 10 BU Classroom: FCU/HRU',
+    };
+    state.cur.analysis.rows.push(row);
+    openRowEditor(row, false, 'Viewer');
+    return row.id;
+  });
   await page.locator('#modalBk.show .modal.is-flexible').waitFor();
   const modalState = await page.evaluate(() => {
     const backdrop = document.querySelector('#modalBk');
     const modal = backdrop.querySelector('.modal');
+    const footer = modal.querySelector('.m-foot');
+    const save = modal.querySelector('#mOk');
     const rect = modal.getBoundingClientRect();
+    const footerRect = footer.getBoundingClientRect();
+    const saveRect = save.getBoundingClientRect();
     return {
       parent: backdrop.parentElement?.id,
       resize: getComputedStyle(modal).resize,
       visible: rect.width > 0 && rect.height > 0,
       withinViewport: rect.left >= 0 && rect.top >= 0 && rect.right <= innerWidth && rect.bottom <= innerHeight,
+      footerVisible: footerRect.top >= rect.top && footerRect.bottom <= rect.bottom,
+      saveVisible: saveRect.top >= footerRect.top && saveRect.bottom <= footerRect.bottom && !save.disabled,
     };
   });
-  assert.deepEqual(modalState, { parent: 'pt-viewer', resize: 'both', visible: true, withinViewport: true });
+  assert.deepEqual(modalState, {
+    parent: 'pt-viewer', resize: 'both', visible: true, withinViewport: true, footerVisible: true, saveVisible: true,
+  });
+  await page.locator('#eDev').selectOption({ label: 'MCB' });
+  assert.equal(await page.locator('#eRcd').inputValue(), 'no', 'choosing MCB must clear incompatible integral RCD state');
+  assert.equal(await page.locator('#eSens').inputValue(), '');
   if (shotsDir) await page.screenshot({ path: join(shotsDir, 'viewer-fullscreen-correction.png'), fullPage: false });
-  await page.locator('#mCancel').click();
+  await page.locator('#mOk').click();
+  await page.locator('#modalBk').waitFor({ state: 'hidden' });
+  const savedCorrection = await page.evaluate((rowId) => {
+    const row = state.cur.analysis.rows.find((item) => item.id === rowId);
+    return {
+      device: row.device,
+      rcdProtected: row.rcdProtected,
+      sens: row.sens,
+      edited: row.edited,
+      status: row.status,
+      fields: row.corrections.map((item) => item.field),
+    };
+  }, correctionRowId);
+  assert.equal(savedCorrection.device, 'MCB');
+  assert.equal(savedCorrection.rcdProtected, false);
+  assert.equal(savedCorrection.sens, null);
+  assert.equal(savedCorrection.edited, true);
+  assert.equal(savedCorrection.status, 'confirmed');
+  assert.ok(savedCorrection.fields.includes('Device Family'));
+  assert.ok(savedCorrection.fields.includes('RCD Protection'));
+  await page.evaluate(async (rowId) => {
+    state.cur.analysis.rows = state.cur.analysis.rows.filter((row) => row.id !== rowId);
+    await renderViewer();
+  }, correctionRowId);
 
   let nextBoard = firstBoard;
   for (let decision = 0; decision < 80 && nextBoard === firstBoard; decision += 1) {

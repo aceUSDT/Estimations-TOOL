@@ -164,6 +164,11 @@
     return Number.isFinite(sensitivity) && sensitivity > 0 && sensitivity <= 1000 ? sensitivity : null;
   }
 
+  function normaliseRcdType(value) {
+    const source = text(value).toUpperCase().replace(/^TYPE\s+/, '').trim();
+    return /^(?:AC|A|F|B)$/.test(source) ? source : NOT_SPECIFIED;
+  }
+
   function normaliseProtectionStandard(value) {
     const source = text(value).toUpperCase().replace(/\s+/g, ' ');
     if (!source) return NOT_SPECIFIED;
@@ -184,6 +189,7 @@
       tripUnit: text(row && row.tripUnit) || NOT_SPECIFIED,
       rcdProtected,
       rcdSensitivity,
+      rcdType: normaliseRcdType(row && row.rcdType),
       afdd,
     };
   }
@@ -428,10 +434,11 @@
     const pole = poleLabel(row);
     const protection = protectionSpecification(row);
     const key = [
-      deviceFamily.toUpperCase(), rating == null ? NOT_SPECIFIED : formatRating(rating), curve, breakingCapacity, pole,
-      protection.protectionStandard, protection.tripUnit,
+      deviceFamily.toUpperCase(), rating == null ? NOT_SPECIFIED : formatRating(rating), curve, pole,
       protection.rcdProtected == null ? NOT_SPECIFIED : protection.rcdProtected ? 'RCD' : 'NO RCD',
       protection.rcdSensitivity == null ? NOT_SPECIFIED : `${formatRating(protection.rcdSensitivity)}mA`,
+      protection.rcdType,
+      breakingCapacity,
       protection.afdd == null ? NOT_SPECIFIED : protection.afdd ? 'AFDD' : 'NO AFDD',
     ]
       .join("|");
@@ -515,6 +522,7 @@
       tripUnit: specification.tripUnit,
       rcdProtected: specification.rcdProtected,
       rcdSensitivity: specification.rcdSensitivity,
+      rcdType: specification.rcdType,
       afdd: specification.afdd,
       sourceDocument,
       fileId: text(row && row.fileId),
@@ -638,6 +646,7 @@
           tripUnit: specification.tripUnit,
           rcdProtected: specification.rcdProtected,
           rcdSensitivity: specification.rcdSensitivity,
+          rcdType: specification.rcdType,
           afdd: specification.afdd,
           quantities: Array(boards.length).fill(0),
           rowIdsByBoard: Array.from({ length: boards.length }, () => []),
@@ -663,6 +672,16 @@
     grouped.forEach((reportRow) => {
       reportRow.purposes = Array.from(new Set(reportRow.contributors.map((item) => item.purpose))).sort(purposeSort);
       reportRow.sourcePages = summariseSourcePages(reportRow.contributors);
+      const standards = Array.from(new Set(reportRow.contributors.map((item) => item.protectionStandard)
+        .filter((value) => value && value !== NOT_SPECIFIED))).sort(naturalCompare);
+      const tripUnits = Array.from(new Set(reportRow.contributors.map((item) => item.tripUnit)
+        .filter((value) => value && value !== NOT_SPECIFIED))).sort(naturalCompare);
+      reportRow.protectionStandards = standards;
+      reportRow.tripUnits = tripUnits;
+      reportRow.protectionStandard = standards.length === 1 ? standards[0] : NOT_SPECIFIED;
+      reportRow.tripUnit = tripUnits.length === 1 ? tripUnits[0] : NOT_SPECIFIED;
+      if (standards.length > 1) reportRow.reviewReasons.push("Source rows contain multiple protection standards");
+      if (tripUnits.length > 1) reportRow.reviewReasons.push("Source rows contain multiple trip-unit descriptions");
       if (reportRow.rating == null) {
         reportRow.notes.push(QUALIFICATIONS.rating);
         reportRow.reviewReasons.push("Current rating is missing");
@@ -1062,10 +1081,9 @@
       row.rating == null ? null : `${formatRating(row.rating)}A`,
       deliverableValue(row.pole),
       deliverableValue(row.curve) ? `${row.curve} curve` : null,
-      deliverableValue(row.tripUnit) ? `Trip ${row.tripUnit}` : null,
       deliverableValue(row.breakingCapacity),
-      deliverableValue(row.protectionStandard),
       row.rcdProtected === true ? rcdProtectionLabel(true, row.rcdSensitivity) : row.rcdProtected === false ? 'No RCD' : null,
+      deliverableValue(row.rcdType) ? `RCD Type ${row.rcdType}` : null,
       row.afdd === true ? 'AFDD' : row.afdd === false ? 'No AFDD' : null,
     ].filter(Boolean);
     return fields.join('\n');
