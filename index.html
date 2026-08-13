@@ -469,6 +469,7 @@
 
   /* ---------- reporting workspace ---------- */
   .report-shell{background:#fff;border:1px solid var(--line);border-radius:6px;overflow:hidden;}
+  .report-shell,.report-matrix,.report-board-table{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
   .report-top{display:flex;align-items:center;gap:18px;padding:15px 18px;border-bottom:1px solid var(--line);}
   .report-heading{min-width:210px;}
   .report-heading h2{font-size:16px;line-height:1.25;font-weight:700;}
@@ -509,6 +510,8 @@
   .report-family-row .devdot{margin-left:2px;}
   .report-family-total{float:right;color:var(--txt2);font-weight:700;}
   .report-techline{display:flex;align-items:center;gap:4px;flex-wrap:wrap;}
+  .report-spec-swatch{width:8px;height:22px;border-radius:2px;background:var(--spec-color,#8a95a5);flex:0 0 auto;margin-right:2px;}
+  .report-spec-row .report-spec-identity{background:var(--spec-tint,#fff);box-shadow:inset 4px 0 0 var(--spec-color,#8a95a5);}
   .report-description{margin-top:4px;color:var(--txt2);line-height:1.35;}
   .report-protection{display:flex;gap:4px;flex-wrap:wrap;}
   .report-locations,.report-sources{line-height:1.45;color:var(--txt2);}
@@ -558,6 +561,11 @@
   .report-matrix.report-transposed .report-board-name{position:sticky;left:0;z-index:5;width:150px;min-width:150px;text-align:left;background:#fff;}
   .report-matrix.report-transposed thead .report-board-name{z-index:9;background:#f7e0d1;}
   .report-matrix.report-transposed .report-spec-column{width:180px;min-width:180px;max-width:180px;text-align:left;vertical-align:top;white-space:normal;}
+  .report-matrix .report-row-head th.report-spec-column{background:var(--spec-tint,#f7e0d1);box-shadow:inset 0 4px 0 var(--spec-color,#8a95a5);}
+  .report-matrix .report-data td.report-spec-cell{background:var(--spec-cell-tint,#fff);}
+  .report-matrix .report-data:hover td.report-spec-cell{background:var(--spec-tint,#f7fafc);}
+  .report-matrix .report-final td.report-spec-cell{background:var(--spec-tint,#e3e5e8);box-shadow:inset 0 3px 0 var(--spec-color,#8a95a5);}
+  .report-matrix .report-spec-cell .report-qty{color:var(--spec-color,#1668e3);}
   .report-spec-category{display:block;margin-bottom:5px;color:#5d6875;font-size:9px;text-transform:uppercase;}
   .report-spec-name{display:block;font-size:11px;color:#111820;}
   .report-spec-details{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;}
@@ -3755,8 +3763,8 @@ function scheduleGuidedAdvance(row,action){
 }
 /* Stable specification colours keep visually different devices distinct even
    when they share a broad family such as MCB or RCBO. */
-const DEVICE_PALETTE=['#1668e3','#d18400','#0f8f5f','#b43a47','#7a56c2','#007f95','#c0448f','#567b1f','#9a5328','#2b6f92','#cf5d17','#006d77','#6d597a','#1982c4','#8f2d56','#4d7c0f','#7c3aed','#b45309','#0369a1','#be123c','#047857','#92400e','#4338ca','#0e7490'];
-const SPECIFICATION_PALETTE=[...DEVICE_PALETTE,...Array.from({length:168},(_,index)=>{
+const DEVICE_PALETTE=window.EstimationReport?.DEVICE_PALETTE||['#1668e3','#d18400','#0f8f5f','#b43a47','#7a56c2','#007f95','#c0448f','#567b1f','#9a5328','#2b6f92','#cf5d17','#006d77','#6d597a','#1982c4','#8f2d56','#4d7c0f','#7c3aed','#b45309','#0369a1','#be123c','#047857','#92400e','#4338ca','#0e7490'];
+const SPECIFICATION_PALETTE=window.EstimationReport?.SPECIFICATION_PALETTE||[...DEVICE_PALETTE,...Array.from({length:168},(_,index)=>{
   const hue=Math.round((index*137.508)%360),saturation=60+(index%3)*8,lightness=34+(Math.floor(index/3)%3)*7;
   return `hsl(${hue} ${saturation}% ${lightness}%)`;
 })];
@@ -3767,6 +3775,7 @@ function hashText(value){
 }
 function deviceColor(name){return DEVICE_PALETTE[hashText(name)%DEVICE_PALETTE.length];}
 function deviceSpecificationKey(row){
+  if(window.EstimationReport?.specificationKey)return window.EstimationReport.specificationKey(row);
   if(!row||!row.device)return '';
   return [
     String(row.device).toUpperCase(),
@@ -3787,9 +3796,11 @@ function deviceSpecificationLabel(row){
   if(row.space)return 'Space way';
   return 'Unclassified device';
 }
-function buildSpecificationColorMap(rows){
-  const keys=[...new Set((rows||[]).map(deviceSpecificationKey).filter(Boolean))].sort();
-  const used=new Set(),map=new Map();
+function buildSpecificationColorMap(rows,existingColours=null){
+  if(window.EstimationReport?.buildSpecificationColorMap)return window.EstimationReport.buildSpecificationColorMap(rows,existingColours);
+  const map=new Map(existingColours instanceof Map?existingColours:[]);
+  const keys=[...new Set((rows||[]).map(deviceSpecificationKey).filter(Boolean))].filter(key=>!map.has(key)).sort();
+  const used=new Set([...map.values()].map(colour=>SPECIFICATION_PALETTE.indexOf(colour)).filter(slot=>slot>=0));
   keys.forEach(key=>{
     const start=hashText(key)%SPECIFICATION_PALETTE.length;
     let slot=start;
@@ -4373,6 +4384,16 @@ function renderReport(){
     host.innerHTML='<div class="report-empty">Analyse documents to build the take-off.</div>';
     return;
   }
+  const mainReportSpecificationRows=(model.groups||[]).flatMap(group=>group.rows||[]);
+  const associatedReportSpecificationRows=(model.associated?.groups||[]).flatMap(group=>group.rows||[]);
+  const mainReportColourMap=buildSpecificationColorMap(mainReportSpecificationRows);
+  const reportColourMap=buildSpecificationColorMap(associatedReportSpecificationRows,mainReportColourMap);
+  const reportColour=row=>{
+    const key=deviceSpecificationKey(row),color=reportColourMap.get(key)||deviceColor(row.deviceFamily||row.device||'Other device');
+    const tint=window.EstimationReport?.tintColour?.(color,0.88)||'#f1f4f8';
+    const cellTint=window.EstimationReport?.tintColour?.(color,0.95)||'#fafbfd';
+    return {key,color,tint,cellTint,style:`--spec-color:${color};--spec-tint:${tint};--spec-cell-tint:${cellTint}`};
+  };
   const factItems=[['Boards in report',model.boards.length],['Device lines',model.deviceLineCount],['Total devices',model.grandTotal]];
   factItems.push(['Reconciled',model.reconciliation?.valid?'Yes':'No']);
   if(model.associated&&model.associated.grandTotal) factItems.push(['Control items',model.associated.grandTotal]);
@@ -4418,13 +4439,14 @@ function renderReport(){
       board.families.forEach(family=>{
         html+=`<tr class="report-family-row"><td colspan="6"><span class="devdot" style="background:${deviceColor(family.name)}"></span>${esc(family.name)}<span class="report-family-total">${family.total} total</span></td></tr>`;
         family.rows.forEach(row=>{
+          const appearance=reportColour(row);
           const descriptions=(row.descriptions||[]).slice(0,3),more=(row.descriptions||[]).length-descriptions.length;
           const description=descriptions.join('; ')+(more>0?` · +${more} more`:'');
           const usableLocations=(row.circuitLocators||[]).filter(value=>value&&!/^(?:Not specified|Unclear|Not applicable)$/i.test(String(value)));
           const locations=usableLocations.slice(0,5),moreLocations=usableLocations.length-locations.length;
           const locationText=locations.join('; ')+(moreLocations>0?` · +${moreLocations} more`:'');
           const reviewDetail=[...(row.reviewReasons||[]),...(row.notes||[])].join(' ');
-          html+=`<tr><td><div class="report-techline">${techChips(row)}</div>${description?`<div class="report-description">${esc(description)}</div>`:''}</td>
+          html+=`<tr class="report-spec-row" data-spec-key="${encodeURIComponent(appearance.key)}" style="${appearance.style}"><td class="report-spec-identity"><div class="report-techline"><span class="report-spec-swatch" aria-hidden="true"></span>${techChips(row)}</div>${description?`<div class="report-description">${esc(description)}</div>`:''}</td>
             <td>${row.quantity}</td><td>${protectionHtml(row)}</td><td class="report-locations">${esc(locationText)}</td>
             <td class="report-sources">${esc((row.sourcePages||[]).join('; '))}${reportSourceButton(row,scope,board.norm)}</td><td><span class="chip ${row.reviewStatus==='Ready'?'green':'amber'}" title="${esc(reviewDetail)}">${esc(row.reviewStatus)}</span></td></tr>`;
         });
@@ -4434,7 +4456,7 @@ function renderReport(){
     return html+'</div>';
   };
   const matrix=(groups,title,totalLabel,boardTotals,grandTotal,scope='main')=>{
-    const rows=groups.flatMap(group=>group.rows.map(row=>({...row,category:group.name})));
+    const rows=groups.flatMap(group=>group.rows.map(row=>({...row,category:group.name,appearance:reportColour(row)})));
     const colSpan=rows.length+2;
     const known=value=>value!=null&&!/^(?:Not specified|Unclear|Not applicable)$/i.test(String(value));
     const specDetails=row=>[
@@ -4448,15 +4470,15 @@ function renderReport(){
       `<tr class="report-row-title"><th class="report-device" colspan="${colSpan}">${esc(title)}</th></tr>`+
       '<tr class="report-row-head"><th class="report-board-name">Board</th>'+rows.map(row=>{
         const reviewDetail=[...(row.reviewReasons||[]),...(row.notes||[])].join(' ');
-        return `<th class="report-spec-column" title="${esc(reviewDetail)}"><span class="report-spec-category">${esc(row.category)}</span><span class="report-spec-name">${esc(row.deviceFamily)}</span>`+
+        return `<th class="report-spec-column" data-spec-key="${encodeURIComponent(row.appearance.key)}" style="${row.appearance.style}" title="${esc(reviewDetail)}"><span class="report-spec-category">${esc(row.category)}</span><span class="report-spec-name">${esc(row.deviceFamily)}</span>`+
           `<span class="report-spec-details">${specDetails(row).map(value=>`<span class="chip grey">${esc(value)}</span>`).join('')}</span>${reportSourceButton(row,scope)}</th>`;
       }).join('')+'<th class="report-total">Board total</th></tr></thead><tbody>';
     model.boards.forEach((board,boardIndex)=>{
       table+=`<tr class="report-data"><th class="report-board-name"><button data-report-board="${esc(board.norm)}" title="Open ${esc(board.label)}">${esc(board.label)}</button></th>`+
-        rows.map(row=>{const qty=Number(row.quantities[boardIndex])||0;return `<td>${qty?`<button class="report-qty" data-report-source-key="${encodeURIComponent(row.key)}" data-report-source-scope="${scope}" data-report-source-board="${encodeURIComponent(board.norm)}" title="Review ${esc(row.deviceFamily)} sources on ${esc(board.label)}">${qty}</button>`:''}</td>`;}).join('')+
+        rows.map(row=>{const qty=Number(row.quantities[boardIndex])||0;return `<td class="report-spec-cell" style="${row.appearance.style}">${qty?`<button class="report-qty" data-report-source-key="${encodeURIComponent(row.key)}" data-report-source-scope="${scope}" data-report-source-board="${encodeURIComponent(board.norm)}" title="Review ${esc(row.deviceFamily)} sources on ${esc(board.label)}">${qty}</button>`:''}</td>`;}).join('')+
         `<td class="report-board-total">${boardTotals[boardIndex]||''}</td></tr>`;
     });
-    return table+`<tr class="report-final"><th class="report-board-name">${esc(totalLabel)}</th>${rows.map(row=>`<td>${row.total||''}</td>`).join('')}<td class="report-total">${grandTotal}</td></tr></tbody></table>`;
+    return table+`<tr class="report-final"><th class="report-board-name">${esc(totalLabel)}</th>${rows.map(row=>`<td class="report-spec-cell" style="${row.appearance.style}">${row.total||''}</td>`).join('')}<td class="report-total">${grandTotal}</td></tr></tbody></table>`;
   };
   let html='';
   if(mode==='board'){

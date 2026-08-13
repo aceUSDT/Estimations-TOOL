@@ -48,6 +48,36 @@
 
   const NOT_SPECIFIED = "Not specified";
   const UNCLEAR = "Unclear";
+  const DEVICE_PALETTE = Object.freeze([
+    '#1668e3', '#d18400', '#0f8f5f', '#b43a47', '#7a56c2', '#007f95', '#c0448f', '#567b1f',
+    '#9a5328', '#2b6f92', '#cf5d17', '#006d77', '#6d597a', '#1982c4', '#8f2d56', '#4d7c0f',
+    '#7c3aed', '#b45309', '#0369a1', '#be123c', '#047857', '#92400e', '#4338ca', '#0e7490',
+  ]);
+
+  function hslToHex(hue, saturation, lightness) {
+    const s = saturation / 100;
+    const l = lightness / 100;
+    const chroma = (1 - Math.abs(2 * l - 1)) * s;
+    const section = ((hue % 360) + 360) % 360 / 60;
+    const x = chroma * (1 - Math.abs((section % 2) - 1));
+    const [r1, g1, b1] = section < 1 ? [chroma, x, 0]
+      : section < 2 ? [x, chroma, 0]
+        : section < 3 ? [0, chroma, x]
+          : section < 4 ? [0, x, chroma]
+            : section < 5 ? [x, 0, chroma] : [chroma, 0, x];
+    const offset = l - chroma / 2;
+    return `#${[r1, g1, b1].map((channel) => Math.round((channel + offset) * 255)
+      .toString(16).padStart(2, '0')).join('')}`;
+  }
+
+  const SPECIFICATION_PALETTE = Object.freeze([
+    ...DEVICE_PALETTE,
+    ...Array.from({ length: 168 }, (_, index) => hslToHex(
+      Math.round((index * 137.508) % 360),
+      60 + (index % 3) * 8,
+      34 + (Math.floor(index / 3) % 3) * 7,
+    )),
+  ]);
   const QUALIFICATIONS = {
     curve: "Tripping curve not specified in the source document. No curve has been assumed. Confirm the required tripping characteristic before procurement or final quotation.",
     breakingCapacity: "Breaking capacity not specified in the source document. No breaking capacity has been assumed. Confirm the required value before procurement or final quotation.",
@@ -162,6 +192,25 @@
     const match = text(value).replace(/,/g, '.').match(/\d+(?:\.\d+)?/);
     const sensitivity = match ? Number(match[0]) : Number(value);
     return Number.isFinite(sensitivity) && sensitivity > 0 && sensitivity <= 1000 ? sensitivity : null;
+  }
+
+  function hashText(value) {
+    let hash = 2166136261;
+    const source = text(value).toUpperCase();
+    for (let index = 0; index < source.length; index += 1) {
+      hash ^= source.charCodeAt(index);
+      hash = Math.imul(hash, 16777619);
+    }
+    return hash >>> 0;
+  }
+
+  function tintColour(value, whiteWeight = 0.86) {
+    const match = text(value).match(/^#([0-9a-f]{6})$/i);
+    if (!match) return '#f1f4f8';
+    const amount = Math.max(0, Math.min(1, Number(whiteWeight)));
+    const channels = [0, 2, 4].map((offset) => parseInt(match[1].slice(offset, offset + 2), 16));
+    return `#${channels.map((channel) => Math.round(channel * (1 - amount) + 255 * amount)
+      .toString(16).padStart(2, '0')).join('')}`;
   }
 
   function normaliseRcdType(value) {
@@ -443,6 +492,33 @@
     ]
       .join("|");
     return { key, deviceFamily, rating, curve, breakingCapacity, pole, ...protection };
+  }
+
+  function specificationKey(row) {
+    if (row && row.deviceFamily && text(row.key)) return text(row.key);
+    return deviceSpecification(row).key;
+  }
+
+  function buildSpecificationColorMap(rows, existingColours = null) {
+    const colours = new Map(existingColours instanceof Map ? existingColours : []);
+    const keys = [...new Set((rows || []).map(specificationKey).filter(Boolean))]
+      .filter((key) => !colours.has(key)).sort(naturalCompare);
+    const used = new Set([...colours.values()].map((colour) => SPECIFICATION_PALETTE.indexOf(colour))
+      .filter((slot) => slot >= 0));
+    keys.forEach((key) => {
+      const start = hashText(key) % SPECIFICATION_PALETTE.length;
+      let slot = start;
+      for (let offset = 0; offset < SPECIFICATION_PALETTE.length; offset += 1) {
+        const candidate = (start + offset) % SPECIFICATION_PALETTE.length;
+        if (!used.has(candidate)) {
+          slot = candidate;
+          break;
+        }
+      }
+      used.add(slot);
+      colours.set(key, SPECIFICATION_PALETTE[slot]);
+    });
+    return colours;
   }
 
   function markSpecificationConflicts(reportRows) {
@@ -1109,6 +1185,10 @@
     ];
     headers.forEach((value, index) => { sheet.getCell(3, index + 1).value = value; });
     styleHeaderRow(sheet, 3, lastColumn);
+    const mainSpecifications = (model.groups || []).flatMap((group) => group.rows || []);
+    const associatedSpecifications = (model.associated?.groups || []).flatMap((group) => group.rows || []);
+    const mainSpecificationColours = buildSpecificationColorMap(mainSpecifications);
+    const specificationColours = buildSpecificationColorMap(associatedSpecifications, mainSpecificationColours);
 
     let rowNumber = 4;
     combinedBoardSections(model).filter((board) => board.families.length).forEach((board) => {
@@ -1148,6 +1228,17 @@
           ];
           values.forEach((value, columnIndex) => { sheet.getCell(rowNumber, columnIndex + 1).value = value; });
           styleDataRange(sheet, rowNumber, rowNumber, lastColumn);
+          const specificationColour = specificationColours.get(specificationKey(item));
+          if (specificationColour) {
+            const identityCell = sheet.getCell(rowNumber, 1);
+            identityCell.fill = {
+              type: 'pattern', pattern: 'solid', fgColor: { argb: `FF${tintColour(specificationColour, 0.91).slice(1).toUpperCase()}` },
+            };
+            identityCell.border = {
+              ...borderStyle(),
+              left: { style: 'medium', color: { argb: `FF${specificationColour.slice(1).toUpperCase()}` } },
+            };
+          }
           sheet.getCell(rowNumber, 13).fill = {
             type: 'pattern', pattern: 'solid', fgColor: { argb: item.reviewStatus === 'Ready' ? XLSX_COLORS.green : XLSX_COLORS.red },
           };
@@ -1175,6 +1266,10 @@
       },
     });
     const devices = deviceColumns(model);
+    const mainSpecifications = (model.groups || []).flatMap((group) => group.rows || []);
+    const associatedSpecifications = (model.associated?.groups || []).flatMap((group) => group.rows || []);
+    const mainSpecificationColours = buildSpecificationColorMap(mainSpecifications);
+    const specificationColours = buildSpecificationColorMap(associatedSpecifications, mainSpecificationColours);
     const firstDeviceColumn = 2;
     const totalColumn = firstDeviceColumn + devices.length;
     const lastColumn = totalColumn;
@@ -1201,8 +1296,20 @@
       sheet.getCell(4, column).alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
     }
     devices.forEach((device, index) => {
-      if (device.reviewStatus === 'Ready') return;
-      sheet.getCell(4, firstDeviceColumn + index).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: XLSX_COLORS.amber } };
+      const cell = sheet.getCell(4, firstDeviceColumn + index);
+      const specificationColour = specificationColours.get(specificationKey(device));
+      if (specificationColour) {
+        cell.fill = {
+          type: 'pattern', pattern: 'solid', fgColor: { argb: `FF${tintColour(specificationColour, 0.82).slice(1).toUpperCase()}` },
+        };
+        cell.border = {
+          ...borderStyle(),
+          top: { style: 'medium', color: { argb: `FF${specificationColour.slice(1).toUpperCase()}` } },
+          ...(device.reviewStatus === 'Ready' ? {} : {
+            right: { style: 'medium', color: { argb: 'FFD18400' } },
+          }),
+        };
+      }
     });
 
     model.boards.forEach((board, boardIndex) => {
@@ -1437,8 +1544,11 @@
   }
 
   return {
+    DEVICE_PALETTE,
     GROUP_ORDER,
+    SPECIFICATION_PALETTE,
     buildModel,
+    buildSpecificationColorMap,
     canonicalDevice,
     createExcelWorkbook,
     csv,
@@ -1450,6 +1560,8 @@
     normaliseCurve,
     normalisePole,
     safeFileName,
+    specificationKey,
+    tintColour,
     validateModel,
   };
 });

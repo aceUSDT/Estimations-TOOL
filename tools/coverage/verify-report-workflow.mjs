@@ -31,6 +31,15 @@ try {
   }
   assert.ok(await boardReport.locator('.report-source-open').count() > 0, 'Board Take-Off rows need source-review windows');
   assert.doesNotMatch(await boardReport.textContent(), /Not specified|Unclear/i, 'deliverable report must keep unresolved prose out of cells');
+  const boardSpecificationColours = await boardReport.locator('.report-spec-row').evaluateAll((elements) => elements.map((element) => ({
+    key: decodeURIComponent(element.dataset.specKey || ''),
+    colour: element.style.getPropertyValue('--spec-color'),
+  })));
+  assert.ok(boardSpecificationColours.every((item) => item.key && item.colour), 'every Board Take-Off specification row needs a colour identity');
+  const repeatedBoardSpecification = Object.values(Object.groupBy(boardSpecificationColours, (item) => item.key))
+    .find((items) => items.length > 1);
+  assert.ok(repeatedBoardSpecification, 'report fixture must exercise one specification across multiple boards');
+  assert.equal(new Set(repeatedBoardSpecification.map((item) => item.colour)).size, 1, 'one specification must keep the same colour across boards');
   if (shotsDir) await page.screenshot({ path: join(shotsDir, 'report-board-desktop.png'), fullPage: true });
 
   await boardReport.locator('.report-source-open').first().click();
@@ -49,6 +58,22 @@ try {
   assert.ok(await matrix.locator('thead .report-spec-column').count() >= 2, 'Device Take-Off must place full device specifications across columns');
   assert.ok(await matrix.locator('tbody tr .report-board-name').count() >= 2, 'Device Take-Off must place boards down rows');
   assert.doesNotMatch(await matrix.textContent(), /Not specified|Unclear/i, 'matrix must keep unresolved prose out of deliverable cells');
+  const reportColours = await matrix.locator('thead .report-spec-column').evaluateAll((elements) => elements.map((element) => ({
+    key: decodeURIComponent(element.dataset.specKey || ''),
+    colour: element.style.getPropertyValue('--spec-color'),
+    tint: getComputedStyle(element).backgroundColor,
+    marker: getComputedStyle(element).boxShadow,
+  })));
+  assert.ok(reportColours.every((item) => item.key && item.colour), 'every Device Take-Off specification needs an explicit colour identity');
+  assert.equal(new Set(reportColours.map((item) => item.colour)).size, reportColours.length, 'different report specifications need distinct colours');
+  assert.ok(reportColours.every((item) => item.tint !== 'rgb(247, 224, 209)' && item.marker !== 'none'), 'report headers need visible specification tint and marker');
+  const viewerColourAgreement = await page.evaluate((colours) => {
+    const reportMap = new Map(colours.map((item) => [item.key, item.colour]));
+    const sourceRows = state.cur.analysis.rows.filter(isTakeoffEvidenceRow);
+    const viewerMap = buildSpecificationColorMap(sourceRows);
+    return [...reportMap].every(([key, colour]) => viewerMap.get(key) === colour);
+  }, reportColours);
+  assert.equal(viewerColourAgreement, true, 'Viewer and final report must use the same colour for each specification');
   if (shotsDir) await page.screenshot({ path: join(shotsDir, 'report-device-desktop.png'), fullPage: true });
 
   await page.setViewportSize({ width: 390, height: 844 });

@@ -55,6 +55,21 @@ assert.equal(model.associated.groups[0].rows[0].label, "Contactor");
 const workbook = Report.createExcelWorkbook(model, ExcelJS);
 const sheet = workbook.getWorksheet("Device Take-Off");
 const boardSheet = workbook.getWorksheet("Board Take-Off");
+const modelSpecifications = model.groups.flatMap((group) => group.rows);
+const modelColours = Report.buildSpecificationColorMap(modelSpecifications);
+assert.equal(modelColours.size, modelSpecifications.length, "every consolidated device specification needs one stable report colour");
+assert.equal(new Set(modelColours.values()).size, modelColours.size, "different device specifications need different report colours");
+assert.equal(
+  Report.buildSpecificationColorMap(modelSpecifications).get(modelSpecifications[0].key),
+  modelColours.get(modelSpecifications[0].key),
+  "the same specification must keep its colour across report renders",
+);
+const associatedSpecifications = model.associated.groups.flatMap((group) => group.rows);
+const extendedColours = Report.buildSpecificationColorMap(associatedSpecifications, modelColours);
+assert.equal(extendedColours.get(modelSpecifications[0].key), modelColours.get(modelSpecifications[0].key),
+  "optional associated equipment must not shift a protective-device colour");
+assert.equal(new Set(extendedColours.values()).size, extendedColours.size,
+  "associated equipment must not reuse a protective-device colour in the same report");
 assert.equal(workbook.worksheets[0].name, "Board Take-Off");
 assert.deepEqual(workbook.worksheets.map((worksheet) => worksheet.name), ["Board Take-Off", "Device Take-Off"]);
 assert.match(boardSheet.getCell("A4").value, /DB-2/);
@@ -69,7 +84,11 @@ assert.equal(sheet.getCell("B5").value, 2);
 assert.equal(sheet.getCell("B6").value, 1);
 assert.equal(sheet.getCell("F5").value.formula, "SUM(B5:E5)");
 assert.equal(sheet.getCell("B7").value.formula, "SUM(B5:B6)");
-assert.equal(sheet.getCell("B4").fill.fgColor.argb, "FFFFF2CC");
+const firstDeviceColour = modelColours.get(modelSpecifications[0].key);
+assert.equal(sheet.getCell("B4").fill.fgColor.argb, `FF${Report.tintColour(firstDeviceColour, 0.82).slice(1).toUpperCase()}`);
+assert.equal(sheet.getCell("B4").border.top.color.argb, `FF${firstDeviceColour.slice(1).toUpperCase()}`);
+assert.notEqual(sheet.getCell("B4").fill.fgColor.argb, sheet.getCell("C4").fill.fgColor.argb, "different specifications need distinct Excel header colours");
+assert.equal(boardSheet.getCell("A6").border.left.color.argb, `FF${firstDeviceColour.slice(1).toUpperCase()}`);
 assert.equal(sheet.getCell("A3").fill.fgColor.argb, "FF171717");
 assert.equal(sheet.getCell("A3").font.color.argb, "FFFFFFFF");
 assert.equal(sheet.views[0].ySplit, 4);
