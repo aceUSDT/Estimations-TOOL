@@ -1,18 +1,21 @@
-/* AI extraction endpoint — the "AI extracts" half of the architecture.
+/* Hosted extraction endpoint — the "AI extracts" half of the architecture.
  *
  * The browser posts one page (rendered image and/or text lines) — only after
- * the user has explicitly enabled online extraction — and this function runs
- * the Gemini extractor. Gemini is the ONLY runtime AI provider; the key lives
- * ONLY in a hosting environment variable — never in the repo or browser.
+ * the user has explicitly enabled online extraction. The engine selects the
+ * independent NVIDIA team with Gemini master audit when those server-side keys
+ * exist, otherwise it falls back honestly to direct Gemini extraction.
  *
  * Env vars:
- *   GEMINI_API_KEY   required — https://aistudio.google.com/apikey
+ *   GEMINI_API_KEY   Gemini extractor/master auditor
  *   GEMINI_MODEL     optional exact-model override (pinned default in providers)
+ *   NVIDIA_API_KEY_1..3 optional independent sub-agents
+ *   AGENT_TEAM       set to off to force direct Gemini extraction
  *
  * Note on timeouts: Netlify synchronous functions cap at ~26s; dense pages
  * go through the background function instead (no such ceiling).
  */
-import { buildInstruction, extractPage, providerStatus, GEMINI_MODEL, geminiModelCandidates } from './lib/providers.mjs';
+import { buildInstruction, GEMINI_MODEL, geminiModelCandidates } from './lib/providers.mjs';
+import { engineStatus, extractSmart } from './lib/extraction-engine.mjs';
 
 const json = (status, body) => new Response(JSON.stringify(body), {
   status,
@@ -22,11 +25,12 @@ const json = (status, body) => new Response(JSON.stringify(body), {
 export default async function handler(req) {
   if (req.method === 'GET') {
     // health probe used by the front-end to decide whether AI extraction is on
-    const status = providerStatus();
+    const status = engineStatus();
     return json(200, {
       status: 'ok',
       configured: status.configured,
-      providers: { gemini: status.gemini },
+      mode: status.mode,
+      providers: { gemini: status.gemini, nvidia: status.nvidia },
       primary: status.primary,
       model: GEMINI_MODEL,
       fallbackModels: geminiModelCandidates().slice(1),
@@ -34,8 +38,8 @@ export default async function handler(req) {
     });
   }
   if (req.method !== 'POST') return json(405, { error: 'POST only' });
-  if (!providerStatus().configured) {
-    return json(503, { error: 'AI extraction is not configured: set GEMINI_API_KEY in the hosting environment.' });
+  if (!engineStatus().configured) {
+    return json(503, { error: 'AI extraction is not configured: set GEMINI_API_KEY or NVIDIA_API_KEY_1..3 in the hosting environment.' });
   }
 
   let body;
@@ -52,7 +56,8 @@ export default async function handler(req) {
 
   const instruction = buildInstruction({ filename, pageNumber, hints, textLines, layoutHint });
   try {
-    const out = await extractPage({ imageBase64, mediaType, instruction, maxTokens: 12000 });
+    const out = await extractSmart({ imageBase64, mediaType, instruction, maxTokens: 12000,
+      textLines, filename, pageNumber, hints, layoutHint });
     return json(200, out);
   } catch (err) {
     if (err && err.http) return json(err.http, { error: err.message });

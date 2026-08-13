@@ -19,11 +19,13 @@ const required = [
   'host.requestFullscreen',
   "document.addEventListener('fullscreenchange'",
   'function syncViewerLayout()',
-  'const ANALYSIS_VERSION=12;',
+  'const ANALYSIS_VERSION=13;',
   'id="processingCancelBtn"',
   'const AI_RECOVERY_MAX_PAGES=3;',
   'const AI_RECOVERY_PAGE_TIMEOUT_MS=25000;',
   'const AI_RECOVERY_TOTAL_BUDGET_MS=45000;',
+  'active (AI agent team + master audit)',
+  'function applyAiAudit(',
   'appSettings.onlineExtraction&&!auto',
   'noRecovery:true,noAi:true',
   '!opts.recoverLowConfidence',
@@ -31,6 +33,7 @@ const required = [
   'function recoveryCandidates(',
   'async function runAnalysisWithRecovery(',
   'core.parseSpatialSchematicPage(',
+  "&&!schematicSpatial?.matched",
   "const governingNotesByFile=new Map();",
   "strategy:'geometry-prior-schema'",
   "strategy:'geometry-single-way'",
@@ -61,12 +64,17 @@ const required = [
   'function viewerDetectionCardHtml(d,index)',
   'function bindViewerDocumentRows(detections)',
   'function syncViewerDetectionList(rowId',
+  'Extraction incomplete',
+  'Schedule rows were not extracted.',
   'data-row-id=',
   'reconcileCombinedProtection(row)',
   'schematicDevices:[]',
   'function isTakeoffEvidenceRow(row)',
+  "!['mention','ai'].includes(row.kind)||row.status==='confirmed'",
 ];
 required.forEach((value) => assert.ok(html.includes(value), `missing UI contract: ${value}`));
+assert.ok(!html.includes("automaticScope?.enforced&&!automaticScope.pageSet.has(pageNo)"),
+  'content-derived scope must never exclude pages from deterministic or enhanced analysis');
 assert.ok(!html.includes('id="vAssistBoard"'), 'viewer must not contain a duplicate board selector');
 assert.ok(!html.includes('Match rows'), 'ambiguous Match rows command must not return');
 assert.ok(!html.includes('Approve checked rows'), 'bulk approval must not claim rows are checked');

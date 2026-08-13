@@ -69,13 +69,15 @@ try {
       ext: 'txt',
       status: 'ready',
       native: true,
-      pages: Array.from({ length: 40 }, () => ({
-        lines: lines.map((line) => ({ ...line })),
+      pages: Array.from({ length: 40 }, (_, pageIndex) => ({
+        lines: pageIndex === 12
+          ? [{ text: 'DOCUMENT CONTENTS' }, { text: 'Circuit Charts' }]
+          : lines.map((line) => ({ ...line })),
         w: 842,
         h: 595,
-        type: 'db-schedule',
-        sub_format: 'db-schedule',
-        threeType: 'db-schedule',
+        type: pageIndex === 12 ? 'register' : 'db-schedule',
+        sub_format: pageIndex === 12 ? 'register' : 'db-schedule',
+        threeType: pageIndex === 12 ? 'other' : 'db_schedule',
         typeManual: true,
         source: 'native_text',
         needsOcr: false,
@@ -104,6 +106,9 @@ try {
   if (!automatic) throw new Error('automatic deterministic analysis returned no result');
   if (automaticPosts !== 0) throw new Error(`automatic analysis sent ${automaticPosts} cloud pages`);
   if (automaticElapsedMs > 5000) throw new Error(`automatic analysis took ${automaticElapsedMs}ms`);
+  if (automatic.pageDiagnostics?.length !== 40) {
+    throw new Error(`deterministic analysis inspected ${automatic.pageDiagnostics?.length || 0} of 40 pages`);
+  }
 
   const manualStartedAt = Date.now();
   const manual = await page.evaluate(() => runAnalysisWithRecovery({ noRecovery: true }));
@@ -115,7 +120,7 @@ try {
   }));
   if (!manual) throw new Error('explicit enhanced analysis returned no result');
   if (postCount !== 3) throw new Error(`enhanced analysis sent ${postCount} pages instead of 3`);
-  if (budget.recovery?.eligible !== 40 || budget.recovery?.selected !== 3 || budget.recovery?.deferred !== 37) {
+  if (budget.recovery?.eligible !== 39 || budget.recovery?.selected !== 3 || budget.recovery?.deferred !== 36) {
     throw new Error(`unexpected recovery budget: ${JSON.stringify(budget.recovery)}`);
   }
   if (manualElapsedMs > 10000) throw new Error(`bounded enhanced analysis took ${manualElapsedMs}ms`);

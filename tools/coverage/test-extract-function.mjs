@@ -28,6 +28,7 @@ let body = await res.json();
 check('GET health 200', res.status === 200);
 check('GET reports unconfigured without key', body.configured === false);
 check('GET health reports providers', body.providers && body.providers.gemini === false);
+check('GET health reports agent-team state', body.mode === 'unconfigured' && body.providers.nvidia === false);
 check('GET health has no anthropic provider', !('anthropic' in (body.providers || {})));
 
 /* method guard */

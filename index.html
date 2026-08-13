@@ -1126,7 +1126,7 @@ const state = {
   reportMode: 'board',
   reviewFlow: {active:false,currentRowId:null,initialCount:0,moving:false,boardOrder:[],initialByBoard:{},rowOrderByBoard:{}},
 };
-const ANALYSIS_VERSION=12;
+const ANALYSIS_VERSION=13;
 const uid = () => 'x'+(state.nextId++)+'_'+Math.random().toString(36).slice(2,6);
 
 /* ====================== PERSISTENCE (IndexedDB) ====================== */
@@ -1761,7 +1761,7 @@ function isTakeoffEvidenceRow(row){
 }
 function isCountedDeviceRow(row){
   return isTakeoffEvidenceRow(row)&&!row.outOfScope&&row.status!=='rejected'&&!row.space&&Boolean(row.device)
-    &&(row.kind!=='mention'||row.status==='confirmed');
+    &&(!['mention','ai'].includes(row.kind)||row.status==='confirmed');
 }
 function isPendingReviewRow(row){
   return isTakeoffEvidenceRow(row)&&!row.outOfScope&&row.status!=='confirmed'&&row.status!=='rejected';
@@ -2166,9 +2166,11 @@ function aiExtractReady(){
     aiProbePromise=fetch(AI_EXTRACT_ENDPOINT,{method:'GET',signal:controller.signal}).then(async r=>{
       if(!r.ok){ window.__aiStatus='off — extraction endpoint not reachable'; return false; }
       const j=await r.json();
-      if(!j.configured){ window.__aiStatus='not configured — set GEMINI_API_KEY in the hosting environment'; return false; }
+      if(!j.configured){ window.__aiStatus='not configured — set the extraction keys in the hosting environment'; return false; }
       window.__aiExecutionMode=j.executionMode||'background';
-      window.__aiStatus='active ('+(j.model||'Gemini')+')';
+      window.__aiStatus=j.mode==='agent-team'
+        ? 'active (AI agent team + master audit)'
+        : 'active ('+(j.model||'Gemini')+')';
       return true;
     }).catch(()=>{ window.__aiStatus='off — extraction endpoint not reachable'; return false; })
       .finally(()=>clearTimeout(timer));
@@ -2322,7 +2324,50 @@ function mergeAiResult(A,out,fileId,pageNo,pageType){
   });
   (out.flags||[]).forEach(fl=>{ (A.aiFlags=A.aiFlags||[]).push({fileId, page:pageNo, kind:fl.kind, message:fl.message}); });
 }
-async function runAiExtraction(A,f,p,pageSet,automaticScopes,{signal=null}={}){
+function applyAiAudit(A,response,fileId,pageNo){
+  const verification=response?.verification;
+  if(verification){
+    A.xcheck=A.xcheck||{pages:0,errors:0,mismatches:0,provider:null};
+    if(verification.status==='done'){
+      A.xcheck.pages++;A.xcheck.provider=verification.provider||response.provider||'AI team';
+      (verification.mismatches||[]).forEach(mismatch=>{
+        A.xcheck.mismatches++;
+        const boardNorm=mismatch.board?canonicalBoardRef(mismatch.board).normalised:null;
+        const mismatchPhase=String(mismatch.phase||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+        const row=A.rows.find(item=>item.fileId===fileId&&item.page===pageNo&&item.boardNorm===boardNorm
+          &&String(item.way??'')===String(mismatch.way??'')
+          &&(!mismatchPhase||String(item.phase||'').toUpperCase().replace(/[^A-Z0-9]/g,'')===mismatchPhase));
+        if(row&&row.status==='pending'){
+          row.conf=Math.min(row.conf??1,0.55);row.requiresReview=true;
+          row.xcheck=mismatch.detail||'Independent extraction agents disagreed on this row';
+        }
+        (A.aiAuditFindings=A.aiAuditFindings||[]).push({fileId,page:pageNo,boardNorm,way:mismatch.way??null,
+          kind:mismatch.kind||'agent_disagreement',message:mismatch.detail||'Independent extraction agents disagreed'});
+      });
+    }else A.xcheck.errors++;
+  }
+  const master=response?.master;
+  if(master){
+    A.masterAudit=A.masterAudit||{reviewed:0,skipped:0,errors:0,missed:0};
+    if(master.status==='reviewed'){
+      A.masterAudit.reviewed++;
+      (master.missed||[]).forEach(finding=>{
+        A.masterAudit.missed++;
+        const boardNorm=finding.board_ref?canonicalBoardRef(finding.board_ref).normalised:null;
+        const auditFinding={fileId,page:pageNo,boardNorm,
+          way:finding.way||null,kind:'master_missed_evidence',message:finding.evidence||'Master audit found uncaptured evidence'};
+        (A.aiAuditFindings=A.aiAuditFindings||[]).push(auditFinding);
+        const sourceKey=`master-audit|${fileId}|${pageNo}|${boardNorm||''}|${finding.way||''}|${auditFinding.message}`;
+        if(!A.rows.some(row=>row.sourceKey===sourceKey))A.rows.push({id:uid(),sourceKey,boardNorm,fileId,page:pageNo,line:null,
+          status:'pending',kind:'ai',way:finding.way||null,phase:null,desc:auditFinding.message,device:null,rating:null,poles:null,
+          curve:null,sens:null,rcdProtected:null,afdd:null,ka:null,cable:null,spare:false,space:false,incomer:false,qty:0,
+          srcText:auditFinding.message,conf:0.35,requiresReview:true,extractionMethod:'AI master audit'});
+      });
+    }else if(master.status==='skipped')A.masterAudit.skipped++;
+    else A.masterAudit.errors++;
+  }
+}
+async function runAiExtraction(A,f,p,pageSet,{signal=null}={}){
   if(!(await aiExtractReady())) return;
   const jobs=[];
   A.aiSelectionLog=[];
@@ -2331,8 +2376,6 @@ async function runAiExtraction(A,f,p,pageSet,automaticScopes,{signal=null}={}){
     fl.pages.forEach((pg,pi)=>{
       const pageNo=pi+1;
       if (pageSet && !pageSet.has(pageNo)) return;
-      const automaticScope=automaticScopes?.get(id);
-      if(!pageSet&&automaticScope?.enforced&&!automaticScope.pageSet.has(pageNo))return;
       const rowsHere=A.rows.filter(r=>r.fileId===id&&r.page===pageNo&&r.kind==='schedule');
       const pageBoards=[...new Set((pg.lines||[]).flatMap(line=>detectBoards(line.text).map(board=>board.norm)))];
       const rowBoards=[...new Set(rowsHere.map(row=>row.boardNorm).filter(Boolean))];
@@ -2369,7 +2412,8 @@ async function runAiExtraction(A,f,p,pageSet,automaticScopes,{signal=null}={}){
       await paintProcessing();
       try{
         const resp=await aiExtractPage(job.fl,job.pageNo,job.pg,{signal,timeoutMs:Math.min(AI_RECOVERY_PAGE_TIMEOUT_MS,remaining)});
-        mergeAiResult(A,resp&&resp.result?resp.result:resp,job.id,job.pageNo,job.pg.type);A.aiPages++;
+        mergeAiResult(A,resp&&resp.result?resp.result:resp,job.id,job.pageNo,job.pg.type);
+        applyAiAudit(A,resp,job.id,job.pageNo);A.aiPages++;
       }catch(error){
         if(signal?.aborted)throw error;
         if(error?.name==='TimeoutError'||error?.name==='AbortError')A.aiTimedOut++;
@@ -2663,11 +2707,13 @@ function renderCoverage(){
   const ai=appSettings.onlineExtraction?(window.__aiStatus||'checking'):'local only';
   const aiCls = ai.startsWith('active')?'green': ai.startsWith('not configured')?'amber':'grey';
   const aiStats = appSettings.onlineExtraction&&p.analysis&&p.analysis.aiPages!=null ? ` · ${p.analysis.aiPages} page(s) read${p.analysis.aiErrors?', '+p.analysis.aiErrors+' failed':''}` : '';
-  const xc=p.analysis&&p.analysis.xcheck;
+   const xc=p.analysis&&p.analysis.xcheck;
    const xcChip = xc&&xc.pages ? `<span class="chip ${xc.mismatches?'amber':'green'}" title="A second AI model re-read every page; disagreements are in the Review queue">Cross-check (${esc(xc.provider||'gemini')}): ${xc.pages} page(s)${xc.mismatches?', '+xc.mismatches+' disagreement(s) → Review':' — models agree'}</span> ` : '';
+   const master=p.analysis&&p.analysis.masterAudit;
+   const masterChip=master&&master.reviewed?`<span class="chip ${master.missed?'amber':'green'}">Master audit: ${master.reviewed} page(s)${master.missed?', '+master.missed+' finding(s) → Review':' complete'}</span> `:'';
    const protectionGaps=s.boardsWithProtectionGaps||0;
    const protectionChip=`<span class="chip ${protectionGaps?'amber':'green'}">Protection data: ${protectionGaps?protectionGaps+' board(s) need review':'complete on captured rows'}</span>`;
-   pagesEl.innerHTML = `<div style="margin-bottom:7px"><span class="chip ${aiCls}">Extraction service: ${esc(ai)}${esc(aiStats)}</span> ${xcChip}${protectionChip}</div>`
+   pagesEl.innerHTML = `<div style="margin-bottom:7px"><span class="chip ${aiCls}">Extraction service: ${esc(ai)}${esc(aiStats)}</span> ${xcChip}${masterChip}${protectionChip}</div>`
     + (cov.zeroRowSchedulePages.length
     ? '<span class="chip amber">Check '+cov.zeroRowSchedulePages.length+' schedule page(s) with no rows:</span> '
       + cov.zeroRowSchedulePages.slice(0,30).map(z=>{
@@ -2904,13 +2950,11 @@ async function runAnalysis(opts){
   await showAnalysisStage(0,`${f.fileIds.length} document${f.fileIds.length===1?'':'s'} ready`);
   await showAnalysisStage(1,`${pageTotal} page${pageTotal===1?'':'s'}`);
   f.fileIds.forEach(id=>{ const fl=p.files.find(x=>x.id===id); if(fl) classifyFilePages(fl); });
-  const automaticScopes=new Map();
   f.fileIds.forEach(id=>{
     const fl=p.files.find(x=>x.id===id);if(!fl)return;
     const scope=window.EstimationExtractorCore?.buildDocumentExtractionScope
       ? window.EstimationExtractorCore.buildDocumentExtractionScope(fl.pages.map((page,index)=>({page:index+1,type:page.type,lines:page.lines})))
       : {enforced:false,pages:fl.pages.map((_,index)=>index+1),scheduleRange:null,reason:'all-pages'};
-    scope.pageSet=new Set(scope.pages);automaticScopes.set(id,scope);
     A.documentScopes[id]={enforced:scope.enforced,pages:scope.pages,scheduleRange:scope.scheduleRange,reason:scope.reason,totalPages:scope.totalPages||fl.pages.length};
   });
   const governingNotesByFile=new Map();
@@ -2948,13 +2992,11 @@ async function runAnalysis(opts){
   const pageDiag=[];   // per-page stage counters for the health model + diagnostics export
   for (const id of f.fileIds){
     const fl=p.files.find(x=>x.id===id); if(!fl||fl.status!=='ready') continue;
-    const automaticScope=automaticScopes.get(id);
-    let prevBoard=null;
-    let prevSpatialSchema=null;
-    fl.pages.forEach((pg,pi)=>{
-      const pageNo=pi+1;
-      if (pageSet && !pageSet.has(pageNo)) return;
-      if(!pageSet&&automaticScope?.enforced&&!automaticScope.pageSet.has(pageNo))return;
+      let prevBoard=null;
+      let prevSpatialSchema=null;
+      fl.pages.forEach((pg,pi)=>{
+        const pageNo=pi+1;
+        if (pageSet && !pageSet.has(pageNo)) return;
       const lines=(pg.lines||[]).map(l=>l.text);
       const core=window.EstimationExtractorCore;
       if(!pg.typeManual&&core?.classifyPageText){
@@ -3028,7 +3070,9 @@ async function runAnalysis(opts){
       } else {
         prevBoard=null;
         prevSpatialSchema=null;
-        if(pg.type==='sld'||pg.type==='schematic')pageBoards.forEach(b=>regBoard(b,id,pageNo,false,'schematic'));
+        if((pg.type==='sld'||pg.type==='schematic')&&!schematicSpatial?.matched){
+          pageBoards.forEach(b=>regBoard(b,id,pageNo,false,'schematic'));
+        }
         if(schematicSpatial){
           schematicSpatial.boards.forEach(item=>{
             const type=/^MAIN/.test(item.norm)?'MAIN':/^SMDB/.test(item.norm)?'SMDB':/^MDB/.test(item.norm)?'MDB':/^LVS/.test(item.norm)?'SB':'UNK';
@@ -3179,7 +3223,7 @@ async function runAnalysis(opts){
   // (regex pass above stays as the fast pre-pass; AI rows go to review, never
   // overriding a slot the schedule parser already filled).
   if (appSettings.onlineExtraction&&!auto&&!(opts&&opts.noAi)){
-    try{ await runAiExtraction(A,f,p,pageSet,automaticScopes,{signal:runController.signal}); }
+    try{ await runAiExtraction(A,f,p,pageSet,{signal:runController.signal}); }
     catch(error){if(runController.signal.aborted)throw error;console.warn('AI extraction unavailable:',error.message);}
   }else if(appSettings.onlineExtraction&&auto){
     A.aiRecovery={status:'deferred-automatic-run',eligible:0,selected:0,deferred:0,maxPages:AI_RECOVERY_MAX_PAGES};
@@ -3395,6 +3439,7 @@ function deviceTotals(rows, exclSpare){
     else if (r.spare && !r.device) key='(Unpopulated spare ways)';
     else if (!r.device) key='(Unclassified)';
     else if (r.kind==='mention' && r.status!=='confirmed') key='(Plan mentions — confirm to count: '+r.device+')';
+    else if (r.kind==='ai' && r.status!=='confirmed') key='(AI recovery candidates — confirm to count: '+r.device+')';
     else key=r.device + (r.incomer?' (incomer)':'');
     by[bn][key]=by[bn][key]||{qty:0, rows:[]};
     by[bn][key].qty += r.qty||1;
@@ -5047,9 +5092,13 @@ async function renderViewer(){
   // meta row (+ board page map when highlighting)
   const hlPages = V.boardHl? boardPagesIn(f,V.boardHl) : [];
   const nDets=dets.filter(d=>d.kind!=='boardhl').length;
+  const scheduleCandidate=window.EstimationExtractorCore?.scoreScheduleCandidate((pg.lines||[]).map(line=>line.text))||{score:0,signals:[]};
+  const scheduleRows=A?.rows?.filter(row=>row.kind==='schedule'&&row.fileId===f.id&&Number(row.page)===Number(V.page))||[];
+  const schedulePage=SCHEDULE_TYPES.has(pg.type)||(scheduleCandidate.score>=0.45&&scheduleCandidate.signals.length>=2);
+  const extractionGap=schedulePage&&scheduleRows.length===0;
   $('#vMetaRow').innerHTML=`<span class="chip blue">${esc(THREE_TYPE_LABELS[pageThreeType(pg)]||'Unknown')}</span>
     ${pg.sub_format&&PAGE_TYPES[pg.sub_format]&&pg.sub_format!==THREE_TO_FINE[pageThreeType(pg)]?`<span class="chip grey">${esc(PAGE_TYPES[pg.sub_format])}</span>`:''}
-    ${pg.typeManual?'<span class="chip grey">manually set</span>':confChip(pg.conf||0.3)}
+    ${extractionGap?'<span class="chip red">Extraction incomplete</span>':pg.typeManual?'<span class="chip grey">manually set</span>':confChip(pg.conf||0.3)}
     ${pg.ocr?`<span class="chip purple" title="${esc(pg.ocr.selectedCandidate||'OCR')}">OCR ${Math.round((pg.ocr.qualityScore||0)*100)}%</span>${pg.ocr.corrections?.length?`<span class="chip amber">${pg.ocr.corrections.length} correction${pg.ocr.corrections.length===1?'':'s'} to review</span>`:''}`:(pg.needsOcr?'<span class="chip amber">OCR queued</span>':'')}
     <span class="hint" style="margin:0">${nDets} detection${nDets===1?'':'s'} on this page</span>
     ${V.boardHl?`<span class="chip blue">${esc(boardLabel(V.boardHl))} on:</span> `+
@@ -5185,7 +5234,9 @@ async function renderViewer(){
   } else {
     const listDets=dets.filter(d=>d.kind!=='boardhl');
     dl.innerHTML = listDets.length? listDets.map(viewerDetectionCardHtml).join('')
-    : '<div class="empty">No detections on this page.</div>';
+    : extractionGap
+      ? '<div class="empty"><b>Schedule rows were not extracted.</b><br>Run Analyse documents before reviewing this page.</div>'
+      : '<div class="empty">No detections on this page.</div>';
     dl.querySelectorAll('.det').forEach(el=>{
       const d=listDets[+el.dataset.i];
       el.querySelectorAll('[data-action]').forEach(button=>button.addEventListener('click',event=>{

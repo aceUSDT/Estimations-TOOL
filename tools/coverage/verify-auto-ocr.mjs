@@ -75,6 +75,18 @@ try {
     'state.cur.files.every(file => file.pages.every(p => (p.lines||[]).length)) && state.cur.analysis',
     null, { timeout: 300000 },
   );
+  if (process.env.DUMP_PAGE_JSON) {
+    const pageDump = await page.evaluate(`(() => {
+      const file = state.cur.files[${Number(process.env.DUMP_FILE_INDEX) || 0}];
+      const page = file?.pages?.[${Math.max(0, (Number(process.env.DUMP_PAGE_NUMBER) || 1) - 1)}];
+      return page ? {
+        name: file.name, page: ${Number(process.env.DUMP_PAGE_NUMBER) || 1},
+        width: page.w, height: page.h, type: page.type,
+        lines: page.lines, tableRows: page.tableRows,
+      } : null;
+    })()`);
+    fs.writeFileSync(path.resolve(process.env.DUMP_PAGE_JSON), JSON.stringify(pageDump, null, 2));
+  }
   const res = await page.evaluate(`({
     ocrReady: state.cur.files.every(file => file.ocrReady === true || file.pages.every(page => page.source !== 'ocr')),
     pageLines: state.cur.files.flatMap(file => file.pages.map(p => (p.lines||[]).length)),

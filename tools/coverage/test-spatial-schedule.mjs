@@ -106,6 +106,19 @@ assert.equal(result.rows[0].rcdProtected, false);
 assert.equal(result.rows[0].afdd, false);
 assert.ok(result.rows[0].highlightBbox[3] >= 18, 'a genuine merged three-phase row may span all phase lanes');
 
+const schematicWithLegend = Core.parseSpatialSchematicPage({
+  lines: [{ text: 'LV SCHEMATIC' }, { text: 'Legend' }, { text: 'FAP Fire Alarm Panel' }, { text: 'LVS1 DB-G1-LP 125A MCCB' }],
+  words: [
+    word('LV SCHEMATIC', 10, 10), word('LVS1', 40, 100), word('DB-G1-LP', 160, 100),
+    word('125A', 160, 130), word('MCCB', 160, 145),
+    word('Legend', 510, 10), word('FAP', 520, 50), word('Fire Alarm Panel', 540, 50),
+  ],
+  pageWidth: 600,
+  pageHeight: 300,
+  pageType: 'sld',
+});
+assert.ok(!schematicWithLegend.boards.some((board) => board.norm === 'FAP'), 'legend keys must not become schematic board nodes');
+
 for (const token of ['YES', 'Y', '1', '✓', '✔', '☑', '\uF0FC']) {
   assert.equal(Core.parseProtectionIndicator(token), true, `${token} must be recognised as a protection tick`);
 }

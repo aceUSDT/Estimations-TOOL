@@ -1117,6 +1117,12 @@
     const pageHeight = Number(input.pageHeight) || Math.max(1, ...words.map((word) => word.y1));
     if (words.length < 8) return { matched: false, confidence: 0, boards: [], feeds: [], devices: [], warnings: ['insufficient_spatial_text'] };
 
+    const legendBoundaryX = (() => {
+      const legendWords = words.filter((word) => /^LEGEND$/i.test(word.text));
+      if (!legendWords.length) return null;
+      const rightmost = legendWords.sort((left, right) => right.cx - left.cx)[0];
+      return rightmost.cx >= pageWidth * 0.68 ? rightmost.x0 - Math.max(12, pageWidth * 0.01) : null;
+    })();
     const boardCandidates = [];
     const addBoardCandidate = (original, items) => {
       const canonical = Core.canonicalBoardReference(original);
@@ -1125,6 +1131,7 @@
       if (!cell) return;
       const box = bboxObject(cell.bbox);
       if (!box) return;
+      if (Number.isFinite(legendBoundaryX) && box.x0 >= legendBoundaryX) return;
       const candidate = {
         ref: canonical.display || original,
         norm: canonical.normalised,

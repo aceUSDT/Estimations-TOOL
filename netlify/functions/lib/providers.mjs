@@ -1,6 +1,6 @@
-/* AI extraction provider — Google Gemini is the ONLY runtime AI provider.
- * The key lives ONLY in a hosting environment variable — never in the browser, never in
- * this repo.
+/* Hosted Gemini extraction and master-audit provider. NVIDIA sub-agents live
+ * behind extraction-engine.mjs; every key remains server-side and never enters
+ * the browser or repository.
  *
  *   GEMINI_API_KEY      required — https://aistudio.google.com/apikey
  *   GEMINI_MODEL        optional exact-model override (default pinned below)
@@ -25,8 +25,8 @@ export function isGeminiModelUnavailable(status, detail = '') {
   return status === 404 || (status === 400 && /model[^\n]*(?:unavailable|not found|no longer available|unsupported)/i.test(detail));
 }
 
-export function providerStatus() {
-  const gemini = Boolean(process.env.GEMINI_API_KEY);
+export function providerStatus(env = process.env) {
+  const gemini = Boolean(env.GEMINI_API_KEY);
   return { gemini, configured: gemini, primary: gemini ? 'gemini' : null };
 }
 
@@ -68,6 +68,7 @@ async function callGeminiModel({ model, imageBase64, mediaType, instruction, max
     systemInstruction: { parts: [{ text: EXTRACTION_SYSTEM_PROMPT }] },
     contents: [{ role: 'user', parts }],
     generationConfig: {
+      temperature: 0,
       maxOutputTokens: maxTokens,
       responseMimeType: 'application/json',
       responseJsonSchema: geminiSchema(EXTRACTION_SCHEMA),
@@ -115,6 +116,68 @@ export async function callGemini({ imageBase64, mediaType, instruction, maxToken
     }
   }
   throw unavailableError || new Error('No Gemini extraction model is available');
+}
+
+export async function callGeminiJson({ instruction, schema, maxTokens = 4000, model = GEMINI_MODEL,
+  imageBase64, mediaType, system }) {
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) throw new Error('GEMINI_API_KEY unset');
+  const parts = [];
+  if (imageBase64) parts.push({ inlineData: { mimeType: mediaType || 'image/jpeg', data: imageBase64 } });
+  parts.push({ text: instruction });
+  const body = {
+    ...(system ? { systemInstruction: { parts: [{ text: system }] } } : {}),
+    contents: [{ role: 'user', parts }],
+    generationConfig: {
+      temperature: 0,
+      maxOutputTokens: maxTokens,
+      responseMimeType: 'application/json',
+      ...(schema ? { responseJsonSchema: geminiSchema(schema) } : {}),
+    },
+  };
+  const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-goog-api-key': key },
+    body: JSON.stringify(body),
+  });
+  if (!resp.ok) throw Object.assign(new Error(`Gemini API error ${resp.status}`), { status: resp.status });
+  const data = await resp.json();
+  const candidate = data.candidates && data.candidates[0];
+  if (!candidate?.content?.parts) throw new Error(`Gemini returned no candidate (${candidate?.finishReason || 'no finishReason'})`);
+  return { json: JSON.parse(candidate.content.parts.map((part) => part.text || '').join('')), model };
+}
+
+const norm = (value) => String(value == null ? '' : value).trim().toUpperCase().replace(/[\s\-_/]+/g, '');
+const deviceKey = (device) => [norm(device.board_ref), norm(device.way), norm(device.phase)].join('|');
+
+export function crossCheckExtractions(primary, second) {
+  const primaryRows = (primary?.devices || []).filter((device) => device.device_class !== 'space');
+  const secondRows = (second?.devices || []).filter((device) => device.device_class !== 'space');
+  const primaryMap = new Map(primaryRows.map((device) => [deviceKey(device), device]));
+  const secondMap = new Map(secondRows.map((device) => [deviceKey(device), device]));
+  const mismatches = [];
+  for (const [key, device] of secondMap) {
+    if (!primaryMap.has(key)) mismatches.push({
+      kind: 'missing_in_primary', board: device.board_ref || '', way: device.way ?? '', phase: device.phase || '',
+      detail: `Second agent found ${device.device_class || 'a device'}${device.rating_a ? ` ${device.rating_a}A` : ''} that the primary extraction missed`,
+      second: { device_class: device.device_class, rating_a: device.rating_a, description: device.description },
+    });
+  }
+  for (const [key, device] of primaryMap) {
+    const other = secondMap.get(key);
+    if (!other) {
+      mismatches.push({ kind: 'missing_in_second', board: device.board_ref || '', way: device.way ?? '', phase: device.phase || '',
+        detail: 'Second agent did not corroborate this device' });
+      continue;
+    }
+    for (const field of ['rating_a', 'device_class', 'poles']) {
+      if (device[field] != null && other[field] != null && String(device[field]) !== String(other[field])) {
+        mismatches.push({ kind: 'field_mismatch', board: device.board_ref || '', way: device.way ?? '', phase: device.phase || '',
+          field, primary: device[field], second: other[field], detail: `Agents disagree on ${field}: ${device[field]} vs ${other[field]}` });
+      }
+    }
+  }
+  return { agree: mismatches.length === 0, counts: { primary: primaryMap.size, second: secondMap.size }, mismatches };
 }
 
 /* Full-page extraction. Fails with 503 semantics when unconfigured so the

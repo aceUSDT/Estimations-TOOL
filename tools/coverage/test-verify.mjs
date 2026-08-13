@@ -1,4 +1,4 @@
-/* Regression test: the Gemini-only extraction runtime.
+/* Regression test: the Gemini master-provider runtime.
  * No network, no keys — exercises the Gemini schema translation, provider
  * gating, the health-probe contract, and the instruction builder. Also pins
  * the addendum's core requirement: NO Anthropic SDK, key, or model name in
@@ -24,9 +24,15 @@ const check = (name, cond, detail) => {
   if (!cond) { console.log(`FAIL ${name}${detail ? ' — ' + detail : ''}`); fail++; }
 };
 
-/* ---------- Gemini is the ONLY runtime provider ---------- */
+/* ---------- Gemini remains the only master/provider outside the optional NVIDIA team ---------- */
 check('providers module exports no Claude call', !('callClaude' in providers) && !('CLAUDE_MODEL' in providers));
-check('no cross-check machinery in runtime', !('crossCheckExtractions' in providers) && !('extractWithVerification' in providers));
+check('deterministic cross-check is available', typeof providers.crossCheckExtractions === 'function');
+const disagreement=providers.crossCheckExtractions(
+  {devices:[{board_ref:'DB-1',way:1,phase:'L1',device_class:'MCB',rating_a:10}]},
+  {devices:[{board_ref:'DB-1',way:1,phase:'L1',device_class:'MCB',rating_a:16}]},
+);
+check('cross-check exposes disagreements without resolving them', disagreement.agree===false
+  && disagreement.mismatches.some(item=>item.kind==='field_mismatch'&&item.primary===10&&item.second===16));
 for (const file of ['netlify/functions/lib/providers.mjs', 'netlify/functions/extract.mjs', 'netlify/functions/extract-background.mjs', 'netlify/functions/extract-status.mjs']) {
   const src = fs.readFileSync(path.resolve(ROOT, file), 'utf8');
   check(`${file} has no Anthropic references`, !/anthropic|ANTHROPIC|claude-|CLAUDE_MODEL|EXTRACTION_MODEL/i.test(src));
@@ -96,4 +102,4 @@ const instr = buildInstruction({ filename: 'a.pdf', pageNumber: 3, hints: { type
 check('instruction carries filename/page/hint/lines', instr.includes('a.pdf') && instr.includes('page 3') && instr.includes('bam_epo') && instr.includes('ROW 1'));
 
 if (fail) { console.log(`\n${fail} failure(s)`); process.exit(1); }
-console.log('PASS: Gemini-only runtime, schema translation, provider gating, health probe.');
+console.log('PASS: Gemini master runtime, deterministic cross-check, schema translation, provider gating, health probe.');
