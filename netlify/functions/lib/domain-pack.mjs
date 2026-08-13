@@ -38,6 +38,7 @@ export const EXTRACTION_SYSTEM_PROMPT = `You are the extraction engine of an ele
   * Identical load names on L1/L2/L3 with per-row devices/ratings are THREE single-phase circuits; with one common multi-pole device they are ONE — decide from poles, merged cells, and cable conductor counts; if unresolved, extract as separate rows and add a flag "possible common multi-pole device".
   * An empty phase position inside a partially-used way ("empty"/blank row under a used way) is device_class "space" with its phase — it is NOT an active circuit and NOT the same as a spare way.
   * A fully spare way on a TPN board printed as three "Spare" phase rows → one spare entry per printed phase row, as shown.
+  * A lone populated L1, L2, or L3 row between explicit SPARE/SPACE rows is a single-phase device. Explicit occupancy in neighbouring phase slots disproves a merged TP device unless the source separately states TP/3P/TPN/4P.
   * Never sum a multi-pole device's rating across phases — the rating is per device.
 
 ## Legends (read the page's own legend when present; these are the defaults)

@@ -91,6 +91,28 @@ try {
     await renderViewer();
   }, occupancyPeerIds);
 
+  const poleGuardId = await page.evaluate(async () => {
+    const source = pageDetections(viewerFile(), state.viewer.page).find((item) => item.kind === 'row' && item.r.boardNorm)?.r;
+    const guarded = window.EstimationExtractorCore.reconcileCombinedProtection({
+      ...source,
+      id: 'viewer-single-phase-pole-guard', way: 'T-4', phase: 'L2',
+      device: 'MCB', rating: 10, poles: 3, poleConfiguration: 'TP',
+      phaseSlotIndependent: true, sharedPhaseSpan: false, poleEvidenceExplicit: false,
+      status: 'confirmed', desc: 'Calorifier trace heating',
+      srcText: 'L2 MCB C 10 Calorifier trace heating',
+    });
+    state.cur.analysis.rows.push(guarded);
+    await renderViewer();
+    return guarded.id;
+  });
+  const poleGuardCard = page.locator(`#vDetList .det[data-row-id="${poleGuardId}"]`);
+  assert.match(await poleGuardCard.textContent(), /\bSP\b/, 'bounded L2 row must render as single-pole');
+  assert.doesNotMatch(await poleGuardCard.textContent(), /\bTP\b/, 'unproven TP label must not reach the Viewer');
+  await page.evaluate(async (rowId) => {
+    state.cur.analysis.rows = state.cur.analysis.rows.filter((row) => row.id !== rowId);
+    await renderViewer();
+  }, poleGuardId);
+
   const documentRows = page.locator('#vStage [data-row-id]');
   assert.ok(await documentRows.count() > 1, 'document rows must be interactive');
   const linkedId = await documentRows.nth(1).getAttribute('data-row-id');

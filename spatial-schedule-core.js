@@ -785,6 +785,11 @@
       } : null,
       spare, space, incomer: false, qty: space ? 0 : (hasDeviceEvidence ? 1 : 0),
       occupies_ways: poles === 3 ? 3 : 1,
+      sharedPhaseSpan: poles === 3 && !context.phaseLane,
+      phaseSlotIndependent: poles === 1 && Boolean(context.phaseLane),
+      poleEvidenceBasis: poles === 3 && !context.phaseLane
+        ? 'explicit_or_merged_phase_span'
+        : (poles === 1 && context.phaseLane ? 'bounded_phase_lane' : null),
       inferredDevice: resolution.confidence < 0.9,
       requiresReview,
       resolutionSource: 'spatial_column_schema',
@@ -961,19 +966,40 @@
       const cells = columnCells(laneWords, schema);
       cells.way = sourceCell([wayAnchor], 'way');
       cells.phase = interpretedPhaseCell([item]);
-      const row = parseSpatialRow(cells, schema.confidence, { ...context, phaseLane: true, laneTop, laneBottom });
-      return applyPhaseReconciliation(row, item.phaseRepair, item.phaseConflict, cells.phase);
+      const occupancyCell = Object.values(cells).find((cell) => Core.occupancyLabel?.(cell?.text));
+      const explicitOccupancy = Core.occupancyLabel?.(occupancyCell?.text) || null;
+      let row = parseSpatialRow(cells, schema.confidence, { ...context, phaseLane: true, laneTop, laneBottom });
+      row = applyPhaseReconciliation(row, item.phaseRepair, item.phaseConflict, cells.phase);
+      if (!row) return null;
+      row.phaseSlotIndependent = true;
+      row.sharedPhaseSpan = false;
+      row.poleEvidenceBasis = 'bounded_phase_lane';
+      if (explicitOccupancy) {
+        row.explicitOccupancy = explicitOccupancy;
+        row.occupancySourceCell = occupancyCell;
+        if (explicitOccupancy === 'spare') row.spare = true;
+        if (explicitOccupancy === 'space') row.space = true;
+        if (!row.desc) row.desc = explicitOccupancy === 'spare' ? 'Spare' : 'Fitted blank';
+        row = Core.reconcileRowOccupancy ? Core.reconcileRowOccupancy(row) : row;
+      }
+      return row;
     }).filter(Boolean);
     const meaningful = phaseRows.filter((row) => !row.space || row.spare);
     const technical = phaseRows.filter((row) => row.device || row.rating != null || row.protectionStandard
       || row.circuitReference || row.cable || row.sens != null || row.afdd);
-    const explicitSpares = phaseRows.filter((row) => row.spare);
+    const explicitOccupancies = phaseRows.filter((row) => row.explicitOccupancy || row.spare);
     if (!meaningful.length) return [aggregate];
-    if (technical.length >= 2 || explicitSpares.length) return phaseRows;
+    // A bounded SPARE/SPACE cell belongs to its own physical phase lane. It is
+    // decisive evidence against treating a lone populated middle lane as a
+    // merged three-pole device.
+    if (technical.length >= 2 || explicitOccupancies.length) return phaseRows;
     if (technical.length === 1 && technical[0].phase !== 'L2') return phaseRows;
     if ((technical.length === 1 && technical[0].phase === 'L2')
       || (technical.length === 0 && meaningful.length === 1 && meaningful[0].phase === 'L2')) {
       aggregate.inferredPoleGrouping = true;
+      aggregate.sharedPhaseSpan = true;
+      aggregate.phaseSlotIndependent = false;
+      aggregate.poleEvidenceBasis = 'merged_three_phase_geometry';
       aggregate.resolutionReasons = [...(aggregate.resolutionReasons || []), 'Single merged evidence row spans L1/L2/L3'];
       return [aggregate];
     }

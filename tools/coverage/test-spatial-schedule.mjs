@@ -218,6 +218,43 @@ for (let index = 1; index < wayOneHighlights.length; index += 1) {
   assert.ok(prior[1] + prior[3] <= current[1], 'single-phase review highlights must not overlap adjacent rows');
 }
 
+// A single populated middle phase with explicit spare neighbours is not a
+// merged three-pole circuit. This is the production W-2 failure mode.
+const middlePhaseWords = phaseRowWords.filter((item) => item.bbox[1] < 240).map((item) => ({ ...item }));
+middlePhaseWords.push(word('3', 12, 270));
+['L1', 'L2', 'L3'].forEach((phase, phaseIndex) => {
+  const y = 250 + phaseIndex * 20;
+  middlePhaseWords.push(word(phase, 47, y));
+  if (phase === 'L2') {
+    middlePhaseWords.push(
+      word('60898', 94, y), word('C', 148, y), word('10', 184, y), word('10', 247, y),
+      word('Calorifier Trace Heating: Plantroom', 325, y, 95),
+    );
+  } else {
+    middlePhaseWords.push(word('SPARE', 335, y));
+  }
+});
+const middlePhase = Core.parseSpatialSchedulePage({
+  lines: [
+    { text: 'DISTRIBUTION BOARD SCHEDULE' },
+    { text: 'Board Reference: DB-TEST-MIDDLE-PHASE' },
+    { text: 'Size: 3 WAY TPN' },
+  ],
+  words: middlePhaseWords,
+  pageWidth: 430,
+  pageHeight: 340,
+  pageType: 'db-schedule',
+  materializeMissingWays: false,
+});
+const middlePhaseWay = middlePhase.rows.filter((row) => row.way === 3);
+assert.deepEqual(middlePhaseWay.map((row) => [row.phase, row.device, row.poles, row.poleConfiguration, row.spare, row.qty]), [
+  ['L1', null, null, null, true, 0],
+  ['L2', 'MCB', 1, 'SP', false, 1],
+  ['L3', null, null, null, true, 0],
+]);
+assert.equal(middlePhaseWay.filter((row) => row.device).length, 1);
+assert.ok(middlePhaseWay.every((row) => row.phase !== '3PH'), 'spare neighbours must prevent TP promotion');
+
 // Source drawings can contain authored errors. Three physical phase lanes must
 // survive repeated labels, and a repair is allowed only when the same page or
 // board header supplies corroborating structural evidence.

@@ -184,6 +184,95 @@
     return next;
   }
 
+  function explicitPoleEvidence(value) {
+    const source = String(value || '').toUpperCase().replace(/\s+/g, ' ');
+    const tokenSource = source.replace(/[|,;:()[\]{}]+/g, ' ').replace(/\s+/g, ' ').trim();
+    const bare = (token) => new RegExp(`(?:^|\\s)${token}(?=\\s|$)`).test(tokenSource);
+    if (/\b(?:4P|FOUR[- ]POLE)\b/.test(source)) return { configuration: '4P', poles: 4 };
+    if (/\b(?:TPN|TP\s*&\s*N|3P\s*\+\s*N)\b/.test(source)) return { configuration: 'TPN', poles: 3 };
+    if (/\b(?:3P|TRIPLE[- ]POLE|THREE[- ]POLE)\b/.test(source) || bare('TP')) return { configuration: 'TP', poles: 3 };
+    if (/\b(?:DPN|2P\s*\+\s*N)\b/.test(source)) return { configuration: 'DPN', poles: 2 };
+    if (/\b(?:2P|DOUBLE[- ]POLE)\b/.test(source) || bare('DP')) return { configuration: 'DP', poles: 2 };
+    if (/\b(?:SPN|1P\s*\+\s*N)\b/.test(source)) return { configuration: 'SPN', poles: 1 };
+    if (/\b(?:1P|SINGLE[- ]POLE)\b/.test(source) || bare('SP')) return { configuration: 'SP', poles: 1 };
+    return null;
+  }
+
+  /**
+   * Keep phase occupancy and pole classification coherent after every
+   * extraction route. A bounded L1/L2/L3 slot proves a single-phase position
+   * unless the source itself, shared-span geometry, or a user correction
+   * explicitly proves a multi-pole device.
+   */
+  function reconcilePoleEvidence(row) {
+    if (!row) return row;
+    const next = { ...row };
+    const phase = String(next.phase || '').toUpperCase().replace(/\s+/g, '');
+    const singlePhaseSlot = next.phaseSlotIndependent === true
+      || (/^L[123]$/.test(phase) && next.sharedPhaseSpan !== true);
+    if (!singlePhaseSlot) return next;
+
+    const userCorrected = Array.isArray(next.corrections)
+      && next.corrections.some((item) => String(item?.field || '').toLowerCase() === 'pole configuration');
+    const sourcePoleText = next.fieldSources?.poles?.originalText || next.fieldSources?.poles?.text
+      || next.poleSourceText || next.srcText || '';
+    const sourceEvidence = explicitPoleEvidence(sourcePoleText);
+    const explicit = next.poleEvidenceExplicit === true || userCorrected || Boolean(sourceEvidence);
+    const configuration = String(next.poleConfiguration || next.poleConfig || next.pole || '').toUpperCase();
+    const poleCount = Number(next.poles);
+    const claimsThreePole = poleCount >= 3 || /^(?:TP|TPN|3P|3P\+N|4P)$/.test(configuration);
+
+    if (!userCorrected && sourceEvidence) {
+      const differs = poleCount !== sourceEvidence.poles || configuration !== sourceEvidence.configuration;
+      next.poles = sourceEvidence.poles;
+      next.poleConfiguration = sourceEvidence.configuration;
+      next.occupies_ways = Math.max(1, Math.min(3, sourceEvidence.poles));
+      next.poleEvidenceExplicit = true;
+      next.poleEvidenceBasis = 'source_pole_label';
+      next.sharedPhaseSpan = sourceEvidence.poles >= 3;
+      next.phaseSlotIndependent = sourceEvidence.poles < 3;
+      if (differs) {
+        const reason = 'Explicit source pole label overrides a conflicting extracted pole value';
+        next.poleReconciliation = {
+          original: configuration || (Number.isFinite(poleCount) ? `${poleCount}P` : null),
+          corrected: sourceEvidence.configuration,
+          reason,
+        };
+        const reasons = Array.isArray(next.resolutionReasons) ? [...next.resolutionReasons] : [];
+        if (!reasons.includes(reason)) reasons.push(reason);
+        next.resolutionReasons = reasons;
+      }
+      return next;
+    }
+
+    const missingConfiguration = !configuration && poleCount === 1;
+    if (!explicit && (claimsThreePole || !Number.isFinite(poleCount) || poleCount < 1 || missingConfiguration)) {
+      const reason = claimsThreePole
+        ? 'Bounded single-phase slot evidence overrides an unproven three-pole grouping'
+        : 'Bounded phase-slot geometry establishes a single-pole outgoing device';
+      next.poles = 1;
+      next.poleConfiguration = 'SP';
+      next.occupies_ways = 1;
+      next.sharedPhaseSpan = false;
+      next.phaseSlotIndependent = true;
+      next.poleEvidenceBasis = 'bounded_phase_lane';
+      if (claimsThreePole) {
+        next.poleReconciliation = {
+          original: configuration || (Number.isFinite(poleCount) ? `${poleCount}P` : null),
+          corrected: 'SP',
+          reason,
+        };
+        next.requiresReview = true;
+        const confidence = Number(next.conf);
+        next.conf = Math.min(Number.isFinite(confidence) ? confidence : 0.84, 0.84);
+      }
+      const reasons = Array.isArray(next.resolutionReasons) ? [...next.resolutionReasons] : [];
+      if (!reasons.includes(reason)) reasons.push(reason);
+      next.resolutionReasons = reasons;
+    }
+    return next;
+  }
+
   function normaliseInstallMethod(value) {
     return value ? value.replace(/\s+/g, '').replace(/,+/g, ',') : null;
   }
@@ -1053,7 +1142,7 @@
    */
   function reconcileCombinedProtection(row) {
     if (!row) return row;
-    const next = reconcileRowOccupancy(row);
+    const next = reconcilePoleEvidence(reconcileRowOccupancy(row));
     const rcdProtected = next.rcdProtected === true || next.sens != null
       ? true
       : (next.rcdProtected === false ? false : null);
@@ -2163,6 +2252,7 @@
     occupancyLabel,
     scheduleOccupancyLabel,
     reconcileRowOccupancy,
+    reconcilePoleEvidence,
     hasFittedProtectionDevice,
     hasProtectionEvidence,
     protectionDeviceQuantity,

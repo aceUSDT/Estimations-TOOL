@@ -854,7 +854,7 @@
                   <div class="fgroup">
                     <label class="lbl">Ignore rows containing</label>
                     <input class="in" id="anIgnore" placeholder="e.g. existing, remove">
-                    <label class="check-row"><input type="checkbox" id="anExclSpare" checked> Exclude unpopulated spare and space ways</label>
+                    <label class="check-row"><input type="checkbox" id="anExclSpare" checked> Exclude unpopulated spare ways and fitted blanks</label>
                     <button class="btn sm ghost" id="anPreviewBtn" style="margin-top:4px">Preview exclusions</button>
                   </div>
                 </div>
@@ -1134,7 +1134,7 @@ const state = {
   reportMode: 'board',
   reviewFlow: {active:false,currentRowId:null,initialCount:0,moving:false,boardOrder:[],initialByBoard:{},rowOrderByBoard:{}},
 };
-const ANALYSIS_VERSION=17;
+const ANALYSIS_VERSION=18;
 const uid = () => 'x'+(state.nextId++)+'_'+Math.random().toString(36).slice(2,6);
 
 /* ====================== PERSISTENCE (IndexedDB) ====================== */
@@ -2305,8 +2305,10 @@ function mergeAiResult(A,out,fileId,pageNo,pageType){
       if(d.afdd===true){existing.afdd=true;existing.afddIndicated=true;}
       return;
     }
+    const aiSourceText=d.source_text||d.description||'';
+    const aiPhase=d.phase&&d.phase!=='L1L2L3'?d.phase:(d.phase==='L1L2L3'?'3PH':null);
     const aiRow={id:uid(), boardNorm:bn, fileId, page:pageNo, line:null, status:'pending', kind:'ai',
-      way:d.way??null, phase:d.phase&&d.phase!=='L1L2L3'?d.phase:(d.phase==='L1L2L3'?'3PH':null),
+      way:d.way??null, phase:aiPhase,
       desc:d.description||'', device, rating:d.rating_a??null, poles:d.poles??null, poleConfiguration:d.pole_configuration||null,
       curve:d.trip_curve||null, tripUnit:d.trip_unit||null, protectionStandard:d.protection_standard||null,
       circuitReference:d.circuit_reference||null, sens:d.rcd_ma??null, rcdProtected:d.rcd_protected===false?false:(d.rcd_protected===true||d.rcd_ma!=null?true:null),
@@ -2315,6 +2317,8 @@ function mergeAiResult(A,out,fileId,pageNo,pageType){
         size:d.phase_csa_mm2??null, cpc:typeof d.cpc_csa_mm2==='number'?d.cpc_csa_mm2:null, cores:null,
         construction:typeof d.cpc_csa_mm2==='string'?d.cpc_csa_mm2:null, typeCode:d.cable_type||null, installMethod:d.install_method||null}:null,
       circuitConfig:d.circuit_config||null, spare, space, incomer:!!d.is_incomer, isSpd:!!d.is_spd,
+      phaseSlotIndependent:/^L[123]$/i.test(String(aiPhase||'')), sharedPhaseSpan:aiPhase==='3PH',
+      poleEvidenceExplicit:/\b(?:SPN|DPN|TPN|TP\s*&\s*N|SP|DP|TP|[1-4]P|SINGLE[- ]POLE|DOUBLE[- ]POLE|TRIPLE[- ]POLE|THREE[- ]POLE|FOUR[- ]POLE)\b/i.test(aiSourceText),
       qty:space?0:1, srcText:(d.description||d.device_class||'Device')+(d.way!=null?' (way '+d.way+(d.phase?'/'+d.phase:'')+')':''),
       conf:Math.max(0.2,Math.min(0.95,Number(d.confidence)||0.6))};
     const fl=state.cur?.files?.find(file=>file.id===fileId),bbox=Array.isArray(d.bbox||d.source_region)?(d.bbox||d.source_region):null;
@@ -3487,7 +3491,7 @@ function deviceTotals(rows, exclSpare){
     if (r.device&&r.kind==='mention' && r.status!=='confirmed') key='(Plan mentions — confirm to count: '+r.device+')';
     else if (r.kind==='ai' && r.status!=='confirmed') key='(AI recovery candidates — confirm to count: '+r.device+')';
     else if (r.device) key=r.device + (r.incomer?' (incomer)':'');
-    else if (r.space) key='(Fitted blank / space ways)';
+    else if (r.space) key='(Fitted blank ways)';
     else if (r.spare) key='(Unpopulated spare ways)';
     else key='(Unclassified)';
     by[bn][key]=by[bn][key]||{qty:0, rows:[]};
@@ -3498,7 +3502,7 @@ function deviceTotals(rows, exclSpare){
 }
 const countable = k => !k.startsWith('(');
 function rowDecisionSummary(row){
-  const device=row.device||(row.spare?'Spare':row.space?'Space':'Unclassified row');
+  const device=row.device||(row.spare?'Spare':row.space?'Fitted blank':'Unclassified row');
   return [row.way!=null?'Way '+row.way:null,row.phase,device,row.rating!=null?row.rating+'A':null].filter(Boolean).join(' · ');
 }
 function recordRowDecision(row,action,surface,note=''){
@@ -3631,7 +3635,7 @@ function guidedReviewCurrentRow(){
 function guidedReviewRowTitle(row){
   if(!row)return 'Current row';
   const board=row.boardNorm?boardLabel(row.boardNorm):'No board reference';
-  const detail=[row.way!=null?'Way '+row.way:null,row.phase,row.device||row.spare&&'Spare'||row.space&&'Space'||'Unclassified'].filter(Boolean).join(' · ');
+  const detail=[row.way!=null?'Way '+row.way:null,row.phase,row.device||row.spare&&'Spare'||row.space&&'Fitted blank'||'Unclassified'].filter(Boolean).join(' · ');
   return board+(detail?' · '+detail:'');
 }
 function renderGuidedReviewControls(){
@@ -3793,7 +3797,7 @@ function deviceSpecificationLabel(row){
   if(row.device)return [row.rating!=null?row.rating+'A':null,row.curve?row.curve+' curve':null,row.device]
     .filter(Boolean).join(' ');
   if(row.spare)return 'Spare way';
-  if(row.space)return 'Space way';
+  if(row.space)return 'Fitted blank way';
   return 'Unclassified device';
 }
 function buildSpecificationColorMap(rows,existingColours=null){
@@ -4124,7 +4128,7 @@ function evRowHtml(r){
   if (r.qty>1) bits.push('×'+r.qty);
   if (r.incomer) bits.push('INCOMER');
   if (r.spare) bits.push('SPARE');
-  if (r.space) bits.push('SPACE');
+  if (r.space) bits.push('FITTED BLANK');
   return `<tr class="evrow" data-rid="${r.id}">
     <td style="width:26px"></td>
     <td><div class="src">${esc(r.srcText)}</div>
@@ -4209,8 +4213,14 @@ function openRowEditor(r, isNew, surface='Boards & Devices'){
     r.qty=Math.max(1,parseInt($('#eQty').value,10)||1);
     r.rating=numberOrNull('#eRat');
     r.curve=$('#eCur').value||null;
-    r.poleConfiguration=$('#ePol').value||null;
+    const nextPoleConfiguration=$('#ePol').value||null;
+    const poleConfigurationChanged=String(before.poleConfiguration||'')!==String(nextPoleConfiguration||'');
+    r.poleConfiguration=nextPoleConfiguration;
     r.poles={SP:1,SPN:1,DP:2,DPN:2,TP:3,TPN:3,'4P':4}[r.poleConfiguration]||null;
+    if(poleConfigurationChanged||isNew){
+      r.poleEvidenceExplicit=Boolean(r.poleConfiguration);
+      r.poleEvidenceBasis=r.poleConfiguration?'user_correction':null;
+    }
     r.ka=numberOrNull('#eKa');
     r.protectionStandard=$('#eStandard').value.trim()||null;
     r.tripUnit=$('#eTrip').value.trim()||null;
@@ -5119,7 +5129,7 @@ function viewerDetectionCardHtml(d,index){
     <div class="det-head"><span class="chip ${d.color}">${esc(d.kind)}</span><b>${esc(d.label)}</b><span class="det-actions">
       ${d.r?.boardNorm?'<button class="btn sm ghost" data-action="board">Board</button>':''}
     </span></div><div class="det-source">${esc(d.r?.srcText||'')}</div></div>`;
-  const row=d.r,primary=row.device||(row.spare?'Spare way':row.space?'Space way':'Unclassified device');
+  const row=d.r,primary=row.device||(row.spare?'Spare way':row.space?'Fitted blank way':'Unclassified device');
   const current=state.viewer.evidenceId===row.id;
   const circuit=row.circuitReference||null,description=String(row.desc||'').trim();
   const protection=[];

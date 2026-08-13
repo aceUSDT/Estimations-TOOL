@@ -19,7 +19,7 @@ const required = [
   'host.requestFullscreen',
   "document.addEventListener('fullscreenchange'",
   'function syncViewerLayout()',
-  'const ANALYSIS_VERSION=17;',
+  'const ANALYSIS_VERSION=18;',
   'id="processingCancelBtn"',
   'const AI_RECOVERY_MAX_PAGES=3;',
   'const AI_RECOVERY_PAGE_TIMEOUT_MS=25000;',
@@ -78,6 +78,8 @@ required.forEach((value) => assert.ok(html.includes(value), `missing UI contract
 assert.ok(!html.includes("automaticScope?.enforced&&!automaticScope.pageSet.has(pageNo)"),
   'content-derived scope must never exclude pages from deterministic or enhanced analysis');
 assert.ok(!html.includes('id="vAssistBoard"'), 'viewer must not contain a duplicate board selector');
+assert.ok(!/\bSpace way(?:s)?\b/i.test(html), 'user-facing empty positions must be labelled as fitted blanks, not Space ways');
+assert.ok(html.includes('Fitted blank way'), 'viewer must use the commercial fitted-blank label');
 assert.ok(!html.includes('Match rows'), 'ambiguous Match rows command must not return');
 assert.ok(!html.includes('Approve checked rows'), 'bulk approval must not claim rows are checked');
 assert.ok(!html.includes("slice(0,90)"), 'viewer source evidence must not be silently truncated');

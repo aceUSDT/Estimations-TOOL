@@ -78,6 +78,39 @@ const perryfieldsText = [
 assert.equal(Core.classifyPageText(perryfieldsText).type, 'db-schedule', 'a structured board table must outrank incidental specification text');
 assert.equal(Core.classifyPageText('Legend\nSymbol Description\nProject Perryfields Academy\nTitle LV Schematic\nMCCB Panelboard').type, 'sld', 'an explicit schematic title must outrank its embedded legend');
 
+const reconciledSinglePhase = Core.reconcilePoleEvidence({
+  phase: 'L2', device: 'MCB', rating: 10, poles: 3, poleConfiguration: 'TP',
+  phaseSlotIndependent: true, srcText: 'L2 MCB C 10 Calorifier trace heating', conf: 0.97,
+});
+assert.equal(reconciledSinglePhase.poles, 1);
+assert.equal(reconciledSinglePhase.poleConfiguration, 'SP');
+assert.equal(reconciledSinglePhase.occupies_ways, 1);
+assert.equal(reconciledSinglePhase.requiresReview, true);
+assert.match(reconciledSinglePhase.poleReconciliation.reason, /single-phase slot/i);
+
+const explicitThreePole = Core.reconcilePoleEvidence({
+  phase: 'L2', device: 'MCCB', rating: 40, poles: 3, poleConfiguration: 'TP',
+  phaseSlotIndependent: true, poleEvidenceExplicit: true, srcText: 'TP MCCB 40A', conf: 0.95,
+});
+assert.equal(explicitThreePole.poles, 3, 'explicit source pole evidence must not be overwritten');
+assert.equal(explicitThreePole.poleConfiguration, 'TP');
+
+const explicitSinglePole = Core.reconcilePoleEvidence({
+  phase: 'L2', device: 'MCB', rating: 10, poles: 3, poleConfiguration: 'TP',
+  phaseSlotIndependent: true, srcText: 'L2 SP MCB 10A', conf: 0.95,
+});
+assert.equal(explicitSinglePole.poles, 1, 'an explicit SP token must override a contradictory inferred TP value');
+assert.equal(explicitSinglePole.poleConfiguration, 'SP');
+assert.equal(explicitSinglePole.sharedPhaseSpan, false);
+assert.equal(explicitSinglePole.phaseSlotIndependent, true);
+
+const boardReferenceToken = Core.reconcilePoleEvidence({
+  phase: 'L2', device: 'MCB', rating: 10, poles: 3, poleConfiguration: 'TP',
+  phaseSlotIndependent: true, srcText: 'DB-SP-01 L2 MCB 10A', conf: 0.95,
+});
+assert.equal(boardReferenceToken.poles, 1, 'SP inside a board reference must not become explicit pole evidence');
+assert.equal(boardReferenceToken.poleConfiguration, 'SP');
+
 const perryfieldsWords = [
   word('Way', 68, 28, 8), word('Phase', 81, 28, 8),
   word('Circuit protective device', 88, 28, 7), word('Type', 97, 28, 7),
