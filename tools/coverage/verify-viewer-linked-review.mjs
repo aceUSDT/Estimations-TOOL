@@ -65,6 +65,38 @@ try {
   await documentRows.nth(1).click();
   await page.waitForFunction((rowId) => document.querySelector('#vDetList .det.current')?.dataset.rowId === rowId, linkedId);
 
+  const extractionGap = await page.evaluate(() => {
+    const A = state.cur.analysis;
+    const fileId = state.cur.files[0].id;
+    A.boards.DBFIRSTGAP = {
+      norm: 'DBFIRSTGAP', orig: 'DB-FIRST-GAP', type: 'DB', inScope: true,
+      pages: [{ fileId, page: 1, primary: true }],
+    };
+    A.pageDiagnostics.push({
+      fileId, page: 1, type: 'db-schedule', textLines: 20,
+      scheduleScore: 0.95, rowsParsed: 0, testReviewGap: true,
+    });
+    A.rows.push({
+      id: 'test-review-gap-row', boardNorm: 'DBFIRSTGAP', fileId, page: 2,
+      kind: 'schedule', way: 'L-1', phase: 'L1', device: 'MCB', rating: 10,
+      status: 'confirmed', testReviewGap: true,
+    });
+    renderGuidedReviewControls();
+    return { fileId };
+  });
+  await page.locator('#vReviewStart').click();
+  await page.waitForFunction(() => state.viewer.boardHl === 'DBFIRSTGAP');
+  assert.equal(await page.evaluate(() => state.reviewFlow.active), false, 'guided review must not skip an earlier board with zero extracted rows');
+  assert.match(await page.locator('#vReviewTitle').textContent(), /Extraction required for DB-FIRST-GAP/);
+  assert.match(await page.locator('#vReviewProgress').textContent(), /Page 1 is the first unresolved board/);
+  await page.evaluate(({ fileId }) => {
+    delete state.cur.analysis.boards.DBFIRSTGAP;
+    state.cur.analysis.pageDiagnostics = state.cur.analysis.pageDiagnostics.filter((item) => !item.testReviewGap);
+    state.cur.analysis.rows = state.cur.analysis.rows.filter((item) => !item.testReviewGap);
+    state.viewer.fileId = fileId;
+    renderGuidedReviewControls();
+  }, extractionGap);
+
   await page.locator('#vReviewStart').click();
   await page.waitForFunction(() => state.reviewFlow.active && Boolean(state.reviewFlow.currentRowId));
   const firstBoard = await page.evaluate(() => guidedReviewCurrentRow().boardNorm || '__none__');

@@ -114,6 +114,53 @@ assert.deepEqual(perryfields.rows.map((row) => [row.way, row.device, row.rating,
 assert.equal(perryfields.rows[0].ka, 10, 'the 30mA earth-fault value must not displace the 10kA breaking capacity');
 assert.equal(perryfields.board.header.ways_total, 3, 'distinct printed ways provide a reconciled board count when the header omits it');
 
+const perryfieldsPrefixedWayWords = [
+  word('Way', 20, 28), word('Phase', 52, 28), word('Type', 82, 28),
+  word('AFDD?', 108, 28), word('Characteristic', 132, 28), word('In (A)', 160, 28),
+  word('Earth fault device (mA)', 188, 28, 18), word('Load description', 242, 28, 28),
+];
+[
+  ['L-1', 96, [
+    ['L1', 'MCB', 'No', 'C', 10, 'Ltg: Atrium'],
+    ['L2', 'MCB', 'No', 'C', 10, 'Ltg: Stair'],
+    ['L3', 'MCB', 'No', 'C', 10, 'Ltg: Food Room'],
+  ]],
+  ['L-2', 144, [
+    ['L1', 'MCB', 'No', 'C', 10, 'Ltg: Open Space'],
+    ['L2', 'MCB', 'No', 'C', 10, 'Ltg: Staff Room'],
+    ['L3', 'MCB', 'No', 'C', 10, 'Ltg: Circulation'],
+  ]],
+].forEach(([way, centreY, phaseRows]) => {
+  perryfieldsPrefixedWayWords.push(word(way, 20, centreY, 10));
+  phaseRows.forEach(([phase, device, afdd, curve, rating, description], phaseIndex) => {
+    const y = centreY + (phaseIndex - 1) * 12;
+    perryfieldsPrefixedWayWords.push(
+      word(phase, 52, y, 8), word(device, 82, y, 10), word(afdd, 108, y, 8),
+      word(curve, 132, y, 6), word(String(rating), 160, y, 8), word(description, 242, y, 72),
+    );
+  });
+});
+const perryfieldsPrefixedWays = Core.parseSpatialSchedulePage({
+  lines: [
+    { text: 'PROJECT NAME Perryfields Academy PROJECT NUMBER 11274 Board reference DB-G1-LP' },
+    { text: 'COMPONENTS DUTY CABLES' },
+    { text: 'Way Phase Type AFDD Characteristic In (A) Earth fault device (mA) Load description' },
+  ],
+  words: perryfieldsPrefixedWayWords,
+  pageWidth: 360,
+  pageHeight: 210,
+  pageType: 'db-schedule',
+});
+assert.equal(perryfieldsPrefixedWays.matched, true, 'Perryfields L-1/L-2 merged way cells must resolve as schedule ways');
+assert.deepEqual(perryfieldsPrefixedWays.rows.map((row) => [row.way, row.phase, row.device, row.rating]), [
+  ['L-1', 'L1', 'MCB', 10],
+  ['L-1', 'L2', 'MCB', 10],
+  ['L-1', 'L3', 'MCB', 10],
+  ['L-2', 'L1', 'MCB', 10],
+  ['L-2', 'L2', 'MCB', 10],
+  ['L-2', 'L3', 'MCB', 10],
+]);
+
 const unprovenGrid = Core.parseSpatialSchedulePage({
   lines: [{ text: 'LV SCHEMATIC' }],
   words: [

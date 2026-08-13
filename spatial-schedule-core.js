@@ -166,9 +166,12 @@
       const way = Number(numericPhase[1]);
       return way >= 1 && way <= 200 ? way : null;
     }
-    const opaque = labelled.match(/^([A-Z]{1,3}\d{1,3})$/)?.[1] || null;
-    if (!explicitlyLabelled && /^L[123]$/.test(opaque || '')) return null;
-    return opaque && Number(opaque.match(/\d+$/)?.[0]) <= 200 ? opaque : null;
+    const hasOpaqueSeparator = /^[A-Z]{1,3}[-/]\d{1,3}$/.test(labelled);
+    const normalisedOpaque = labelled.replace(/^([A-Z]{1,3})[-/](\d{1,3})$/, '$1$2');
+    const opaque = normalisedOpaque.match(/^([A-Z]{1,3}\d{1,3})$/)?.[1] || null;
+    if (!explicitlyLabelled && !hasOpaqueSeparator && /^L[123]$/.test(opaque || '')) return null;
+    if (!opaque || Number(opaque.match(/\d+$/)?.[0]) > 200) return null;
+    return hasOpaqueSeparator ? labelled.replace('/', '-') : opaque;
   }
 
   function extractPhase(value) {
@@ -195,7 +198,7 @@
       const unique = new Set(values).size;
       let consecutive = 0;
       const sequencePart = (value) => {
-        const match = String(value).match(/^([A-Z]*)(\d+)$/);
+        const match = String(value).replace(/[-/]/g, '').match(/^([A-Z]*)(\d+)$/);
         return match ? { prefix: match[1], number: Number(match[2]) } : null;
       };
       for (let i = 1; i < values.length; i += 1) {

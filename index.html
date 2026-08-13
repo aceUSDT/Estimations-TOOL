@@ -1126,7 +1126,7 @@ const state = {
   reportMode: 'board',
   reviewFlow: {active:false,currentRowId:null,initialCount:0,moving:false,boardOrder:[],initialByBoard:{},rowOrderByBoard:{}},
 };
-const ANALYSIS_VERSION=13;
+const ANALYSIS_VERSION=14;
 const uid = () => 'x'+(state.nextId++)+'_'+Math.random().toString(36).slice(2,6);
 
 /* ====================== PERSISTENCE (IndexedDB) ====================== */
@@ -3547,6 +3547,32 @@ function orderedPendingReviewRows(){
     return boardDifference||compareReviewTuple(reviewRowTuple(a),reviewRowTuple(b));
   });
 }
+function unresolvedReviewExtractionGaps(){
+  const p=state.cur,A=p?.analysis,rows=A?.rows||[];
+  if(!p||!A)return [];
+  return Object.entries(A.boards||{}).flatMap(([boardNorm,board])=>{
+    if(board?.inScope===false)return [];
+    const locations=(board?.pages||[]).filter(ref=>ref?.primary&&ref.fileId&&Number.isFinite(Number(ref.page)));
+    const candidates=locations.map(location=>{
+      const diagnostic=(A.pageDiagnostics||[]).find(page=>page.fileId===location.fileId&&Number(page.page)===Number(location.page)
+        && page.type!=='sld'&&page.type!=='schematic'&&(page.rowsParsed||0)===0
+        && ((page.scheduleScore||0)>=0.45||SCHEDULE_TYPES.has(page.type)));
+      return diagnostic?{boardNorm,fileId:location.fileId,page:Number(location.page),diagnostic}:null;
+    }).filter(Boolean);
+    if(!candidates.length)return [];
+    const first=candidates.sort((left,right)=>compareReviewTuple(
+      [Math.max(0,p.files.findIndex(file=>file.id===left.fileId)),left.page],
+      [Math.max(0,p.files.findIndex(file=>file.id===right.fileId)),right.page],
+    ))[0];
+    return [{...first,sourceTuple:reviewBoardSourceTuple(boardNorm,rows)}];
+  }).sort((left,right)=>compareReviewTuple(left.sourceTuple,right.sourceTuple));
+}
+function firstBlockingReviewGap(queue=orderedPendingReviewRows()){
+  const gap=unresolvedReviewExtractionGaps()[0];
+  if(!gap)return null;
+  if(!queue.length)return gap;
+  return compareReviewTuple(gap.sourceTuple,reviewSourceTuple(queue[0]))<=0?gap:null;
+}
 function guidedReviewBoardKeys(rows=orderedPendingReviewRows()){
   return [...new Set(rows.map(row=>row.boardNorm||'__none__'))];
 }
@@ -3560,17 +3586,25 @@ function guidedReviewRowTitle(row){
   return board+(detail?' · '+detail:'');
 }
 function renderGuidedReviewControls(){
-  const queue=orderedPendingReviewRows(),flow=state.reviewFlow;
+  const queue=orderedPendingReviewRows(),gap=firstBlockingReviewGap(queue),flow=state.reviewFlow;
   const current=guidedReviewCurrentRow();
   const analysisButton=$('#guidedReviewBtn'),viewerButton=$('#vReviewStart'),bar=$('#vReviewBar'),focus=$('#vReviewFocus'),stop=$('#vReviewStop');
   [analysisButton,viewerButton].filter(Boolean).forEach(button=>{
-    button.disabled=!flow.active&&!queue.length;
+    button.disabled=!flow.active&&!queue.length&&!gap;
     button.textContent=flow.active?(button===analysisButton?'Continue guided review':'Show current row'):'Review from first board';
-    button.title=queue.length?`${queue.length} row${queue.length===1?'':'s'} awaiting a decision`:'No rows are awaiting a decision';
+    button.title=gap?`${guidedBoardName(gap.boardNorm)} must be extracted before approval can continue`
+      :queue.length?`${queue.length} row${queue.length===1?'':'s'} awaiting a decision`:'No rows are awaiting a decision';
   });
   if(!bar)return;
-  bar.hidden=!flow.active&&!queue.length;
+  bar.hidden=!flow.active&&!queue.length&&!gap;
   if(!flow.active){
+    if(gap){
+      $('#vReviewTitle').textContent=`Extraction required for ${guidedBoardName(gap.boardNorm)}`;
+      $('#vReviewProgress').textContent=`Page ${gap.page} is the first unresolved board · no schedule rows were captured · approval is paused`;
+      if(focus){focus.hidden=false;focus.textContent='Open first board';}
+      if(stop)stop.hidden=true;
+      return;
+    }
     if(!queue.length)return;
     const first=queue[0],boardKeys=guidedReviewBoardKeys(queue);
     $('#vReviewTitle').textContent=`Ready to begin with ${guidedBoardName(first.boardNorm||'__none__')}`;
@@ -3612,8 +3646,18 @@ async function showGuidedReviewRow(row){
   setTab('analysis');
   toast('This row has no printed source location; it is open in its board review instead');
 }
+async function showGuidedReviewGap(gap){
+  if(!gap)return;
+  stopGuidedReview(false);
+  state.viewer.fileId=gap.fileId;state.viewer.page=gap.page;state.viewer.boardHl=gap.boardNorm;state.viewer.evidenceId=null;
+  state.viewer.assist.boardNorm=gap.boardNorm;state.selectedBoard=gap.boardNorm;
+  setTab('viewer');renderGuidedReviewControls();
+  toast(`${guidedBoardName(gap.boardNorm)} has no captured schedule rows · approval is paused`);
+}
 async function startGuidedReview(){
   const queue=orderedPendingReviewRows();
+  const gap=firstBlockingReviewGap(queue);
+  if(gap){await showGuidedReviewGap(gap);return;}
   if(!queue.length){toast('Every extracted row already has a decision');renderGuidedReviewControls();return;}
   const boardOrder=guidedReviewBoardKeys(queue),initialByBoard={},rowOrderByBoard={};
   queue.forEach(row=>{
@@ -3645,6 +3689,13 @@ async function advanceGuidedReview(completedRow,action='decision saved'){
   flow.moving=true;
   const previousBoard=completedRow.boardNorm||'__none__';
   const queue=orderedPendingReviewRows();
+  const gap=firstBlockingReviewGap(queue);
+  if(gap){
+    flow.moving=false;
+    await showGuidedReviewGap(gap);
+    toast(`${guidedBoardName(previousBoard)} complete · extraction is required for ${guidedBoardName(gap.boardNorm)}`);
+    return;
+  }
   if(!queue.length){
     const total=flow.initialCount;
     stopGuidedReview(false);

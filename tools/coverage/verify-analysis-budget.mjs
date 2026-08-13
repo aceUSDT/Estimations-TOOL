@@ -7,7 +7,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const playwrightSpecifier = process.env.PLAYWRIGHT_CORE_PATH
-  ? pathToFileURL(process.env.PLAYWRIGHT_CORE_PATH).href
+  ? pathToFileURL(path.join(process.env.PLAYWRIGHT_CORE_PATH, 'index.mjs')).href
   : 'playwright-core';
 const { chromium } = await import(playwrightSpecifier);
 
