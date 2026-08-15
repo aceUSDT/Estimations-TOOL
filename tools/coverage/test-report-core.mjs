@@ -16,8 +16,8 @@ const model = Report.buildModel({
     DB2: { norm: "DB2", orig: "DB-2", type: "DB" },
   },
   rows: [
-    { id: "r1", boardNorm: "DB2", device: "MCB", rating: 10, poles: 1, desc: "Lighting", associatedDevices: [{ device: "Contactor", qty: 1 }], qty: 2, status: "confirmed", conf: 1, protectionStandard: "BS EN 60898", rcdProtected: true, sens: 30, afdd: false },
-    { id: "r2", boardNorm: "DB10", device: "MCB", rating: 10, poles: 1, desc: "Lighting", qty: 1, status: "pending", conf: 0.9, protectionStandard: "60898", rcdProtected: true, sens: 30, afdd: false },
+    { id: "r1", boardNorm: "DB2", device: "MCB", rating: 10, poles: 1, desc: "Lighting", associatedDevices: [{ device: "Contactor", qty: 1 }], qty: 2, status: "confirmed", conf: 1, protectionStandard: "BS EN 60898", rcdProtected: true, rcdArrangement: "separate", sens: 30, afdd: false },
+    { id: "r2", boardNorm: "DB10", device: "MCB", rating: 10, poles: 1, desc: "Lighting", qty: 1, status: "pending", conf: 0.9, protectionStandard: "60898", rcdProtected: true, rcdArrangement: "separate", sens: 30, afdd: false },
     { id: "r3", boardNorm: "DB10", device: "MCB", rating: 20, poles: 3, desc: "AHU supply", qty: 1, status: "pending", conf: 0.7 },
     { id: "r4", boardNorm: "DB2", device: "RCBO", rating: 32, poles: 1, desc: "Socket circuit", qty: 1, status: "confirmed", conf: 1 },
     { id: "r5", boardNorm: "DB2", device: "MCB", rating: 40, poles: 1, qty: 7, status: "rejected", conf: 0.2 },
@@ -47,7 +47,7 @@ assert.equal(model.groups[0].rows[0].protectionStandard, "BS EN 60898");
 assert.deepEqual(Array.from(model.boardSections, (board) => board.label), ["DB-2", "DB-10"]);
 assert.equal(model.boardSections[0].total, 3);
 assert.deepEqual(Array.from(model.boardSections[0].families, (family) => [family.name, family.total]), [["MCB", 2], ["RCBO", 1]]);
-assert.equal(model.boardSections[0].families[0].rows[0].rcdLabel, "RCD 30mA");
+assert.equal(model.boardSections[0].families[0].rows[0].rcdLabel, "Separate RCD 30mA");
 assert.equal(model.reconciliation.valid, true);
 assert.equal(model.associated.grandTotal, 1);
 assert.equal(model.associated.groups[0].rows[0].label, "Contactor");
@@ -75,7 +75,7 @@ assert.deepEqual(workbook.worksheets.map((worksheet) => worksheet.name), ["Board
 assert.match(boardSheet.getCell("A4").value, /DB-2/);
 assert.equal(boardSheet.getCell("A5").value, "MCB | 2");
 assert.equal(boardSheet.getCell("B6").value, 2);
-assert.equal(boardSheet.getCell("H6").value, "RCD 30mA");
+assert.equal(boardSheet.getCell("H6").value, "Separate RCD 30mA");
 assert.equal(boardSheet.getCell("K6").value, "BS EN 60898");
 assert.equal(sheet.getCell("A1").value, "Llangatwg Test");
 assert.equal(sheet.getCell("A4").value, "Board Reference");
@@ -105,7 +105,7 @@ assert.equal(buffer[1], 0x4b);
 const roundTrip = new ExcelJS.Workbook();
 await roundTrip.xlsx.load(buffer);
 assert.equal(roundTrip.getWorksheet("Device Take-Off").getCell("F5").value.formula, "SUM(B5:E5)");
-assert.equal(roundTrip.getWorksheet("Board Take-Off").getCell("H6").value, "RCD 30mA");
+assert.equal(roundTrip.getWorksheet("Board Take-Off").getCell("H6").value, "Separate RCD 30mA");
 
 const wideBoards = Object.fromEntries(Array.from({ length: 57 }, (_, index) => {
   const number = index + 1;

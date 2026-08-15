@@ -544,9 +544,21 @@
     const tripUnit = text.match(/\bMICROLOGIC\s*([0-9]+(?:\.[0-9]+)?)\b/i)?.[1]
       || text.match(/\b(TMD|TM-D|LSI|LSIG|ELECTRONIC\s+TRIP(?:\s+UNIT)?)\b/i)?.[1]
       || null;
-    const curve = text.match(/\b(?:TYPE|CURVE|CHARACTERISTIC)\s*([BCD])\b/i)?.[1]?.toUpperCase() || null;
+    const curve = (text.match(/\b(?:TYPE|CURVE|CHARACTERISTIC)\s*([BCD])\b/i)?.[1]
+      || text.match(/\b([BCD])\s*CURVE\b/i)?.[1] || '').toUpperCase() || null;
     const breakingCapacityKa = Number(text.match(/\b(\d+(?:\.\d+)?)\s*KA\b/i)?.[1]) || null;
-    return { text, standardCode: standard.code, protectionStandard: standard.label, explicitDevice: explicit, rating, tripUnit, curve, breakingCapacityKa };
+    const sensitivityMa = Number(text.match(/\b(\d+(?:\.\d+)?)\s*MA\b/i)?.[1]) || null;
+    const rcdType = text.match(/\bTYPE\s+(AC|A|B|F)\b/i)?.[1]?.toUpperCase() || null;
+    const poleToken = text.match(/\b(1P\s*\+\s*N|3\s*[-/]\s*4P|4P|3P|2P|1P|TPN|TP|SPN|SP)\b/i)?.[1]
+      ?.toUpperCase().replace(/\s+/g, '') || null;
+    const poles = poleToken && /^(?:3-4P|4P|3P|TPN|TP)$/.test(poleToken) ? 3
+      : (poleToken && /^(?:2P)$/.test(poleToken) ? 2
+        : (poleToken && /^(?:1P\+N|1P|SPN|SP)$/.test(poleToken) ? 1 : null));
+    const poleConfiguration = poles === 3 ? 'TP' : (poles === 2 ? 'DP' : (poles === 1 ? 'SP' : null));
+    return {
+      text, standardCode: standard.code, protectionStandard: standard.label, explicitDevice: explicit,
+      rating, tripUnit, curve, breakingCapacityKa, sensitivityMa, rcdType, poleToken, poles, poleConfiguration,
+    };
   }
 
   function resolveProtectionDevice(fields = {}, context = {}) {
@@ -554,12 +566,31 @@
     const explicitText = String(fields.deviceClass || '');
     const explicit = explicitText.match(/\b(AFDD\s*\+\s*RCBO|RCBO|MCCB|MCB|ACB|RCCB|RCD|FUSE|SWITCH\s+DISCONNECTOR|ISOLATOR)\b/i)?.[1]?.toUpperCase() || null;
     const tripUnit = String(fields.tripUnit || '').trim();
-    let device = null; let confidence = 0.55; let classBasis = null; const reasons = [];
+    const standardDevice = {
+      '60898': 'MCB',
+      '61009': 'RCBO',
+      '61008': 'RCD',
+      '60947-2': 'MCCB',
+      '60947-3': 'Isolator',
+    }[standard.code] || null;
+    let device = null; let confidence = 0.55; let classBasis = null; let classConflict = null; const reasons = [];
     if (standard.correctedFrom) reasons.push(`Normalised ${standard.correctedFrom} to ${standard.code}`);
     if (explicit) {
       device = explicit === 'RCCB' ? 'RCD' : explicit.replace(/\s+/g, ' ');
       classBasis = 'explicit';
       confidence = 0.96; reasons.push('Explicit device class');
+      const compatibleIndustrialMcb = device === 'MCB' && standard.code === '60947-2';
+      if (standardDevice && String(device).toUpperCase() !== String(standardDevice).toUpperCase()
+        && !compatibleIndustrialMcb) {
+        classConflict = {
+          explicit: device,
+          standardCode: standard.code,
+          standardDevice,
+          reason: `Explicit ${device} conflicts with ${standard.label}, which normally identifies ${standardDevice}`,
+        };
+        confidence = Math.min(confidence, 0.72);
+        reasons.push(classConflict.reason);
+      }
     } else if (standard.code === '60898') {
       classBasis = 'bs_en';
       device = 'MCB'; confidence = 0.97; reasons.push('BS EN 60898');
@@ -579,27 +610,23 @@
       || /MICROLOGIC|MCCB/i.test(context.boardProtectionText || ''))) {
       classBasis = 'bs_en_context';
       device = 'MCCB'; confidence = 0.91; reasons.push('BS 60947 with MCCB trip-unit evidence');
-    } else if (fields.rcdProtected === true && Number(fields.rating) > 0 && !explicit) {
+    } else if (fields.rcdProtected === true && Number(fields.rating) > 0
+      && !explicit && !['separate', 'shared', 'upstream'].includes(fields.rcdArrangement)) {
       classBasis = 'derived_rcd';
       device = fields.afdd === true ? 'AFDD+RCBO' : 'RCBO';
       confidence = 0.9;
       reasons.push('Rated outgoing CPD with explicit row-level RCD protection');
     }
     if (/^AFDD\s*\+\s*RCBO$/i.test(device || '')) device = 'AFDD+RCBO';
-    const rcdProtected = fields.rcdProtected === true || Number(fields.sensitivityMa) > 0;
-    if (device === 'MCB' && rcdProtected) {
-      device = fields.afdd === true ? 'AFDD+RCBO' : 'RCBO';
-      classBasis = fields.afdd === true ? 'derived_rcd_afdd' : 'derived_rcd';
-      confidence = Math.max(confidence, 0.94);
-      reasons.push(fields.afdd === true
-        ? 'MCB with row-level RCD and AFDD protection'
-        : 'MCB with row-level RCD protection');
-    } else if (device === 'RCBO' && fields.afdd === true) {
+    if (device === 'RCBO' && fields.afdd === true && fields.afddArrangement !== 'separate') {
       device = 'AFDD+RCBO';
       classBasis = 'derived_afdd';
       reasons.push('RCBO with row-level AFDD protection');
     }
-    return { device, classBasis, confidence, reasons, standardCode: standard.code, protectionStandard: standard.label };
+    return {
+      device, classBasis, confidence, reasons, classConflict,
+      standardCode: standard.code, protectionStandard: standard.label,
+    };
   }
 
   function classifyBoardFamily(header = {}, options = {}) {
@@ -1156,12 +1183,475 @@
     };
   }
 
+  function trimbleDialectProfile(words) {
+    const rows = spatialRows(words, 3.2);
+    const text = rows.map((row) => row.words.map((item) => item.text).join(' ')).join('\n');
+    const signatures = [
+      /DISTRIBUTION\s+BOARD\s+SCHEDULE/i,
+      /BOARD\s+DATA/i,
+      /INCOMER\s+DETAILS/i,
+      /OVER\s*CURRENT\s+PROTECTIVE\s+DEVICE/i,
+      /EARTH\s+FAULT\s+PROTECTIVE\s+DEVICE/i,
+      /ARC\s+FLASH\s+PROTECTIVE\s+DEVICE/i,
+      /CONNECTED\s+TO/i,
+      /CREATED\s+USING|TRIMBLE\s+INC/i,
+    ];
+    const signals = signatures.map((pattern, index) => pattern.test(text) ? index : null).filter((value) => value != null);
+    const required = signatures[1].test(text) && signatures[3].test(text) && signatures[4].test(text);
+    return {
+      matched: required && signals.length >= 5,
+      confidence: Math.min(0.99, 0.45 + signals.length * 0.065),
+      signals,
+      rows,
+      text,
+    };
+  }
+
+  function rowText(row) {
+    return (row?.words || []).map((item) => item.text).join(' ').replace(/\s+/g, ' ').trim();
+  }
+
+  function firstProfileRow(profile, pattern, minimumY = -Infinity, maximumY = Infinity) {
+    return profile.rows.find((row) => row.cy >= minimumY && row.cy <= maximumY && pattern.test(rowText(row))) || null;
+  }
+
+  function wordsInRegion(words, left, right, top = -Infinity, bottom = Infinity) {
+    return (words || []).filter((item) => item.cx >= left && item.cx < right && item.cy >= top && item.cy < bottom);
+  }
+
+  function regionCell(words, left, right, top, bottom, role) {
+    return sourceCell(wordsInRegion(words, left, right, top, bottom), role);
+  }
+
+  function numericCellInRegion(row, left, right, role, options = {}) {
+    const candidates = (row?.words || []).filter((item) => item.cx >= left && item.cx < right
+      && /^-?\d+(?:\.\d+)?$/.test(item.text));
+    if (!candidates.length) return { value: null, cell: null };
+    const cell = sourceCell([candidates[0]], role);
+    return { value: numberValue(cell, options), cell };
+  }
+
+  function profileHeaderAnchor(row, pattern, minimumX = -Infinity, maximumX = Infinity) {
+    return (row?.words || []).find((item) => item.cx >= minimumX && item.cx < maximumX && pattern.test(normaliseLabel(item.text))) || null;
+  }
+
+  function trimbleColumnSchema(profile, pageWidth, pageHeight) {
+    const overcurrentRow = firstProfileRow(profile, /OVER\s*CURRENT\s+PROTECTIVE\s+DEVICE/i);
+    const earthRow = firstProfileRow(profile, /EARTH\s+FAULT\s+PROTECTIVE\s+DEVICE/i, overcurrentRow?.cy || 0);
+    const arcRow = firstProfileRow(profile, /ARC\s+FLASH\s+PROTECTIVE\s+DEVICE/i, earthRow?.cy || 0);
+    if (!overcurrentRow || !earthRow || !arcRow) return null;
+
+    const way = profileHeaderAnchor(overcurrentRow, /^WAY$/, 0, pageWidth * 0.12);
+    const id = profileHeaderAnchor(overcurrentRow, /^ID$/, way?.x1 || 0, pageWidth * 0.24);
+    const cable = profileHeaderAnchor(overcurrentRow, /^CABLE$/, pageWidth * 0.12, pageWidth * 0.42);
+    const connected = profileHeaderAnchor(overcurrentRow, /^CONNECTED$/, pageWidth * 0.42, pageWidth * 0.72);
+    const protection = profileHeaderAnchor(overcurrentRow, /^OVER\s*CURRENT$/, pageWidth * 0.58, pageWidth * 0.9)
+      || profileHeaderAnchor(overcurrentRow, /^OVERCURRENT$/, pageWidth * 0.58, pageWidth * 0.9);
+    const rating = profileHeaderAnchor(overcurrentRow, /^RATING$/, pageWidth * 0.82, pageWidth);
+    if (!way || !id || !cable || !connected || !protection || !rating) return null;
+
+    const bounds = {
+      wayPhaseLeft: 0,
+      wayPhaseRight: Math.max(way.x1 + 3, id.x0 - 4),
+      idLeft: Math.max(0, id.x0 - 4),
+      idRight: Math.max(id.x1 + 6, cable.x0 - 5),
+      cableLeft: Math.max(0, cable.x0 - 5),
+      cableRight: Math.max(cable.x1 + 10, connected.x0 - 5),
+      connectedLeft: Math.max(0, connected.x0 - 5),
+      connectedRight: Math.max(connected.x1 + 10, protection.x0 - 5),
+      protectionLeft: Math.max(0, protection.x0 - 5),
+      protectionRight: Math.max(protection.x1 + 10, rating.x0 - 7),
+      ratingLeft: Math.max(0, rating.x0 - 7),
+      ratingRight: pageWidth,
+    };
+    const footer = profile.rows.find((row) => row.cy > arcRow.cy + 30
+      && row.cy > pageHeight * 0.72 && /^(?:PROJECT\s*:|CREATED\s+USING)/i.test(rowText(row)));
+    const dataTop = Math.min(pageHeight, arcRow.cy + Math.max(7, median(arcRow.words.map((item) => item.height)) || 8));
+    const dataBottom = Math.max(dataTop + 1, footer?.cy || pageHeight);
+    const columns = [
+      { role: 'way_phase', x: way.cx, left: bounds.wayPhaseLeft, right: bounds.wayPhaseRight, source: 'trimble_header_stack' },
+      { role: 'circuit_id', x: id.cx, left: bounds.idLeft, right: bounds.idRight, source: 'trimble_header_stack' },
+      { role: 'cable', x: cable.cx, left: bounds.cableLeft, right: bounds.cableRight, source: 'trimble_header_stack' },
+      { role: 'connected_to', x: connected.cx, left: bounds.connectedLeft, right: bounds.connectedRight, source: 'trimble_header_stack' },
+      { role: 'protection_records', x: protection.cx, left: bounds.protectionLeft, right: bounds.protectionRight, source: 'trimble_header_stack' },
+      { role: 'protection_ratings', x: rating.cx, left: bounds.ratingLeft, right: bounds.ratingRight, source: 'trimble_header_stack' },
+    ];
+    return {
+      dialect: 'trimble_stacked_protection',
+      columns,
+      bounds,
+      confidence: profile.confidence,
+      headerBand: [0, 0, pageWidth, dataTop],
+      dataBand: [0, dataTop, pageWidth, dataBottom - dataTop],
+      rowSpacing: null,
+      protectionRows: {
+        overcurrent: overcurrentRow.cy,
+        earthFault: earthRow.cy,
+        arcFlash: arcRow.cy,
+      },
+    };
+  }
+
+  function trimbleBoardHeader(profile, words, schema, pageWidth) {
+    const boardDataRow = firstProfileRow(profile, /BOARD\s+DATA/i, 0, schema.dataBand[1]);
+    const incomerHeaderRow = firstProfileRow(profile, /INCOMER\s+DETAILS/i, boardDataRow?.cy || 0, schema.dataBand[1]);
+    const headerBottom = incomerHeaderRow?.cy || schema.dataBand[1];
+    const identityRow = profile.rows.find((row) => row.cy > (boardDataRow?.cy || 0) && row.cy < headerBottom
+      && (row.words || []).some((item) => item.cx < pageWidth * 0.12 && /^ID$/.test(normaliseLabel(item.text)))
+      && (row.words || []).some((item) => item.cx < pageWidth * 0.14 && /^NO$/.test(normaliseLabel(item.text))));
+    const modelAnchor = (identityRow?.words || []).find((item) => /MODEL\s*NO/.test(normaliseLabel(item.text)));
+    const identityWords = (identityRow?.words || []).filter((item) => item.cx >= pageWidth * 0.095
+      && item.x0 < (modelAnchor?.x0 || pageWidth * 0.43));
+    const identityCell = sourceCell(identityWords, 'board_ref');
+    const boardRef = String(identityCell?.text || '').replace(/\s+/g, ' ').trim() || null;
+
+    const waysRow = profile.rows.find((row) => row.cy > (identityRow?.cy || 0) && row.cy < headerBottom
+      && /\bNO\.?\s+OF\s+WAYS\b/i.test(rowText(row)));
+    const ratingRow = profile.rows.find((row) => row.cy > (waysRow?.cy || 0) && row.cy < headerBottom
+      && /BOARD\s+RATING/i.test(rowText(row)));
+    const incomerRow = profile.rows.find((row) => row.cy > (incomerHeaderRow?.cy || 0) && row.cy < schema.dataBand[1]
+      && /DEVICE\s+MANUFACTURER/i.test(rowText(row)) && /DEVICE\s+RATING/i.test(rowText(row)));
+
+    const ways = numericCellInRegion(waysRow, pageWidth * 0.35, pageWidth * 0.46, 'ways_total', { min: 1, max: 200 });
+    const spare = numericCellInRegion(waysRow, pageWidth * 0.49, pageWidth * 0.61, 'spare_capacity_pct', { min: 0, max: 100 });
+    const boardRating = numericCellInRegion(ratingRow, pageWidth * 0.1, pageWidth * 0.23, 'board_rating_a', { min: 1, max: 6300 });
+    const fault = numericCellInRegion(ratingRow, pageWidth * 0.35, pageWidth * 0.46, 'fault_ka', { min: 1, max: 250 });
+    const ze = numericCellInRegion(ratingRow, pageWidth * 0.49, pageWidth * 0.61, 'ze_ohm', { min: 0, max: 100 });
+    const incomerRating = numericCellInRegion(incomerRow, pageWidth * 0.76, pageWidth, 'incomer_rating_a', { min: 1, max: 6300 });
+    const incomerTypeCell = sourceCell((incomerRow?.words || []).filter((item) => item.cx >= pageWidth * 0.455
+      && item.cx < pageWidth * 0.67 && !/^DEVICE$|^TYPE$/i.test(normaliseLabel(item.text))), 'incomer_class');
+    const incomerType = String(incomerTypeCell?.text || '').replace(/\s+/g, ' ').trim() || null;
+
+    const header = {
+      board_ref: boardRef,
+      description: boardRef,
+      board_type_text: boardRef,
+      ways_total: ways.value,
+      size_text: ways.value ? `${ways.value} WAY TPN` : null,
+      spare_capacity_pct: spare.value,
+      board_rating_a: boardRating.value,
+      fault_ka: fault.value,
+      ze_ohm: ze.value,
+      phase_config: 'TPN',
+      phase_count: 3,
+      incomer_class: incomerType,
+      incomer_rating_a: incomerRating.value,
+      internal_isolator_class: /ISOLAT/i.test(incomerType || '') ? 'Isolator' : null,
+      internal_isolator_rating_a: /ISOLAT/i.test(incomerType || '') ? incomerRating.value : null,
+      internal_isolator_details: [incomerType, incomerRating.value != null ? `${incomerRating.value}A` : null].filter(Boolean).join(' ') || null,
+    };
+    const evidence = {
+      board_ref: identityCell,
+      description: identityCell,
+      board_type_text: identityCell,
+      ways_total: ways.cell,
+      size_text: ways.cell,
+      spare_capacity_pct: spare.cell,
+      board_rating_a: boardRating.cell,
+      fault_ka: fault.cell,
+      ze_ohm: ze.cell,
+      phase_config: identityCell,
+      phase_count: identityCell,
+      incomer_class: incomerTypeCell,
+      incomer_rating_a: incomerRating.cell,
+      internal_isolator_class: incomerTypeCell,
+      internal_isolator_rating_a: incomerRating.cell,
+      internal_isolator_details: sourceCell([...(incomerTypeCell?.words || []), ...(incomerRating.cell?.words || [])], 'internal_isolator_details'),
+    };
+    Object.keys(header).forEach((key) => { if (header[key] == null || header[key] === '') delete header[key]; });
+    Object.keys(evidence).forEach((key) => { if (!evidence[key]) delete evidence[key]; });
+    return { header, evidence, boardRef, identityCell };
+  }
+
+  function tripAmpsToMa(cell) {
+    const value = numberValue(cell, { min: 0.001, max: 1000 });
+    if (value == null) return null;
+    return value < 1 ? Math.round(value * 1000) : value;
+  }
+
+  function recordIsEmpty(value) {
+    return !String(value || '').trim() || /^(?:NONE|N\/?A|NOT\s+APPLICABLE|-+)$/i.test(String(value || '').trim());
+  }
+
+  function trimbleProtectionRecords(groupWords, schema, top, bottom) {
+    const { bounds } = schema;
+    const ratingWords = wordsInRegion(groupWords, bounds.ratingLeft, bounds.ratingRight, top, bottom);
+    const ratingRows = spatialRows(ratingWords, 2.8).filter((row) => row.words.length).sort((left, right) => left.cy - right.cy);
+    const centers = ratingRows.map((row) => row.cy);
+    const topCenter = centers[0] ?? top;
+    const earthCenter = centers[1] ?? topCenter + (bottom - top) * 0.48;
+    const arcCenter = centers[2] ?? earthCenter + (bottom - top) * 0.28;
+    const overEarthBoundary = (topCenter + earthCenter) / 2;
+    const earthArcBoundary = (earthCenter + arcCenter) / 2;
+    const protectionCell = (from, to, role) => regionCell(groupWords, bounds.protectionLeft, bounds.protectionRight, from, to, role);
+    const ratingCell = (from, to, role) => regionCell(groupWords, bounds.ratingLeft, bounds.ratingRight, from, to, role);
+    return {
+      overcurrent: protectionCell(top, overEarthBoundary, 'overcurrent_device'),
+      overcurrentRating: ratingCell(top, overEarthBoundary, 'overcurrent_rating_a'),
+      earthFault: protectionCell(overEarthBoundary, earthArcBoundary, 'earth_fault_device'),
+      earthFaultRating: ratingCell(overEarthBoundary, earthArcBoundary, 'earth_fault_trip_a'),
+      arcFlash: protectionCell(earthArcBoundary, bottom, 'arc_flash_device'),
+      arcFlashRating: ratingCell(earthArcBoundary, bottom, 'arc_flash_rating_a'),
+      centers: { top: topCenter, earthFault: earthCenter, arcFlash: arcCenter },
+    };
+  }
+
+  function trimbleRow(groupWords, anchor, top, bottom, schema, boardRef) {
+    const { bounds } = schema;
+    const records = trimbleProtectionRecords(groupWords, schema, top, bottom);
+    const descriptor = parseProtectionDescriptor(records.overcurrent?.text || '');
+    const rating = numberValue(records.overcurrentRating, { min: 0.1, max: 6300 });
+    const earthDescriptor = parseProtectionDescriptor(records.earthFault?.text || '');
+    const earthPresent = !recordIsEmpty(records.earthFault?.text);
+    const arcPresent = !recordIsEmpty(records.arcFlash?.text);
+    const tripSensitivity = tripAmpsToMa(records.earthFaultRating);
+    const integralRcd = /^(?:RCBO|AFDD\s*\+\s*RCBO|RCD|RCCB)$/i.test(descriptor.explicitDevice || '')
+      || descriptor.standardCode === '61009' || descriptor.standardCode === '61008';
+    const rcdArrangement = integralRcd ? 'integral' : (earthPresent ? 'separate' : null);
+    const rcdProtected = integralRcd || earthPresent || descriptor.sensitivityMa != null || tripSensitivity != null;
+    const sensitivity = descriptor.sensitivityMa ?? tripSensitivity;
+    const arcDescriptor = parseProtectionDescriptor(records.arcFlash?.text || '');
+    const explicitAfdd = arcPresent && (/\bAFDD\b|\bAFFD\b|\bBS\s*(?:EN\s*)?62606\b/i.test(records.arcFlash?.text || ''));
+    const resolution = resolveProtectionDevice({
+      standard: records.overcurrent?.text || descriptor.protectionStandard,
+      deviceClass: descriptor.explicitDevice,
+      tripUnit: descriptor.tripUnit,
+      rating,
+      rcdProtected,
+      rcdArrangement,
+      sensitivityMa: sensitivity,
+      afdd: explicitAfdd,
+      afddArrangement: arcPresent ? 'separate' : null,
+    });
+
+    const phaseWords = wordsInRegion(groupWords, bounds.wayPhaseLeft, bounds.wayPhaseRight, top, bottom)
+      .filter((item) => item !== anchor && phaseValues(item.text).length > 0);
+    const phaseCell = sourceCell(phaseWords, 'phase');
+    const phases = phaseValues(phaseCell?.text);
+    let poles = phases.length >= 3 ? 3 : (phases.length === 1 ? 1 : descriptor.poles);
+    let poleConfiguration = poles === 3 ? 'TP' : (poles === 2 ? 'DP' : (poles === 1 ? 'SP' : descriptor.poleConfiguration));
+    const poleConflict = descriptor.poles && poles && descriptor.poles !== poles ? {
+      printedPhase: phaseCell?.text || null,
+      descriptor: descriptor.poleToken,
+      reason: `Phase cell ${phaseCell?.text || 'blank'} conflicts with device pole descriptor ${descriptor.poleToken}`,
+    } : null;
+    if (!poles && descriptor.poles) {
+      poles = descriptor.poles;
+      poleConfiguration = descriptor.poleConfiguration;
+    }
+    const phase = poles === 3 ? '3PH' : (phases.length === 1 ? phases[0] : null);
+    const circuitIdCell = regionCell(groupWords, bounds.idLeft, bounds.idRight, top, bottom, 'circuit_id');
+    const cableCell = regionCell(groupWords, bounds.cableLeft, bounds.cableRight, top, bottom, 'cable');
+    const connectedCell = regionCell(groupWords, bounds.connectedLeft, bounds.connectedRight, top, bottom, 'connected_to');
+    const connectedText = String(connectedCell?.text || '').replace(/\s+/g, ' ').trim();
+    const circuitReference = Core.extractBoardReferences(connectedText)[0]?.original || null;
+    const source = sourceCell(groupWords, 'row');
+    const occupancy = Core.occupancyLabel?.(connectedText || records.overcurrent?.text || '') || null;
+    const spare = occupancy === 'spare';
+    const space = occupancy === 'space' || (!resolution.device && !rating && !connectedText);
+    const separateRcd = earthPresent ? {
+      device: earthDescriptor.explicitDevice === 'RCCB' ? 'RCD' : (earthDescriptor.explicitDevice || 'RCD'),
+      sensitivityMa: tripSensitivity ?? earthDescriptor.sensitivityMa,
+      type: earthDescriptor.rcdType,
+      poles: earthDescriptor.poles,
+      descriptor: records.earthFault?.text || null,
+      sourceCell: records.earthFault,
+      ratingSourceCell: records.earthFaultRating,
+    } : null;
+    const invalidSensitivity = sensitivity != null && ![10, 30, 100, 300, 500].includes(Number(sensitivity));
+    const invalidBreakingCapacity = descriptor.breakingCapacityKa != null
+      && (descriptor.breakingCapacityKa < 3 || descriptor.breakingCapacityKa > 150);
+    const requiresReview = Boolean(resolution.classConflict || poleConflict || invalidSensitivity || invalidBreakingCapacity
+      || (!spare && !space && (!resolution.device || rating == null || !poles)));
+    const reasons = [...resolution.reasons];
+    if (earthPresent) reasons.push('Separate earth-fault protective-device record bound by vertical header position');
+    else if (integralRcd) reasons.push('Integral residual protection is stated by the overcurrent device');
+    if (poleConflict) reasons.push(poleConflict.reason);
+    if (invalidSensitivity) reasons.push(`RCD sensitivity ${sensitivity}mA is outside the supported evidence domain`);
+    if (invalidBreakingCapacity) reasons.push(`Breaking capacity ${descriptor.breakingCapacityKa}kA is outside the supported evidence domain`);
+    return {
+      way: extractWayIdentifier(anchor.text),
+      boardRef,
+      phase,
+      rating,
+      device: resolution.device,
+      class_basis: resolution.classBasis,
+      classConflict: resolution.classConflict,
+      curve: descriptor.curve,
+      tripUnit: descriptor.tripUnit,
+      poleConfiguration,
+      protectionStandard: descriptor.protectionStandard || resolution.protectionStandard,
+      protectionStandardCode: descriptor.standardCode || resolution.standardCode,
+      sens: sensitivity,
+      rcdProtected: rcdProtected ? true : false,
+      rcdArrangement,
+      rcdType: descriptor.rcdType || earthDescriptor.rcdType,
+      separateRcd,
+      earthFaultDevice: earthPresent ? separateRcd : null,
+      afdd: explicitAfdd,
+      afddIndicated: explicitAfdd ? true : (arcPresent ? null : false),
+      arcFlashDevice: arcPresent ? (arcDescriptor.explicitDevice || records.arcFlash?.text || null) : null,
+      arcFlashRatingA: numberValue(records.arcFlashRating, { min: 0, max: 6300 }),
+      poles,
+      poleConflict,
+      ka: descriptor.breakingCapacityKa,
+      desc: connectedText,
+      circuitId: circuitIdCell?.text || null,
+      circuitReference,
+      circuitReferenceText: connectedText || null,
+      circuitConfig: null,
+      associatedDevices: Core.extractAssociatedEquipment(connectedText),
+      cable: cableCell ? { orig: cableCell.text, description: cableCell.text } : null,
+      spare,
+      space,
+      incomer: false,
+      qty: space ? 0 : (resolution.device ? 1 : 0),
+      occupies_ways: poles === 3 ? 3 : 1,
+      sharedPhaseSpan: poles === 3,
+      phaseSlotIndependent: poles === 1,
+      poleEvidenceBasis: phases.length ? 'trimble_bounded_phase_record' : 'trimble_device_descriptor',
+      inferredDevice: resolution.classBasis !== 'explicit' && resolution.classBasis !== 'bs_en',
+      requiresReview,
+      resolutionSource: 'trimble_stacked_geometry',
+      resolutionReasons: reasons,
+      srcText: source?.text || '',
+      sourceCell: source,
+      highlightBbox: source?.bbox || null,
+      fieldSources: {
+        way: sourceCell([anchor], 'way'),
+        phase: phaseCell || source,
+        device: records.overcurrent || source,
+        protectionStandard: records.overcurrent || source,
+        tripUnit: records.overcurrent || source,
+        rating: records.overcurrentRating || source,
+        curve: records.overcurrent || source,
+        breakingCapacity: records.overcurrent || source,
+        poles: phaseCell || records.overcurrent || source,
+        rcdProtection: records.earthFault || records.overcurrent || source,
+        rcdSensitivity: records.earthFaultRating || records.overcurrent || source,
+        afdd: records.arcFlash || source,
+        arcFlash: records.arcFlash || source,
+        circuitReference: connectedCell || source,
+        description: connectedCell || source,
+        circuitId: circuitIdCell || source,
+        installMethod: cableCell || source,
+      },
+      conf: requiresReview ? Math.min(0.76, resolution.confidence || 0.76) : Math.min(0.98, resolution.confidence || 0.92),
+      validation: { invalidSensitivity, invalidBreakingCapacity },
+    };
+  }
+
+  function parseTrimbleStackedSchedulePage(input, words, profile, pageWidth, pageHeight) {
+    const schema = trimbleColumnSchema(profile, pageWidth, pageHeight);
+    if (!schema) {
+      return {
+        matched: false, confidence: profile.confidence, words: words.length, schema: null, rows: [], feeds: [], references: [],
+        warnings: ['trimble_header_stack_not_resolved'],
+      };
+    }
+    const header = trimbleBoardHeader(profile, words, schema, pageWidth);
+    const anchors = wordsInRegion(words, schema.bounds.wayPhaseLeft, schema.bounds.wayPhaseRight,
+      schema.dataBand[1], schema.dataBand[1] + schema.dataBand[3])
+      .filter((item) => extractWayIdentifier(item.text) != null)
+      .sort((left, right) => left.cy - right.cy || left.cx - right.cx);
+    const rows = [];
+    for (let index = 0; index < anchors.length; index += 1) {
+      const top = Math.max(schema.dataBand[1], anchors[index].y0 - Math.max(2, anchors[index].height * 0.35));
+      const nextTop = anchors[index + 1]?.y0;
+      const bottom = Math.min(schema.dataBand[1] + schema.dataBand[3],
+        Number.isFinite(nextTop) ? nextTop - Math.max(1, anchors[index].height * 0.2) : schema.dataBand[1] + schema.dataBand[3]);
+      const groupWords = words.filter((item) => item.cy >= top && item.cy < bottom
+        && item.x0 < schema.bounds.ratingRight);
+      const row = trimbleRow(groupWords, anchors[index], top, bottom, schema, header.boardRef);
+      if (row) rows.push(row);
+    }
+    schema.rowSpacing = median(anchors.slice(1).map((anchor, index) => anchor.cy - anchors[index].cy).filter((value) => value > 2));
+
+    const blockingReasons = [];
+    if (!header.boardRef) blockingReasons.push('primary_board_not_resolved');
+    if (!anchors.length) blockingReasons.push('way_rows_not_resolved');
+    if (!rows.some((row) => row.device || row.spare || row.space)) blockingReasons.push('no_bounded_schedule_rows');
+    const reviewReasons = [];
+    if (rows.some((row) => row.classConflict)) reviewReasons.push('explicit_device_class_conflict');
+    if (rows.some((row) => row.poleConflict)) reviewReasons.push('phase_pole_conflict');
+    if (rows.some((row) => row.validation?.invalidSensitivity || row.validation?.invalidBreakingCapacity)) reviewReasons.push('invalid_protection_unit_domain');
+    if (rows.some((row) => row.requiresReview)) reviewReasons.push('row_review_required');
+    const grid = {
+      accepted: blockingReasons.length === 0,
+      reasons: [...blockingReasons, ...reviewReasons],
+      blockingReasons,
+      reviewReasons,
+      roles: schema.columns.map((column) => column.role),
+      wayAnchors: anchors.length,
+      distinctWays: new Set(rows.map((row) => row.way)).size,
+      populatedRows: rows.filter((row) => row.device || row.spare || row.space).length,
+    };
+    const references = [];
+    if (header.boardRef) references.push({
+      role: 'primary_board', original: header.boardRef,
+      normalised: Core.normaliseBoardReference(header.boardRef), line: null,
+    });
+    rows.forEach((row) => {
+      if (!row.circuitReference) return;
+      const normalised = Core.normaliseBoardReference(row.circuitReference);
+      if (!normalised || references.some((item) => item.role === 'circuit_reference' && item.normalised === normalised)) return;
+      references.push({ role: 'circuit_reference', original: row.circuitReference, normalised, line: null });
+    });
+    const classification = classifyBoardFamily(header.header, { devices: rows, policy: input.boardPolicy });
+    const feeds = header.boardRef ? rows.filter((row) => row.circuitReference).map((row) => ({
+      fromRef: header.boardRef,
+      toRef: row.circuitReference,
+      way: row.way,
+      device: row.device,
+      rating: row.rating,
+      poles: row.poles,
+      cable: row.cable,
+      confidence: row.conf,
+      sourceCell: row.fieldSources.circuitReference,
+    })) : [];
+    const warnings = [];
+    if (!header.boardRef) warnings.push('primary_board_not_resolved');
+    blockingReasons.filter((reason) => reason !== 'primary_board_not_resolved').forEach((reason) => warnings.push(`unproven_schedule_grid:${reason}`));
+    reviewReasons.forEach((reason) => warnings.push(`schedule_grid_review:${reason}`));
+    schema.transferEligible = grid.accepted && !reviewReasons.includes('explicit_device_class_conflict')
+      && !reviewReasons.includes('invalid_protection_unit_domain');
+    return {
+      matched: grid.accepted,
+      confidence: grid.accepted ? Math.min(profile.confidence, 0.98) : Math.min(profile.confidence, 0.6),
+      words: words.length,
+      dialect: schema.dialect,
+      schema,
+      grid,
+      table: {
+        bbox: unionBox(words.filter((item) => item.cy >= schema.dataBand[1] && item.cy <= schema.dataBand[1] + schema.dataBand[3])),
+        rowCount: rows.length,
+        observedRowCount: rows.length,
+        inferredRowCount: 0,
+      },
+      board: header.boardRef ? {
+        ref: header.boardRef,
+        header: header.header,
+        evidence: header.evidence,
+        classification,
+        type: familyTypeCode(classification.family),
+      } : null,
+      rows,
+      feeds,
+      references,
+      warnings,
+    };
+  }
+
   function parseSpatialSchedulePage(input = {}) {
     const words = collectSpatialWords(input);
     const pageWidth = Number(input.pageWidth || input.width || Math.max(1, ...words.map((word) => word.x1)));
     const pageHeight = Number(input.pageHeight || input.height || Math.max(1, ...words.map((word) => word.y1)));
     if (words.length < 8 || !Number.isFinite(pageWidth) || !Number.isFinite(pageHeight)) {
       return { matched: false, confidence: 0, words: words.length, rows: [], feeds: [], references: [], warnings: ['insufficient_spatial_words'] };
+    }
+    const trimbleProfile = trimbleDialectProfile(words);
+    if (trimbleProfile.matched) {
+      return parseTrimbleStackedSchedulePage(input, words, trimbleProfile, pageWidth, pageHeight);
     }
     const hintedWayX = input.schemaHint?.columns?.find((column) => column.role === 'way')?.x;
     const wayAnchors = findWayAnchors(words, pageWidth, { allowSingle: Boolean(input.allowSingleWay), expectedX: hintedWayX });
@@ -1298,6 +1788,18 @@
     };
   }
 
+  function spatialSchemaTransferEligible(result) {
+    if (!result?.matched || !result.rows?.length || !result.schema?.columns?.length) return false;
+    if (result.schema.transferEligible === false || result.grid?.accepted === false) return false;
+    if (!result.board?.ref) return false;
+    const blockingWarnings = (result.warnings || []).some((warning) => /^(?:primary_board_not_resolved|unproven_schedule_grid:)/.test(warning));
+    if (blockingWarnings) return false;
+    const activeRows = result.rows.filter((row) => Core.isPopulatedProtectionRow
+      ? Core.isPopulatedProtectionRow(row) : !row.space && !row.spare);
+    return activeRows.every((row) => !row.classConflict
+      && !row.validation?.invalidSensitivity && !row.validation?.invalidBreakingCapacity);
+  }
+
   function parseSpatialScheduleDocument(pageInputs = [], options = {}) {
     const pages = (pageInputs || []).map((input, index) => ({
       ...input,
@@ -1314,7 +1816,7 @@
       }
       return { input, result, attempts };
     });
-    const catalogue = independent.filter((entry) => entry.result?.matched && entry.result.rows?.length && entry.result.schema?.columns?.length)
+    const catalogue = independent.filter((entry) => spatialSchemaTransferEligible(entry.result))
       .map((entry) => ({
         page: entry.input.documentPage,
         width: Number(entry.input.pageWidth || entry.input.width),
@@ -1366,7 +1868,8 @@
           const transferAccepted = Number(recovered.confidence || 0) >= 0.62
             && Number(recovered.grid?.populatedRows || 0) > 0
             && completeness >= 0.5
-            && unresolvedPhaseRows <= Math.max(1, Math.floor(recovered.rows.length * 0.5));
+            && unresolvedPhaseRows <= Math.max(1, Math.floor(recovered.rows.length * 0.5))
+            && spatialSchemaTransferEligible(recovered);
           entry.attempts[entry.attempts.length - 1].matched = transferAccepted;
           entry.attempts[entry.attempts.length - 1].completeness = Number(completeness.toFixed(2));
           if (transferAccepted) candidates.push({ result: recovered, hint, completeness });

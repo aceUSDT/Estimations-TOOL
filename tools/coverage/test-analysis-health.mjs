@@ -134,6 +134,20 @@ test('no pages at all ⇒ failed (NO_CONTENT)', () => {
   assert.ok(h.reasons.some((r) => r.code === 'NO_CONTENT'));
 });
 
+test('boardless rows, unproven grids, class conflicts, and invalid units fail closed', () => {
+  const h = core.buildAnalysisHealth({
+    coverage: { perBoard: [{ norm: 'DB-01', inScope: true, rowsCaptured: 1, capturedWays: 1, expectedWays: 1, unaccountedWays: 0 }], summary: { expectedWays: 1, capturedWays: 1 } },
+    boards: { 'DB-01': linkedBoard() },
+    rows: [row({ boardNorm: null, classConflict: { explicit: 'MCB', standardDevice: 'RCBO' }, poleConflict: { printedPhase: 'L1', descriptor: '3-4P' }, validation: { invalidSensitivity: true } })],
+    pages: [page({ rowsParsed: 1, spatialGridAccepted: false, spatialBlockingReasons: ['primary_board_not_resolved'] })],
+    files: [{ id: 'f1', status: 'ready' }],
+  });
+  assert.equal(h.state, 'failed');
+  for (const code of ['UNASSIGNED_SCHEDULE_ROWS', 'SCHEDULE_GRID_UNPROVEN', 'PROTECTION_CLASS_CONFLICT', 'PHASE_POLE_CONFLICT', 'INVALID_PROTECTION_DOMAIN']) {
+    assert.ok(h.reasons.some((reason) => reason.code === code), `missing ${code}`);
+  }
+});
+
 test('schematic pages use feeder health and never masquerade as empty schedules', () => {
   const boards = {
     LVS1: { norm: 'LVS1', orig: 'LVS1', pages: [{ fileId: 's1', page: 1 }] },
@@ -204,7 +218,7 @@ test('diagnostic export contains NO document text, board names, or file names', 
 });
 
 test('every reason emitted by the model has a stable message in HEALTH_REASONS', () => {
-  for (const code of ['ZERO_DEVICES_WITH_BOARDS', 'DEVICE_COUNT_BELOW_BOARD_COUNT', 'BOARD_ROWS_MISSING', 'WAYS_UNACCOUNTED', 'WAYS_OVER_CAPACITY', 'BOARD_FEED_MISSING', 'PROTECTION_DETAILS_MISSING', 'SCHEDULE_PAGE_UNPARSED', 'SCHEDULE_DOC_NO_BOARDS', 'SCHEMATIC_FEEDS_MISSING', 'PAGE_TEXT_UNRELIABLE', 'OCR_PENDING', 'DOCUMENT_UNREADABLE', 'NO_CONTENT']) {
+  for (const code of ['ZERO_DEVICES_WITH_BOARDS', 'DEVICE_COUNT_BELOW_BOARD_COUNT', 'BOARD_ROWS_MISSING', 'WAYS_UNACCOUNTED', 'WAYS_OVER_CAPACITY', 'BOARD_FEED_MISSING', 'PROTECTION_DETAILS_MISSING', 'SCHEDULE_PAGE_UNPARSED', 'SCHEDULE_DOC_NO_BOARDS', 'UNASSIGNED_SCHEDULE_ROWS', 'SCHEDULE_GRID_UNPROVEN', 'PROTECTION_CLASS_CONFLICT', 'PHASE_POLE_CONFLICT', 'INVALID_PROTECTION_DOMAIN', 'SCHEMATIC_FEEDS_MISSING', 'PAGE_TEXT_UNRELIABLE', 'OCR_PENDING', 'DOCUMENT_UNREADABLE', 'NO_CONTENT']) {
     assert.ok(core.HEALTH_REASONS[code], `missing message for ${code}`);
   }
 });

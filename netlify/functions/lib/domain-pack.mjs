@@ -16,7 +16,7 @@ export const EXTRACTION_SYSTEM_PROMPT = `You are the extraction engine of an ele
 - other — cover pages, indexes, pricing sheets, anything else.
 
 ## Schedule dialects (tag sub_format; adapt column mapping, never hard-code one layout)
-- amtech (Amtech/Trimble "Board Data"): Id No, Model No, Ze, Fault Rating kA; per-way In/Ir/Type/RCD mA/AFDD/Cable mm²/Cores/Sep.CPC.
+- amtech / trimble (Amtech/Trimble/SVA "Board Data"): Id No is the board identity; Model No, Ze and Fault Rating kA are board fields. Some variants print three vertically stacked protection records for each way: Overcurrent Protective Device, Earth Fault Protective Device, and Arc Flash Protective Device. Bind each record and its adjacent rating to that way independently.
 - bes (BES/Brenbar): DB Reference, DB Fed From, Device Protecting DB, Number of ways (TP/SP), Spare capacity %; per-way WAY PHASE DESCRIPTION config PROTECTIVE-DEVICE(A) Curve RCD(mA) AFDD.
 - syntegral: ways as "CCT n" or "n/Lx"; columns MCB/RCBO Rating(A), Trip Curve, RCD/RCBO(mA), Arc Fault Detection, Cable Type (coded 1–5), Phase & Neutral(mm²), CPC(mm²/SWA), Circuit Configuration, Duty.
 - bam_epo (BAM/EPO): Reference, Serving, [rating] Sw/Discon, [n] Way TP&N, Incoming Cable Reference; per-way Way Line In Ib P-code Description csa T-code InstallMethod.
@@ -51,6 +51,9 @@ export const EXTRACTION_SYSTEM_PROMPT = `You are the extraction engine of an ele
 
 ## Non-negotiable extraction rules
 1. READ IN THIS ORDER: (a) board identity/header and incomer, (b) every way/phase slot and its protective device, rating, curve, RCD/AFDD, poles and breaking capacity, (c) associated equipment, (d) supply relationships, and only then (e) cable details. Cable fields must never displace or substitute for protection-device fields. In UK protection columns, BS EN 60898 identifies an MCB, BS EN 61009 identifies an RCBO, BS EN 61008 identifies an RCD/RCCB, BS EN 60947-2 identifies an MCCB, and BS EN 60947-3 identifies a switch-disconnector/isolator. After the BS standard, read the adjacent Type/Curve, Rating (A), short-circuit capacity (kA), AFDD, RCD and RCD operating-current (mA) cells in that exact column order. Never take a later live-conductor, CPC, cable-size or voltage-drop number as the protective-device rating.
+   - Explicit device wording remains visible when it conflicts with a standard: keep the explicit class, lower confidence, and flag the conflict. Industrial schedules may explicitly call a breaker an MCB while also citing BS EN 60947-2; do not silently relabel it MCCB.
+   - An MCB with a marked RCD column or a separate Earth Fault Protective Device remains an MCB with rcd_protected=true and rcd_arrangement="separate" (or "shared"/"upstream" when printed). Only BS EN 61009, explicit RCBO wording, or equally direct integral evidence identifies an RCBO.
+   - "Arc Flash Protective Device" is a separate protection record and is NOT an AFDD synonym. Set afdd=true only for explicit AFDD/AFFD wording or BS EN 62606 evidence.
 2. RECALL FIRST. A missing device is the worst failure. Extract EVERY way slot on the page, including spares, spaces and blanks. If the header says "18 WAY" there are 18 ways (54 phase-slots on TP&N) — account for all that appear on this page.
 3. Reconstruct tables by their printed column headers and row geometry, not by a left-to-right text dump. Attach each cell to its way/phase row before interpreting it. When a row is readable but a protection field is not, emit the row with the unknown field empty, lower confidence, and a possible_missing_rows or uncertain flag.
 4. Phase-slots are independent. Way 7 may be L1=spare, L2=equipped, L3=equipped: emit one device entry per phase-slot as shown. Never mark a whole way spare because one phase-line is spare. Multi-phase circuits that genuinely share one device across L1..L3 (one rating spanning three slot rows) are ONE device entry with phase "L1L2L3".
@@ -135,8 +138,8 @@ const DEVICE = {
   type: 'object',
   additionalProperties: false,
   required: ['board_ref', 'way', 'phase', 'description', 'circuit_reference', 'device_class', 'protection_standard',
-    'trip_unit', 'rating_a', 'trip_curve', 'breaking_capacity_ka', 'rcd_ma',
-    'afdd', 'poles', 'cable_type', 'phase_csa_mm2', 'cpc_csa_mm2', 'circuit_config', 'install_method',
+    'trip_unit', 'rating_a', 'trip_curve', 'breaking_capacity_ka', 'rcd_protected', 'rcd_ma', 'rcd_arrangement',
+    'earth_fault_device', 'arc_flash_device', 'afdd', 'poles', 'cable_type', 'phase_csa_mm2', 'cpc_csa_mm2', 'circuit_config', 'install_method',
     'is_spare', 'is_spd', 'is_incomer', 'confidence'],
   properties: {
     board_ref: STR,
@@ -150,7 +153,11 @@ const DEVICE = {
     rating_a: NUM,
     trip_curve: { type: 'string', enum: ['B', 'C', 'D', ''] },
     breaking_capacity_ka: NUM,
+    rcd_protected: { type: 'boolean' },
     rcd_ma: NUM,
+    rcd_arrangement: { type: 'string', enum: ['integral', 'separate', 'shared', 'upstream', 'unclear', ''] },
+    earth_fault_device: { type: 'string', description: 'Separate Earth Fault Protective Device wording; "" if none or integral' },
+    arc_flash_device: { type: 'string', description: 'Separate Arc Flash Protective Device wording; never treat this field as AFDD' },
     afdd: { type: 'boolean' },
     poles: NUM,
     cable_type: { type: 'string', description: 'Code as printed (T2, 5, …) or description; "" if none' },

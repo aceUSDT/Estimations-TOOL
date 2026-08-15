@@ -25,6 +25,7 @@ assert.deepEqual(rcbo.columnEvidence, {
   rating: 16,
   breakingCapacityKa: 10,
   rcdProtected: true,
+  rcdArrangement: 'integral',
   sensitivityMa: 30,
 });
 assert.equal(rcbo.requiresReview, false);
@@ -41,10 +42,11 @@ const mcbWithRcdColumn = Core.parseProtectionTableLine(
   '5 L1 60898 C 10 10 x yes 30 LIGHTING-BATHROOM/HALL Rd 1.5 1 B 102 0.4 2.19',
   { headerText: header },
 );
-assert.equal(mcbWithRcdColumn.device, 'RCBO', 'an MCB standard plus same-row RCD protection is a combined RCBO');
+assert.equal(mcbWithRcdColumn.device, 'MCB', 'BS EN 60898 remains an MCB when a separate RCD column is marked');
 assert.equal(mcbWithRcdColumn.rating, 10);
 assert.equal(mcbWithRcdColumn.curve, 'C');
 assert.equal(mcbWithRcdColumn.rcdProtected, true);
+assert.equal(mcbWithRcdColumn.rcdArrangement, 'separate');
 assert.equal(mcbWithRcdColumn.sens, 30);
 
 const condenser = Core.parseProtectionTableLine(
@@ -84,7 +86,8 @@ assert.equal(incompleteRcbo.device, 'RCBO');
 assert.equal(incompleteRcbo.requiresReview, true, 'an RCBO without a sensitivity must remain in review');
 
 const reconciledAiRow = Core.reconcileCombinedProtection({device:'MCB',rating:10,curve:'C',rcdProtected:true,sens:30,afdd:false});
-assert.equal(reconciledAiRow.device, 'RCBO', 'the shared reconciliation rule must cover non-table extraction paths');
+assert.equal(reconciledAiRow.device, 'MCB', 'reconciliation must not overwrite an evidenced MCB class');
+assert.equal(reconciledAiRow.rcdArrangement, 'separate_or_unspecified');
 const unstatedRcd = Core.reconcileCombinedProtection({device:'MCB',rating:20,rcdProtected:null,sens:null});
 assert.equal(unstatedRcd.rcdProtected, null, 'reconciliation must preserve an unstated RCD field instead of inventing No RCD');
 

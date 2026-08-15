@@ -218,6 +218,18 @@
     return /^(?:AC|A|F|B)$/.test(source) ? source : NOT_SPECIFIED;
   }
 
+  function normaliseRcdArrangement(value) {
+    const source = text(value).toLowerCase().replace(/\s+/g, '_');
+    const labels = {
+      integral: 'Integral',
+      separate: 'Separate',
+      shared: 'Shared',
+      upstream: 'Upstream',
+      separate_or_unspecified: 'Separate / unclear',
+    };
+    return labels[source] || NOT_SPECIFIED;
+  }
+
   function normaliseProtectionStandard(value) {
     const source = text(value).toUpperCase().replace(/\s+/g, ' ');
     if (!source) return NOT_SPECIFIED;
@@ -239,12 +251,16 @@
       rcdProtected,
       rcdSensitivity,
       rcdType: normaliseRcdType(row && row.rcdType),
+      rcdArrangement: normaliseRcdArrangement(row && row.rcdArrangement),
       afdd,
     };
   }
 
-  function rcdProtectionLabel(value, sensitivity) {
-    if (value === true) return sensitivity == null ? 'RCD protected' : `RCD ${formatRating(sensitivity)}mA`;
+  function rcdProtectionLabel(value, sensitivity, arrangement) {
+    if (value === true) {
+      const prefix=arrangement&&arrangement!==NOT_SPECIFIED?`${arrangement} RCD`:'RCD';
+      return sensitivity == null ? `${prefix} protected` : `${prefix} ${formatRating(sensitivity)}mA`;
+    }
     if (value === false) return 'No RCD';
     return NOT_SPECIFIED;
   }
@@ -487,6 +503,7 @@
       protection.rcdProtected == null ? NOT_SPECIFIED : protection.rcdProtected ? 'RCD' : 'NO RCD',
       protection.rcdSensitivity == null ? NOT_SPECIFIED : `${formatRating(protection.rcdSensitivity)}mA`,
       protection.rcdType,
+      protection.rcdProtected ? protection.rcdArrangement : NOT_SPECIFIED,
       breakingCapacity,
       protection.afdd == null ? NOT_SPECIFIED : protection.afdd ? 'AFDD' : 'NO AFDD',
     ]
@@ -599,6 +616,7 @@
       rcdProtected: specification.rcdProtected,
       rcdSensitivity: specification.rcdSensitivity,
       rcdType: specification.rcdType,
+      rcdArrangement: specification.rcdArrangement,
       afdd: specification.afdd,
       sourceDocument,
       fileId: text(row && row.fileId),
@@ -648,7 +666,7 @@
           descriptions: Array.from(new Set(contributors.map((item) => item.description).filter((value) => value !== NOT_SPECIFIED))).sort(naturalCompare),
           sourcePages: summariseSourcePages(contributors),
           reviewStatus: reportRow.reviewReasons.length || contributors.some((item) => item.reviewStatus !== 'Approved') ? 'Review required' : 'Ready',
-          rcdLabel: rcdProtectionLabel(reportRow.rcdProtected, reportRow.rcdSensitivity),
+          rcdLabel: rcdProtectionLabel(reportRow.rcdProtected, reportRow.rcdSensitivity, reportRow.rcdArrangement),
           afddLabel: afddProtectionLabel(reportRow.afdd),
         });
       });
@@ -723,6 +741,7 @@
           rcdProtected: specification.rcdProtected,
           rcdSensitivity: specification.rcdSensitivity,
           rcdType: specification.rcdType,
+          rcdArrangement: specification.rcdArrangement,
           afdd: specification.afdd,
           quantities: Array(boards.length).fill(0),
           rowIdsByBoard: Array.from({ length: boards.length }, () => []),
@@ -1158,7 +1177,7 @@
       deliverableValue(row.pole),
       deliverableValue(row.curve) ? `${row.curve} curve` : null,
       deliverableValue(row.breakingCapacity),
-      row.rcdProtected === true ? rcdProtectionLabel(true, row.rcdSensitivity) : row.rcdProtected === false ? 'No RCD' : null,
+      row.rcdProtected === true ? rcdProtectionLabel(true, row.rcdSensitivity, row.rcdArrangement) : row.rcdProtected === false ? 'No RCD' : null,
       deliverableValue(row.rcdType) ? `RCD Type ${row.rcdType}` : null,
       row.afdd === true ? 'AFDD' : row.afdd === false ? 'No AFDD' : null,
     ].filter(Boolean);
@@ -1387,7 +1406,7 @@
       item.breakingCapacity,
       item.protectionStandard,
       item.tripUnit,
-      rcdProtectionLabel(item.rcdProtected, item.rcdSensitivity),
+      rcdProtectionLabel(item.rcdProtected, item.rcdSensitivity, item.rcdArrangement),
       item.rcdSensitivity == null ? NOT_SPECIFIED : item.rcdSensitivity,
       afddProtectionLabel(item.afdd),
       item.role,
@@ -1476,7 +1495,7 @@
         ["Breaking Capacity", item.breakingCapacity],
         ["Protection Standard", item.protectionStandard],
         ["Trip Unit", item.tripUnit],
-        ["RCD Protection", rcdProtectionLabel(item.rcdProtected, item.rcdSensitivity)],
+        ["RCD Protection", rcdProtectionLabel(item.rcdProtected, item.rcdSensitivity, item.rcdArrangement)],
         ["RCD Sensitivity", item.rcdSensitivity == null ? NOT_SPECIFIED : `${formatRating(item.rcdSensitivity)}mA`],
         ["AFDD Protection", afddProtectionLabel(item.afdd)],
         ["Circuit Reference", item.circuitReference],

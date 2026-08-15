@@ -1098,7 +1098,6 @@
 
     const rcdProtected = standard.combinedRcd ? true : rcdColumn;
     let device = standard.device;
-    if (device === 'MCB' && rcdProtected) device = 'RCBO';
     if (afdd && device === 'RCBO') device = 'AFDD+RCBO';
     return {
       standard: standard.label,
@@ -1110,6 +1109,7 @@
       afdd,
       rcdProtected,
       rcdCombined: standard.combinedRcd,
+      rcdArrangement: standard.combinedRcd ? 'integral' : (rcdColumn === true ? 'separate' : null),
       sensitivityMa,
       description: tokens.join(' ').trim(),
       indicatorsCaptured: indicators.length,
@@ -1152,12 +1152,14 @@
       : (explicitCombinedRcd || sensitivity != null || explicitRcdYes ? true : (explicitRcdNo ? false : null));
     const rcdConfirmed = rcdState === true;
     let device = standardSequence?.device || explicitDevice;
-    if (device === 'MCB' && rcdConfirmed) device = 'RCBO';
     if (device === 'RCBO' && standardSequence?.afdd) device = 'AFDD+RCBO';
+    let rcdArrangement = standardSequence?.rcdArrangement
+      || (explicitCombinedRcd ? 'integral' : (rcdConfirmed && explicitDevice === 'MCB' ? 'separate' : null));
     let inferredDevice = false;
     if (!device && curve && rating != null && protectionHeader) {
       device = rcdConfirmed ? 'RCBO' : 'MCB';
       inferredDevice = true;
+      if (device === 'RCBO' && !rcdArrangement) rcdArrangement = 'integral';
     } else if (!device && rating != null && protectionHeader
       && (extractBreakingCapacity(text) || /\b[1-4]\s*P(?:OLE)?\b/i.test(text))) {
       device = 'Protective device';
@@ -1182,6 +1184,7 @@
       sens: sensitivity,
       afdd: Boolean(standardSequence?.afdd),
       rcdProtected: rcdState,
+      rcdArrangement,
       protectionStandard: standardSequence?.standard || null,
       poles: poleMatch ? Number(poleMatch[1]) : null,
       ka: breaking?.value ?? null,
@@ -1201,6 +1204,7 @@
         rating: standardSequence.rating,
         breakingCapacityKa: standardSequence.breakingCapacityKa,
         rcdProtected: standardSequence.rcdProtected,
+        rcdArrangement: standardSequence.rcdArrangement,
         sensitivityMa: standardSequence.sensitivityMa,
       } : null,
       srcText: text,
@@ -1208,12 +1212,7 @@
     };
   }
 
-  /**
-   * Reconcile protection columns after any extraction path. A schedule row that
-   * identifies an MCB and also marks RCD protection represents the combined
-   * protective function sold and counted as an RCBO. Keeping this rule here
-   * means OCR, spatial parsing, assisted extraction, and user edits agree.
-   */
+  /** Reconcile protection attributes without overwriting an evidenced class. */
   function reconcileCombinedProtection(row) {
     if (!row) return row;
     const next = reconcilePoleEvidence(reconcileRowOccupancy(row));
@@ -1223,18 +1222,29 @@
     const afdd = next.afdd === true;
     const current = String(next.device || '').toUpperCase().replace(/\s+/g, '');
     let device = next.device;
-    if (current === 'MCB' && rcdProtected) device = afdd ? 'AFDD+RCBO' : 'RCBO';
-    else if ((current === 'RCBO' || current === 'AFDD+RCBO') && afdd) device = 'AFDD+RCBO';
-    if (device === next.device && next.rcdProtected === rcdProtected) return next;
+    let rcdArrangement = next.rcdArrangement || null;
+    if ((current === 'RCBO' || current === 'AFDD+RCBO' || current === 'RCD') && rcdProtected !== false) {
+      rcdArrangement = 'integral';
+    } else if (current === 'MCB' && rcdProtected && !rcdArrangement) {
+      rcdArrangement = next.separateRcd ? 'separate' : 'separate_or_unspecified';
+    }
+    if ((current === 'RCBO' || current === 'AFDD+RCBO') && afdd && next.afddArrangement !== 'separate') {
+      device = 'AFDD+RCBO';
+    }
+    const reconciledRcd = current === 'RCBO' || current === 'AFDD+RCBO' || current === 'RCD'
+      ? (rcdProtected === false ? false : true) : rcdProtected;
+    if (device === next.device && next.rcdProtected === reconciledRcd
+      && next.rcdArrangement === rcdArrangement) return next;
 
     next.device = device;
-    next.rcdProtected = rcdProtected;
+    next.rcdProtected = reconciledRcd;
+    next.rcdArrangement = rcdArrangement;
     const reasons = Array.isArray(next.resolutionReasons) ? [...next.resolutionReasons] : [];
-    const reason = current === 'MCB'
-      ? (afdd
-        ? 'Combined MCB, RCD and AFDD row evidence classified as AFDD+RCBO'
-        : 'Combined MCB and RCD row evidence classified as RCBO')
-      : 'RCBO with AFDD row evidence classified as AFDD+RCBO';
+    const reason = device !== row.device
+      ? 'RCBO with integral AFDD row evidence classified as AFDD+RCBO'
+      : (current === 'MCB' && reconciledRcd
+        ? 'MCB class retained; RCD protection recorded as a separate attribute'
+        : 'Integral residual-current protection normalised from the device class');
     if (device !== row.device && !reasons.includes(reason)) reasons.push(reason);
     next.resolutionReasons = reasons;
     if ((device === 'RCBO' || device === 'AFDD+RCBO') && next.sens == null) next.requiresReview = true;
@@ -1253,6 +1263,7 @@
         row.poles || '',
         row.sens ?? '',
         row.rcdType || '',
+        row.rcdArrangement || '',
       ].join('|');
       if (!totals.has(key)) {
         totals.set(key, {
@@ -1262,6 +1273,7 @@
           poles: row.poles,
           sensitivityMa: row.sens,
           rcdType: row.rcdType,
+          rcdArrangement: row.rcdArrangement,
           quantity: 0,
           evidence: [],
         });
@@ -1997,6 +2009,11 @@
     PROTECTION_DETAILS_MISSING: 'Active circuit rows are missing a protective device or rating',
     SCHEDULE_PAGE_UNPARSED: 'Page looks like a schedule but produced no rows',
     SCHEDULE_DOC_NO_BOARDS: 'Schedule-type pages exist but no board reference was identified',
+    UNASSIGNED_SCHEDULE_ROWS: 'Active schedule rows were captured without a resolved board identity',
+    SCHEDULE_GRID_UNPROVEN: 'A schedule page contains rows but its table geometry was not proven',
+    PROTECTION_CLASS_CONFLICT: 'Explicit device wording conflicts with the governing protection standard',
+    PHASE_POLE_CONFLICT: 'Printed phase evidence conflicts with the device pole descriptor',
+    INVALID_PROTECTION_DOMAIN: 'A protection value falls outside the supported electrical unit domain',
     SCHEMATIC_FEEDS_MISSING: 'Schematic boards were identified but no feeder relationships were captured',
     PAGE_TEXT_UNRELIABLE: 'Page text is unreliable and OCR has not replaced it',
     OCR_PENDING: 'Page is still waiting for OCR',
@@ -2027,6 +2044,9 @@
       signals.push('column-header');
     }
     if (/\bDB\s*REFERENCE\b|\b(?:DISTRIBUTION\s+)?BOARD\s*(?:REFERENCE|REF|IDENTITY)\b/i.test(all)) signals.push('board-header');
+    if (/\bBOARD\s+DATA\b/i.test(all) && /\bID\s*(?:NO|NUMBER)\b/i.test(all)) signals.push('board-data-identity');
+    if (/\bOVER\s*CURRENT\s+PROTECTIVE\s+DEVICE\b/i.test(all)
+      && /\bEARTH\s+FAULT\s+PROTECTIVE\s+DEVICE\b/i.test(all)) signals.push('stacked-protection');
     if (expectedWaysFromText(all)) signals.push('way-count-header');
     const score = Math.min(1, signals.length * 0.2 + (wayLines >= 8 ? 0.15 : 0) + (deviceHits >= 8 ? 0.1 : 0));
     return { score: Number(score.toFixed(2)), signals };
@@ -2203,6 +2223,19 @@
       if ((pg.rowsParsed || 0) === 0 && (pg.textLines || 0) > 0) {
         addReason('SCHEDULE_PAGE_UNPARSED', { fileId: pg.fileId, page: pg.page, score: pg.scheduleScore || null });
       }
+      if ((pg.spatialBlockingReasons || []).length > 0) {
+        addReason('SCHEDULE_GRID_UNPROVEN', { fileId: pg.fileId, page: pg.page });
+      }
+    }
+    for (const row of allRows) {
+      if (row.kind !== 'schedule' || !isPopulatedProtectionRow(row)) continue;
+      const ref = { fileId: row.fileId, page: row.page };
+      if (!row.boardNorm) addReason('UNASSIGNED_SCHEDULE_ROWS', ref);
+      if (row.classConflict && !row.edited) addReason('PROTECTION_CLASS_CONFLICT', ref);
+      if (row.poleConflict && !row.edited) addReason('PHASE_POLE_CONFLICT', ref);
+      if (!row.edited && (row.validation?.invalidSensitivity || row.validation?.invalidBreakingCapacity)) {
+        addReason('INVALID_PROTECTION_DOMAIN', ref);
+      }
     }
     if (coverage) {
       for (const board of coverage.perBoard || []) {
@@ -2239,6 +2272,9 @@
     if (reasons.has('ZERO_DEVICES_WITH_BOARDS') || reasons.has('NO_CONTENT')
       || reasons.has('DEVICE_COUNT_BELOW_BOARD_COUNT') || reasons.has('WAYS_OVER_CAPACITY')
       || reasons.has('BOARD_FEED_MISSING') || reasons.has('SCHEMATIC_FEEDS_MISSING')
+      || reasons.has('UNASSIGNED_SCHEDULE_ROWS') || reasons.has('SCHEDULE_GRID_UNPROVEN')
+      || reasons.has('PROTECTION_CLASS_CONFLICT') || reasons.has('PHASE_POLE_CONFLICT')
+      || reasons.has('INVALID_PROTECTION_DOMAIN')
       || (deviceCount === 0 && schedulePages.length > 0)) state = 'failed';
 
     return {
@@ -2302,6 +2338,10 @@
         spatialConfidence: pg.spatialConfidence ?? null,
         spatialColumns: pg.spatialColumns || [],
         spatialWarnings: pg.spatialWarnings || [],
+        spatialDialect: pg.spatialDialect || null,
+        spatialGridAccepted: pg.spatialGridAccepted ?? null,
+        spatialBlockingReasons: pg.spatialBlockingReasons || [],
+        spatialReviewReasons: pg.spatialReviewReasons || [],
         spatialContinuation: Boolean(pg.spatialContinuation),
       })),
     };

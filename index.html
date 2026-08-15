@@ -1134,7 +1134,7 @@ const state = {
   reportMode: 'board',
   reviewFlow: {active:false,currentRowId:null,initialCount:0,moving:false,boardOrder:[],initialByBoard:{},rowOrderByBoard:{}},
 };
-const ANALYSIS_VERSION=19;
+const ANALYSIS_VERSION=20;
 const uid = () => 'x'+(state.nextId++)+'_'+Math.random().toString(36).slice(2,6);
 
 /* ====================== PERSISTENCE (IndexedDB) ====================== */
@@ -2292,6 +2292,11 @@ function mergeAiResult(A,out,fileId,pageNo,pageType){
         if(!existing.tripUnit&&d.trip_unit)existing.tripUnit=d.trip_unit;
         if(!existing.protectionStandard&&d.protection_standard)existing.protectionStandard=d.protection_standard;
         if(existing.sens==null&&d.rcd_ma!=null)existing.sens=d.rcd_ma;
+        if(existing.rcdProtected==null&&typeof d.rcd_protected==='boolean')existing.rcdProtected=d.rcd_protected;
+        if(!existing.rcdArrangement&&d.rcd_arrangement)existing.rcdArrangement=d.rcd_arrangement==='unclear'?'separate_or_unspecified':d.rcd_arrangement;
+        if(!existing.earthFaultDevice&&d.earth_fault_device)existing.earthFaultDevice={descriptor:d.earth_fault_device};
+        if(!existing.arcFlashDevice&&d.arc_flash_device)existing.arcFlashDevice=d.arc_flash_device;
+        if(existing.afddIndicated==null&&d.afdd===true){existing.afdd=true;existing.afddIndicated=true;}
         if(existing.poles==null&&d.poles!=null)existing.poles=d.poles;
         if(existing.ka==null&&d.breaking_capacity_ka!=null)existing.ka=d.breaking_capacity_ka;
         if(!existing.circuitReference&&d.circuit_reference)existing.circuitReference=d.circuit_reference;
@@ -2301,8 +2306,6 @@ function mergeAiResult(A,out,fileId,pageNo,pageType){
         existing.requiresReview=!existing.device||existing.rating==null||existing.conf<0.8;
         existing.extractionMethod=(existing.extractionMethod||'Deterministic parser')+' + AI field check';
       }
-      if(d.rcd_ma!=null){existing.sens=d.rcd_ma;existing.rcdProtected=true;}
-      if(d.afdd===true){existing.afdd=true;existing.afddIndicated=true;}
       return;
     }
     const aiSourceText=d.source_text||d.description||'';
@@ -2313,6 +2316,8 @@ function mergeAiResult(A,out,fileId,pageNo,pageType){
       desc:d.description||'', device, rating:d.rating_a??null, poles:d.poles??null, poleConfiguration:d.pole_configuration||null,
       curve:d.trip_curve||null, tripUnit:d.trip_unit||null, protectionStandard:d.protection_standard||null,
       circuitReference:d.circuit_reference||null, sens:d.rcd_ma??null, rcdProtected:d.rcd_protected===false?false:(d.rcd_protected===true||d.rcd_ma!=null?true:null),
+      rcdArrangement:d.rcd_arrangement==='unclear'?'separate_or_unspecified':d.rcd_arrangement||null,
+      earthFaultDevice:d.earth_fault_device?{descriptor:d.earth_fault_device}:null,arcFlashDevice:d.arc_flash_device||null,
       afdd:typeof d.afdd==='boolean'?d.afdd:null, afddIndicated:typeof d.afdd==='boolean'?d.afdd:null, ka:d.breaking_capacity_ka??null,
       cable:(d.phase_csa_mm2!=null||d.cable_type)?{orig:[d.phase_csa_mm2?d.phase_csa_mm2+'mm²':null,d.cable_type].filter(Boolean).join(' '),
         size:d.phase_csa_mm2??null, cpc:typeof d.cpc_csa_mm2==='number'?d.cpc_csa_mm2:null, cores:null,
@@ -2895,6 +2900,7 @@ function sourceTrace(row,line,pg,fileName){
     if(field==='Protection Standard')return sources.protectionStandard||sources.device||line;
     if(field==='Trip Unit')return sources.tripUnit||line;
     if(field==='RCD Protection')return sources.rcdProtection||sources.rcdSensitivity||line;
+    if(field==='RCD Arrangement')return sources.rcdProtection||sources.rcdSensitivity||line;
     if(field==='RCD Sensitivity')return sources.rcdSensitivity||sources.rcdProtection||line;
     if(field==='AFDD Protection')return sources.afdd||line;
     if(field==='Circuit Reference')return sources.circuitReference||line;
@@ -2938,6 +2944,7 @@ function sourceTrace(row,line,pg,fileName){
       'Protection Standard':evidence('Protection Standard',row.protectionStandard||'Not specified'),
       'Trip Unit':evidence('Trip Unit',row.tripUnit||'Not specified'),
       'RCD Protection':evidence('RCD Protection',row.rcdProtected==null?'Not specified':row.rcdProtected?'Yes':'No'),
+      'RCD Arrangement':evidence('RCD Arrangement',row.rcdArrangement||'Not specified'),
       'RCD Sensitivity':evidence('RCD Sensitivity',row.sens==null?'Not specified':row.sens+'mA'),
       'AFDD Protection':evidence('AFDD Protection',row.afdd==null?'Not specified':row.afdd?'Yes':'No'),
       'Circuit Reference':evidence('Circuit Reference',row.circuitReference||'Not specified'),
@@ -3102,6 +3109,10 @@ async function runAnalysis(opts){
         spatialContinuation,
         spatialSchemaSourcePage:documentSpatial?.schemaSourcePage??null,
         spatialConfidence:spatial?.confidence??null, spatialColumns:spatial?.schema?.columns?.map(column=>column.role)||[],
+        spatialDialect:spatial?.dialect||spatial?.schema?.dialect||null,
+        spatialGridAccepted:spatial?.grid?.accepted??null,
+        spatialBlockingReasons:spatial?.grid?.blockingReasons||[],
+        spatialReviewReasons:spatial?.grid?.reviewReasons||[],
         spatialWarnings:spatial?.warnings||[],extractionAttempts:spatialAttempts,
         schematicFeeds:schematicSpatial?.feeds?.length||0,schematicWarnings:schematicSpatial?.warnings||[]};
       pageDiag.push(diagnostic);
@@ -3314,7 +3325,7 @@ async function runAnalysis(opts){
   if (prev){
     const key=r=>stableRowSourceKey(r);
     const prevMap={}; prev.rows.forEach(r=>{ if(r.kind!=='manual') prevMap[key(r)]=r; });
-    const correctedFields=['boardNorm','way','phase','device','qty','rating','curve','poleConfiguration','poles','protectionStandard','tripUnit','ka','rcdProtected','sens','afdd','afddIndicated','circuitReference','desc'];
+    const correctedFields=['boardNorm','way','phase','device','qty','rating','curve','poleConfiguration','poles','protectionStandard','tripUnit','ka','rcdProtected','rcdArrangement','sens','afdd','afddIndicated','circuitReference','desc'];
     A.rows.forEach(r=>{
       const o=prevMap[key(r)];if(!o)return;
       if(o.status!=='pending')r.status=o.status;
@@ -3516,23 +3527,64 @@ function recordRowDecision(row,action,surface,note=''){
   });
   if(p.approvalLog.length>2500)p.approvalLog.length=2500;
 }
+function refreshAnalysisHealth(){
+  const p=state.cur,A=p?.analysis,core=window.EstimationExtractorCore;
+  if(!p||!A||!core?.buildAnalysisHealth)return;
+  if(core.buildCoverage){
+    const pages=(A.pageDiagnostics||[]).map(diagnostic=>{
+      const file=p.files.find(item=>item.id===diagnostic.fileId),page=file?.pages?.[Number(diagnostic.page)-1];
+      return {fileId:diagnostic.fileId,page:diagnostic.page,type:diagnostic.type,text:(page?.lines||[]).map(line=>line.text).join('\n')};
+    });
+    A.coverage=core.buildCoverage({boards:A.boards,rows:A.rows,pages});
+  }
+  const fileIds=new Set((A.pageDiagnostics||[]).map(page=>page.fileId));
+  const files=p.files.filter(file=>fileIds.has(file.id)).map(file=>({id:file.id,ext:file.ext,status:file.status,pages:file.pages}));
+  A.health=core.buildAnalysisHealth({coverage:A.coverage||null,boards:A.boards,rows:A.rows,
+    pages:A.pageDiagnostics||[],files,feeders:A.feeders||[]});
+}
+function rowApprovalIssue(row){
+  const A=state.cur?.analysis;if(!row||!A)return 'Analysis data is unavailable';
+  const populated=window.EstimationExtractorCore?.isPopulatedProtectionRow
+    ? window.EstimationExtractorCore.isPopulatedProtectionRow(row)
+    : !row.spare&&!row.space&&Boolean(row.device||row.rating!=null);
+  if(populated&&!row.boardNorm)return 'No board identity is linked to this schedule row';
+  if(row.classConflict&&!row.edited)return 'The device class conflicts with the printed protection standard';
+  if(row.poleConflict&&!row.edited)return 'The printed phase conflicts with the device pole descriptor';
+  if(!row.edited&&(row.validation?.invalidSensitivity||row.validation?.invalidBreakingCapacity))return 'A protection value is outside the supported electrical unit range';
+  if(populated&&(!row.device||row.rating==null))return 'The protective device class or current rating is missing';
+  const diagnostic=(A.pageDiagnostics||[]).find(page=>page.fileId===row.fileId&&Number(page.page)===Number(row.page));
+  if((diagnostic?.spatialBlockingReasons||[]).length)return 'The schedule table geometry has not been proven on this page';
+  return null;
+}
+function approvalButtonAttrs(row){
+  const issue=rowApprovalIssue(row);
+  return issue?` disabled title="${esc(issue)}" aria-label="Approval blocked: ${esc(issue)}"`:'';
+}
 function setRowDecision(row,status,surface,note=''){
-  if(!row)return;
+  if(!row)return false;
+  if(status==='confirmed'){
+    const issue=rowApprovalIssue(row);
+    if(issue){toast('Approval blocked — '+issue+'. Use Correct to resolve the evidence first.');return false;}
+  }
   row.status=status;
   recordRowDecision(row,status==='confirmed'?'Approved':'Rejected',surface,note);
+  if(status==='rejected')refreshAnalysisHealth();
+  return true;
 }
 function undoRowDecision(row,surface){
   if(!row)return;
   const prior=row.status;
   row.status='pending';
   recordRowDecision(row,prior==='rejected'?'Rejection undone':'Approval undone',surface,'Returned to pending review');
+  if(prior==='rejected')refreshAnalysisHealth();
 }
 function approveRows(rows,surface,note=''){
   let count=0;
   (rows||[]).forEach(candidate=>{
     const row=state.cur?.analysis?.rows?.find(item=>item.id===candidate.id)||candidate;
     if(!row)return;
-    setRowDecision(row,'confirmed',surface,note);count++;
+    if(rowApprovalIssue(row))return;
+    if(setRowDecision(row,'confirmed',surface,note))count++;
   });
   return count;
 }
@@ -3791,6 +3843,7 @@ function deviceSpecificationKey(row){
     row.ka??'',
     row.rcdProtected===true?'RCD':row.rcdProtected===false?'NO_RCD':'RCD_UNSTATED',
     row.sens??'',
+    row.rcdArrangement||'',
     row.afdd===true?'AFDD':'NO_AFDD',
   ].join('|');
 }
@@ -4033,17 +4086,20 @@ function renderBoardDetail(){
   const location=b&&boardEvidenceLocation(norm);
   const rows=activeRows().filter(r=>(r.boardNorm||'__none__')===norm);
   const pendingRows=rows.filter(reviewDecisionPending);
+  const approvablePendingRows=pendingRows.filter(row=>!rowApprovalIssue(row));
+  const blockedPendingRows=pendingRows.length-approvablePendingRows.length;
   head.innerHTML=`<button class="btn sm ghost" id="bdBack">‹ All boards</button> <b style="margin-left:6px">${esc(label)}</b>
     <span style="margin-left:auto;display:flex;gap:7px;align-items:center;flex-wrap:wrap">
-      ${pendingRows.length?`<button class="btn sm primary" id="bdApproveRemaining">Approve remaining (${pendingRows.length})</button>`:''}
+      ${approvablePendingRows.length?`<button class="btn sm primary" id="bdApproveRemaining">Approve ready (${approvablePendingRows.length})</button>`:''}
+      ${blockedPendingRows?`<span class="chip red" title="Correct the blocked evidence before approval">${blockedPendingRows} blocked</span>`:''}
       ${location?'<button class="btn sm" id="bdViewSource">View source</button>':''}</span>`;
   $('#bdBack').addEventListener('click', ()=>{ state.selectedBoard=null; renderTakeoff(); });
   $('#bdViewSource')?.addEventListener('click',()=>openBoardInViewer(norm));
   $('#bdApproveRemaining')?.addEventListener('click',()=>openModal('Approve remaining rows',
-    `<p style="line-height:1.6">Approve all <b>${pendingRows.length}</b> remaining extracted row${pendingRows.length===1?'':'s'} for <b>${esc(label)}</b>?</p>
+    `<p style="line-height:1.6">Approve all <b>${approvablePendingRows.length}</b> ready row${approvablePendingRows.length===1?'':'s'} for <b>${esc(label)}</b>?</p>
      <p class="hint">Each decision is written to the board history and can be undone from its evidence row.</p>`,()=>{
       const current=guidedReviewCurrentRow();
-      const count=approveRows(pendingRows,'Boards & Devices','Approved all remaining rows on '+label);
+      const count=approveRows(approvablePendingRows,'Boards & Devices','Approved all ready rows on '+label);
       renderTakeoff();renderProjHeader();saveProject(p);toast(`${count} row${count===1?'':'s'} approved for ${label}`);
       if(current&&(current.boardNorm||'__none__')===norm)scheduleGuidedAdvance(current,'Board approval saved');
     },'Approve rows'));
@@ -4120,7 +4176,7 @@ function evRowHtml(r){
   if (r.protectionCode) bits.push(r.protectionCode);
   if (r.curve) bits.push('Type '+r.curve);
   if (r.rcdType) bits.push('RCD Type '+r.rcdType);
-  if (r.rcdProtected===true) bits.push('RCD protected');
+  if (r.rcdProtected===true) bits.push((r.rcdArrangement&&r.rcdArrangement!=='integral'?r.rcdArrangement.replaceAll('_',' ')+' ':'')+'RCD protected');
   if (r.rcdProtected===false) bits.push('No RCD');
   if (r.poles) bits.push(r.poles+'P');
   if (r.sens) bits.push(r.sens+'mA');
@@ -4140,7 +4196,7 @@ function evRowHtml(r){
     <td>${confChip(r.conf, r.status)}</td>
     <td style="white-space:nowrap"><div class="grow-actions">
       <button data-ev="jump" title="Show in document">View</button>
-      ${r.status==='confirmed'?'<button data-ev="undo" title="Undo approval">↶</button>':'<button data-ev="ok" class="ok" title="Approve">✓</button>'}
+      ${r.status==='confirmed'?'<button data-ev="undo" title="Undo approval">↶</button>':`<button data-ev="ok" class="ok"${approvalButtonAttrs(r)}>✓</button>`}
       <button data-ev="edit" title="Correct">✎</button>
       <button data-ev="no" class="no" title="Reject">✕</button>
     </div></td></tr>`;
@@ -4153,7 +4209,7 @@ function bindEvActions(container, rows){
       e.stopPropagation();
       const a=btn.dataset.ev;
       if (a==='jump'){ jumpToEvidence(r); return; }
-      if (a==='ok'){ setRowDecision(r,'confirmed','Boards & Devices'); }
+      if (a==='ok'&&!setRowDecision(r,'confirmed','Boards & Devices'))return;
       if (a==='no'){ setRowDecision(r,'rejected','Boards & Devices'); }
       if (a==='undo'){ undoRowDecision(r,'Boards & Devices'); }
       if (a==='edit'){ openRowEditor(r); return; }
@@ -4172,6 +4228,7 @@ function openRowEditor(r, isNew, surface='Boards & Devices'){
   const boards=Object.values(A.boards);
   const poleValue=r.poleConfiguration||(r.poles===1?'SP':r.poles===2?'DP':r.poles===3?'TP':r.poles===4?'4P':'');
   const rcdValue=r.rcdProtected===true?'yes':r.rcdProtected===false?'no':'';
+  const rcdArrangementValue=r.rcdArrangement||'';
   const afddSource=Object.prototype.hasOwnProperty.call(r,'afddIndicated')?r.afddIndicated:r.afdd;
   const afddValue=afddSource===true?'yes':afddSource===false?'no':'';
   openModal(isNew?'Add device manually':'Correct this row', `
@@ -4189,6 +4246,7 @@ function openRowEditor(r, isNew, surface='Boards & Devices'){
       <div><label class="lbl">Trip unit</label><input class="in" id="eTrip" value="${esc(r.tripUnit||'')}" placeholder="Not specified"></div>
       <div><label class="lbl">RCD protection</label><select class="sel" id="eRcd"><option value="" ${!rcdValue?'selected':''}>Not specified</option><option value="yes" ${rcdValue==='yes'?'selected':''}>Yes</option><option value="no" ${rcdValue==='no'?'selected':''}>No</option></select></div>
       <div><label class="lbl">RCD sensitivity (mA)</label><input class="in" id="eSens" inputmode="decimal" value="${r.sens??''}" placeholder="Not specified"></div>
+      <div><label class="lbl">RCD arrangement</label><select class="sel" id="eRcdArrangement"><option value="" ${!rcdArrangementValue?'selected':''}>Not specified</option><option value="integral" ${rcdArrangementValue==='integral'?'selected':''}>Integral to device</option><option value="separate" ${rcdArrangementValue==='separate'?'selected':''}>Separate RCD</option><option value="shared" ${rcdArrangementValue==='shared'?'selected':''}>Shared RCD</option><option value="upstream" ${rcdArrangementValue==='upstream'?'selected':''}>Upstream RCD</option><option value="separate_or_unspecified" ${rcdArrangementValue==='separate_or_unspecified'?'selected':''}>Separate / unclear</option></select></div>
       <div><label class="lbl">AFDD protection</label><select class="sel" id="eAfdd"><option value="" ${!afddValue?'selected':''}>Not specified</option><option value="yes" ${afddValue==='yes'?'selected':''}>Yes</option><option value="no" ${afddValue==='no'?'selected':''}>No</option></select></div>
       <div><label class="lbl">Circuit reference</label><input class="in" id="eCircuit" value="${esc(r.circuitReference||'')}" placeholder="Not specified"></div>
       <div class="span-2"><label class="lbl">Description / note</label><input class="in" id="eDesc" value="${esc(r.desc||'')}"></div>
@@ -4197,16 +4255,21 @@ function openRowEditor(r, isNew, surface='Boards & Devices'){
   `, ()=>{
     const before={boardNorm:r.boardNorm||null,way:r.way??null,phase:r.phase||null,device:r.device||null,qty:r.qty??1,rating:r.rating??null,curve:r.curve||null,
       poleConfiguration:r.poleConfiguration||poleValue||null,ka:r.ka??null,protectionStandard:r.protectionStandard||null,tripUnit:r.tripUnit||null,
-      rcdProtected:r.rcdProtected??null,sens:r.sens??null,afdd:afddSource??null,circuitReference:r.circuitReference||null,desc:r.desc||null};
+      rcdProtected:r.rcdProtected??null,rcdArrangement:r.rcdArrangement||null,sens:r.sens??null,afdd:afddSource??null,circuitReference:r.circuitReference||null,desc:r.desc||null};
     const numberOrNull=id=>{const raw=$(id).value.trim(),value=Number(raw);return raw===''||!Number.isFinite(value)?null:value;};
     const wayOrNull=()=>{const raw=$('#eWay').value.trim().toUpperCase();if(!raw)return null;
       if(!/^(?:\d{1,3}|[A-Z]{1,3}\d{1,3})$/.test(raw)){toast('Way must be a number or an identifier such as L7 or P1');return undefined;}
       return /^\d+$/.test(raw)?Number(raw):raw;};
     const nextDevice=$('#eDev').value||null,nextRcd=$('#eRcd').value,nextSens=numberOrNull('#eSens');
-    if(nextDevice==='MCB'&&(nextRcd==='yes'||nextSens!=null)){
-      toast('An MCB cannot have integral RCD sensitivity. Choose RCBO or set RCD protection to No');return false;
-    }
+    let nextRcdArrangement=$('#eRcdArrangement').value||null;
     if(nextSens!=null&&nextRcd==='no'){toast('RCD sensitivity cannot be set when RCD protection is No');return false;}
+    if(nextRcd!=='yes')nextRcdArrangement=null;
+    if(nextRcd==='yes'&&!nextRcdArrangement){
+      nextRcdArrangement=/^(?:RCBO|AFDD\+RCBO|RCD)$/i.test(nextDevice||'')?'integral':nextDevice==='MCB'?'separate':'separate_or_unspecified';
+    }
+    if(nextDevice==='MCB'&&nextRcdArrangement==='integral'){
+      toast('An MCB can be RCD protected, but the RCD arrangement must be separate, shared, upstream, or unclear');return false;
+    }
     const nextWay=wayOrNull();if(nextWay===undefined)return false;
     r.boardNorm=$('#eBoard').value||null;
     r.way=nextWay;
@@ -4233,6 +4296,7 @@ function openRowEditor(r, isNew, surface='Boards & Devices'){
     r.protectionStandard=$('#eStandard').value.trim()||null;
     r.tripUnit=$('#eTrip').value.trim()||null;
     r.rcdProtected=nextRcd===''?null:nextRcd==='yes';
+    r.rcdArrangement=nextRcdArrangement;
     r.sens=nextSens;
     if(r.sens!=null&&r.rcdProtected==null)r.rcdProtected=true;
     const afdd=$('#eAfdd').value;r.afddIndicated=afdd===''?null:afdd==='yes';r.afdd=r.afddIndicated;
@@ -4243,7 +4307,7 @@ function openRowEditor(r, isNew, surface='Boards & Devices'){
     }
     const changed=[['Board Reference','boardNorm'],['Way','way'],['Phase','phase'],['Device Family','device'],['Quantity','qty'],['Current Rating','rating'],
       ['Tripping Curve','curve'],['Pole Configuration','poleConfiguration'],['Breaking Capacity','ka'],['Protection Standard','protectionStandard'],['Trip Unit','tripUnit'],
-      ['RCD Protection','rcdProtected'],['RCD Sensitivity','sens'],['AFDD Protection','afdd'],['Circuit Reference','circuitReference'],['Description','desc']];
+      ['RCD Protection','rcdProtected'],['RCD Arrangement','rcdArrangement'],['RCD Sensitivity','sens'],['AFDD Protection','afdd'],['Circuit Reference','circuitReference'],['Description','desc']];
     r.corrections=Array.isArray(r.corrections)?r.corrections:[];r.fieldEvidence=r.fieldEvidence||{};
     const changedFields=[];
     changed.forEach(([field,key])=>{
@@ -4255,31 +4319,48 @@ function openRowEditor(r, isNew, surface='Boards & Devices'){
         normalisedValue:correction.corrected,correction:correction.corrected,correctionReason:correction.reason,reviewStatus:'Approved',method:'User correction'};
       changedFields.push(field);
     });
-    r.status='confirmed'; r.edited=true;
+    if(changedFields.includes('Device Family')||changedFields.includes('Protection Standard'))r.classConflict=null;
+    if(changedFields.includes('Phase')||changedFields.includes('Pole Configuration'))r.poleConflict=null;
+    if(changedFields.includes('RCD Sensitivity'))r.validation={...(r.validation||{}),invalidSensitivity:false};
+    if(changedFields.includes('Breaking Capacity'))r.validation={...(r.validation||{}),invalidBreakingCapacity:false};
+    r.edited=true;
+    r.requiresReview=Boolean(r.classConflict||r.poleConflict||r.validation?.invalidSensitivity||r.validation?.invalidBreakingCapacity
+      ||(!r.spare&&!r.space&&(!r.device||r.rating==null)));
+    const approvalIssue=rowApprovalIssue(r);
+    r.status=approvalIssue?'pending':'confirmed';
     if (isNew) A.rows.push(r);
-    recordRowDecision(r,isNew?'Added and approved':changedFields.length?'Corrected and approved':'Reviewed and approved',surface,
-      changedFields.length?'Changed: '+changedFields.join(', '):'No field changes');
+    recordRowDecision(r,approvalIssue?(isNew?'Added - approval blocked':'Corrected - approval still blocked')
+      :isNew?'Added and approved':changedFields.length?'Corrected and approved':'Reviewed and approved',surface,
+      (changedFields.length?'Changed: '+changedFields.join(', '):'No field changes')+(approvalIssue?' | '+approvalIssue:''));
+    refreshAnalysisHealth();
     renderTakeoff();renderReport();renderProjHeader();saveProject(p);
     if(surface==='Viewer')renderViewer();
-    toast(isNew?'Device added':changedFields.length?'Row corrected and confirmed':'Row reviewed and confirmed');
-    if(!isNew)scheduleGuidedAdvance(r,changedFields.length?'Correction saved':'Review saved');
+    toast(approvalIssue?'Correction saved, but approval remains blocked: '+approvalIssue
+      :isNew?'Device added':changedFields.length?'Row corrected and confirmed':'Row reviewed and confirmed');
+    if(!isNew&&!approvalIssue)scheduleGuidedAdvance(r,changedFields.length?'Correction saved':'Review saved');
   });
-  const deviceEditor=$('#eDev'),rcdEditor=$('#eRcd'),sensitivityEditor=$('#eSens');
-  const syncProtectionEditor=()=>{sensitivityEditor.disabled=rcdEditor.value==='no';};
+  const deviceEditor=$('#eDev'),rcdEditor=$('#eRcd'),sensitivityEditor=$('#eSens'),arrangementEditor=$('#eRcdArrangement');
+  const syncProtectionEditor=()=>{const disabled=rcdEditor.value!=='yes';sensitivityEditor.disabled=rcdEditor.value==='no';arrangementEditor.disabled=disabled;};
   deviceEditor.addEventListener('change',()=>{
     const device=deviceEditor.value;
-    if(device==='MCB'){rcdEditor.value='no';sensitivityEditor.value='';}
-    else if(device==='RCBO'||device==='AFDD+RCBO'||device==='RCD')rcdEditor.value='yes';
+    if(device==='MCB'&&rcdEditor.value==='yes'&&(!arrangementEditor.value||arrangementEditor.value==='integral'))arrangementEditor.value='separate';
+    else if(device==='RCBO'||device==='AFDD+RCBO'||device==='RCD'){
+      rcdEditor.value='yes';arrangementEditor.value='integral';
+    }
     syncProtectionEditor();
   });
-  rcdEditor.addEventListener('change',()=>{if(rcdEditor.value==='no')sensitivityEditor.value='';syncProtectionEditor();});
+  rcdEditor.addEventListener('change',()=>{
+    if(rcdEditor.value==='no'){sensitivityEditor.value='';arrangementEditor.value='';}
+    else if(rcdEditor.value==='yes'&&!arrangementEditor.value)arrangementEditor.value=deviceEditor.value==='MCB'?'separate':/^(?:RCBO|AFDD\+RCBO|RCD)$/i.test(deviceEditor.value)?'integral':'separate_or_unspecified';
+    syncProtectionEditor();
+  });
   syncProtectionEditor();
   $('#modalBk .modal')?.classList.add('row-editor-modal','is-flexible');
 }
 $('#bulkApproveBtn').addEventListener('click', ()=>{
   const p=state.cur; if(!p||!p.analysis) return;
   const guided=guidedReviewCurrentRow();
-  const eligible=p.analysis.rows.filter(r=>isPendingReviewRow(r)&&!r.requiresReview&&r.conf>=0.8);
+  const eligible=p.analysis.rows.filter(r=>isPendingReviewRow(r)&&!r.requiresReview&&r.conf>=0.8&&!rowApprovalIssue(r));
   const n=approveRows(eligible,'Boards & Devices','High-confidence batch approval');
   renderTakeoff(); renderProjHeader(); saveProject(p);
   toast(n+' high-confidence rows approved');
@@ -4331,7 +4412,11 @@ function openReportSources(scope,key,boardNorm=null){
   if(!reportRow){toast('That report line is no longer available');return;}
   const contributors=(reportRow.contributors||[]).filter(item=>!boardNorm||item.boardNorm===boardNorm);
   const sourceRows=new Map((state.cur?.analysis?.rows||[]).map(row=>[String(row.id||''),row]));
-  const rcdLabel=item=>item.rcdProtected===true?(item.rcdSensitivity!=null?`Yes · ${item.rcdSensitivity}mA`:'Yes'):item.rcdProtected===false?'No':'Not specified';
+  const rcdLabel=item=>{
+    if(item.rcdProtected!==true)return item.rcdProtected===false?'No':'Not specified';
+    const arrangement={integral:'Integral',separate:'Separate',shared:'Shared',upstream:'Upstream',separate_or_unspecified:'Separate / unclear'}[item.rcdArrangement];
+    return `${arrangement?arrangement+' · ':''}Yes${item.rcdSensitivity!=null?' · '+item.rcdSensitivity+'mA':''}`;
+  };
   const afddLabel=item=>item.afdd===true?'Yes':item.afdd===false?'No':'Not specified';
   const body=`<div class="report-source-summary"><div><strong>${esc(reportRow.label||reportRow.deviceFamily)}</strong><span>${esc(boardNorm?(contributors[0]?.board||boardNorm):'All boards')} · ${contributors.length} contributing extracted row${contributors.length===1?'':'s'} · quantity ${contributors.reduce((sum,item)=>sum+(Number(item.quantity)||1),0)}</span></div></div>
     <div class="report-source-list">${contributors.map((item,index)=>{
@@ -4425,7 +4510,11 @@ function renderReport(){
   if (!model.reconciliation?.valid) issues.push('quantities do not reconcile');
   status.className='report-status '+(!model.reconciliation?.valid||model.unassignedQty?'bad':(model.reviewCount||model.coverageIssueCount)?'warn':'ok');
   status.textContent=issues.length?issues.join(' · '):'Ready for issue';
-  const rcdLabel=row=>row.rcdProtected===true?(row.rcdSensitivity!=null?`RCD ${row.rcdSensitivity}mA`:'RCD protected'):row.rcdProtected===false?'No RCD':'Not specified';
+  const rcdLabel=row=>{
+    if(row.rcdProtected!==true)return row.rcdProtected===false?'No RCD':'Not specified';
+    const arrangement={integral:'Integral',separate:'Separate',shared:'Shared',upstream:'Upstream',separate_or_unspecified:'Separate / unclear'}[row.rcdArrangement];
+    return `${arrangement?arrangement+' ':''}RCD${row.rcdSensitivity!=null?' '+row.rcdSensitivity+'mA':' protected'}`;
+  };
   const afddLabel=row=>row.afdd===true?'AFDD':row.afdd===false?'No AFDD':'Not specified';
   const techChips=row=>{
     const values=[];
@@ -4844,13 +4933,13 @@ function renderReview(){
         <div class="racts">
           <button class="btn sm" data-a="jump">View</button>
           <button class="btn sm" data-a="edit">Correct</button>
-          <button class="btn sm primary" data-a="ok">✓ Approve</button>
+          <button class="btn sm primary" data-a="ok"${approvalButtonAttrs(r)}>✓ Approve</button>
           <button class="btn sm danger" data-a="no">Reject</button></div>`;
       div.querySelectorAll('[data-a]').forEach(b=>b.addEventListener('click',()=>{
         const a=b.dataset.a;
         if (a==='jump') return jumpToEvidence(r);
         if (a==='edit') return openRowEditor(r);
-        setRowDecision(r,a==='ok'?'confirmed':'rejected','Review');
+        if(!setRowDecision(r,a==='ok'?'confirmed':'rejected','Review'))return;
         renderReview(); renderTakeoff(); renderProjHeader(); saveProject(p);
         scheduleGuidedAdvance(r,a==='ok'?'Approval saved':'Rejection saved');
       }));
@@ -5141,7 +5230,10 @@ function viewerDetectionCardHtml(d,index){
   const current=state.viewer.evidenceId===row.id;
   const circuit=row.circuitReference||null,description=String(row.desc||'').trim();
   const protection=[];
-  if(row.rcdProtected===true)protection.push(`<span class="chip cyan">RCD${row.sens!=null?' '+esc(row.sens)+'mA':''}</span>`);
+  if(row.rcdProtected===true){
+    const arrangement={integral:'Integral',separate:'Separate',shared:'Shared',upstream:'Upstream',separate_or_unspecified:'Separate / unclear'}[row.rcdArrangement];
+    protection.push(`<span class="chip cyan">${arrangement?esc(arrangement)+' ':''}RCD${row.sens!=null?' '+esc(row.sens)+'mA':''}</span>`);
+  }
   else if(row.rcdProtected===false)protection.push('<span class="chip grey">No RCD</span>');
   if(row.afdd===true)protection.push('<span class="chip purple">AFDD</span>');
   else if(row.afdd===false)protection.push('<span class="chip grey">No AFDD</span>');
@@ -5157,7 +5249,7 @@ function viewerDetectionCardHtml(d,index){
   const stateChip=row.status==='rejected'?'<span class="chip red">Rejected</span>'
     :row.status==='pending'?'<span class="chip amber">Pending</span>'
       :row.edited?'<span class="chip blue">Corrected</span>':'<span class="chip green">Approved</span>';
-  const decisionAction=row.status==='pending'?'<button class="btn sm primary" data-action="approve">Approve</button>'
+  const decisionAction=row.status==='pending'?`<button class="btn sm danger" data-action="reject">Reject</button><button class="btn sm primary" data-action="approve"${approvalButtonAttrs(row)}>Approve</button>`
     :`<button class="btn sm ghost" data-action="undo">${row.status==='rejected'?'Undo rejection':'Undo'}</button>${stateChip}`;
   return `<div class="det${current?' current':''}" data-i="${index}" data-row-id="${esc(row.id)}" aria-current="${current?'true':'false'}"
       style="--spec-color:${d.stateColor||d.specColor||'#8a95a5'}" title="${esc(d.countTitle)}">
@@ -5250,7 +5342,9 @@ async function renderViewer(){
   const scheduleCandidate=window.EstimationExtractorCore?.scoreScheduleCandidate((pg.lines||[]).map(line=>line.text))||{score:0,signals:[]};
   const scheduleRows=A?.rows?.filter(row=>row.kind==='schedule'&&row.fileId===f.id&&Number(row.page)===Number(V.page))||[];
   const schedulePage=SCHEDULE_TYPES.has(pg.type)||(scheduleCandidate.score>=0.45&&scheduleCandidate.signals.length>=2);
-  const extractionGap=schedulePage&&scheduleRows.length===0;
+  const pageDiagnostic=(A?.pageDiagnostics||[]).find(item=>item.fileId===f.id&&Number(item.page)===Number(V.page));
+  const extractionGap=schedulePage&&(scheduleRows.length===0||(pageDiagnostic?.spatialBlockingReasons||[]).length>0
+    ||scheduleRows.some(row=>Boolean(rowApprovalIssue(row))));
   $('#vMetaRow').innerHTML=`<span class="chip blue">${esc(THREE_TYPE_LABELS[pageThreeType(pg)]||'Unknown')}</span>
     ${pg.sub_format&&PAGE_TYPES[pg.sub_format]&&pg.sub_format!==THREE_TO_FINE[pageThreeType(pg)]?`<span class="chip grey">${esc(PAGE_TYPES[pg.sub_format])}</span>`:''}
     ${extractionGap?'<span class="chip red">Extraction incomplete</span>':pg.typeManual?'<span class="chip grey">manually set</span>':confChip(pg.conf||0.3)}
@@ -5397,7 +5491,10 @@ async function renderViewer(){
       el.querySelectorAll('[data-action]').forEach(button=>button.addEventListener('click',event=>{
         event.stopPropagation();
         if(button.dataset.action==='approve'){
-          setRowDecision(d.r,'confirmed','Viewer');saveProject(p);renderProjHeader();renderViewer();toast(d.label+' approved');scheduleGuidedAdvance(d.r,'Approval saved');
+          if(!setRowDecision(d.r,'confirmed','Viewer'))return;
+          saveProject(p);renderProjHeader();renderViewer();toast(d.label+' approved');scheduleGuidedAdvance(d.r,'Approval saved');
+        }else if(button.dataset.action==='reject'){
+          setRowDecision(d.r,'rejected','Viewer');saveProject(p);renderProjHeader();renderViewer();toast(d.label+' rejected');scheduleGuidedAdvance(d.r,'Rejection saved');
         }else if(button.dataset.action==='undo'){
           undoRowDecision(d.r,'Viewer');saveProject(p);renderProjHeader();renderViewer();toast('Approval returned to pending review');
         }else if(button.dataset.action==='edit'){

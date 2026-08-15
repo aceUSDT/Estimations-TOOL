@@ -350,6 +350,27 @@ const unprovenPage = rejectedTransfer.pages.find((entry) => entry.input.document
 assert.equal(unprovenPage.result.matched, false, 'schema transfer must remain fail-closed when protection cells do not reconcile');
 assert.equal(unprovenPage.schemaSourcePage, null);
 
+const boardlessSourceTransfer = Core.parseSpatialScheduleDocument([
+  {
+    documentPage: 1,
+    lines: [{ text: 'Board Reference: DB-TARGET-01' }],
+    words: croppedFirstPage,
+    pageWidth: 325,
+    pageHeight: 275,
+    pageType: 'db-schedule',
+  },
+  {
+    documentPage: 2,
+    lines: [{ text: 'DISTRIBUTION BOARD SCHEDULE' }],
+    words: sourcePageWords,
+    pageWidth: 260,
+    pageHeight: 220,
+    pageType: 'db-schedule',
+  },
+]);
+assert.equal(boardlessSourceTransfer.catalogue.length, 0, 'a boardless page must never teach a reusable document schema');
+assert.equal(boardlessSourceTransfer.pages[0].schemaSourcePage, null);
+
 // Mirrored schedules are valid layouts too; the way column is discovered by
 // sequence and phase support rather than a hard-coded left-page position.
 const mirroredCompact = compactWords.map((item) => {
@@ -372,8 +393,8 @@ assert.equal(correctedStandard.standardCode, '60947');
 assert.match(correctedStandard.reasons.join(' '), /60974/);
 
 const spatialMcbWithRcd = Core.resolveProtectionDevice({standard:'BS EN 60898',rcdProtected:true,sensitivityMa:30});
-assert.equal(spatialMcbWithRcd.device, 'RCBO');
-assert.match(spatialMcbWithRcd.reasons.join(' '), /row-level RCD protection/);
+assert.equal(spatialMcbWithRcd.device, 'MCB');
+assert.equal(spatialMcbWithRcd.classBasis, 'bs_en');
 
 const splitPageWords = [
   word('Way', 10, 25), word('Phase', 45, 25), word('Device BS (EN)', 90, 25),

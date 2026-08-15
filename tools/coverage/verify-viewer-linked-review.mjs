@@ -220,8 +220,9 @@ try {
     parent: 'pt-viewer', resize: 'both', visible: true, withinViewport: true, footerVisible: true, saveVisible: true,
   });
   await page.locator('#eDev').selectOption({ label: 'MCB' });
-  assert.equal(await page.locator('#eRcd').inputValue(), 'no', 'choosing MCB must clear incompatible integral RCD state');
-  assert.equal(await page.locator('#eSens').inputValue(), '');
+  assert.equal(await page.locator('#eRcd').inputValue(), 'yes', 'choosing MCB must preserve evidenced RCD protection');
+  assert.equal(await page.locator('#eRcdArrangement').inputValue(), 'separate', 'an MCB with RCD protection must default to a separate arrangement');
+  assert.equal(await page.locator('#eSens').inputValue(), '10');
   if (shotsDir) await page.screenshot({ path: join(shotsDir, 'viewer-fullscreen-correction.png'), fullPage: false });
   await page.locator('#mOk').click();
   await page.locator('#modalBk').waitFor({ state: 'hidden' });
@@ -230,6 +231,7 @@ try {
     return {
       device: row.device,
       rcdProtected: row.rcdProtected,
+      rcdArrangement: row.rcdArrangement,
       sens: row.sens,
       edited: row.edited,
       status: row.status,
@@ -237,12 +239,13 @@ try {
     };
   }, correctionRowId);
   assert.equal(savedCorrection.device, 'MCB');
-  assert.equal(savedCorrection.rcdProtected, false);
-  assert.equal(savedCorrection.sens, null);
+  assert.equal(savedCorrection.rcdProtected, true);
+  assert.equal(savedCorrection.rcdArrangement, 'separate');
+  assert.equal(savedCorrection.sens, 10);
   assert.equal(savedCorrection.edited, true);
   assert.equal(savedCorrection.status, 'confirmed');
   assert.ok(savedCorrection.fields.includes('Device Family'));
-  assert.ok(savedCorrection.fields.includes('RCD Protection'));
+  assert.ok(savedCorrection.fields.includes('RCD Arrangement'));
   await page.evaluate(async (rowId) => {
     state.cur.analysis.rows = state.cur.analysis.rows.filter((row) => row.id !== rowId);
     await renderViewer();
@@ -251,7 +254,9 @@ try {
   let nextBoard = firstBoard;
   for (let decision = 0; decision < 80 && nextBoard === firstBoard; decision += 1) {
     const priorRow = await page.evaluate(() => state.reviewFlow.currentRowId);
-    await page.locator('#vDetList .det.current [data-action="approve"]').click();
+    const approve = page.locator('#vDetList .det.current [data-action="approve"]');
+    if (await approve.isDisabled()) await page.locator('#vDetList .det.current [data-action="reject"]').click();
+    else await approve.click();
     await page.waitForFunction((rowId) => !state.reviewFlow.active || state.reviewFlow.currentRowId !== rowId, priorRow);
     if (!await page.evaluate(() => state.reviewFlow.active)) break;
     await page.waitForFunction(() => document.querySelector('#vDetList .det.current')?.dataset.rowId === state.reviewFlow.currentRowId);
@@ -269,24 +274,27 @@ try {
     const rows = activeRows().filter((row) => (row.boardNorm || '__none__') === boardNorm);
     return {
       pending: rows.filter(reviewDecisionPending).length,
+      ready: rows.filter((row) => reviewDecisionPending(row) && !rowApprovalIssue(row)).length,
+      blocked: rows.filter((row) => reviewDecisionPending(row) && Boolean(rowApprovalIssue(row))).length,
       history: ensureProjectState(state.cur).approvalLog.filter((item) => (item.boardNorm || '__none__') === boardNorm).length,
     };
   }, nextBoard);
   assert.ok(boardApprovalBefore.pending > 0, 'next board must have rows available for board-level approval');
+  assert.ok(boardApprovalBefore.ready > 0, 'next board must have ready rows available for board-level approval');
   await page.locator('#bdApproveRemaining').click();
   await page.locator('#modalBk.show #mOk').click();
-  await page.waitForFunction((boardNorm) => {
+  await page.waitForFunction(({ boardNorm, blocked }) => {
     const rows = activeRows().filter((row) => (row.boardNorm || '__none__') === boardNorm);
-    return rows.filter(reviewDecisionPending).length === 0;
-  }, nextBoard);
+    return rows.filter(reviewDecisionPending).length === blocked;
+  }, { boardNorm: nextBoard, blocked: boardApprovalBefore.blocked });
   const boardApprovalAfter = await page.evaluate((boardNorm) => ({
     pending: activeRows().filter((row) => (row.boardNorm || '__none__') === boardNorm && reviewDecisionPending(row)).length,
     history: ensureProjectState(state.cur).approvalLog.filter((item) => (item.boardNorm || '__none__') === boardNorm).length,
   }), nextBoard);
-  assert.equal(boardApprovalAfter.pending, 0, 'board-level approval must resolve every remaining row on the selected board');
+  assert.equal(boardApprovalAfter.pending, boardApprovalBefore.blocked, 'board-level approval must leave structurally blocked rows pending');
   assert.equal(
     boardApprovalAfter.history - boardApprovalBefore.history,
-    boardApprovalBefore.pending,
+    boardApprovalBefore.ready,
     'board-level approval must add one audit entry per approved row',
   );
 
