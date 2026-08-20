@@ -157,16 +157,41 @@ test('schematic pages use feeder health and never masquerade as empty schedules'
   const coverage = core.buildCoverage({ boards, rows, pages: [{ fileId: 's1', page: 1, type: 'sld', text: 'LV SCHEMATIC DB-G9 250A MCCB' }] });
   assert.equal(coverage.summary.boards, 0);
   assert.equal(coverage.zeroRowSchedulePages.length, 0);
+  const schematicPage = page({ fileId: 's1', type: 'sld', scheduleScore: 0.9, rowsParsed: 0,
+    schematicTopologyMethod: 'pdf_vector_trace', schematicVectorStats: { segments: 2 },
+    schematicUnresolvedBoards: [], schematicAmbiguousBoards: [], schematicGraphStats: { inferredBridges: 0 } });
   const healthy = core.buildAnalysisHealth({ coverage, boards, rows,
-    pages: [page({ fileId: 's1', type: 'sld', scheduleScore: 0.9, rowsParsed: 0 })],
+    pages: [schematicPage],
     files: [{ id: 's1', status: 'ready' }], feeders: [{ from: 'LVS1', to: 'DBG9', rating: 250 }] });
   assert.equal(healthy.state, 'complete');
   assert.ok(!healthy.reasons.some((reason) => reason.code === 'SCHEDULE_PAGE_UNPARSED'));
   const missingFeeds = core.buildAnalysisHealth({ coverage, boards, rows,
-    pages: [page({ fileId: 's1', type: 'sld', scheduleScore: 0.9, rowsParsed: 0 })],
+    pages: [schematicPage],
     files: [{ id: 's1', status: 'ready' }], feeders: [] });
   assert.equal(missingFeeds.state, 'failed');
   assert.ok(missingFeeds.reasons.some((reason) => reason.code === 'SCHEMATIC_FEEDS_MISSING'));
+});
+
+test('schematic topology uncertainty and cross-document conflicts fail closed', () => {
+  const boards = {
+    LVS1: { norm: 'LVS1', pages: [{ fileId: 's1', page: 1 }] },
+    DBA: { norm: 'DBA', pages: [{ fileId: 's1', page: 1 }], parent: 'LVS1' },
+  };
+  const health = core.buildAnalysisHealth({
+    coverage: core.buildCoverage({ boards, rows: [], pages: [{ fileId: 's1', page: 1, type: 'sld', text: 'LV SCHEMATIC' }] }),
+    boards,
+    rows: [],
+    pages: [page({ fileId: 's1', type: 'sld', schematicTopologyMethod: 'none', schematicVectorStats: null,
+      schematicUnresolvedBoards: ['DBA'], schematicAmbiguousBoards: ['DBA'] })],
+    files: [{ id: 's1', status: 'ready' }],
+    feeders: [{ from: 'LVS1', to: 'DBA' }],
+    discrepancies: [{ kind: 'cable_mismatch', severity: 'high', status: 'open', scheduleNorm: 'DBA' }],
+  });
+  assert.equal(health.state, 'failed');
+  for (const code of ['SCHEMATIC_VECTOR_GEOMETRY_MISSING', 'SCHEMATIC_TOPOLOGY_UNRESOLVED',
+    'SCHEMATIC_TOPOLOGY_AMBIGUOUS', 'SCHEMATIC_SCHEDULE_CABLE_MISMATCH']) {
+    assert.ok(health.reasons.some((reason) => reason.code === code), `missing ${code}`);
+  }
 });
 
 test('schedule scoring: BAM-style schedule page scores as candidate', () => {

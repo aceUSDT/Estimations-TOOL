@@ -61,6 +61,8 @@ export const EXTRACTION_SYSTEM_PROMPT = `You are the extraction engine of an ele
 6. Over-capture beats omission: when unsure whether something is a device/board, include it with low confidence and add a flag explaining the doubt. Never silently drop uncertain rows.
 7. Board header completeness: capture every labelled header field present. Keep the supply source, supply cable, upstream Supply CPD, internal isolator, board rating/family, ways, phase configuration, voltage, location and purpose as separate fields. The Supply CPD is not automatically the board's internal incomer. A blank cell is null, not an omission.
 8. Schematics: treat the drawing as a graph. Follow drawn conductors from source → main panel → outgoing device → cable → downstream board; NEVER infer a feed from proximity, vertical order, or matching names. A line crossing without a junction dot is not a connection. Emit every downstream board node and every resolved feed edge with its protective device and cable (ref, csa, cpc, type). Include SPDs, EVC pillars, lifts/ATS, generators, UPS as boards/devices with their annotations in description. Unresolved endpoints stay unresolved and are flagged.
+   - Every emitted schematic feed must include path_points as an ordered source-to-target polyline, source_bbox, target_bbox, and junction_evidence. Use page-normalised coordinates from 0 to 1000 on each axis. At minimum record the source, every visible bend/junction used, and the target. If the conductor cannot be followed continuously, do not emit the feed: set unresolved_reason and add an uncertain flag instead.
+   - Crossing lines connect only when a filled junction dot or an explicit terminal is visible. A bare crossing, nearby label, matching name, aligned text, or vertical order is never path evidence.
 9. The incomer/main switch of a board is a device entry with is_incomer=true, way null.
 10. Confidence is per item, 0..1: 0.9+ clearly printed; 0.6–0.9 legible but ambiguous; <0.6 guessed from context (always also add a flag).
 11. Use the board reference EXACTLY as printed (e.g. "DB-00-08P", "DB/GF", "2A4"). Do not invent, normalise, merge or split references.
@@ -176,7 +178,8 @@ const FEED = {
   type: 'object',
   additionalProperties: false,
   required: ['from_ref', 'to_ref', 'device_class', 'rating_a', 'poles', 'cable_ref', 'cable_csa_mm2',
-    'cable_cpc_mm2', 'cable_desc', 'confidence'],
+    'cable_cpc_mm2', 'cable_desc', 'path_points', 'source_bbox', 'target_bbox', 'junction_evidence',
+    'unresolved_reason', 'confidence'],
   properties: {
     from_ref: { type: 'string', description: 'Feeding board/source (TRANSFORMER, GENERATOR, panel ref…); "" if none' },
     to_ref: STR,
@@ -187,6 +190,11 @@ const FEED = {
     cable_csa_mm2: NUM,
     cable_cpc_mm2: { type: 'string', description: 'mm² number as a string, or "SWA"/"integral"; "" if none' },
     cable_desc: STR,
+    path_points: { type: 'string', description: 'Ordered 0..1000 page-normalised coordinates: x,y;x,y;... through every visible bend/junction; "" when unresolved' },
+    source_bbox: { type: 'string', description: 'Source node bbox x,y,w,h in 0..1000 page-normalised coordinates; "" when unavailable' },
+    target_bbox: { type: 'string', description: 'Target node bbox x,y,w,h in 0..1000 page-normalised coordinates; "" when unavailable' },
+    junction_evidence: { type: 'string', description: 'Visible terminals and filled junction dots used by this path; "" if none' },
+    unresolved_reason: { type: 'string', description: 'Why the route cannot be proven; resolved feeds use ""' },
     confidence: NUM,
   },
 };

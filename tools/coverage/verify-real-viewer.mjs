@@ -82,17 +82,32 @@ try {
     return {
       analysisVersion: state.cur.analysis.version,
       scheduleRows: scheduleRows.length,
+      schematicPages: (state.cur.analysis.pageDiagnostics || []).filter((item) => item.type === 'sld' || item.type === 'schematic').length,
+      schematicVectorSegments: (state.cur.analysis.pageDiagnostics || []).reduce((sum, item) => sum + Number(item.schematicVectorStats?.segments || 0), 0),
+      schematicFeeds: state.cur.analysis.feeders.filter((feed) => String(feed.sourceRole || '').startsWith('schematic')).length,
+      tracedSchematicFeeds: state.cur.analysis.feeders.filter((feed) => String(feed.sourceRole || '').startsWith('schematic')
+        && feed.topologyMethod && Array.isArray(feed.path) && feed.path.length >= 2).length,
+      unresolvedSchematicBoards: (state.cur.analysis.pageDiagnostics || []).reduce((sum, item) => sum + (item.schematicUnresolvedBoards || []).length, 0),
+      linkedCrossReferences: (state.cur.analysis.discrepancies || []).filter((item) => item.kind === 'linked').length,
       firstId: first?.id || null,
       firstBoard: first?.boardNorm || null,
       firstPage: first?.page || null,
       health: state.cur.analysis.health,
     };
   });
-  assert.equal(extraction.analysisVersion, 17, 'real project must use the current analysis model');
+  assert.equal(extraction.analysisVersion, 21, 'real project must use the current analysis model');
   assert.ok(extraction.scheduleRows > 0, 'schedule rows must be extracted before opening Viewer');
   assert.ok(extraction.firstId && extraction.firstBoard, 'guided review must have a first schedule row');
   assert.equal(extraction.firstPage, 1, 'guided review must begin on the earliest schedule page');
-  assert.notEqual(extraction.health?.state, 'failed', 'real extraction health must not fail');
+  if (extraction.schematicPages) {
+    assert.ok(extraction.schematicVectorSegments > 100, 'schematic PDF vectors must be captured in the browser pipeline');
+    assert.ok(extraction.schematicFeeds > 0, 'schematic feeder relationships must be extracted');
+    assert.equal(extraction.tracedSchematicFeeds, extraction.schematicFeeds, 'every accepted schematic feed must carry path evidence');
+    assert.equal(extraction.unresolvedSchematicBoards, 0, 'the supplied schematic must have no unresolved board endpoints');
+    assert.ok(extraction.linkedCrossReferences > 0, 'at least one schematic board must link exactly to its supplied schedule');
+  } else {
+    assert.notEqual(extraction.health?.state, 'failed', 'schedule-only extraction health must not fail');
+  }
 
   await page.evaluate(async (rowId) => {
     const row = state.cur.analysis.rows.find((candidate) => candidate.id === rowId);
@@ -185,8 +200,43 @@ try {
   assert.equal(mobile.board, guidedNext.board, 'mobile Go to Board must remain synchronised');
   await page.screenshot({ path: path.join(shotsDir, 'real-viewer-mobile.png'), fullPage: false });
 
+  let schematicViewer = null;
+  if (extraction.schematicPages) {
+    await page.setViewportSize({ width: 1600, height: 900 });
+    await page.evaluate(async () => {
+      const diagnostic = state.cur.analysis.pageDiagnostics.find((item) => item.type === 'sld' || item.type === 'schematic');
+      state.viewer.fileId = diagnostic.fileId;
+      state.viewer.page = diagnostic.page;
+      state.viewer.evidenceId = null;
+      await renderViewer();
+    });
+    await page.locator('#vStage .schematic-path').first().waitFor({ timeout: 30000 });
+    schematicViewer = await page.evaluate(() => {
+      const paths = [...document.querySelectorAll('#vStage .schematic-path')];
+      return {
+        paths: paths.length,
+        feederCards: document.querySelectorAll('#vDetList .det[data-kind="feeder"]').length,
+        invalidPaths: paths.filter((element) => element.points.numberOfItems < 2).length,
+        outsideCanvas: paths.filter((element) => {
+          const box = element.getBBox();
+          const view = element.ownerSVGElement?.viewBox?.baseVal;
+          return !view || box.x < view.x - 1 || box.y < view.y - 1 || box.x + box.width > view.x + view.width + 1 || box.y + box.height > view.y + view.height + 1;
+        }).length,
+      };
+    });
+    assert.equal(schematicViewer.paths, extraction.schematicFeeds, 'each accepted schematic feed must render one selectable path');
+    assert.equal(schematicViewer.feederCards, extraction.schematicFeeds, 'each schematic path must have a source-evidence card');
+    assert.equal(schematicViewer.invalidPaths, 0, 'schematic path overlays must contain source and target points');
+    assert.equal(schematicViewer.outsideCanvas, 0, 'schematic paths must remain inside the rendered page');
+    await page.locator('#vStage .schematic-path').first().evaluate((element) => element.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    await page.waitForFunction(() => Boolean(state.viewer.evidenceId));
+    const selected = await page.locator('#vDetList .det[data-kind="feeder"].current').count();
+    assert.equal(selected, 1, 'selecting a traced path must focus its evidence card');
+    await page.screenshot({ path: path.join(shotsDir, 'real-schematic-paths.png'), fullPage: false });
+  }
+
   assert.deepEqual(browserErrors, [], `browser errors: ${browserErrors.join('; ')}`);
-  console.log(JSON.stringify({ extraction, viewer, guidedStart, guidedNext, mobile, shotsDir }, null, 2));
+  console.log(JSON.stringify({ extraction, viewer, guidedStart, guidedNext, mobile, schematicViewer, shotsDir }, null, 2));
   console.log('PASS: real Viewer extraction, overlays, board sync, guided progression, and responsive layout.');
 } finally {
   await browser.close();

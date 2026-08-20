@@ -1913,6 +1913,12 @@
   }
 
   function parseSpatialSchematicPage(input = {}) {
+    // Schematics are connectivity graphs. Once the topology engine is loaded,
+    // never fall back to coordinate proximity unless an isolated legacy test
+    // opts in explicitly.
+    if (Core.parseSchematicTopologyPage && input.allowLegacyProximity !== true) {
+      return Core.parseSchematicTopologyPage(input);
+    }
     const words = collectSpatialWords(input);
     const pageWidth = Number(input.pageWidth) || Math.max(1, ...words.map((word) => word.x1));
     const pageHeight = Number(input.pageHeight) || Math.max(1, ...words.map((word) => word.y1));

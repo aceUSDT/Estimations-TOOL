@@ -407,6 +407,7 @@ assert.equal(Core.isTakeoffEvidenceRow({ kind: 'schematic', sourceRole: 'schemat
 assert.equal(Core.isTakeoffEvidenceRow({ kind: 'schedule' }), true);
 assert.equal(Core.selectAiRecoveryReason({ pageType: 'sld', schematicFeedCount: 25, boardReferenceCount: 30 }), null);
 assert.equal(Core.selectAiRecoveryReason({ pageType: 'sld', schematicFeedCount: 0, boardReferenceCount: 3 }), 'schematic-topology-missing');
+assert.equal(Core.selectAiRecoveryReason({ pageType: 'schematic', schematicFeedCount: 0, boardReferenceCount: 0 }), 'schematic-topology-missing');
 assert.equal(Core.selectAiRecoveryReason({ pageType: 'db-schedule', scheduleCandidate: { score: 0.9, signals: ['way-sequence', 'column-header'] },
   scheduleRows: perryfields.rows, expectedWays: 3 }), null);
 assert.equal(Core.selectAiRecoveryReason({ pageType: 'legend', scheduleCandidate: { score: 0.9, signals: ['device-tokens', 'rating-tokens'] },

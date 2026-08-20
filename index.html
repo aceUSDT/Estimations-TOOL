@@ -355,6 +355,9 @@
   .ovl.blue{background:rgba(22,104,227,.15);outline:2px solid var(--blue);}
   .ovl.attention{outline:4px solid #d33c43!important;background:rgba(211,60,67,.2)!important;z-index:7;}
   .ovl.assisted{background:rgba(123,92,214,.2);outline:2px solid var(--purple);z-index:4;}
+  .schematic-path-layer{position:absolute;inset:0;overflow:visible;pointer-events:none;z-index:5;}
+  .schematic-path{fill:none;stroke:#0aa2c0;stroke-width:4;stroke-linecap:round;stroke-linejoin:round;pointer-events:stroke;cursor:pointer;vector-effect:non-scaling-stroke;}
+  .schematic-path:hover,.schematic-path.attention{stroke:#d33c43;stroke-width:7;}
   .markup-note{position:absolute;z-index:5;background:var(--purple);color:#fff;border-radius:5px;padding:2px 6px;
     font-size:10px;font-weight:800;line-height:1.4;box-shadow:0 2px 6px rgba(45,30,90,.25);pointer-events:none;}
   .assist-bar{padding:9px 12px;border-bottom:1px solid #d9d0f4;background:var(--purple-soft);display:flex;
@@ -1004,6 +1007,7 @@
 <script src="./report-core.js"></script>
 <script src="./extractor-core.js"></script>
 <script src="./spatial-schedule-core.js"></script>
+<script src="./schematic-topology-core.js"></script>
 <script>
 'use strict';
 /* Estimation Tools - specialist electrical document reading tool.
@@ -1134,7 +1138,7 @@ const state = {
   reportMode: 'board',
   reviewFlow: {active:false,currentRowId:null,initialCount:0,moving:false,boardOrder:[],initialByBoard:{},rowOrderByBoard:{}},
 };
-const ANALYSIS_VERSION=20;
+const ANALYSIS_VERSION=21;
 const uid = () => 'x'+(state.nextId++)+'_'+Math.random().toString(36).slice(2,6);
 
 /* ====================== PERSISTENCE (IndexedDB) ====================== */
@@ -2163,6 +2167,8 @@ async function autoOcrScannedFiles(){
 const AI_EXTRACT_ENDPOINT='/api/extract';
 const AI_BG_ENDPOINT='/api/extract-background';
 const AI_STATUS_ENDPOINT='/api/extract-status';
+const schematicRasterTraceCache=new Map();
+const schematicRasterKey=(fileId,pageNo)=>`${fileId}:${pageNo}`;
 let aiProbePromise=null;
 window.__aiStatus='unknown';
 window.__aiExecutionMode='background';
@@ -2208,27 +2214,49 @@ async function fetchWithTimeout(url,init={},timeoutMs=AI_RECOVERY_PAGE_TIMEOUT_M
   try{return await fetch(url,{...init,signal:controller.signal});}
   finally{clearTimeout(timer);parentSignal?.removeEventListener('abort',cancel);}
 }
+async function renderSourcePageCanvas(f,pageNo,maxEdge=1500){
+  if(!f||!rawStore[f.id])return null;
+  if(f.ext==='pdf'){
+    const lib=await loadPdfjs();
+    let doc=state.viewer.pdfDocs[f.id];
+    if(!doc){doc=await lib.getDocument({data:rawStore[f.id].slice(0)}).promise;state.viewer.pdfDocs[f.id]=doc;}
+    const page=await doc.getPage(pageNo),base=page.getViewport({scale:1});
+    const scale=Math.min(2,Math.max(.2,maxEdge/Math.max(base.width,base.height)));
+    const viewport=page.getViewport({scale}),canvas=document.createElement('canvas');
+    canvas.width=Math.ceil(viewport.width);canvas.height=Math.ceil(viewport.height);
+    const context=canvas.getContext('2d',{alpha:false,willReadFrequently:true});
+    context.fillStyle='#fff';context.fillRect(0,0,canvas.width,canvas.height);
+    await page.render({canvasContext:context,viewport}).promise;
+    return {canvas,pageWidth:base.width,pageHeight:base.height};
+  }
+  if(IMAGE_EXTS.has(f.ext)){
+    const mime=f.ext==='jpg'||f.ext==='jpeg'?'image/jpeg':'image/'+f.ext;
+    const bitmap=await createImageBitmap(new Blob([rawStore[f.id]],{type:mime}));
+    const scale=Math.min(2,Math.max(.2,maxEdge/Math.max(bitmap.width,bitmap.height)));
+    const canvas=document.createElement('canvas');canvas.width=Math.ceil(bitmap.width*scale);canvas.height=Math.ceil(bitmap.height*scale);
+    const context=canvas.getContext('2d',{alpha:false,willReadFrequently:true});
+    context.fillStyle='#fff';context.fillRect(0,0,canvas.width,canvas.height);context.drawImage(bitmap,0,0,canvas.width,canvas.height);
+    const result={canvas,pageWidth:bitmap.width,pageHeight:bitmap.height};bitmap.close();return result;
+  }
+  return null;
+}
 async function aiExtractPage(f,pageNo,pg,{signal=null,timeoutMs=AI_RECOVERY_PAGE_TIMEOUT_MS}={}){
   const deadline=Date.now()+Math.max(1,timeoutMs);
   const remaining=()=>Math.max(1,deadline-Date.now());
   if(signal?.aborted)throw new DOMException('Analysis stopped','AbortError');
-  let image_base64=null;
-  if (f.ext==='pdf'&&rawStore[f.id]){
-    const lib=await loadPdfjs();
-    let doc=state.viewer.pdfDocs[f.id];
-    if(!doc){doc=await lib.getDocument({data:rawStore[f.id].slice(0)}).promise;state.viewer.pdfDocs[f.id]=doc;}
-    const page=await doc.getPage(pageNo);
-    const base=page.getViewport({scale:1});
-    // ~1500px long edge: legible for schedule tables, modest payload.
-    const scale=Math.min(2.0, 1500/Math.max(base.width,base.height));
-    const vp=page.getViewport({scale});
-    const cv=document.createElement('canvas'); cv.width=Math.ceil(vp.width); cv.height=Math.ceil(vp.height);
-    await page.render({canvasContext:cv.getContext('2d',{alpha:false}),viewport:vp}).promise;
-    image_base64=cv.toDataURL('image/jpeg',0.85).split(',')[1];
-  }
-  if(signal?.aborted)throw new DOMException('Analysis stopped','AbortError');
   const core=window.EstimationExtractorCore;
   const topologyOnly=pg.type==='sld'||pg.type==='schematic';
+  let image_base64=null;
+  const rendered=await renderSourcePageCanvas(f,pageNo,1500);
+  if(rendered){
+    image_base64=rendered.canvas.toDataURL('image/jpeg',0.85).split(',')[1];
+    if(topologyOnly&&core?.buildRasterTraceMap){
+      const context=rendered.canvas.getContext('2d',{willReadFrequently:true});
+      const traceMap=core.buildRasterTraceMap(context.getImageData(0,0,rendered.canvas.width,rendered.canvas.height));
+      if(traceMap)schematicRasterTraceCache.set(schematicRasterKey(f.id,pageNo),traceMap);
+    }
+  }
+  if(signal?.aborted)throw new DOMException('Analysis stopped','AbortError');
   const spatial=!topologyOnly&&core?.parseSpatialSchedulePage?core.parseSpatialSchedulePage({lines:pg.lines||[],tableRows:pg.tableRows||[],
     pageWidth:pg.w,pageHeight:pg.h,pageType:pg.type}):null;
   const layoutHint=spatial?.matched&&core?.buildSpatialLayoutHint?core.buildSpatialLayoutHint(spatial):null;
@@ -2334,15 +2362,36 @@ function mergeAiResult(A,out,fileId,pageNo,pageType){
     const record={...aiRow,...trace,extractionMethod:'AI-assisted extraction'};
     record.sourceKey=stableRowSourceKey(record);A.rows.push(record);
   });
+  const aiPathPoints=value=>{
+    if(Array.isArray(value))return value.map(point=>Array.isArray(point)?point:[point.x,point.y])
+      .filter(point=>point.length>=2&&point.every(Number.isFinite));
+    return String(value||'').split(/[;|]/).map(token=>token.trim().split(/\s*,\s*/).map(Number))
+      .filter(point=>point.length>=2&&point.every(Number.isFinite));
+  };
   (out.feeds||[]).forEach(fd=>{
     if(!fd.to_ref) return;
+    const rawPath=aiPathPoints(fd.path_points),sourcePage=state.cur?.files?.find(file=>file.id===fileId)?.pages?.[pageNo-1];
+    const path=topologyOnly&&sourcePage?rawPath.map(point=>[point[0]/1000*sourcePage.w,point[1]/1000*sourcePage.h]):rawPath;
+    const pathValid=rawPath.length>=2&&rawPath.every(point=>point[0]>=0&&point[0]<=1000&&point[1]>=0&&point[1]<=1000);
+    const rasterValidation=topologyOnly&&pathValid?window.EstimationExtractorCore?.validateRasterTracePath?.({
+      raster:schematicRasterTraceCache.get(schematicRasterKey(fileId,pageNo)),path:rawPath,normalised:true}):null;
+    if(topologyOnly&&(!pathValid||fd.unresolved_reason||!rasterValidation?.accepted)){
+      (A.aiFlags=A.aiFlags||[]).push({fileId,page:pageNo,kind:'uncertain',
+        message:fd.unresolved_reason||`Schematic feed to ${fd.to_ref} was withheld because its proposed path was not continuously supported by the drawing pixels (${rasterValidation?.reason||'raster evidence unavailable'}).`});
+      return;
+    }
     A.feeders.push({id:uid(), fileId, page:pageNo, line:null,
       from:fd.from_ref?canonicalBoardRef(fd.from_ref).normalised:null, to:canonicalBoardRef(fd.to_ref).normalised,
       cable:(fd.cable_csa_mm2!=null||fd.cable_desc)?{orig:fd.cable_desc||(fd.cable_csa_mm2+'mm²'), size:fd.cable_csa_mm2??null,
         cpc:typeof fd.cable_cpc_mm2==='number'?fd.cable_cpc_mm2:null, cores:null, construction:null, ref:fd.cable_ref||null}:null,
       device:fd.device_class||null, rating:fd.rating_a??null, poles:fd.poles??null,
       srcText:'Feed '+(fd.from_ref||'?')+' → '+fd.to_ref+(fd.cable_ref?' via '+fd.cable_ref:''),
-      conf:Math.max(0.2,Math.min(0.9,Number(fd.confidence)||0.7)), ai:true});
+      conf:Math.max(0.2,Math.min(0.9,Number(fd.confidence)||0.7)), ai:true,
+      sourceRole:topologyOnly?'schematic_ai_feeder':'ai_feeder',topologyMethod:topologyOnly?'ai_visual_trace':null,
+      path:path.length?path:null,pathBbox:null,pathEvidence:topologyOnly?{sourceBbox:fd.source_bbox||null,
+        targetBbox:fd.target_bbox||null,junctionEvidence:fd.junction_evidence||null,
+        rasterCoverage:rasterValidation.coverage,rasterMaximumGap:rasterValidation.maximumGap,
+        crossingPolicy:'explicit_visual_trace_with_raster_continuity'}:null});
   });
   (out.flags||[]).forEach(fl=>{ (A.aiFlags=A.aiFlags||[]).push({fileId, page:pageNo, kind:fl.kind, message:fl.message}); });
 }
@@ -2442,7 +2491,10 @@ async function runAiExtraction(A,f,p,pageSet,{signal=null}={}){
         if(error?.name==='TimeoutError'||error?.name==='AbortError')A.aiTimedOut++;
         else A.aiErrors++;
         console.warn('Enhanced extraction skipped '+job.fl.name+' p'+job.pageNo+':',error.message);
-      }finally{completed++;}
+      }finally{
+        if(job.pg.type==='sld'||job.pg.type==='schematic')schematicRasterTraceCache.delete(schematicRasterKey(job.id,job.pageNo));
+        completed++;
+      }
     }
   };
   await Promise.all(Array.from({length:Math.min(2,queue.length)},()=>worker()));
@@ -2473,6 +2525,44 @@ function linesFromTextContent(tc, vp){
     } else lines.push({text:it.str, x:it.x, y:it.y, w:it.w, h:it.h,words:[it.word]});
   });
   return lines.map(l=>({text:l.text, bbox:[l.x, l.y-l.h, l.w, l.h*1.4],confidence:1,words:l.words}));
+}
+async function readPdfVectorGeometry(file,pageNo,pageRecord){
+  const core=window.EstimationExtractorCore;
+  if(!core?.extractPdfVectorGeometry||file?.ext!=='pdf'||!rawStore[file.id])return null;
+  const lib=await loadPdfjs();
+  let doc=state.viewer.pdfDocs[file.id];
+  if(!doc){doc=await lib.getDocument({data:rawStore[file.id].slice(0)}).promise;state.viewer.pdfDocs[file.id]=doc;}
+  const page=await doc.getPage(pageNo);
+  const viewport=page.getViewport({scale:1});
+  const operatorList=await page.getOperatorList({annotationMode:lib.AnnotationMode?.DISABLE??0});
+  return core.extractPdfVectorGeometry({operatorList,OPS:lib.OPS,viewportTransform:viewport.transform,
+    pageWidth:pageRecord?.w||viewport.width,pageHeight:pageRecord?.h||viewport.height,ignoreAnnotations:true});
+}
+async function ensureSchematicVectorGeometry(project,fileIds,pageSet,signal){
+  const jobs=[];
+  for(const id of fileIds){
+    const file=project.files.find(candidate=>candidate.id===id);
+    if(!file||file.ext!=='pdf'||!rawStore[file.id])continue;
+    file.pages.forEach((page,index)=>{
+      const pageNo=index+1;
+      if(pageSet&&!pageSet.has(pageNo))return;
+      if((page.type==='sld'||page.type==='schematic')&&!page.vectorGeometry)jobs.push({file,page,pageNo});
+    });
+  }
+  for(let index=0;index<jobs.length;index++){
+    if(signal?.aborted)throw new DOMException('Analysis stopped','AbortError');
+    const job=jobs[index];
+    try{
+      job.page.vectorGeometry=await readPdfVectorGeometry(job.file,job.pageNo,job.page);
+      job.page.vectorError=null;
+    }catch(error){
+      job.page.vectorGeometry=null;
+      job.page.vectorError=error?.message||'Vector geometry could not be read';
+      console.warn(`Schematic vector reading skipped for ${job.file.name} p${job.pageNo}:`,error);
+    }
+    if(index===0||index===jobs.length-1||index%3===0)await paintProcessing();
+  }
+  return {requested:jobs.length,available:jobs.filter(job=>job.page.vectorGeometry?.segments?.length).length};
 }
 function splitTextPages(txt){
   const parts = txt.includes('\f') ? txt.split('\f') : [txt];
@@ -2516,7 +2606,12 @@ async function ingestFile(file){
           : {route:lines.length>2?'embedded_text':'ocr',reliable:lines.length>2,score:lines.length>2?0.8:0,reasons:[]};
         const needsOcr=textQuality.route==='ocr';
         if (!needsOcr) anyText=true; else ocrPages++;
-        rec.pages.push({lines, embeddedLines:needsOcr?lines:null, w:vp.width, h:vp.height, textQuality, needsOcr, source:needsOcr?'ocr_pending':'native_text'});
+        const pageRecord={lines, embeddedLines:needsOcr?lines:null, w:vp.width, h:vp.height, textQuality, needsOcr, source:needsOcr?'ocr_pending':'native_text'};
+        if(preliminary.type==='sld'||preliminary.type==='schematic'){
+          try{pageRecord.vectorGeometry=await readPdfVectorGeometry(rec,i,pageRecord);}
+          catch(error){pageRecord.vectorGeometry=null;pageRecord.vectorError=error?.message||'Vector geometry could not be read';}
+        }
+        rec.pages.push(pageRecord);
         rec.pct=25+Math.round(65*i/doc.numPages); renderDocs();renderProjHeader();
         setProcessingDock(STAGES[0],`${file.name} | Page ${i} of ${doc.numPages}`,Math.max(2,Math.round(i/doc.numPages*(100/STAGES.length))),0);
         if(i===1||i===doc.numPages||i%8===0)await paintProcessing();
@@ -2982,6 +3077,7 @@ async function runAnalysis(opts){
   await showAnalysisStage(0,`${f.fileIds.length} document${f.fileIds.length===1?'':'s'} ready`);
   await showAnalysisStage(1,`${pageTotal} page${pageTotal===1?'':'s'}`);
   f.fileIds.forEach(id=>{ const fl=p.files.find(x=>x.id===id); if(fl) classifyFilePages(fl); });
+  A.schematicVectorAcquisition=await ensureSchematicVectorGeometry(p,f.fileIds,pageSet,runController.signal);
   f.fileIds.forEach(id=>{
     const fl=p.files.find(x=>x.id===id);if(!fl)return;
     const scope=window.EstimationExtractorCore?.buildDocumentExtractionScope
@@ -3072,7 +3168,8 @@ async function runAnalysis(opts){
         if(!schedCandidate.signals.includes('document-schema'))schedCandidate.signals.push('document-schema');
       }
       const schematicSpatial=schematicPage&&core?.parseSpatialSchematicPage
-        ? core.parseSpatialSchematicPage({lines:pg.lines||[],tableRows:pg.tableRows||[],pageWidth:pg.w,pageHeight:pg.h,pageType:pg.type}) : null;
+        ? core.parseSpatialSchematicPage({lines:pg.lines||[],tableRows:pg.tableRows||[],pageWidth:pg.w,pageHeight:pg.h,
+          pageType:pg.type,vectorGeometry:pg.vectorGeometry||null}) : null;
       const spatialAttempts=documentSpatial?.attempts?.map(attempt=>({...attempt}))||[];
       let spatial=documentSpatial?.result||(regularSchedule&&core?.parseSpatialSchedulePage
         ? core.parseSpatialSchedulePage({lines:pg.lines||[],tableRows:pg.tableRows||[],pageWidth:pg.w,pageHeight:pg.h,pageType:pg.type}) : null);
@@ -3114,7 +3211,13 @@ async function runAnalysis(opts){
         spatialBlockingReasons:spatial?.grid?.blockingReasons||[],
         spatialReviewReasons:spatial?.grid?.reviewReasons||[],
         spatialWarnings:spatial?.warnings||[],extractionAttempts:spatialAttempts,
-        schematicFeeds:schematicSpatial?.feeds?.length||0,schematicWarnings:schematicSpatial?.warnings||[]};
+        schematicFeeds:schematicSpatial?.feeds?.length||0,schematicWarnings:schematicSpatial?.warnings||[],
+        schematicTopologyMethod:schematicSpatial?.topologyMethod||null,
+        schematicGraphStats:schematicSpatial?.graphStats||null,
+        schematicUnresolvedBoards:schematicSpatial?.diagnostics?.unresolvedBoards||[],
+        schematicAmbiguousBoards:schematicSpatial?.diagnostics?.ambiguousBoards||[],
+        schematicVectorStats:schematicSpatial?.vectorStats||pg.vectorGeometry?.stats||null,
+        schematicVectorError:pg.vectorError||null};
       pageDiag.push(diagnostic);
       const pageRowStart=A.rows.length;
       let ctxBoard=null;
@@ -3223,7 +3326,9 @@ async function runAnalysis(opts){
           A.feeders.push({id:uid(),fileId:id,page:pageNo,line:null,from,to,cable:feed.cable||null,
             way:null,device:feed.device||null,rating:feed.rating??null,poles:feed.poles??null,poleConfiguration:feed.poleConfiguration||null,
             srcText:`Schematic feeder${from?' from '+feed.fromRef:''} to ${feed.toRef}`,bbox:feed.sourceCell?.bbox||feed.fieldSources?.rating?.bbox||null,
-            conf:feed.confidence||0.7,sourceRole:'schematic_feeder',fieldSources:feed.fieldSources||{},spatial:true});
+            conf:feed.confidence||0.7,sourceRole:'schematic_feeder',fieldSources:feed.fieldSources||{},spatial:true,
+            topologyMethod:feed.topologyMethod||schematicSpatial.topologyMethod||null,path:feed.path||null,pathBbox:feed.pathBbox||null,
+            pathEvidence:feed.pathEvidence||null,warnings:feed.warnings||[]});
         });
         schematicSpatial.devices.forEach(item=>{
           const boardNorm=canonicalBoardRef(item.boardRef).normalised;
@@ -3241,7 +3346,7 @@ async function runAnalysis(opts){
       lines.forEach((t,li)=>{
         const lower=t.toLowerCase();
         if (f.ignore.length && f.ignore.some(w=>lower.includes(w))) return;
-        detectCables(t).forEach(c=>{
+        if(!schematicPage)detectCables(t).forEach(c=>{
           A.cables.push({id:uid(), fileId:id, page:pageNo, line:li, boardNorm:ctx.board, srcText:t.trim(),
             conf: (isSched||pg.type==='cable-schedule')?0.85:0.7, status:'pending', ...c});
         });
@@ -3251,7 +3356,7 @@ async function runAnalysis(opts){
             addScheduleRow(row,li);
           }
           if(!spatialMatched)parseFeeders(t, pageBoards, ctx.board).forEach(fd=>A.feeders.push({id:uid(),fileId:id,page:pageNo,line:li,...fd}));
-        } else if ((pg.type==='sld'||pg.type==='schematic'||pg.type==='notes')&&!schematicSpatial?.matched){
+        } else if (pg.type==='notes'&&!schematicSpatial?.matched){
           const mainCtx = pageBoards.find(b=>b.type==='MAIN') || pageBoards.find(b=>b.type==='SMDB'||b.type==='MDB');
           parseFeeders(t, pageBoards, mainCtx?mainCtx.norm:null).forEach(fd=>A.feeders.push({id:uid(),fileId:id,page:pageNo,line:li,...fd}));
         } else if (pg.type==='legend'){
@@ -3292,6 +3397,15 @@ async function runAnalysis(opts){
   }else if(appSettings.onlineExtraction&&auto){
     A.aiRecovery={status:'deferred-automatic-run',eligible:0,selected:0,deferred:0,maxPages:AI_RECOVERY_MAX_PAGES};
   }
+  pageDiag.filter(page=>page.type==='sld'||page.type==='schematic').forEach(page=>{
+    const visualFeeds=A.feeders.filter(feed=>feed.fileId===page.fileId&&feed.page===page.page
+      &&feed.sourceRole==='schematic_ai_feeder'&&Array.isArray(feed.path)&&feed.path.length>=2);
+    if(!visualFeeds.length)return;
+    page.schematicTopologyMethod=page.schematicTopologyMethod==='pdf_vector_trace'
+      ?'pdf_vector_trace+ai_visual_trace':'ai_visual_trace';
+    const resolved=new Set(visualFeeds.map(feed=>feed.to));
+    page.schematicUnresolvedBoards=(page.schematicUnresolvedBoards||[]).filter(norm=>!resolved.has(norm));
+  });
   if(runController.signal.aborted)throw new DOMException('Analysis stopped','AbortError');
   if(window.EstimationExtractorCore?.reconcileCombinedProtection){
     A.rows=A.rows.map(row=>window.EstimationExtractorCore.reconcileCombinedProtection(row));
@@ -3364,7 +3478,8 @@ async function runAnalysis(opts){
     const scopeFiles=f.fileIds.map(fid=>p.files.find(x=>x.id===fid)).filter(Boolean)
       .map(fl=>({id:fl.id,ext:fl.ext,status:fl.status,pages:fl.pages}));
     A.health=window.EstimationExtractorCore.buildAnalysisHealth({
-      coverage:A.coverage||null, boards:A.boards, rows:A.rows, pages:pageDiag, files:scopeFiles, feeders:A.feeders});
+      coverage:A.coverage||null, boards:A.boards, rows:A.rows, pages:pageDiag, files:scopeFiles,
+      feeders:A.feeders,discrepancies:A.discrepancies});
     A.pageDiagnostics=pageDiag;
   }
   p.analysis=A;
@@ -3540,7 +3655,7 @@ function refreshAnalysisHealth(){
   const fileIds=new Set((A.pageDiagnostics||[]).map(page=>page.fileId));
   const files=p.files.filter(file=>fileIds.has(file.id)).map(file=>({id:file.id,ext:file.ext,status:file.status,pages:file.pages}));
   A.health=core.buildAnalysisHealth({coverage:A.coverage||null,boards:A.boards,rows:A.rows,
-    pages:A.pageDiagnostics||[],files,feeders:A.feeders||[]});
+    pages:A.pageDiagnostics||[],files,feeders:A.feeders||[],discrepancies:A.discrepancies||[]});
 }
 function rowApprovalIssue(row){
   const A=state.cur?.analysis;if(!row||!A)return 'Analysis data is unavailable';
@@ -4798,74 +4913,16 @@ function refsFuzzyMatch(a,b){
   return longer.startsWith(shorter) && (longer.length-shorter.length)<=2;
 }
 function buildCrossReference(A,p,prev){
-  const prevById={}; (prev||[]).forEach(d=>{ prevById[d.id]=d; });
-  const withOrigin=Object.values(A.boards).map(b=>({b, origins:boardOriginTypes(b,p)}));
-  const schematicBoards=withOrigin.filter(x=>x.origins.has('schematic'));
-  const scheduleBoards=withOrigin.filter(x=>x.origins.has('db_schedule'));
-  if(!schematicBoards.length || !scheduleBoards.length) return [];   // nothing to cross-reference yet
-  const carry=id=>{ const pv=prevById[id]; return pv?{status:pv.status,chosenSource:pv.chosenSource||null}:{status:'open',chosenSource:null}; };
-  const out=[];
-  const usedSchedule=new Set();
-  schematicBoards.forEach(({b:sb})=>{
-    let match = scheduleBoards.find(x=>x.b.norm===sb.norm && !usedSchedule.has(x.b.norm));
-    if(!match) match = scheduleBoards.find(x=>refsFuzzyMatch(sb.norm,x.b.norm) && !usedSchedule.has(x.b.norm));
-    if(!match){
-      const id='missing|'+sb.norm;
-      out.push({id, kind:'missing_schedule', schematicNorm:sb.norm, scheduleNorm:null,
-        message:`${sb.orig} appears in a schematic but no matching board schedule was found.`,
-        severity:'medium', ...carry(id)});
-      return;
-    }
-    usedSchedule.add(match.b.norm);
-    const scb=match.b, h=scb.header||{};
-    const feed=A.feeders.find(f=>f.to===scb.norm||f.to===sb.norm);
-    if(feed&&feed.rating!=null&&(h.board_rating_a==null||h.board_rating_a==='')){
-      h.board_rating_a=Number(feed.rating);
-      scb.header=h;
-      scb.headerEvidence=scb.headerEvidence||{};
-      scb.headerEvidence.board_rating_a={
-        text:`${feed.rating}A schematic feeder`,originalText:feed.srcText||`${feed.rating}A`,normalisedValue:`${feed.rating}A`,
-        bbox:feed.bbox||null,confidence:Math.min(0.82,Number(feed.conf)||0.72),extractionMethod:'Schematic-to-schedule reconciliation',
-        inferred:true,reviewStatus:'Review required',sourceFileId:feed.fileId||null,sourcePage:feed.page||null,
-      };
-      scb.boardRatingInferred=true;
-      scb.boardRatingInference={source:'schematic_feeder',fileId:feed.fileId||null,page:feed.page||null,rating:Number(feed.rating),confidence:Math.min(0.82,Number(feed.conf)||0.72)};
-      if(window.EstimationExtractorCore?.classifyBoardFamily){
-        const classification=window.EstimationExtractorCore.classifyBoardFamily(h,{devices:A.rows.filter(row=>row.boardNorm===scb.norm)});
-        scb.family=classification.family;scb.familyConfidence=classification.confidence;scb.familyReasons=classification.reasons;
-        scb.familyPolicy=classification.policyId;scb.familyReview=true;
-      }
-      const inferredId='inferred-rating|'+sb.norm+'|'+scb.norm;
-      out.push({id:inferredId,kind:'inferred_rating',schematicNorm:sb.norm,scheduleNorm:scb.norm,
-        message:`${scb.orig}: board rating inferred as ${feed.rating}A from the matched schematic feeder; confirm before export.`,
-        severity:'medium',detail:{schematicRating:feed.rating,sourceFileId:feed.fileId,sourcePage:feed.page},...carry(inferredId)});
-    }
-    if (feed && feed.rating!=null && h.incomer_rating_a!=null && h.incomer_rating_a!==''){
-      const same=Number(feed.rating)===Number(h.incomer_rating_a);
-      const id='rating|'+sb.norm+'|'+scb.norm;
-      out.push({id, kind:'rating', schematicNorm:sb.norm, scheduleNorm:scb.norm,
-        message: same? `${sb.orig} ↔ ${scb.orig}: incomer rating consistent (${feed.rating}A).`
-                      : `${sb.orig} ↔ ${scb.orig}: rating mismatch — schematic feed shows ${feed.rating}A, schedule incomer shows ${h.incomer_rating_a}A.`,
-        severity: same?'info':'high', detail:{schematicRating:feed.rating, scheduleRating:h.incomer_rating_a},
-        ...(same?{status:'resolved',chosenSource:null}:carry(id))});
-    }
-    if (feed && feed.cable && feed.cable.ref){
-      const ref=String(feed.cable.ref).toUpperCase();
-      const hay=[h.description,h.board_type_text,h.serving].filter(Boolean).join(' ').toUpperCase();
-      const found=hay.includes(ref);
-      const id='cable|'+sb.norm+'|'+scb.norm;
-      out.push({id, kind:'cable', schematicNorm:sb.norm, scheduleNorm:scb.norm,
-        message: found? `${sb.orig} ↔ ${scb.orig}: incoming cable ${feed.cable.ref} confirmed on the schedule.`
-                       : `${sb.orig} ↔ ${scb.orig}: schematic cites incoming cable ${feed.cable.ref}; not confirmed in the schedule text.`,
-        severity: found?'info':'low',
-        ...(found?{status:'resolved',chosenSource:null}:carry(id))});
-    }
-    const linkId='linked|'+sb.norm+'|'+scb.norm;
-    out.push({id:linkId, kind:'linked', schematicNorm:sb.norm, scheduleNorm:scb.norm,
-      message:`${sb.orig} (schematic) linked to ${scb.orig} (schedule).`, severity:'info',
-      status:'resolved', chosenSource:null});
+  const core=window.EstimationExtractorCore;
+  if(!core?.reconcileSchematicSchedules)return [];
+  const previous=new Map((prev||[]).map(item=>[item.id,item]));
+  const result=core.reconcileSchematicSchedules({boards:A.boards,feeders:A.feeders,rows:A.rows,files:p.files});
+  A.crossReferenceSummary=result.summary;
+  return result.discrepancies.map(item=>{
+    const prior=previous.get(item.id);
+    const resolved=item.severity==='info';
+    return {...item,status:prior?.status||(resolved?'resolved':'open'),chosenSource:prior?.chosenSource||null};
   });
-  return out;
 }
 
 /* ============================ REVIEW TAB ============================ */
@@ -4885,7 +4942,7 @@ function renderXref(){
     div.innerHTML=`<div class="ric" style="background:${sevBg[d.severity]||sevBg.info}">${sevIcon[d.severity]||'•'}</div>
       <div style="flex:1"><h4>${esc(d.message)}</h4>
       ${d.chosenSource?`<div class="hint">Resolved — kept ${esc(d.chosenSource)} value.</div>`:''}</div>
-      <div class="racts">${open&&d.kind==='rating'?`
+      <div class="racts">${open&&(d.kind==='rating'||d.kind==='rating_mismatch')?`
           <button class="btn sm" data-a="use-schematic">Use schematic (${d.detail.schematicRating}A)</button>
           <button class="btn sm" data-a="use-schedule">Use schedule (${d.detail.scheduleRating}A)</button>
           <button class="btn sm ghost" data-a="ack">Acknowledge</button>`
@@ -5076,6 +5133,14 @@ function pageDetections(f, pageNo){
       });
     });
     A.cables.forEach(c=>{ if(c.fileId===f.id&&c.page===pageNo) out.push({kind:'cable', r:c, line:c.line, color:'cyan', label:'Cable '+c.orig}); });
+    A.feeders.forEach(feed=>{
+      if(feed.fileId!==f.id||feed.page!==pageNo||!String(feed.sourceRole||'').startsWith('schematic')
+        ||!Array.isArray(feed.path)||feed.path.length<2)return;
+      const source=feed.from?boardLabel(feed.from):'Unresolved source',target=boardLabel(feed.to);
+      const detail=[feed.device,feed.rating!=null?feed.rating+'A':null,feed.cable?.size!=null?feed.cable.size+'mm²':null].filter(Boolean).join(' · ');
+      out.push({kind:'feeder',r:{...feed,boardNorm:feed.to},line:null,path:feed.path,bbox:feed.pathBbox||null,color:'cyan',
+        label:`${source} to ${target}${detail?' · '+detail:''}`});
+    });
   }
   (f.pages[pageNo-1].lines||[]).forEach((l,li)=>{
     detectBoards(l.text).forEach(b=>out.push({kind:'board', line:li, color:'blue', label:'Board '+b.orig, r:{srcText:l.text,boardNorm:b.norm}}));
@@ -5094,7 +5159,7 @@ function ovlVisible(d){
   if (mode==='all') return true;
   if (mode==='confirmed') return d.kind==='row'&&d.r.status==='confirmed';
   if (mode==='review') return d.kind==='row'&&d.r.status==='pending'&&(d.r.requiresReview||d.r.conf<0.8);
-  if (mode==='cable') return d.kind==='cable';
+  if (mode==='cable') return d.kind==='cable'||d.kind==='feeder';
   if (mode==='board') return d.kind==='board';
   if (d.kind==='assisted') return mode==='all';
   return true;
@@ -5222,7 +5287,7 @@ function setViewerPanel(side,open){
   syncViewerLayout();
 }
 function viewerDetectionCardHtml(d,index){
-  if(d.kind!=='row')return `<div class="det" data-i="${index}">
+  if(d.kind!=='row')return `<div class="det${state.viewer.evidenceId===d.r?.id?' current':''}" data-i="${index}" data-kind="${esc(d.kind)}" data-evidence-id="${esc(d.r?.id||'')}">
     <div class="det-head"><span class="chip ${d.color}">${esc(d.kind)}</span><b>${esc(d.label)}</b><span class="det-actions">
       ${d.r?.boardNorm?'<button class="btn sm ghost" data-action="board">Board</button>':''}
     </span></div><div class="det-source">${esc(d.r?.srcText||'')}</div></div>`;
@@ -5269,7 +5334,8 @@ function syncViewerDetectionList(rowId,{scroll=true}={}){
   const list=$('#vDetList');if(!list)return;
   list.querySelectorAll('.det.current').forEach(element=>{element.classList.remove('current');element.setAttribute('aria-current','false');});
   if(!rowId)return;
-  const target=[...list.querySelectorAll('.det[data-row-id]')].find(element=>element.dataset.rowId===String(rowId));
+  const target=[...list.querySelectorAll('.det[data-row-id],.det[data-evidence-id]')]
+    .find(element=>element.dataset.rowId===String(rowId)||element.dataset.evidenceId===String(rowId));
   if(!target)return;
   target.classList.add('current');target.setAttribute('aria-current','true');
   if(scroll)target.scrollIntoView?.({block:'nearest',behavior:'smooth'});
@@ -5283,6 +5349,33 @@ function bindViewerDocumentRows(detections){
     const focus=event=>{event.stopPropagation();if(event.type==='keydown'&&!['Enter',' '].includes(event.key))return;if(event.type==='keydown')event.preventDefault();focusViewerDetection(detection);};
     element.addEventListener('click',focus);element.addEventListener('keydown',focus);
   });
+}
+function viewerRotatedPoint(point,width,height,rotation){
+  const x=Number(Array.isArray(point)?point[0]:point?.x),y=Number(Array.isArray(point)?point[1]:point?.y);
+  const angle=((Number(rotation)||0)%360+360)%360;
+  if(angle===90)return [height-y,x];
+  if(angle===180)return [width-x,height-y];
+  if(angle===270)return [y,width-x];
+  return [x,y];
+}
+function appendSchematicPaths(wrap,detections,width,height,scale,rotation=0){
+  const paths=detections.filter(detection=>detection.kind==='feeder'&&Array.isArray(detection.path)&&detection.path.length>=2);
+  if(!paths.length)return;
+  const namespace='http://www.w3.org/2000/svg';
+  const svg=document.createElementNS(namespace,'svg');svg.classList.add('schematic-path-layer');
+  const rotated=((Number(rotation)||0)%180+180)%180!==0;
+  svg.setAttribute('width',String((rotated?height:width)*scale));svg.setAttribute('height',String((rotated?width:height)*scale));
+  svg.setAttribute('viewBox',`0 0 ${(rotated?height:width)*scale} ${(rotated?width:height)*scale}`);
+  paths.forEach(detection=>{
+    const polyline=document.createElementNS(namespace,'polyline');polyline.classList.add('schematic-path');
+    if(state.viewer.evidenceId===detection.r?.id)polyline.classList.add('attention');
+    polyline.dataset.detKey=detection.viewerKey;polyline.setAttribute('tabindex','0');polyline.setAttribute('role','button');
+    polyline.setAttribute('aria-label',detection.label);polyline.setAttribute('title',detection.label);
+    polyline.setAttribute('points',detection.path.map(point=>viewerRotatedPoint(point,width,height,rotation).map(value=>value*scale).join(',')).join(' '));
+    polyline.addEventListener('click',event=>{event.stopPropagation();focusViewerDetection(detection);});
+    svg.appendChild(polyline);
+  });
+  wrap.appendChild(svg);
 }
 async function renderViewer(){
   syncViewerLayout();
@@ -5390,8 +5483,10 @@ async function renderViewer(){
       const wrap=document.createElement('div'); wrap.className='v-pagewrap'; wrap.appendChild(cv);
       wrap.dataset.cssScale=cssR;
       const sc=renderScale;
+      if(showOvl)appendSchematicPaths(wrap,dets,pg.w||vp1.width,pg.h||vp1.height,sc,V.rot);
       if (pg.lines){
         if (showOvl) dets.forEach(d=>{
+          if(d.kind==='feeder')return;
           const ln=pg.lines[d.line],bbox=d.bbox||ln?.bbox; if(!bbox) return;
           const focused=V.evidenceId&&d.r?.id===V.evidenceId;
           const o=document.createElement('div'); o.className='ovl '+d.color+(d.kind==='row'?' row-link':'')+(d.kind==='assisted'?' assisted':'')+(focused?' attention':'');
@@ -5430,7 +5525,9 @@ async function renderViewer(){
     const img=document.createElement('img');img.alt=f.name;img.style.width='100%';img.style.height='100%';img.style.display='block';
     const imageUrl=URL.createObjectURL(new Blob([rawStore[f.id]],{type:imageMime(f.ext)}));
     img.onload=()=>URL.revokeObjectURL(imageUrl);img.src=imageUrl;wrap.appendChild(img);
+    if(showOvl)appendSchematicPaths(wrap,dets,pg.w,pg.h,scale,0);
     if(showOvl&&pg.lines) dets.forEach(d=>{
+      if(d.kind==='feeder')return;
       const line=pg.lines[d.line],bbox=d.bbox||line?.bbox;if(!bbox)return;
       const focused=V.evidenceId&&d.r?.id===V.evidenceId;
       const overlay=document.createElement('div');overlay.className='ovl '+d.color+(d.kind==='row'?' row-link':'')+(focused?' attention':'');overlay.title=d.countTitle||d.label;overlay.dataset.detKey=d.viewerKey;

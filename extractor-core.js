@@ -2015,6 +2015,16 @@
     PHASE_POLE_CONFLICT: 'Printed phase evidence conflicts with the device pole descriptor',
     INVALID_PROTECTION_DOMAIN: 'A protection value falls outside the supported electrical unit domain',
     SCHEMATIC_FEEDS_MISSING: 'Schematic boards were identified but no feeder relationships were captured',
+    SCHEMATIC_VECTOR_GEOMETRY_MISSING: 'A schematic page has no validated vector conductor geometry',
+    SCHEMATIC_TOPOLOGY_UNRESOLVED: 'One or more schematic board endpoints could not be traced to a source',
+    SCHEMATIC_TOPOLOGY_AMBIGUOUS: 'One or more schematic board endpoints have multiple plausible conductor anchors',
+    SCHEMATIC_TOPOLOGY_INFERRED_GAP: 'A small conductor gap was bridged and requires review',
+    SCHEMATIC_SCHEDULE_FEED_MISMATCH: 'Schematic and schedule supply relationships do not agree',
+    SCHEMATIC_SCHEDULE_DEVICE_MISMATCH: 'Schematic and schedule incoming device details do not agree',
+    SCHEMATIC_SCHEDULE_CABLE_MISMATCH: 'Schematic and schedule incoming cable details do not agree',
+    SCHEMATIC_ORPHAN_BOARD: 'A schematic board has no exact board-schedule counterpart',
+    SCHEDULE_ORPHAN_BOARD: 'A board schedule has no exact schematic counterpart',
+    DOCUMENT_REVISION_CONFLICT: 'Cross-referenced documents have conflicting revision evidence',
     PAGE_TEXT_UNRELIABLE: 'Page text is unreliable and OCR has not replaced it',
     OCR_PENDING: 'Page is still waiting for OCR',
     DOCUMENT_UNREADABLE: 'Document could not be read',
@@ -2057,8 +2067,7 @@
     const scheduleRows = Array.isArray(input.scheduleRows) ? input.scheduleRows : [];
     const schematic = pageType === 'sld' || pageType === 'schematic';
     if (schematic) {
-      return Number(input.schematicFeedCount || 0) === 0 && Number(input.boardReferenceCount || 0) >= 2
-        ? 'schematic-topology-missing' : null;
+      return Number(input.schematicFeedCount || 0) === 0 ? 'schematic-topology-missing' : null;
     }
     const scheduleTypes = new Set(['db-schedule', 'main-schedule', 'equipment-schedule']);
     if (!scheduleTypes.has(pageType) && pageType !== 'unknown') return null;
@@ -2181,7 +2190,7 @@
    * @param files    [{id, name, status}] all files that were in scope
    * @returns {state:'complete'|'incomplete'|'failed', reasons:[{code,message,count,refs}], counters}
    */
-  function buildAnalysisHealth({ coverage, boards, rows, pages, files, feeders }) {
+  function buildAnalysisHealth({ coverage, boards, rows, pages, files, feeders, discrepancies }) {
     const reasons = new Map();
     const addReason = (code, ref) => {
       if (!reasons.has(code)) reasons.set(code, { code, message: HEALTH_REASONS[code] || code, count: 0, refs: [] });
@@ -2227,6 +2236,21 @@
         addReason('SCHEDULE_GRID_UNPROVEN', { fileId: pg.fileId, page: pg.page });
       }
     }
+    for (const pg of schematicPages) {
+      const ref = { fileId: pg.fileId, page: pg.page };
+      if (!pg.schematicVectorStats?.segments && pg.schematicTopologyMethod !== 'ai_visual_trace') {
+        addReason('SCHEMATIC_VECTOR_GEOMETRY_MISSING', ref);
+      }
+      if ((pg.schematicUnresolvedBoards || []).length) {
+        addReason('SCHEMATIC_TOPOLOGY_UNRESOLVED', { ...ref, count: pg.schematicUnresolvedBoards.length });
+      }
+      if ((pg.schematicAmbiguousBoards || []).length) {
+        addReason('SCHEMATIC_TOPOLOGY_AMBIGUOUS', { ...ref, count: pg.schematicAmbiguousBoards.length });
+      }
+      if ((pg.schematicGraphStats?.usedInferredBridges || 0) > 0) {
+        addReason('SCHEMATIC_TOPOLOGY_INFERRED_GAP', { ...ref, count: pg.schematicGraphStats.usedInferredBridges });
+      }
+    }
     for (const row of allRows) {
       if (row.kind !== 'schedule' || !isPopulatedProtectionRow(row)) continue;
       const ref = { fileId: row.fileId, page: row.page };
@@ -2261,6 +2285,16 @@
     if (schematicPages.length > 0 && schematicBoardNorms.length > 1 && !(feeders || []).some((feeder) => feeder?.to)) {
       addReason('SCHEMATIC_FEEDS_MISSING', { boards: schematicBoardNorms.length });
     }
+    for (const discrepancy of discrepancies || []) {
+      if (discrepancy.status === 'resolved' || discrepancy.severity === 'info') continue;
+      const ref = { board: discrepancy.scheduleNorm || discrepancy.schematicNorm || null };
+      if (discrepancy.kind === 'missing_schedule') addReason('SCHEMATIC_ORPHAN_BOARD', ref);
+      else if (discrepancy.kind === 'schedule_orphan_board') addReason('SCHEDULE_ORPHAN_BOARD', ref);
+      else if (discrepancy.kind === 'supply_from_mismatch' || discrepancy.kind === 'schematic_feed_missing') addReason('SCHEMATIC_SCHEDULE_FEED_MISMATCH', ref);
+      else if (discrepancy.kind === 'rating_mismatch' || discrepancy.kind === 'device_mismatch' || discrepancy.kind === 'poles_mismatch') addReason('SCHEMATIC_SCHEDULE_DEVICE_MISMATCH', ref);
+      else if (discrepancy.kind === 'cable_mismatch') addReason('SCHEMATIC_SCHEDULE_CABLE_MISMATCH', ref);
+      else if (discrepancy.kind === 'revision_conflict') addReason('DOCUMENT_REVISION_CONFLICT', ref);
+    }
     if (pageList.length === 0) addReason('NO_CONTENT', null);
     if (boardCount > 0 && deviceCount === 0) addReason('ZERO_DEVICES_WITH_BOARDS', null);
     if (boardCount > 0 && deviceCount < boardCount) {
@@ -2272,6 +2306,10 @@
     if (reasons.has('ZERO_DEVICES_WITH_BOARDS') || reasons.has('NO_CONTENT')
       || reasons.has('DEVICE_COUNT_BELOW_BOARD_COUNT') || reasons.has('WAYS_OVER_CAPACITY')
       || reasons.has('BOARD_FEED_MISSING') || reasons.has('SCHEMATIC_FEEDS_MISSING')
+      || reasons.has('SCHEMATIC_VECTOR_GEOMETRY_MISSING') || reasons.has('SCHEMATIC_TOPOLOGY_UNRESOLVED')
+      || reasons.has('SCHEMATIC_TOPOLOGY_AMBIGUOUS') || reasons.has('SCHEMATIC_SCHEDULE_FEED_MISMATCH')
+      || reasons.has('SCHEMATIC_SCHEDULE_DEVICE_MISMATCH') || reasons.has('SCHEMATIC_SCHEDULE_CABLE_MISMATCH')
+      || reasons.has('DOCUMENT_REVISION_CONFLICT')
       || reasons.has('UNASSIGNED_SCHEDULE_ROWS') || reasons.has('SCHEDULE_GRID_UNPROVEN')
       || reasons.has('PROTECTION_CLASS_CONFLICT') || reasons.has('PHASE_POLE_CONFLICT')
       || reasons.has('INVALID_PROTECTION_DOMAIN')
@@ -2343,6 +2381,12 @@
         spatialBlockingReasons: pg.spatialBlockingReasons || [],
         spatialReviewReasons: pg.spatialReviewReasons || [],
         spatialContinuation: Boolean(pg.spatialContinuation),
+        schematicTopologyMethod: pg.schematicTopologyMethod || null,
+        schematicGraphStats: pg.schematicGraphStats || null,
+        schematicVectorStats: pg.schematicVectorStats || null,
+        schematicUnresolvedCount: (pg.schematicUnresolvedBoards || []).length,
+        schematicAmbiguousCount: (pg.schematicAmbiguousBoards || []).length,
+        schematicWarnings: pg.schematicWarnings || [],
       })),
     };
   }
