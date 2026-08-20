@@ -60,6 +60,11 @@ await page.route(/https:\/\/(cdnjs\.cloudflare\.com|cdn\.jsdelivr\.net|tessdata\
 try {
   await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => typeof state !== 'undefined');
+  if (await page.locator('#lockView.active').isVisible()) {
+    await page.locator('#pwInput').fill('codex-production-smoke');
+    await page.locator('#pwBtn').click();
+    await page.locator('#appView.active').waitFor();
+  }
   await page.locator('.proj-card.new').click();
   await page.locator('#mName').fill('Real Viewer regression');
   await page.locator('#mOk').click();

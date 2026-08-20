@@ -34,6 +34,11 @@ await page.route('**/api/extract', async (route) => {
 try {
   await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => typeof state !== 'undefined' && typeof aiExtractPage === 'function');
+  if (await page.locator('#lockView.active').isVisible()) {
+    await page.locator('#pwInput').fill('codex-production-smoke');
+    await page.locator('#pwBtn').click();
+    await page.locator('#appView.active').waitFor();
+  }
   await page.locator('.proj-card.new').click();
   await page.locator('#mName').fill('Scanned schematic regression');
   await page.locator('#mOk').click();
