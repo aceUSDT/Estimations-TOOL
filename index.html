@@ -636,6 +636,7 @@
       height:max(900px,calc(100vh + 56px));min-height:900px;}
   }
 </style>
+<link rel="stylesheet" href="./assets/app-redesign.css">
 </head>
 <body>
 
@@ -643,7 +644,7 @@
 <div class="view active" id="lockView">
   <div class="lock-card" id="lockCard">
     <img class="lock-logo" src="./assets/hager-logo.png" alt="Hager">
-    <div class="lock-name">Estimation Tools</div>
+    <div class="lock-name"><span>Estimation</span><span class="brand-accent">Tools</span></div>
     <div class="lock-prompt" id="lockPrompt">Enter this device's PIN</div>
     <input type="password" id="pwInput" placeholder="PIN" autocomplete="current-password">
     <button class="go" id="pwBtn">Unlock</button>
@@ -655,10 +656,10 @@
 <div class="view" id="appView">
   <div class="appbar">
     <div class="brand"><img class="brand-logo" src="./assets/hager-logo.png" alt="Hager">
-      <div class="bt">Estimation Tools</div></div>
+      <div class="bt"><span>Estimation</span><span class="brand-accent">Tools</span></div></div>
     <div class="crumb" id="crumb"><b>Projects</b></div>
     <div class="right">
-      <span class="storage-state" id="storageState" title="Projects and original files are stored in this device profile">Stored locally</span>
+      <span class="storage-state" id="storageState" title="Projects and original files are stored in this device profile">Stored on this computer</span>
       <a class="link-btn" href="./download/" title="Buy the Windows/macOS desktop app">Get desktop app</a>
       <button class="link-btn" id="lockBtn">Lock</button>
     </div>
@@ -686,8 +687,11 @@
   <!-- HOME -->
   <div class="page subview active" id="homeView">
     <div class="home-head">
-      <div><h1 class="pg">Projects</h1></div>
-      <button class="btn" id="restoreProjectBtn" style="margin-left:auto">Restore project</button>
+      <div><h1 class="pg">Projects</h1><div class="pg-sub" id="homeSub">Projects stored on this computer</div></div>
+      <div class="home-actions">
+        <button class="btn" id="restoreProjectBtn">Restore project</button>
+        <button class="btn primary" id="newProjectBtn">New project</button>
+      </div>
       <input type="file" id="restoreProjectInput" accept=".json,.estimation-project" style="display:none">
     </div>
     <div class="proj-grid" id="projGrid"></div>
@@ -709,23 +713,27 @@
 
     <div class="ptabs">
       <button class="ptab active" data-pt="docs">Documents <span class="badge" id="bDocs">0</span></button>
-      <button class="ptab" data-pt="viewer">Viewer</button>
-      <button class="ptab" data-pt="analysis">Boards &amp; Devices <span class="badge"><span id="bBoards">0</span> boards</span><span class="badge"><span id="bDev">0</span> devices</span></button>
-      <button class="ptab" data-pt="reports">Reports</button>
+      <button class="ptab" data-pt="analysis">Boards &amp; devices <span class="badge"><span id="bBoards">0</span> boards</span><span class="badge"><span id="bDev">0</span> devices</span></button>
       <button class="ptab" data-pt="review">Review <span class="badge" id="bRev">0</span></button>
+      <button class="ptab" data-pt="reports">Reports</button>
+      <button class="ptab" data-pt="viewer">Viewer</button>
       <button class="ptab" data-pt="compare">Compare</button>
     </div>
 
     <!-- ==== DOCUMENTS ==== -->
     <div class="subview active" id="pt-docs">
+      <div class="section-head documents-head">
+        <div><h2>Documents</h2><p>What the tool has read, and what it could not - a shortfall is flagged, never silently accepted.</p></div>
+      </div>
       <div class="dropzone" id="dropzone">
-        <h3>Drop electrical documents here — or click to browse</h3>
-        <p>Floor plans · schematics · DB schedules · cable schedules — <b>PDF</b>, <b>Excel</b>, <b>images</b>, <b>TXT</b>, <b>CSV</b>.</p>
+        <div class="dropzone-copy"><h3>Drop documents here</h3>
+        <p>PDF, XLSX, PNG, JPG, TXT or CSV - files are copied into the project, not moved.</p></div>
+        <span class="btn dropzone-choose">Choose files</span>
       </div>
       <input type="file" id="fileInput" multiple accept=".pdf,.txt,.csv,.md,.xlsx,.png,.jpg,.jpeg,.webp" style="display:none">
       <div class="panel" style="margin-bottom:16px">
-        <div class="p-head">Documents <span class="sub" id="docCountSub"></span></div>
-        <div style="overflow-x:auto"><table class="t doc-table">
+        <div class="p-head">Ingestion queue <span class="sub" id="docCountSub"></span></div>
+        <div class="doc-queue-scroll" style="overflow-x:auto"><table class="t doc-table">
           <thead><tr><th></th><th>Document</th><th>Type</th><th>Size</th><th class="num">Pages</th>
           <th>Source</th><th>Status</th><th></th></tr></thead>
           <tbody id="docBody"></tbody>
@@ -939,8 +947,8 @@
         <div class="report-status" id="reportStatus"></div>
         <div class="report-viewbar" id="reportModeBar" role="tablist" aria-label="Report view">
           <div class="report-mode">
-            <button type="button" data-report-mode="board" role="tab">Board Take-Off</button>
-            <button type="button" data-report-mode="matrix" role="tab">Device Take-Off</button>
+            <button type="button" data-report-mode="board" role="tab">Board take-off</button>
+            <button type="button" data-report-mode="matrix" role="tab">Device take-off</button>
           </div>
         </div>
         <div class="report-matrix-scroll" id="reportMatrixHost">
@@ -1260,7 +1268,7 @@ async function refreshStorageState(){
     if(!persistent&&navigator.storage?.persist)persistent=await navigator.storage.persist();
     if(navigator.storage?.estimate)estimate=await navigator.storage.estimate();
   }catch(error){console.warn('Storage persistence check failed:',error);}
-  el.textContent='Stored locally';el.classList.remove('warn');
+  el.textContent='Stored on this computer';el.classList.remove('warn');
   const used=estimate?.usage?fmtSize(estimate.usage):null,quota=estimate?.quota?fmtSize(estimate.quota):null;
   el.title=`Projects and original files stay in this device profile${used&&quota?` (${used} of ${quota} used)`:''}${persistent?'':' - browser cleanup rules may apply'}`;
 }
@@ -1672,6 +1680,7 @@ function parseLegendLine(line){
 
 /* ============================ NAVIGATION ============================ */
 function show(view){
+  document.body.dataset.view=view;
   $('#homeView').classList.toggle('active', view==='home');
   $('#projView').classList.toggle('active', view==='proj');
   $('#crumb').innerHTML = view==='home' ? '<b>Projects</b>' : ('Projects <span style="opacity:.5">/</span> <b>'+esc(state.cur?state.cur.name:'')+'</b>');
@@ -1679,6 +1688,7 @@ function show(view){
 function setTab(name){
   if (name==='boards') name='analysis';   // §5.4 — Boards merged into the Boards & Devices page
   if(name!=='viewer'&&state.viewer.fullscreen)setViewerFullscreen(false);
+  document.body.dataset.projectTab=name;
   $$('.ptab').forEach(t=>t.classList.toggle('active', t.dataset.pt===name));
   $$('#projView .subview').forEach(p=>p.classList.toggle('active', p.id==='pt-'+name));
   if (name==='viewer') return renderViewer();
@@ -1692,6 +1702,7 @@ $$('.ptab').forEach(t=>t.addEventListener('click',()=>setTab(t.dataset.pt)));
 $('#backBtn').addEventListener('click', ()=>{ stopGuidedReview(false);state.cur=null;if(!analysisBusy)hideProcessing();renderProjects(); show('home'); });
 $('#backupProjectBtn').addEventListener('click',()=>backupProject(state.cur));
 $('#restoreProjectBtn').addEventListener('click',()=>$('#restoreProjectInput').click());
+$('#newProjectBtn').addEventListener('click',()=>$('.proj-card.new')?.click());
 $('#restoreProjectInput').addEventListener('change',async event=>{
   const file=event.target.files?.[0];event.target.value='';if(!file)return;
   try{await restoreProject(file);}catch(error){toast('Restore failed: '+(error.message||error));}
@@ -1793,6 +1804,8 @@ function projStats(p){
 /* ============================ HOME / PROJECT CARDS ============================ */
 function renderProjects(){
   const g=$('#projGrid'); g.innerHTML='';
+  const count=state.projects.length;
+  $('#homeSub').textContent=`${count||'No'} project${count===1?'':'s'} on this computer - nothing is uploaded unless you ask for it`;
   state.projects.forEach(p=>{
     const s=projStats(p);
     const statusCl = p.status==='Analysed'?'green'
@@ -2712,16 +2725,16 @@ function renderDocs(){
     const nat = f.status!=='ready' ? '—' : f.native? '<span class="chip cyan">Native text</span>' : f.ocrReady?'<span class="chip purple">OCR text</span>':'<span class="chip amber">Scanned</span>';
     const needsOcr=f.ext==='pdf'&&f.pages.some(pg=>pg.needsOcr||!(pg.lines||[]).length);
     tr.innerHTML=`
-      <td><div class="thumb">${esc((f.ext||'?').toUpperCase())}</div></td>
-      <td class="strong">${esc(f.name)}
+      <td data-label="Preview"><div class="thumb">${esc((f.ext||'?').toUpperCase())}</div></td>
+      <td class="strong" data-label="Document">${esc(f.name)}
         ${f.error?`<div style="color:var(--red);font-size:11px;font-weight:400;margin-top:3px">${esc(f.error)}</div>`:''}
         ${f.warn?`<div style="color:var(--amber);font-size:11px;font-weight:400;margin-top:3px">Check: ${esc(f.warn)}</div>`:''}</td>
-      <td>${esc(docTypeLabel(f))}</td>
-      <td>${fmtSize(f.size)}</td>
-      <td class="num">${f.pages.length||'—'}</td>
-      <td>${nat}</td>
-      <td>${st}</td>
-      <td style="white-space:nowrap">
+      <td data-label="Type">${esc(docTypeLabel(f))}</td>
+      <td data-label="Size">${fmtSize(f.size)}</td>
+      <td class="num" data-label="Pages">${f.pages.length||'—'}</td>
+      <td data-label="Source">${nat}</td>
+      <td data-label="Status">${st}</td>
+      <td data-label="Actions" style="white-space:nowrap">
         <button class="btn sm ghost" data-a="view">View</button>
         ${needsOcr?'<button class="btn sm ghost" data-a="ocr">OCR scans</button>':''}
         <button class="btn sm ghost" data-a="replace">${f.status==='error'?'Retry':'Replace'}</button>
