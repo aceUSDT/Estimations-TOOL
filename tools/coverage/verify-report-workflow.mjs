@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { prepareReportFixture } from './browser-report-fixture.mjs';
 
 const appUrl = process.env.APP_URL || 'http://127.0.0.1:8773/?test=1&fixture=report';
 const shotsDir = process.env.REPORT_SHOTS_DIR || '';
@@ -19,7 +20,7 @@ page.on('pageerror', (error) => browserErrors.push(String(error)));
 
 try {
   await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
-  await page.waitForFunction(() => typeof state !== 'undefined' && state.projects.length >= 2);
+  await prepareReportFixture(page);
   await page.locator('.proj-card', { hasText: 'Riverside Office Fit-Out' }).click();
   await page.locator('.ptab[data-pt="reports"]').click();
   await page.locator('#reportMatrixHost table').first().waitFor();
