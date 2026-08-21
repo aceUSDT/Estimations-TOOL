@@ -260,7 +260,35 @@ try {
     else await approve.click();
     await page.waitForFunction((rowId) => !state.reviewFlow.active || state.reviewFlow.currentRowId !== rowId, priorRow);
     if (!await page.evaluate(() => state.reviewFlow.active)) break;
-    await page.waitForFunction(() => document.querySelector('#vDetList .det.current')?.dataset.rowId === state.reviewFlow.currentRowId);
+    await page.waitForFunction(() => {
+      const currentId = state.reviewFlow.currentRowId;
+      return viewerCommittedSequence === viewerRenderSequence
+        && state.viewer.evidenceId === currentId
+        && document.querySelector('#vDetList .det.current')?.dataset.rowId === currentId
+        && document.querySelector('#vStage .attention[data-row-id]')?.dataset.rowId === currentId;
+    });
+    const visibleSync = await page.evaluate(() => {
+      const currentId = state.reviewFlow.currentRowId;
+      const list = document.querySelector('#vDetList');
+      const card = list?.querySelector('.det.current');
+      const stage = document.querySelector('#vStage');
+      const source = stage?.querySelector('.attention[data-row-id]');
+      const within = (container, target) => {
+        const outer = container?.getBoundingClientRect(), inner = target?.getBoundingClientRect();
+        return Boolean(outer && inner && inner.bottom >= outer.top && inner.top <= outer.bottom && inner.right >= outer.left && inner.left <= outer.right);
+      };
+      return {
+        currentId,
+        currentCards: list?.querySelectorAll('.det.current').length || 0,
+        attentionRows: stage?.querySelectorAll('.attention[data-row-id]').length || 0,
+        cardVisible: within(list, card),
+        sourceVisible: within(stage, source),
+      };
+    });
+    assert.equal(visibleSync.currentCards, 1, 'exactly one evidence card must be current after approval');
+    assert.equal(visibleSync.attentionRows, 1, 'exactly one source row must be highlighted after approval');
+    assert.ok(visibleSync.cardVisible, `current evidence card ${visibleSync.currentId} must be visible in the right list`);
+    assert.ok(visibleSync.sourceVisible, `current source row ${visibleSync.currentId} must be visible in the document stage`);
     nextBoard = await page.evaluate(() => guidedReviewCurrentRow().boardNorm || '__none__');
   }
   assert.notEqual(nextBoard, firstBoard, 'guided review must move from the completed first board to the next board');

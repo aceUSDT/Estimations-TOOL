@@ -1013,9 +1013,10 @@ body[data-project-tab="viewer"] .viewer-layout {
 }
 
 .v-info .det {
-  padding: var(--s3) var(--s4);
+  padding: var(--s4);
   border-color: var(--line);
   font-size: var(--t2);
+  line-height: 1.45;
 }
 
 .v-info .det:hover {
@@ -1023,8 +1024,10 @@ body[data-project-tab="viewer"] .viewer-layout {
 }
 
 .v-info .det.current {
-  background: var(--blue-soft);
-  box-shadow: inset 3px 0 0 var(--red);
+  border-top: 1px solid #b8caeb;
+  border-bottom: 1px solid #b8caeb;
+  background: #e8f1ff;
+  box-shadow: inset 4px 0 0 var(--red), inset 0 0 0 1px rgba(22, 104, 227, .12);
 }
 
 .det-primary {
@@ -1035,6 +1038,14 @@ body[data-project-tab="viewer"] .viewer-layout {
 .det-source {
   color: var(--txt3);
   font-size: var(--t1);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.ovl.attention,
+.hl.attention {
+  outline-offset: 2px;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, .94), 0 2px 8px rgba(131, 24, 33, .24);
 }
 
 /* Overlay surfaces */

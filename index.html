@@ -3878,7 +3878,7 @@ async function showGuidedReviewRow(row){
     await jumpToEvidence(row);
     return;
   }
-  setTab('analysis');
+  await setTab('analysis');
   toast('This row has no printed source location; it is open in its board review instead');
 }
 async function showGuidedReviewGap(gap){
@@ -3886,7 +3886,7 @@ async function showGuidedReviewGap(gap){
   stopGuidedReview(false);
   state.viewer.fileId=gap.fileId;state.viewer.page=gap.page;state.viewer.boardHl=gap.boardNorm;state.viewer.evidenceId=null;
   state.viewer.assist.boardNorm=gap.boardNorm;state.selectedBoard=gap.boardNorm;
-  setTab('viewer');renderGuidedReviewControls();
+  await setTab('viewer');renderGuidedReviewControls();
   toast(`${guidedBoardName(gap.boardNorm)} has no captured schedule rows · approval is paused`);
 }
 async function startGuidedReview(){
@@ -3934,7 +3934,7 @@ async function advanceGuidedReview(completedRow,action='decision saved'){
   if(!queue.length){
     const total=flow.initialCount;
     stopGuidedReview(false);
-    renderViewer();
+    await renderViewer();
     toast(`Guided review complete · ${total} decision${total===1?'':'s'} saved`);
     return;
   }
@@ -4462,10 +4462,11 @@ function openRowEditor(r, isNew, surface='Boards & Devices'){
       (changedFields.length?'Changed: '+changedFields.join(', '):'No field changes')+(approvalIssue?' | '+approvalIssue:''));
     refreshAnalysisHealth();
     renderTakeoff();renderReport();renderProjHeader();saveProject(p);
-    if(surface==='Viewer')renderViewer();
     toast(approvalIssue?'Correction saved, but approval remains blocked: '+approvalIssue
       :isNew?'Device added':changedFields.length?'Row corrected and confirmed':'Row reviewed and confirmed');
-    if(!isNew&&!approvalIssue)scheduleGuidedAdvance(r,changedFields.length?'Correction saved':'Review saved');
+    const advancesGuidedReview=!isNew&&!approvalIssue&&state.reviewFlow.active&&state.reviewFlow.currentRowId===r.id;
+    if(advancesGuidedReview)void advanceGuidedReview(r,changedFields.length?'Correction saved':'Review saved');
+    else if(surface==='Viewer')void renderViewer();
   });
   const deviceEditor=$('#eDev'),rcdEditor=$('#eRcd'),sensitivityEditor=$('#eSens'),arrangementEditor=$('#eRcdArrangement');
   const syncProtectionEditor=()=>{const disabled=rcdEditor.value!=='yes';sensitivityEditor.disabled=rcdEditor.value==='no';arrangementEditor.disabled=disabled;};
@@ -5047,6 +5048,7 @@ function renderReview(){
 }
 
 /* ============================ VIEWER ============================ */
+let viewerRenderSequence=0,viewerCommittedSequence=0;
 function renderAssistControls(f){
   const p=state.cur,V=state.viewer,A=p&&p.analysis,as=V.assist;
   ensureAssistedState(p);
@@ -5351,7 +5353,16 @@ function syncViewerDetectionList(rowId,{scroll=true}={}){
     .find(element=>element.dataset.rowId===String(rowId)||element.dataset.evidenceId===String(rowId));
   if(!target)return;
   target.classList.add('current');target.setAttribute('aria-current','true');
-  if(scroll)target.scrollIntoView?.({block:'nearest',behavior:'smooth'});
+  if(scroll)scrollViewerElementIntoView(list,target,{horizontal:false});
+}
+function scrollViewerElementIntoView(container,target,{horizontal=true,behavior='smooth'}={}){
+  if(!container||!target)return;
+  const containerRect=container.getBoundingClientRect(),targetRect=target.getBoundingClientRect();
+  const top=container.scrollTop+(targetRect.top-containerRect.top)-Math.max(0,(containerRect.height-targetRect.height)/2);
+  const left=horizontal
+    ?container.scrollLeft+(targetRect.left-containerRect.left)-Math.max(0,(containerRect.width-targetRect.width)/2)
+    :container.scrollLeft;
+  container.scrollTo?.({top:Math.max(0,top),left:Math.max(0,left),behavior});
 }
 function bindViewerDocumentRows(detections){
   const byId=new Map((detections||[]).filter(d=>d.kind==='row'&&d.r?.id).map(d=>[String(d.r.id),d]));
@@ -5391,6 +5402,8 @@ function appendSchematicPaths(wrap,detections,width,height,scale,rotation=0){
   wrap.appendChild(svg);
 }
 async function renderViewer(){
+  const renderSequence=++viewerRenderSequence;
+  const stale=()=>renderSequence!==viewerRenderSequence;
   syncViewerLayout();
   const p=state.cur; if(!p) return;
   const f=viewerFile();
@@ -5404,8 +5417,8 @@ async function renderViewer(){
   state.viewer.fileId=f.id;
   const V=state.viewer;
   if (f.ext==='pdf' && rawStore[f.id] && !window.pdfjsLib){
-    try { await loadPdfjs(); }
-    catch (error) { stage.innerHTML='<div class="empty">PDF preview is unavailable: '+esc(error.message)+'</div>'; return; }
+    try { await loadPdfjs();if(stale())return; }
+    catch (error) { if(stale())return;stage.innerHTML='<div class="empty">PDF preview is unavailable: '+esc(error.message)+'</div>'; return; }
   }
   V.page=Math.min(Math.max(1,V.page), f.pages.length);
   syncViewerBoardToPage(f,V.page);
@@ -5482,8 +5495,9 @@ async function renderViewer(){
   if (isPdf){
     try{
       let doc=V.pdfDocs[f.id];
-      if (!doc){ doc=await window.pdfjsLib.getDocument({data:rawStore[f.id].slice(0)}).promise; V.pdfDocs[f.id]=doc; }
+      if (!doc){ doc=await window.pdfjsLib.getDocument({data:rawStore[f.id].slice(0)}).promise; V.pdfDocs[f.id]=doc;if(stale())return; }
       const page=await doc.getPage(V.page);
+      if(stale())return;
       // Render the canvas up to a safe pixel cap, then CSS-scale through 1000%.
       const rot=(page.rotate+V.rot)%360;
       const vp1=page.getViewport({scale:1, rotation:rot});
@@ -5493,6 +5507,7 @@ async function renderViewer(){
       const vp=page.getViewport({scale:renderScale, rotation:rot});
       const cv=document.createElement('canvas'); cv.width=vp.width; cv.height=vp.height;
       await page.render({canvasContext:cv.getContext('2d'), viewport:vp}).promise;
+      if(stale())return;
       const wrap=document.createElement('div'); wrap.className='v-pagewrap'; wrap.appendChild(cv);
       wrap.dataset.cssScale=cssR;
       const sc=renderScale;
@@ -5531,7 +5546,7 @@ async function renderViewer(){
         sizer.appendChild(wrap);
         stage.innerHTML=''; stage.appendChild(sizer);
       } else { stage.innerHTML=''; stage.appendChild(wrap); }
-    }catch(e){ stage.innerHTML='<div class="empty">Could not render this PDF page: '+esc(e.message)+'</div>'; }
+    }catch(e){ if(stale())return;stage.innerHTML='<div class="empty">Could not render this PDF page: '+esc(e.message)+'</div>'; }
   } else if(isImage){
     const scale=V.zoom,wrap=document.createElement('div');wrap.className='v-pagewrap';
     wrap.style.width=(pg.w*scale)+'px';wrap.style.height=(pg.h*scale)+'px';
@@ -5598,15 +5613,19 @@ async function renderViewer(){
       : '<div class="empty">No detections on this page.</div>';
     dl.querySelectorAll('.det').forEach(el=>{
       const d=listDets[+el.dataset.i];
-      el.querySelectorAll('[data-action]').forEach(button=>button.addEventListener('click',event=>{
+      el.querySelectorAll('[data-action]').forEach(button=>button.addEventListener('click',async event=>{
         event.stopPropagation();
         if(button.dataset.action==='approve'){
           if(!setRowDecision(d.r,'confirmed','Viewer'))return;
-          saveProject(p);renderProjHeader();renderViewer();toast(d.label+' approved');scheduleGuidedAdvance(d.r,'Approval saved');
+          saveProject(p);renderProjHeader();toast(d.label+' approved');
+          if(state.reviewFlow.active&&state.reviewFlow.currentRowId===d.r.id)await advanceGuidedReview(d.r,'Approval saved');
+          else await renderViewer();
         }else if(button.dataset.action==='reject'){
-          setRowDecision(d.r,'rejected','Viewer');saveProject(p);renderProjHeader();renderViewer();toast(d.label+' rejected');scheduleGuidedAdvance(d.r,'Rejection saved');
+          setRowDecision(d.r,'rejected','Viewer');saveProject(p);renderProjHeader();toast(d.label+' rejected');
+          if(state.reviewFlow.active&&state.reviewFlow.currentRowId===d.r.id)await advanceGuidedReview(d.r,'Rejection saved');
+          else await renderViewer();
         }else if(button.dataset.action==='undo'){
-          undoRowDecision(d.r,'Viewer');saveProject(p);renderProjHeader();renderViewer();toast('Approval returned to pending review');
+          undoRowDecision(d.r,'Viewer');saveProject(p);renderProjHeader();await renderViewer();toast('Approval returned to pending review');
         }else if(button.dataset.action==='edit'){
           openRowEditor(d.r,false,'Viewer');
         }else if(button.dataset.action==='board'){
@@ -5620,14 +5639,16 @@ async function renderViewer(){
     });
   }
   bindViewerDocumentRows(dets);
-  if(!V.assist.enabled)requestAnimationFrame(()=>syncViewerDetectionList(V.evidenceId,{scroll:Boolean(V.evidenceId)}));
+  if(stale())return;
+  viewerCommittedSequence=renderSequence;
+  if(!V.assist.enabled)requestAnimationFrame(()=>{if(!stale())syncViewerDetectionList(V.evidenceId,{scroll:Boolean(V.evidenceId)});});
 }
 function focusViewerDetection(d){
   const V=state.viewer;V.evidenceId=d.r?.id||null;
   $$('#vStage .attention').forEach(element=>element.classList.remove('attention'));
   const line=document.getElementById('vline-'+d.line);
   const target=document.querySelector(`#vStage [data-det-key="${d.viewerKey}"]`)||line?.querySelector('.hl')||line;
-  if(target){target.classList.add('attention');if(target.matches('.hl'))target.classList.add('hl');target.scrollIntoView?.({block:'center',inline:'center',behavior:'smooth'});}
+  if(target){target.classList.add('attention');if(target.matches('.hl'))target.classList.add('hl');scrollViewerElementIntoView($('#vStage'),target);}
   syncViewerDetectionList(V.evidenceId,{scroll:true});
 }
 async function jumpToEvidence(r){
@@ -5635,7 +5656,7 @@ async function jumpToEvidence(r){
   state.viewer.fileId=r.fileId;state.viewer.page=r.page||1;state.viewer.boardHl=r.boardNorm||null;state.viewer.assist.boardNorm=r.boardNorm||null;state.viewer.evidenceId=r.id;
   await setTab('viewer');
   const target=$('#vStage .attention')||document.getElementById('vline-'+r.line);
-  target?.scrollIntoView?.({block:'center',inline:'center'});
+  scrollViewerElementIntoView($('#vStage'),target,{behavior:'auto'});
   syncViewerDetectionList(r.id,{scroll:true});
 }
 $('#vThumbToggle').addEventListener('click',()=>setViewerPanel('left',!ensureViewerPanels().leftOpen));

@@ -21,6 +21,7 @@
     "test:analysis-budget": "node tools/coverage/verify-analysis-budget.mjs",
     "test:store": "node tools/coverage/test-store-static.mjs && node tools/coverage/test-store-page.mjs",
     "test:viewer": "node tools/coverage/verify-viewer-linked-review.mjs",
+    "test:viewer-race": "node tools/coverage/verify-viewer-render-race.mjs",
     "test:viewer-real": "node tools/coverage/verify-real-viewer.mjs",
     "test:schematic-scan-browser": "node tools/coverage/verify-scanned-schematic.mjs",
     "test:report-ui": "node tools/coverage/verify-report-workflow.mjs",

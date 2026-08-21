@@ -83,6 +83,7 @@ try {
 
   const extraction = await page.evaluate(() => {
     const scheduleRows = state.cur.analysis.rows.filter((row) => row.kind === 'schedule' && row.fileId);
+    scheduleRows.filter((row) => !rowApprovalIssue(row)).forEach((row) => { row.status = 'pending'; });
     const first = orderedPendingReviewRows().find((row) => row.kind === 'schedule' && row.fileId);
     return {
       analysisVersion: state.cur.analysis.version,
@@ -172,14 +173,28 @@ try {
 
   await page.locator('#vDetList .det.current [data-action="approve"]').click();
   await page.waitForFunction((priorId) => state.reviewFlow.currentRowId !== priorId, guidedStart.currentId);
+  await page.waitForFunction(() => {
+    const currentId = state.reviewFlow.currentRowId;
+    return viewerCommittedSequence === viewerRenderSequence
+      && state.viewer.evidenceId === currentId
+      && document.querySelector('#vDetList .det.current')?.dataset.rowId === currentId
+      && document.querySelector('#vStage .attention[data-row-id]')?.dataset.rowId === currentId;
+  });
+  await page.waitForTimeout(750);
   const guidedNext = await page.evaluate(() => ({
     currentId: state.reviewFlow.currentRowId,
     board: guidedReviewCurrentRow()?.boardNorm || null,
     selector: document.querySelector('#vBoardHl')?.value || null,
+    evidenceId: state.viewer.evidenceId,
+    currentCardIds: [...document.querySelectorAll('#vDetList .det.current')].map((element) => element.dataset.rowId),
+    attentionRowIds: [...document.querySelectorAll('#vStage .attention[data-row-id]')].map((element) => element.dataset.rowId),
   }));
   assert.notEqual(guidedNext.currentId, guidedStart.currentId, 'approval must advance to the next row automatically');
   assert.equal(guidedNext.board, guidedStart.board, 'review must finish the current board before moving to another board');
   assert.equal(guidedNext.selector, guidedNext.board, 'Go to Board must remain synchronised after auto-advance');
+  assert.equal(guidedNext.evidenceId, guidedNext.currentId, 'Viewer evidence state must follow the guided row');
+  assert.deepEqual(guidedNext.currentCardIds, [guidedNext.currentId], 'the right evidence list must move to exactly one current row');
+  assert.deepEqual(guidedNext.attentionRowIds, [guidedNext.currentId], 'the red source highlight must move to exactly one current row');
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.evaluate(() => renderViewer());
