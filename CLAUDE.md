@@ -45,7 +45,7 @@ report core, fixture suite, and Electron package.
 - `report-core.js`: canonical grouping, reconciliation, CSV, and Excel workbook generation.
 - `vendor/`: pinned local browser runtimes required for offline PDF and OCR handling.
 - `desktop/`: secure Electron protocol, local asset packaging, and installer configuration.
-- `netlify/functions/`: optional hosted extraction; secrets remain server-side.
+- `api/`: optional Vercel Functions for hosted extraction; secrets remain server-side.
 - `tools/coverage/`: deterministic tests and document fixtures.
 
 ## Workflow

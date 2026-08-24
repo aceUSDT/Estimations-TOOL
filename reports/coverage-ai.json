@@ -1,5 +1,5 @@
 {
-  "endpoint": "https://estimationtoolz.netlify.app/.netlify/functions/extract",
+  "endpoint": "https://estimations-tool-b6kuck70f-estimations.vercel.app/api/extract",
   "generated": "2026-07-08T10:36:45.498Z",
   "results": [
     {

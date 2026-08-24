@@ -124,6 +124,6 @@ Browser QA is also run at 1440x1000 and 390x844. The report must scroll inside i
 - Adaptive thresholding and speck removal are browser-based heuristics, not a full computer-vision document restoration system.
 - Table reconstruction uses OCR coordinates and spacing. Complex nested tables or merged cells can still produce broken field relationships and are flagged through confidence and coverage checks.
 - Tesseract.js 5.1.1, its English language data, and PDF.js 3.11.174 are vendored in `vendor/`. Browser and desktop document reading do not require a CDN.
-- Optional online extraction is off by default, is unavailable in desktop, and requires the server-side Netlify configuration described in `docs/AI_EXTRACTION.md`.
+- Optional online extraction is off by default, is unavailable in desktop, and requires the server-side Vercel configuration described in `docs/AI_EXTRACTION.md`.
 - IndexedDB and `.estimation-project` backups are local but not encrypted. The device PIN is a UI lock rather than a cryptographic storage boundary.
 - Manufacturer, series, product reference, coil voltage, and accessory details can only be reported when present in the source or confirmed by a user.

@@ -1,15 +1,15 @@
 /* Regression test: WS0.4 serverless extraction function (no network, no key).
  * Exercises the handler's request validation and health probe, and sanity-
  * checks the structured-output schema. The live Claude call needs
- * ANTHROPIC_API_KEY in the Netlify environment and is not tested here.
+ * ANTHROPIC_API_KEY in the Vercel environment and is not tested here.
  */
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const FN = path.resolve(HERE, '../../netlify/functions/extract.mjs');
-const PACK = path.resolve(HERE, '../../netlify/functions/lib/domain-pack.mjs');
+const FN = path.resolve(HERE, '../../api/extract.mjs');
+const PACK = path.resolve(HERE, '../../api/_lib/domain-pack.mjs');
 
 delete process.env.ANTHROPIC_API_KEY;
 delete process.env.ANTHROPIC_AUTH_TOKEN;

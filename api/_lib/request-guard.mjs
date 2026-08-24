@@ -10,8 +10,8 @@
  *     cannot address arbitrary keys in the shared Blobs store.
  */
 
-/* One rendered page at ~1500px JPEG is well under 4 MB of base64. */
-export const MAX_BODY_BYTES = 8 * 1024 * 1024;
+/* Vercel Functions accept request bodies up to 4.5 MB; reserve JSON overhead by capping rendered pages at 4 MB. */
+export const MAX_BODY_BYTES = 4 * 1024 * 1024;
 export const MAX_TEXT_LINES = 400;
 export const MAX_TEXT_LINE_CHARS = 2000;
 const JOB_ID = /^[A-Za-z0-9_-]{16,128}$/;

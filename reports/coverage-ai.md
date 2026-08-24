@@ -1,7 +1,7 @@
 # AI-active vs regex-only recall — deployed endpoint
 
 Generated 2026-07-08 UTC.
-Endpoint: `https://estimationtoolz.netlify.app/.netlify/functions/extract-background` (background function + polling; model `claude-sonnet-5`, thinking disabled).
+Endpoint: `https://estimations-tool-b6kuck70f-estimations.vercel.app/api/extract-background` (long-running function + polling; model `claude-sonnet-5`, thinking disabled).
 Scope: ground-truth anchor set (§0.5) — 3 document(s), 18 page(s) sent to the model, 1 transient enqueue error (SRP1053 — see note).
 
 **Method.** Regex-only = the deployed app's inline pipeline (`extractor-core.js` + verbatim
