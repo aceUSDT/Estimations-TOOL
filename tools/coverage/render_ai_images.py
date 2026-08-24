@@ -2,7 +2,7 @@
 """Render downscaled JPEGs (<=1300px long edge) for the AI extraction pass.
 
 The full-res work/ PNGs (~2079x2961) push a single Sonnet-5 extraction near
-Netlify's 30s sync limit. A ~1300px JPEG is still legible for schedule tables
+Vercel Function request-body limit. A ~1300px JPEG is still legible for schedule tables
 but cuts vision-input tokens and latency. Writes work/<slug>/ai-<page>.jpg.
 
 Usage: python3 render_ai_images.py [--all]   (default: ground-truth docs only)

@@ -1,6 +1,6 @@
 /* AI extraction providers — Claude (primary when configured) and Gemini
  * (free-tier second opinion, or primary fallback when ANTHROPIC_API_KEY is
- * absent). Both keys live ONLY in Netlify env vars — never in the browser.
+ * absent). Both keys live ONLY in Vercel environment variables — never in the browser.
  *
  *   ANTHROPIC_API_KEY   Claude — primary extractor
  *   GEMINI_API_KEY      Gemini — free tier from https://aistudio.google.com/apikey
@@ -188,7 +188,7 @@ export function crossCheckExtractions(primary, second) {
 export async function extractWithVerification({ imageBase64, mediaType, instruction, maxTokens }) {
   const status = providerStatus();
   if (!status.configured) {
-    throw Object.assign(new Error('AI extraction is not configured: set ANTHROPIC_API_KEY (or GEMINI_API_KEY) in the Netlify environment.'), { http: 503 });
+    throw Object.assign(new Error('AI extraction is not configured: set ANTHROPIC_API_KEY (or GEMINI_API_KEY) in Vercel.'), { http: 503 });
   }
   const args = { imageBase64, mediaType, instruction, maxTokens };
   const primaryCall = status.primary === 'anthropic' ? callClaude(args) : callGemini(args);

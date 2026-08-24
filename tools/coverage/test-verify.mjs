@@ -8,8 +8,8 @@ import path from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const LIB = path.resolve(HERE, '../../netlify/functions/lib/providers.mjs');
-const FN = path.resolve(HERE, '../../netlify/functions/extract.mjs');
+const LIB = path.resolve(HERE, '../../api/_lib/providers.mjs');
+const FN = path.resolve(HERE, '../../api/extract.mjs');
 
 delete process.env.ANTHROPIC_API_KEY;
 delete process.env.ANTHROPIC_AUTH_TOKEN;

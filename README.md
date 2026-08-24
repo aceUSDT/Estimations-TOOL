@@ -70,7 +70,7 @@ totals reconciled.
 
 ## AI extraction keys (server-side only)
 
-Extraction quality comes from a vision model reading each page. Keys are set as **Netlify environment variables** (Site configuration → Environment variables) — never in the repo or the browser:
+Extraction quality comes from a vision model reading each page. Keys are set as **Vercel environment variables** (Project Settings → Environment Variables) — never in the repo or the browser:
 
 | Variable | Purpose |
 |---|---|

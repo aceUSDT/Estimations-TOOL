@@ -1858,12 +1858,12 @@ async function autoOcrScannedFiles(){
 }
 /* ==================== AI EXTRACTION (serverless — key stays server-side) ==================== */
 /* The front-end NEVER holds the Anthropic key: it posts one page at a time to
-   a Netlify function (netlify/functions/extract.mjs) and merges the returned
+   a Vercel Function (api/extract.mjs) and merges the returned
    structured rows as review-pending evidence. If the function is absent or
    unconfigured, the app silently falls back to regex-only extraction. */
-const AI_EXTRACT_ENDPOINT='./.netlify/functions/extract';
-const AI_BG_ENDPOINT='./.netlify/functions/extract-background';
-const AI_STATUS_ENDPOINT='./.netlify/functions/extract-status';
+const AI_EXTRACT_ENDPOINT='/api/extract';
+const AI_BG_ENDPOINT='/api/extract-background';
+const AI_STATUS_ENDPOINT='/api/extract-status';
 let aiProbePromise=null;
 window.__aiStatus='unknown';
 function aiExtractReady(){
@@ -1872,7 +1872,7 @@ function aiExtractReady(){
     aiProbePromise=fetch(AI_EXTRACT_ENDPOINT,{method:'GET'}).then(async r=>{
       if(!r.ok){ window.__aiStatus='off — extraction endpoint not reachable'; return false; }
       const j=await r.json();
-      if(!j.configured){ window.__aiStatus='not configured — set ANTHROPIC_API_KEY (or free GEMINI_API_KEY) in Netlify'; return false; }
+      if(!j.configured){ window.__aiStatus='not configured — set ANTHROPIC_API_KEY or GEMINI_API_KEY in Vercel'; return false; }
       window.__aiStatus='active'+(j.verify?' + cross-check':j.primary==='gemini'?' (Gemini free tier)':'');
       return true;
     }).catch(()=>{ window.__aiStatus='off — extraction endpoint not reachable'; return false; });
@@ -1898,9 +1898,8 @@ async function aiExtractPage(f,pageNo,pg){
     await page.render({canvasContext:cv.getContext('2d',{alpha:false}),viewport:vp}).promise;
     image_base64=cv.toDataURL('image/jpeg',0.85).split(',')[1];
   }
-  // A full extraction of a dense page runs 30–45s — past Netlify's sync limit —
-  // so we go through the BACKGROUND function (202 immediately) and poll for the
-  // result written to the blob store. No 30s ceiling; the key stays server-side.
+  // A full extraction of a dense page can run 30–45s. The Vercel Function writes
+  // its result to a private Blob store before returning 202; the key stays server-side.
   /* Unguessable: results sit in a shared server-side store until polled, so a
      predictable id would let another visitor read this document's extraction. */
   const jobId=(crypto.randomUUID?crypto.randomUUID():Array.from(crypto.getRandomValues(new Uint32Array(4)),v=>v.toString(16).padStart(8,'0')).join('')).replace(/-/g,'');
