@@ -1195,11 +1195,13 @@
   function csv(model) {
     const reconciliation = validateModel(model);
     if (!reconciliation.valid) throw new Error(`Report reconciliation failed: ${reconciliation.issues.join("; ")}`);
-    /* Document text reaches the CSV verbatim; a leading =, +, @ or control
+    /* Document text reaches the CSV verbatim; a leading =, +, -, @ or control
        character would be executed as a formula by Excel and similar tools, so
-       non-numeric cells starting that way are prefixed with an apostrophe. */
+       non-numeric cells starting that way are prefixed with an apostrophe.
+       Genuine numbers (including negatives like -5) are exempted by the
+       numeric guard and remain unprefixed. */
     const neutralise = (raw) => (
-      /^[=+@\t\r]/.test(raw) && !/^[+-]?\d+(\.\d+)?$/.test(raw) ? `'${raw}` : raw
+      /^[=+\-@\t\r]/.test(raw) && !/^[+-]?\d+(\.\d+)?$/.test(raw) ? `'${raw}` : raw
     );
     const escape = (value) => {
       const raw = neutralise(String(value == null ? "" : value));
