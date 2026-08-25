@@ -240,6 +240,38 @@ test('diagnostic export contains NO document text, board names, or file names', 
   assert.ok(!text.includes('KITCHEN'), 'board name leaked');
   assert.ok(text.includes('doc-1'), 'files must be anonymised, not dropped');
   assert.ok(text.includes('ZERO_DEVICES_WITH_BOARDS') || text.includes('BOARD_ROWS_MISSING'), 'reason codes must survive');
+  assert.equal(diag.diagnosticVersion, 2);
+  assert.equal(diag.privacy.shareableWithSupport, true);
+  assert.ok(diag.pages[0].verdict.reasonCodes.includes('SCHEDULE_ROWS_ZERO'));
+  assert.equal(diag.failureSummary.pagesWithTextButNoRows, 1);
+  assert.ok(diag.reasonGuidance.SCHEDULE_ROWS_ZERO);
+});
+
+test('diagnostic v2 records attempts and page micro-metrics without leaking arbitrary fields', () => {
+  const diag = core.buildDiagnosticExport({
+    health: null,
+    coverage: null,
+    files: [{ id: 'secret-file', name: 'Secret Project.pdf', ext: 'pdf', status: 'ready', pages: [{}] }],
+    pages: [page({
+      fileId: 'secret-file', rowsParsed: 0, spatialColumns: ['way', 'rating'], spatialGridAccepted: false,
+      spatialBlockingReasons: ['circuit_column_missing'], spatialWarnings: ['primary_board_not_resolved'],
+      inputStats: { width: 841.89, height: 595.28, positionedLines: 38, spatialWords: 214, tableRows: 26, tableCells: 312 },
+      boardResolved: false, boardDetection: { referencesDetected: 3, primaryReferences: 0, circuitReferences: 3 },
+      extractionAttempts: [{ strategy: 'geometry-strict', matched: false, rows: 0, confidence: 0.61, debugText: 'SECRET CUSTOMER CONTENT' }],
+      rowOutcome: { unassignedRows: 7, reviewRows: 7 },
+    })],
+    appVersion: 'test-v2',
+  });
+  const exported = diag.pages[0];
+  assert.equal(exported.input.spatialWords, 214);
+  assert.equal(exported.input.tableCells, 312);
+  assert.deepEqual(exported.spatial.missingRoles, ['circuit_reference_or_description']);
+  assert.equal(exported.extractionAttempts[0].strategy, 'geometry-strict');
+  assert.equal(exported.extractionAttempts[0].confidence, 0.61);
+  assert.ok(exported.verdict.reasonCodes.includes('BOARD_REFERENCE_UNRESOLVED'));
+  assert.ok(exported.verdict.reasonCodes.includes('OUTPUT_ROWS_UNASSIGNED'));
+  assert.ok(!JSON.stringify(diag).includes('SECRET CUSTOMER CONTENT'));
+  assert.ok(!JSON.stringify(diag).includes('Secret Project'));
 });
 
 test('every reason emitted by the model has a stable message in HEALTH_REASONS', () => {

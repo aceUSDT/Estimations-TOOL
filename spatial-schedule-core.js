@@ -33,7 +33,57 @@
     { role: 'install_method', patterns: [/INSTALL.*METHOD/, /REFERENCE.*METHOD/] },
     { role: 'max_disconnect', patterns: [/DIS.*CONN.*TIME/, /DISCONNECTION.*TIME/] },
     { role: 'max_zs', patterns: [/MAX.*ZS/, /ZS.*MAX/] },
+    { role: 'earth_fault_device', patterns: [/EARTH.*FAULT.*PROTECTIVE.*DEVICE/] },
+    { role: 'arc_flash_device', patterns: [/ARC.*FLASH.*PROTECTIVE.*DEVICE/] },
+    { role: 'contactor', patterns: [/\bCONTACTOR\b/, /CONTROL.*CONTACTOR/] },
+    { role: 'epo', patterns: [/\bEPO\b/, /EMERGENCY.*(?:POWER\s+OFF|STOP)/] },
+    { role: 'spd', patterns: [/\bSPD\b/, /SURGE.*PROTECTION/] },
   ];
+
+  const CALIBRATION_ROLE_DEFINITIONS = Object.freeze([
+    { role: 'outgoing_table', kind: 'region', label: 'Outgoing circuit table' },
+    { role: 'way', kind: 'column', label: 'Way / circuit number column' },
+    { role: 'phase', kind: 'column', label: 'Phase column' },
+    { role: 'device_standard', kind: 'column', label: 'Device BS / EN standard column' },
+    { role: 'device_class', kind: 'column', label: 'Device type column' },
+    { role: 'trip_unit', kind: 'column', label: 'Trip unit / release column' },
+    { role: 'rating', kind: 'column', label: 'Device rating column' },
+    { role: 'trip_curve', kind: 'column', label: 'Trip curve column' },
+    { role: 'breaking_capacity', kind: 'column', label: 'Breaking capacity column' },
+    { role: 'afdd', kind: 'column', label: 'AFDD protection column' },
+    { role: 'rcd', kind: 'column', label: 'RCD protection column' },
+    { role: 'rcd_ma', kind: 'column', label: 'RCD sensitivity column' },
+    { role: 'circuit_reference', kind: 'column', label: 'Circuit reference column' },
+    { role: 'description', kind: 'column', label: 'Load description column' },
+    { role: 'circuit_type', kind: 'column', label: 'Circuit type column' },
+    { role: 'line_csa', kind: 'column', label: 'Live conductor size column' },
+    { role: 'cpc_csa', kind: 'column', label: 'CPC size column' },
+    { role: 'cable_type', kind: 'column', label: 'Cable type column' },
+    { role: 'install_method', kind: 'column', label: 'Installation method column' },
+    { role: 'earth_fault_device', kind: 'column', label: 'Earth-fault protective device column' },
+    { role: 'arc_flash_device', kind: 'column', label: 'Arc-flash protective device column' },
+    { role: 'contactor', kind: 'column', label: 'Contactor column' },
+    { role: 'epo', kind: 'column', label: 'EPO / emergency stop column' },
+    { role: 'spd', kind: 'column', label: 'Surge protection column' },
+    { role: 'board_ref', kind: 'header', label: 'Board reference field' },
+    { role: 'ways_total', kind: 'header', label: 'Number of ways field' },
+    { role: 'board_rating', kind: 'header', label: 'Board rating field' },
+    { role: 'phase_config', kind: 'header', label: 'Board phase configuration field' },
+    { role: 'incomer_class', kind: 'header', label: 'Incomer device field' },
+    { role: 'incomer_rating', kind: 'header', label: 'Incomer rating field' },
+    { role: 'supply_source', kind: 'header', label: 'Supplied from field' },
+    { role: 'supply_cable', kind: 'header', label: 'Supply cable field' },
+    { role: 'fault_rating', kind: 'header', label: 'Fault rating field' },
+    { role: 'location', kind: 'header', label: 'Board location field' },
+    { role: 'purpose', kind: 'header', label: 'Board purpose field' },
+    { role: 'metering', kind: 'header', label: 'Metering field' },
+    { role: 'board_model', kind: 'header', label: 'Board model field' },
+  ]);
+
+  const CALIBRATION_COLUMN_ROLES = new Set(CALIBRATION_ROLE_DEFINITIONS
+    .filter((definition) => definition.kind === 'column').map((definition) => definition.role));
+  const CALIBRATION_HEADER_ROLES = new Set(CALIBRATION_ROLE_DEFINITIONS
+    .filter((definition) => definition.kind === 'header').map((definition) => definition.role));
 
   const CRITICAL_COLUMNS = ['way', 'rating', 'device_standard'];
 
@@ -488,6 +538,121 @@
     };
   }
 
+  function calibrationRegions(input = {}) {
+    return (input.calibrationHint?.regions || []).map((region) => {
+      const box = bboxObject({ bbox: region?.bbox });
+      const role = String(region?.role || '');
+      const definition = CALIBRATION_ROLE_DEFINITIONS.find((item) => item.role === role);
+      if (!box || !definition) return null;
+      return { ...region, role, kind: definition.kind, box };
+    }).filter(Boolean);
+  }
+
+  function wordsInsideCalibration(words, region, padding = 0) {
+    if (!region?.box) return [];
+    const { x0, y0, x1, y1 } = region.box;
+    return (words || []).filter((word) => word.cx >= x0 - padding && word.cx <= x1 + padding
+      && word.cy >= y0 - padding && word.cy <= y1 + padding);
+  }
+
+  function wordsInsideCalibratedColumn(words, region, padding = 0) {
+    if (!region?.box) return [];
+    return (words || []).filter((word) => word.cx >= region.box.x0 - padding && word.cx <= region.box.x1 + padding);
+  }
+
+  function calibratedSchema(schema, input, words, wayAnchors, pageWidth, pageHeight) {
+    const regions = calibrationRegions(input);
+    const columnRegions = regions.filter((region) => CALIBRATION_COLUMN_ROLES.has(region.role));
+    const tableRegion = regions.find((region) => region.role === 'outgoing_table');
+    if (!columnRegions.length && !tableRegion) return schema;
+    const byRole = new Map((schema?.columns || []).map((column) => [column.role, { ...column }]));
+    columnRegions.forEach((region) => {
+      byRole.set(region.role, {
+        role: region.role,
+        x: (region.box.x0 + region.box.x1) / 2,
+        left: region.box.x0,
+        right: region.box.x1,
+        evidence: null,
+        source: 'user_calibration',
+        calibrated: true,
+      });
+    });
+    const columns = [...byRole.values()].filter((column) => Number.isFinite(column.x)).sort((left, right) => left.x - right.x);
+    for (let index = 0; index < columns.length; index += 1) {
+      if (columns[index].calibrated) continue;
+      columns[index].left = index ? (columns[index - 1].x + columns[index].x) / 2 : 0;
+      columns[index].right = index < columns.length - 1 ? (columns[index].x + columns[index + 1].x) / 2 : pageWidth;
+    }
+    const anchorYs = wayAnchors.map((word) => word.cy);
+    const rowSpacing = schema?.rowSpacing || median(anchorYs.slice(1).map((value, index) => value - anchorYs[index]).filter((value) => value > 2)) || 22;
+    const dataTop = tableRegion?.box.y0 ?? schema?.dataBand?.[1]
+      ?? (anchorYs.length ? Math.max(0, Math.min(...anchorYs) - rowSpacing * 0.55) : 0);
+    const dataBottom = tableRegion?.box.y1 ?? (schema?.dataBand ? schema.dataBand[1] + schema.dataBand[3]
+      : (anchorYs.length ? Math.min(pageHeight, Math.max(...anchorYs) + rowSpacing * 0.6) : pageHeight));
+    const calibratedRoles = columnRegions.map((region) => region.role);
+    const structuralRoles = new Set(columns.map((column) => column.role));
+    const critical = structuralRoles.has('way') && structuralRoles.has('rating')
+      && (structuralRoles.has('circuit_reference') || structuralRoles.has('description'));
+    return {
+      ...(schema || {}),
+      columns,
+      confidence: Math.max(Number(schema?.confidence) || 0, critical ? 0.94 : 0.78),
+      headerBand: [0, 0, pageWidth, Math.max(0, dataTop)],
+      dataBand: [tableRegion?.box.x0 ?? 0, dataTop,
+        tableRegion ? Math.max(1, tableRegion.box.x1 - tableRegion.box.x0) : pageWidth,
+        Math.max(1, dataBottom - dataTop)],
+      rowSpacing,
+      calibrationRoles: [...new Set([...calibratedRoles, ...(tableRegion ? ['outgoing_table'] : [])])],
+      calibrated: true,
+    };
+  }
+
+  function calibratedHeaderValue(role, text) {
+    const source = String(text || '').replace(/\s+/g, ' ').trim();
+    if (!source) return null;
+    const number = Number(source.match(/\d+(?:\.\d+)?/)?.[0]);
+    if (role === 'board_ref') {
+      const cleaned = source.replace(/^(?:DIST\s*\/\s*BD|DISTRIBUTION\s+BOARD|DB|BOARD)\s*(?:REF(?:ERENCE)?|IDENTITY)\s*[:#=-]?\s*/i, '').trim();
+      return Core.canonicalBoardReference(cleaned || source).display;
+    }
+    if (role === 'ways_total') return Number.isInteger(number) && number > 0 && number <= 200 ? number : null;
+    if (role === 'board_rating' || role === 'incomer_rating' || role === 'fault_rating') {
+      return Number.isFinite(number) && number > 0 ? number : null;
+    }
+    if (role === 'phase_config') {
+      const token = source.toUpperCase().replace(/\s+/g, '');
+      if (/TP&?N|TPN|3PH|THREEPHASE|L1.*L2.*L3/.test(token)) return 'TPN';
+      if (/SP&?N|SPN|1PH|SINGLEPHASE/.test(token)) return 'SPN';
+      return null;
+    }
+    if (role === 'incomer_class') return parseProtectionDescriptor(source).explicitDevice || source;
+    return source;
+  }
+
+  function applyHeaderCalibrations(parsed, input, words) {
+    const result = parsed || { header: {}, evidence: {} };
+    result.header = result.header || {};
+    result.evidence = result.evidence || {};
+    const fieldMap = {
+      board_ref: 'board_ref', ways_total: 'ways_total', board_rating: 'board_rating_a', phase_config: 'phase_config',
+      incomer_class: 'incomer_class', incomer_rating: 'incomer_rating_a', supply_source: 'fed_from_ref',
+      supply_cable: 'supply_cable_details', fault_rating: 'fault_ka', location: 'location', purpose: 'purpose',
+      metering: 'metering', board_model: 'board_model',
+    };
+    calibrationRegions(input).filter((region) => CALIBRATION_HEADER_ROLES.has(region.role)).forEach((region) => {
+      const cell = sourceCell(wordsInsideCalibration(words, region, Math.max(1, region.box.y1 - region.box.y0) * 0.03), region.role);
+      if (!cell) return;
+      const value = calibratedHeaderValue(region.role, cell.text);
+      const field = fieldMap[region.role];
+      if (!field || value == null || value === '') return;
+      result.header[field] = value;
+      result.evidence[field] = { ...cell, extractionMethod: 'User layout calibration + spatial parser' };
+      if (region.role === 'phase_config') result.header.phase_count = value === 'TPN' ? 3 : 1;
+      if (region.role === 'supply_source') result.header.supplied_from_text = value;
+    });
+    return result;
+  }
+
   function columnCells(words, schema) {
     const assigned = Object.fromEntries(schema.columns.map((column) => [column.role, []]));
     for (const word of words) {
@@ -706,7 +871,7 @@
 
   function extractSpatialBoardHeader(input, words, schema) {
     const lines = headerLines(input, words, schema?.dataBand?.[1] ?? Infinity);
-    const parsed = Core.extractBoardHeader(lines);
+    const parsed = applyHeaderCalibrations(Core.extractBoardHeader(lines), input, words);
     const references = extractContextualBoardReferences(lines, { pageType: input.pageType, isSchedule: true });
     const primary = references.find((reference) => reference.role === 'primary_board');
     if (!parsed.header.board_ref && primary) parsed.header.board_ref = primary.original;
@@ -761,6 +926,8 @@
     const textualRcdProtection = /\b(?:C\s*\/\s*W|WITH)\s+RCD\b/i.test(allText);
     const rcdProtected = rcdIndicator === true || rcdMa != null || textualRcdProtection ? true : rcdIndicator;
     const afddIndicator = indicatorValue(cells.afdd);
+    const earthFaultText = cellText(cells, 'earth_fault_device');
+    const arcFlashText = cellText(cells, 'arc_flash_device');
     const resolution = resolveProtectionDevice({
       standard: standardText,
       deviceClass: resolvedDeviceClassText,
@@ -805,8 +972,23 @@
       poleConfiguration: poles === 3 ? 'TP' : poles === 1 ? 'SP' : null,
       protectionStandard: resolution.protectionStandard, protectionStandardCode: resolution.standardCode,
       sens: rcdMa, rcdProtected, afdd: afddIndicator === true, afddIndicated: afddIndicator, poles, ka,
+      earthFaultDevice: earthFaultText && !/^(?:NO|NONE|N\/A|NA|-|--)$/i.test(earthFaultText)
+        ? { descriptor: earthFaultText } : null,
+      arcFlashDevice: arcFlashText && !/^(?:NO|NONE|N\/A|NA|-|--)$/i.test(arcFlashText) ? arcFlashText : null,
       desc: description, circuitReference, circuitReferenceText: circuitText || null, circuitConfig,
-      associatedDevices: Core.extractAssociatedEquipment(description),
+      associatedDevices: (() => {
+        const equipment = Core.extractAssociatedEquipment(description);
+        const addCalibratedEquipment = (role, device) => {
+          const text = cellText(cells, role);
+          const indicator = indicatorValue(cells[role]);
+          if (indicator === false || !text || /^(?:NO|NONE|N\/A|NA|-|--)$/i.test(text)) return;
+          if (!equipment.some((item) => item.device === device)) equipment.push({ device, qty: 1 });
+        };
+        addCalibratedEquipment('contactor', 'Contactor');
+        addCalibratedEquipment('epo', 'Emergency power off');
+        addCalibratedEquipment('spd', 'Surge protection device');
+        return equipment;
+      })(),
       cable: (liveCsa != null || cpcCsa != null || cableType || installMethod) ? {
         orig: [liveCsa != null ? `${liveCsa}mm2` : null, cpcCsa != null ? `CPC ${cpcCsa}mm2` : null, cableType].filter(Boolean).join(' '),
         size: liveCsa, cpc: cpcCsa, typeCode: cableType,
@@ -839,6 +1021,8 @@
         rcdProtection: cells.rcd || cells.rcd_ma || source,
         rcdSensitivity: cells.rcd_ma || cells.rcd || source,
         afdd: cells.afdd || source,
+        earthFaultDevice: cells.earth_fault_device || source,
+        arcFlashDevice: cells.arc_flash_device || source,
         circuitReference: cells.circuit_reference || cells.description || source,
         description: cells.description || cells.circuit_reference || source,
         installMethod: cells.install_method || source,
@@ -1550,6 +1734,10 @@
       };
     }
     const header = trimbleBoardHeader(profile, words, schema, pageWidth);
+    const calibratedHeader = applyHeaderCalibrations({ header: header.header, evidence: header.evidence }, input, words);
+    header.header = calibratedHeader.header;
+    header.evidence = calibratedHeader.evidence;
+    header.boardRef = calibratedHeader.header.board_ref || header.boardRef;
     const anchors = wordsInRegion(words, schema.bounds.wayPhaseLeft, schema.bounds.wayPhaseRight,
       schema.dataBand[1], schema.dataBand[1] + schema.dataBand[3])
       .filter((item) => extractWayIdentifier(item.text) != null)
@@ -1621,6 +1809,10 @@
       words: words.length,
       dialect: schema.dialect,
       schema,
+      calibration: {
+        applied: calibrationRegions(input).length,
+        roles: [...new Set(calibrationRegions(input).map((region) => region.role))],
+      },
       grid,
       table: {
         bbox: unionBox(words.filter((item) => item.cy >= schema.dataBand[1] && item.cy <= schema.dataBand[1] + schema.dataBand[3])),
@@ -1649,16 +1841,26 @@
     if (words.length < 8 || !Number.isFinite(pageWidth) || !Number.isFinite(pageHeight)) {
       return { matched: false, confidence: 0, words: words.length, rows: [], feeds: [], references: [], warnings: ['insufficient_spatial_words'] };
     }
+    const calibrations = calibrationRegions(input);
+    const structuralCalibration = calibrations.some((region) => region.role === 'outgoing_table'
+      || CALIBRATION_COLUMN_ROLES.has(region.role));
     const trimbleProfile = trimbleDialectProfile(words);
-    if (trimbleProfile.matched) {
+    if (trimbleProfile.matched && !structuralCalibration) {
       return parseTrimbleStackedSchedulePage(input, words, trimbleProfile, pageWidth, pageHeight);
     }
-    const hintedWayX = input.schemaHint?.columns?.find((column) => column.role === 'way')?.x;
-    const wayAnchors = findWayAnchors(words, pageWidth, { allowSingle: Boolean(input.allowSingleWay), expectedX: hintedWayX });
-    const schema = input.schemaHint
-      ? continuationSchema(words, wayAnchors, pageWidth, pageHeight, input.schemaHint)
-      : inferScheduleColumns(words, wayAnchors, pageWidth, pageHeight);
-    const minimumWays = input.allowSingleWay ? 1 : 2;
+    const tableRegion = calibrations.find((region) => region.role === 'outgoing_table');
+    const tableWords = tableRegion ? wordsInsideCalibration(words, tableRegion, 1) : words;
+    const wayRegion = calibrations.find((region) => region.role === 'way');
+    const wayWords = wayRegion ? wordsInsideCalibratedColumn(tableWords.length ? tableWords : words, wayRegion, 2) : tableWords;
+    const hintedWayX = wayRegion ? (wayRegion.box.x0 + wayRegion.box.x1) / 2
+      : input.schemaHint?.columns?.find((column) => column.role === 'way')?.x;
+    const allowSingleWay = Boolean(input.allowSingleWay || wayRegion);
+    const wayAnchors = findWayAnchors(wayWords, pageWidth, { allowSingle: allowSingleWay, expectedX: hintedWayX });
+    const inferredSchema = input.schemaHint
+      ? continuationSchema(tableWords, wayAnchors, pageWidth, pageHeight, input.schemaHint)
+      : inferScheduleColumns(tableWords, wayAnchors, pageWidth, pageHeight);
+    const schema = calibratedSchema(inferredSchema, input, words, wayAnchors, pageWidth, pageHeight);
+    const minimumWays = allowSingleWay ? 1 : 2;
     if (wayAnchors.length < minimumWays || !schema?.columns?.some((column) => column.role === 'way')) {
       return { matched: false, confidence: schema?.confidence || 0, words: words.length, schema, rows: [], feeds: [], references: [], warnings: ['way_column_not_resolved'] };
     }
@@ -1672,7 +1874,7 @@
     for (let index = 0; index < wayAnchors.length; index += 1) {
       const top = index ? (ys[index - 1] + ys[index]) / 2 : schema.dataBand[1];
       const bottom = index < wayAnchors.length - 1 ? (ys[index] + ys[index + 1]) / 2 : schema.dataBand[1] + schema.dataBand[3];
-      const rowWords = words.filter((word) => word.cy >= top && word.cy < bottom);
+      const rowWords = tableWords.filter((word) => word.cy >= top && word.cy < bottom);
       rows.push(...parseSpatialWayRows(rowWords, wayAnchors[index], top, bottom, schema, context));
     }
     reconcileProtectionStandardRows(words, wayAnchors, rows, schema, context);
@@ -1721,6 +1923,10 @@
       confidence: Math.min(schema.confidence, ref ? 0.98 : 0.65),
       words: words.length,
       schema,
+      calibration: {
+        applied: calibrations.length,
+        roles: [...new Set(calibrations.map((region) => region.role))],
+      },
       grid,
       table: {
         bbox: unionBox(words.filter((word) => word.cy >= schema.headerBand[1] && word.cy <= schema.dataBand[1] + schema.dataBand[3])),
@@ -2217,6 +2423,7 @@
 
   Object.assign(Core, {
     DEFAULT_BOARD_CLASSIFICATION_POLICY,
+    CALIBRATION_ROLE_DEFINITIONS,
     collectSpatialWords,
     extractContextualBoardReferences,
     inferScheduleColumns,

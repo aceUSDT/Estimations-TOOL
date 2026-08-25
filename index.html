@@ -269,6 +269,8 @@
   .grow-actions button:hover{background:var(--blue-soft);color:var(--blue);}
   .grow-actions button.ok:hover{background:var(--green-soft);color:var(--green);}
   .grow-actions button.no:hover{background:var(--red-soft);color:var(--red);}
+  .extraction-gap-actions{display:flex;gap:6px;align-items:center;flex-wrap:wrap;}
+  .extraction-gap-actions .btn{width:auto;min-width:0;height:30px;padding:0 9px;white-space:normal;line-height:1.15;}
   .evrow td{background:#f7fafd!important;font-family:var(--mono);font-size:11px;color:var(--txt2);}
   .evrow td .src{white-space:pre-wrap;}
 
@@ -362,12 +364,24 @@
     font-size:10px;font-weight:800;line-height:1.4;box-shadow:0 2px 6px rgba(45,30,90,.25);pointer-events:none;}
   .assist-bar{padding:9px 12px;border-bottom:1px solid #d9d0f4;background:var(--purple-soft);display:flex;
     gap:8px;align-items:center;flex-wrap:wrap;}
+  .assist-bar[hidden]{display:none;}
   .assist-bar .step{font-size:11px;font-weight:800;color:var(--purple);text-transform:uppercase;letter-spacing:0;}
   .assist-bar .assist-help{font-size:11.5px;color:var(--txt2);}
   .assist-on{background:var(--purple)!important;border-color:var(--purple)!important;color:#fff!important;}
   .v-pagewrap.assist-cursor{cursor:crosshair;user-select:none;}
   .canvas-selection{position:absolute;z-index:8;border:2px dashed var(--purple);background:rgba(123,92,214,.12);
     pointer-events:none;border-radius:3px;}
+  .calibration-bar{padding:8px 12px;border-bottom:1px solid #a9d7c9;background:#edf9f5;display:flex;
+    gap:7px;align-items:center;flex-wrap:wrap;}
+  .calibration-bar[hidden]{display:none;}
+  .calibration-bar .step{font-size:11px;font-weight:800;color:#067454;text-transform:uppercase;}
+  .calibration-on{background:#067454!important;border-color:#067454!important;color:#fff!important;}
+  .v-pagewrap.calibration-cursor{cursor:crosshair;user-select:none;}
+  .canvas-selection.calibration{border-color:#067454;background:rgba(6,116,84,.13);}
+  .calibration-overlay{position:absolute;z-index:7;border:2px dashed #067454;background:rgba(6,116,84,.08);
+    pointer-events:none;border-radius:2px;box-sizing:border-box;}
+  .calibration-overlay::after{content:attr(data-label);position:absolute;left:0;top:0;max-width:220px;padding:2px 5px;
+    background:#067454;color:#fff;font-size:9px;font-weight:800;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .assist-result{padding:9px 14px;border-bottom:1px solid #edf0f5;cursor:pointer;}
   .assist-result:hover{background:var(--purple-soft);}
   .assist-summary{padding:12px 14px;background:var(--purple-soft);border-bottom:1px solid #d9d0f4;}
@@ -391,7 +405,7 @@
   .det-source{margin-top:4px;color:var(--txt3);font:10.5px/1.45 var(--mono);white-space:normal;overflow-wrap:anywhere;}
   .det-count{margin-top:6px;color:var(--txt2);font-size:10.5px;font-weight:700;}
   .det-protection{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px;}
-  .v-toolbar,.v-doctabs,.assist-bar,.guided-review-bar,.audit-workspace-head,#vMetaRow{flex-shrink:0;}
+  .v-toolbar,.v-doctabs,.assist-bar,.calibration-bar,.guided-review-bar,.audit-workspace-head,#vMetaRow{flex-shrink:0;}
   .audit-workspace-head{display:flex;align-items:center;gap:12px;min-height:48px;padding:7px 12px;border-bottom:1px solid var(--line);border-left:4px solid var(--blue);background:#fff;}
   .audit-workspace-copy{display:grid;gap:1px;min-width:0;}
   .audit-workspace-copy .step{font-size:10px;font-weight:800;text-transform:uppercase;color:var(--blue);}
@@ -816,6 +830,7 @@
             <div class="vsep"></div>
             <button class="btn sm" id="vReviewStart" title="Start at the first board and audit every required row in document order">Start audit</button>
             <button class="btn sm" id="vAssistMode" title="Select one device row and find the same protection device on this board">Find similar</button>
+            <button class="btn sm" id="vCalibrateMode" title="Label a table, column, or board field for this layout">Calibrate</button>
             <button class="btn sm" id="vOcrBtn" title="Read a scanned page with OCR">OCR page</button>
             <button class="btn sm" id="vDark" title="Dark / light canvas">◐</button>
             <button class="btn sm" id="vPrint" title="Print current page">⎙</button>
@@ -831,6 +846,20 @@
             <span class="chip purple" id="vAssistCount">0 matches</span>
             <button class="btn sm" id="vAssistClear">Clear</button>
             <span class="ocr-progress" id="vOcrStatus"></span>
+          </div>
+          <div class="calibration-bar" id="vCalibrationBar" hidden>
+            <span class="step">Calibration</span>
+            <select class="sel" id="vCalibrationRole" aria-label="Information to calibrate"></select>
+            <select class="sel" id="vCalibrationScope" aria-label="Calibration scope">
+              <option value="following">This and following pages</option>
+              <option value="document">All matching pages</option>
+              <option value="page">This page only</option>
+            </select>
+            <span class="chip green" id="vCalibrationCount">0 saved</span>
+            <button class="btn sm" id="vCalibrationUndo" title="Remove the most recent calibration">Undo</button>
+            <button class="btn sm" id="vCalibrationManage">Manage</button>
+            <button class="btn sm primary" id="vCalibrationApply">Apply &amp; re-analyse</button>
+            <button class="btn sm ghost" id="vCalibrationDone">Done</button>
           </div>
           <div class="guided-review-bar" id="vReviewBar" hidden>
             <span class="chip blue">Audit queue</span>
@@ -1156,12 +1185,12 @@ const state = {
   projects: [],
   cur: null,           // current project
   nextId: 1,
-  viewer: {fileId:null, page:1, zoom:1, rot:0, dark:false, fullscreen:false, boardHl:null, evidenceId:null, pdfDocs:{}, panels:{leftOpen:true,rightOpen:true,leftWidth:132,rightWidth:360}, assist:{enabled:false,boardNorm:null,seed:null,results:[]}},
+  viewer: {fileId:null, page:1, zoom:1, rot:0, dark:false, fullscreen:false, boardHl:null, evidenceId:null, pdfDocs:{}, panels:{leftOpen:true,rightOpen:true,leftWidth:132,rightWidth:360}, assist:{enabled:false,boardNorm:null,seed:null,results:[]}, calibration:{enabled:false,role:'outgoing_table',scope:'following',dirty:false,lastId:null}},
   selectedBoard: null,  // §5.4 — board selected in the merged Boards & Devices page ('__none__' = unassigned rows), null = roll-up
   reportMode: 'board',
   reviewFlow: {active:false,currentRowId:null,initialCount:0,moving:false,boardOrder:[],initialByBoard:{},rowOrderByBoard:{}},
 };
-const ANALYSIS_VERSION=22;
+const ANALYSIS_VERSION=23;
 const uid = () => 'x'+(state.nextId++)+'_'+Math.random().toString(36).slice(2,6);
 
 /* ====================== PERSISTENCE (IndexedDB) ====================== */
@@ -1733,7 +1762,7 @@ $('#restoreProjectInput').addEventListener('change',async event=>{
 /* ============================ PROJECT MODEL ============================ */
 function newProject(name){
   return { id:uid(), name, created:todayStr(), updated:todayStr(), status:'Not analysed',
-    files:[], analysis:null, assistedMarkups:[], approvalLog:[], correctionLog:[], reviewSession:null, contractVersions:{decisions:1,review:1} };
+    files:[], analysis:null, assistedMarkups:[], calibrations:[], approvalLog:[], correctionLog:[], reviewSession:null, contractVersions:{decisions:1,review:1} };
 }
 function bufferToBase64(buffer){
   const bytes=new Uint8Array(buffer);let binary='';
@@ -1789,9 +1818,55 @@ function ensureAssistedState(p){
   if (!state.viewer.assist) state.viewer.assist={enabled:false,boardNorm:null,seed:null,results:[]};
   return p ? p.assistedMarkups : [];
 }
+function ensureCalibrationState(p){
+  if(p&&!Array.isArray(p.calibrations))p.calibrations=[];
+  if(p&&!Number.isFinite(Number(p.calibrationRevision)))p.calibrationRevision=0;
+  if(!state.viewer.calibration)state.viewer.calibration={enabled:false,role:'outgoing_table',scope:'following',dirty:false,lastId:null};
+  if(p)state.viewer.calibration.dirty=Number(p.calibrationRevision||0)!==Number(p.analysis?.calibrationRevision||0);
+  return p?p.calibrations:[];
+}
+function markCalibrationChanged(p){
+  if(!p)return;
+  p.calibrationRevision=Number(p.calibrationRevision||0)+1;
+  state.viewer.calibration.dirty=true;p.status='Calibration pending';
+}
+function calibrationDefinitions(){
+  return window.EstimationExtractorCore?.CALIBRATION_ROLE_DEFINITIONS||[
+    {role:'outgoing_table',kind:'region',label:'Outgoing circuit table'},
+    {role:'way',kind:'column',label:'Way / circuit number column'},
+    {role:'rating',kind:'column',label:'Device rating column'},
+    {role:'description',kind:'column',label:'Load description column'},
+    {role:'board_ref',kind:'header',label:'Board reference field'},
+  ];
+}
+function calibrationRoleLabel(role){return calibrationDefinitions().find(item=>item.role===role)?.label||role.replaceAll('_',' ');}
+function calibrationApplies(record,fileId,pageNo,pageRecord){
+  if(!record||record.fileId!==fileId)return false;
+  if(record.scope==='page'&&Number(record.sourcePage)!==Number(pageNo))return false;
+  if(record.scope==='following'&&Number(pageNo)<Number(record.sourcePage))return false;
+  if(record.scope!=='page'&&record.orientation&&pageRecord){
+    const orientation=Number(pageRecord.w)>=Number(pageRecord.h)?'landscape':'portrait';
+    if(orientation!==record.orientation)return false;
+  }
+  return true;
+}
+function pageCalibrations(project,fileId,pageNo,pageRecord){
+  return ensureCalibrationState(project).filter(record=>calibrationApplies(record,fileId,pageNo,pageRecord));
+}
+function calibrationHintForPage(project,fileId,pageNo,pageRecord){
+  const width=Math.max(1,Number(pageRecord?.w)||1),height=Math.max(1,Number(pageRecord?.h)||1);
+  const records=pageCalibrations(project,fileId,pageNo,pageRecord);
+  return {
+    regions:records.map(record=>({id:record.id,role:record.role,kind:record.kind,scope:record.scope,
+      bbox:[record.bboxNorm[0]*width,record.bboxNorm[1]*height,record.bboxNorm[2]*width,record.bboxNorm[3]*height]})),
+    applicable:records.length,
+    roles:[...new Set(records.map(record=>record.role))],
+  };
+}
 function ensureProjectState(p){
   if(!p)return p;
   ensureAssistedState(p);
+  ensureCalibrationState(p);
   if(window.EstimationDecisionCore)window.EstimationDecisionCore.ensureProject(p);
   else{
     if(!Array.isArray(p.approvalLog))p.approvalLog=[];
@@ -1909,12 +1984,13 @@ function openProject(id){
   restoreGuidedReviewSession(state.cur);
   show('proj');
   $('#projTitle').textContent=state.cur.name;
-  state.viewer={fileId:null,page:1,zoom:1,rot:0,dark:state.viewer.dark,fullscreen:false,boardHl:null,evidenceId:null,pdfDocs:state.viewer.pdfDocs,panels:state.viewer.panels,assist:{enabled:false,boardNorm:null,seed:null,results:[]}};
+  state.viewer={fileId:null,page:1,zoom:1,rot:0,dark:state.viewer.dark,fullscreen:false,boardHl:null,evidenceId:null,pdfDocs:state.viewer.pdfDocs,panels:state.viewer.panels,assist:{enabled:false,boardNorm:null,seed:null,results:[]},calibration:{enabled:false,role:'outgoing_table',scope:'following',dirty:false,lastId:null}};
   setViewerFullscreen(false);
   state.selectedBoard=null;
   renderProjHeader(); renderDocs(); renderPgclass(); renderAnalysisControls(); renderResults();
   setTab('docs');
-  if(state.cur.files.some(file=>file.status==='ready')&&(!state.cur.analysis||state.cur.analysis.version!==ANALYSIS_VERSION)){
+  if(state.cur.files.some(file=>file.status==='ready')&&(!state.cur.analysis||state.cur.analysis.version!==ANALYSIS_VERSION
+    ||Number(state.cur.analysis.calibrationRevision||0)!==Number(state.cur.calibrationRevision||0))){
     setProcessingDock(STAGES[0],state.cur.analysis?'Updating saved analysis':'Completing interrupted analysis',2,0);
     setTimeout(()=>runAnalysisWithRecovery({auto:true}),0);
   }
@@ -2818,6 +2894,7 @@ function renderDocs(){
             p.analysis.cables=p.analysis.cables.filter(r=>r.fileId!==f.id);
           }
           p.assistedMarkups=(p.assistedMarkups||[]).filter(m=>m.fileId!==f.id&&!m.matches?.some(x=>x.fileId===f.id));
+          p.calibrations=(p.calibrations||[]).filter(record=>record.fileId!==f.id);
           renderDocs(); renderPgclass(); renderAnalysisControls(); renderTakeoff(); renderProjHeader(); saveProject(p); toast('Document removed');
         }, 'Remove');
       }
@@ -2825,7 +2902,7 @@ function renderDocs(){
         const inp=document.createElement('input'); inp.type='file'; inp.accept='.pdf,.txt,.csv,.md,.xlsx,.png,.jpg,.jpeg,.webp';
         inp.addEventListener('change', async ()=>{
           if (!inp.files.length) return;
-          p.files=p.files.filter(x=>x.id!==f.id); await removeRawFile(f.id);
+          p.files=p.files.filter(x=>x.id!==f.id);p.calibrations=(p.calibrations||[]).filter(record=>record.fileId!==f.id);await removeRawFile(f.id);
           await ingestFile(inp.files[0]); await autoOcrScannedFiles(); await runAnalysisWithRecovery({auto:true});
         });
         inp.click();
@@ -3153,7 +3230,7 @@ async function runAnalysis(opts){
   const boardFilter=f.boards.length?new Set(f.boards):null;
   const devFilter=f.devices.length?new Set(f.devices.map(d=>d.toUpperCase())):null;
   const prev=p.analysis;
-  const A={ version:ANALYSIS_VERSION, ranAt: todayStr(), boards:{}, rows:[], cables:[], feeders:[], schematicDevices:[], legend:[], filters:f, documentScopes:{} };
+  const A={ version:ANALYSIS_VERSION, calibrationRevision:Number(p.calibrationRevision||0), ranAt: todayStr(), boards:{}, rows:[], cables:[], feeders:[], schematicDevices:[], legend:[], filters:f, documentScopes:{} };
   const pageTotal=f.fileIds.reduce((sum,id)=>sum+(p.files.find(file=>file.id===id)?.pages?.length||0),0);
   const showAnalysisStage=async(index,detail)=>{
     renderStages(index,false,detail);
@@ -3192,15 +3269,17 @@ async function runAnalysis(opts){
     fl.pages.forEach((pg,pi)=>{
       const pageNo=pi+1;if(pageSet&&!pageSet.has(pageNo))return;
       const lines=(pg.lines||[]).map(line=>line.text);
+      const calibrationHint=calibrationHintForPage(p,id,pageNo,pg);
       const sched=core.scoreScheduleCandidate?core.scoreScheduleCandidate(lines):{score:0,signals:[]};
       const schematic=pg.type==='sld'||pg.type==='schematic';
       const headerEvidence=hasScheduleBoardHeader(lines);
       const spatialEvidence=core.collectSpatialWords?core.collectSpatialWords({lines:pg.lines||[],tableRows:pg.tableRows||[]}).length>=8:false;
       const regular=!schematic&&pg.type!=='cable-schedule'
-        &&(SCHEDULE_TYPES.has(pg.type)||(sched.score>=0.45&&sched.signals.length>=2)||(headerEvidence&&spatialEvidence));
+        &&(SCHEDULE_TYPES.has(pg.type)||(sched.score>=0.45&&sched.signals.length>=2)||(headerEvidence&&spatialEvidence)
+          ||calibrationHint.regions.length>0);
       if(!regular)return;
       candidates.push({documentPage:pageNo,lines:pg.lines||[],tableRows:pg.tableRows||[],pageWidth:pg.w,pageHeight:pg.h,
-        pageType:pg.type,allowSingleWay:sched.score>=0.55&&sched.signals.length>=2});
+        pageType:pg.type,allowSingleWay:sched.score>=0.55&&sched.signals.length>=2,calibrationHint});
     });
     const parsed=core.parseSpatialScheduleDocument(candidates,{maxSchemaCandidates:4});
     documentSpatialByFile.set(id,new Map(parsed.pages.map(entry=>[entry.input.documentPage,entry])));
@@ -3245,11 +3324,13 @@ async function runAnalysis(opts){
       // never by a single classifier label (SmartScreen addendum).
       const schedCandidate=core&&core.scoreScheduleCandidate
         ? core.scoreScheduleCandidate(lines) : {score:0,signals:[]};
+      const calibrationHint=calibrationHintForPage(p,id,pageNo,pg);
       const schematicPage=pg.type==='sld'||pg.type==='schematic';
       const documentSpatial=documentSpatialByFile.get(id)?.get(pageNo)||null;
       const regularSchedule=!schematicPage&&pg.type!=='cable-schedule'
         && (SCHEDULE_TYPES.has(pg.type) || (schedCandidate.score>=0.45&&schedCandidate.signals.length>=2)
-          || Boolean(documentSpatial?.result?.matched&&documentSpatial.result.rows?.length));
+          || Boolean(documentSpatial?.result?.matched&&documentSpatial.result.rows?.length)
+          || calibrationHint.regions.length>0);
       if(documentSpatial?.result?.matched&&documentSpatial.result.rows?.length&&schedCandidate.score<0.45){
         schedCandidate.score=0.45;
         if(!schedCandidate.signals.includes('document-schema'))schedCandidate.signals.push('document-schema');
@@ -3259,19 +3340,19 @@ async function runAnalysis(opts){
           pageType:pg.type,vectorGeometry:pg.vectorGeometry||null}) : null;
       const spatialAttempts=documentSpatial?.attempts?.map(attempt=>({...attempt}))||[];
       let spatial=documentSpatial?.result||(regularSchedule&&core?.parseSpatialSchedulePage
-        ? core.parseSpatialSchedulePage({lines:pg.lines||[],tableRows:pg.tableRows||[],pageWidth:pg.w,pageHeight:pg.h,pageType:pg.type}) : null);
+        ? core.parseSpatialSchedulePage({lines:pg.lines||[],tableRows:pg.tableRows||[],pageWidth:pg.w,pageHeight:pg.h,pageType:pg.type,calibrationHint}) : null);
       if(regularSchedule&&core?.parseSpatialSchedulePage&&!documentSpatial){
         spatialAttempts.push({strategy:'geometry-strict',matched:Boolean(spatial?.matched&&spatial.rows?.length),rows:spatial?.rows?.length||0});
         const hasPrintedBoardHeader=hasScheduleBoardHeader(lines);
         if((!spatial?.matched||!spatial.rows?.length)&&prevSpatialSchema&&!hasPrintedBoardHeader){
           const schemaRetry=core.parseSpatialSchedulePage({lines:pg.lines||[],tableRows:pg.tableRows||[],pageWidth:pg.w,pageHeight:pg.h,
-            pageType:pg.type,schemaHint:prevSpatialSchema,allowSingleWay:true,materializeMissingWays:false});
+            pageType:pg.type,schemaHint:prevSpatialSchema,allowSingleWay:true,materializeMissingWays:false,calibrationHint});
           spatialAttempts.push({strategy:'geometry-prior-schema',matched:Boolean(schemaRetry?.matched&&schemaRetry.rows?.length),rows:schemaRetry?.rows?.length||0});
           if(schemaRetry?.matched&&schemaRetry.rows?.length)spatial=schemaRetry;
         }
         if((!spatial?.matched||!spatial.rows?.length)&&schedCandidate.score>=0.55&&schedCandidate.signals.length>=2){
           const permissiveRetry=core.parseSpatialSchedulePage({lines:pg.lines||[],tableRows:pg.tableRows||[],pageWidth:pg.w,pageHeight:pg.h,
-            pageType:pg.type,allowSingleWay:true,materializeMissingWays:false});
+            pageType:pg.type,allowSingleWay:true,materializeMissingWays:false,calibrationHint});
           spatialAttempts.push({strategy:'geometry-single-way',matched:Boolean(permissiveRetry?.matched&&permissiveRetry.rows?.length),rows:permissiveRetry?.rows?.length||0});
           if(permissiveRetry?.matched&&permissiveRetry.rows?.length)spatial=permissiveRetry;
         }
@@ -3279,25 +3360,47 @@ async function runAnalysis(opts){
       let spatialContinuation=false;
       if(!regularSchedule&&prevBoard&&prevSpatialSchema&&core?.parseSpatialSchedulePage){
         const continuation=core.parseSpatialSchedulePage({lines:pg.lines||[],tableRows:pg.tableRows||[],pageWidth:pg.w,pageHeight:pg.h,
-          pageType:'db-schedule-continuation',schemaHint:prevSpatialSchema,allowSingleWay:true,materializeMissingWays:false});
+          pageType:'db-schedule-continuation',schemaHint:prevSpatialSchema,allowSingleWay:true,materializeMissingWays:false,calibrationHint});
         spatialContinuation=Boolean(continuation?.matched&&continuation.rows?.length&&continuation.schema?.continuation);
         if(spatialContinuation)spatial=continuation;
       }
       const isSched=regularSchedule||spatialContinuation;
       const contextualRefs=core?.extractContextualBoardReferences
         ? core.extractContextualBoardReferences(pg.lines||lines,{pageType:pg.type,isSchedule:isSched}) : [];
+      const spatialWordCount=core?.collectSpatialWords
+        ? core.collectSpatialWords({lines:pg.lines||[],tableRows:pg.tableRows||[]}).length : 0;
+      const positionedLines=(pg.lines||[]).filter(line=>Array.isArray(line?.bbox)&&line.bbox.length>=4).length;
+      const tableCells=(pg.tableRows||[]).reduce((sum,row)=>sum+(row?.cells||[]).length,0);
       const diagnostic={fileId:id, page:pageNo, type:pg.type, textLines:lines.filter(t=>t.trim()).length,
+        pageWidth:pg.w??null,pageHeight:pg.h??null,
+        inputStats:{width:pg.w??null,height:pg.h??null,positionedLines,spatialWords:spatialWordCount,
+          tableRows:(pg.tableRows||[]).length,tableCells,vectorSegments:pg.vectorGeometry?.stats?.segments||0},
         needsOcr:Boolean(pg.needsOcr), source:pg.source||null,
         textQualityUnreliable:Boolean(pg.textQuality&&pg.textQuality.reliable===false&&!pg.ocr),
+        textQualityScore:pg.textQuality?.score??pg.ocr?.qualityScore??null,
+        textQualityStats:{embeddedLines:(pg.embeddedLines||[]).length,ocrLines:pg.ocr?(pg.lines||[]).length:0,
+          ocrConfidence:pg.ocr?.confidence??null},
+        recoveryAttempted:Boolean(pg.recovery),recoveryOutcome:pg.recovery?.outcome||
+          (pg.recovery?.error?'error':pg.recovery?'attempted':null),
         scheduleScore:schedCandidate.score, scheduleSignals:schedCandidate.signals, rowsParsed:0,
         spatialContinuation,
+        spatialMatched:Boolean(spatial?.matched&&spatial?.rows?.length),spatialWords:spatial?.words??spatialWordCount,
         spatialSchemaSourcePage:documentSpatial?.schemaSourcePage??null,
         spatialConfidence:spatial?.confidence??null, spatialColumns:spatial?.schema?.columns?.map(column=>column.role)||[],
         spatialDialect:spatial?.dialect||spatial?.schema?.dialect||null,
         spatialGridAccepted:spatial?.grid?.accepted??null,
+        spatialGridStats:spatial?.grid?{wayAnchors:spatial.grid.wayAnchors||0,distinctWays:spatial.grid.distinctWays||0,
+          populatedRows:spatial.grid.populatedRows||0}:null,
+        spatialTableStats:spatial?.table?{observedRowCount:spatial.table.observedRowCount||0,
+          inferredRowCount:spatial.table.inferredRowCount||0}:null,
         spatialBlockingReasons:spatial?.grid?.blockingReasons||[],
         spatialReviewReasons:spatial?.grid?.reviewReasons||[],
         spatialWarnings:spatial?.warnings||[],extractionAttempts:spatialAttempts,
+        calibration:{applicable:calibrationHint.applicable,applied:spatial?.calibration?.applied||0,
+          roles:spatial?.calibration?.roles||calibrationHint.roles},calibrationForcedSchedule:calibrationHint.regions.length>0,
+        boardDetection:{referencesDetected:contextualRefs.length,primaryReferences:contextualRefs.filter(ref=>ref.role==='primary_board').length,
+          indexReferences:contextualRefs.filter(ref=>ref.role==='index_board').length,
+          circuitReferences:contextualRefs.filter(ref=>ref.role==='circuit_reference').length},
         schematicFeeds:schematicSpatial?.feeds?.length||0,schematicWarnings:schematicSpatial?.warnings||[],
         schematicTopologyMethod:schematicSpatial?.topologyMethod||null,
         schematicGraphStats:schematicSpatial?.graphStats||null,
@@ -3317,6 +3420,7 @@ async function runAnalysis(opts){
         if (!ctxBoard && !hasBoardHeader && prevBoard) ctxBoard=prevBoard; // continuation page
         if (ctxBoard){ regBoard(ctxBoard,id,pageNo,true); prevBoard=ctxBoard; if(spatial?.schema)prevSpatialSchema=spatial.schema; }
         else if(hasBoardHeader){ prevBoard=null;prevSpatialSchema=null; }
+        diagnostic.boardResolved=Boolean(ctxBoard);
         contextualRefs.filter(reference=>reference.role==='index_board').forEach(reference=>{
           const detected=detectBoards(reference.original)[0],canonical=canonicalBoardRef(reference.original);
           if(canonical.normalised)regBoard(detected||{norm:canonical.normalised,orig:reference.original,type:'UNK'},id,pageNo,false);
@@ -3354,6 +3458,7 @@ async function runAnalysis(opts){
         if(board&&localHeader){
           board.header=Object.assign(board.header||{},localHeader.header||{});
           board.headerEvidence=localHeader.evidence||{};
+          diagnostic.boardHeaderRoles=Object.keys(localHeader.header||{}).filter(field=>localHeader.header[field]!=null&&localHeader.header[field]!=='');
           if(spatial?.board?.classification){
             board.family=spatial.board.classification.family;
             board.familyConfidence=spatial.board.classification.confidence;
@@ -3405,6 +3510,7 @@ async function runAnalysis(opts){
             conf:feed.confidence||0.7,sourceRole:'circuit_reference',spatial:true});
         });
       }
+      if(diagnostic.boardResolved==null)diagnostic.boardResolved=!isSched||Boolean(spatial?.board?.ref);
       if(schematicSpatial?.matched){
         schematicSpatial.feeds.forEach(feed=>{
           const from=feed.fromRef?canonicalBoardRef(feed.fromRef).normalised:null;
@@ -3484,6 +3590,13 @@ async function runAnalysis(opts){
   }else if(appSettings.onlineExtraction&&auto){
     A.aiRecovery={status:'deferred-automatic-run',eligible:0,selected:0,deferred:0,maxPages:AI_RECOVERY_MAX_PAGES};
   }
+  (A.aiSelectionLog||[]).forEach(selection=>{
+    const diagnostic=pageDiag.find(page=>page.fileId===selection.fileId&&Number(page.page)===Number(selection.page));
+    if(!diagnostic)return;
+    const recovered=A.rows.filter(row=>row.kind==='ai'&&row.fileId===selection.fileId&&Number(row.page)===Number(selection.page)).length;
+    diagnostic.extractionAttempts.push({strategy:'ai-recovery',selected:Boolean(selection.selected),deferred:!selection.selected,
+      reason:selection.reason,matched:recovered>0,rows:recovered});
+  });
   pageDiag.filter(page=>page.type==='sld'||page.type==='schematic').forEach(page=>{
     const visualFeeds=A.feeders.filter(feed=>feed.fileId===page.fileId&&feed.page===page.page
       &&feed.sourceRole==='schematic_ai_feeder'&&Array.isArray(feed.path)&&feed.path.length>=2);
@@ -3574,9 +3687,23 @@ async function runAnalysis(opts){
   try{ A.discrepancies = buildCrossReference(A, p, prev&&prev.discrepancies); }
   catch(e){ console.warn('cross-reference skipped:', e.message); A.discrepancies=[]; }
   // SmartScreen addendum — honest health state with stable reason codes.
-  const rowsByPage={};
-  A.rows.forEach(r=>{ if(r.kind==='manual')return; const k=r.fileId+'#'+r.page; rowsByPage[k]=(rowsByPage[k]||0)+1; });
-  pageDiag.forEach(d=>{ d.rowsParsed=rowsByPage[d.fileId+'#'+d.page]||0; });
+  pageDiag.forEach(d=>{
+    const pageRows=A.rows.filter(row=>row.kind!=='manual'&&row.fileId===d.fileId&&Number(row.page)===Number(d.page));
+    const scheduleRows=pageRows.filter(row=>row.kind==='schedule'||row.kind==='ai');
+    d.rowsParsed=pageRows.length;
+    d.rowOutcome={
+      countableDeviceRows:scheduleRows.filter(row=>isCountedDeviceRow(row)).length,
+      spareRows:scheduleRows.filter(row=>row.spare).length,
+      blankRows:scheduleRows.filter(row=>row.space).length,
+      incomerRows:scheduleRows.filter(row=>row.incomer).length,
+      unassignedRows:scheduleRows.filter(row=>!row.boardNorm).length,
+      reviewRows:scheduleRows.filter(row=>row.status!=='confirmed'&&row.status!=='rejected').length,
+      invalidRows:scheduleRows.filter(row=>row.validation?.invalidSensitivity||row.validation?.invalidBreakingCapacity).length,
+      classConflictRows:scheduleRows.filter(row=>row.classConflict&&!row.edited).length,
+      phaseConflictRows:scheduleRows.filter(row=>row.poleConflict&&!row.edited).length,
+      feeders:A.feeders.filter(feeder=>feeder.fileId===d.fileId&&Number(feeder.page)===Number(d.page)).length,
+    };
+  });
   if (window.EstimationExtractorCore&&window.EstimationExtractorCore.buildAnalysisHealth){
     const scopeFiles=f.fileIds.map(fid=>p.files.find(x=>x.id===fid)).filter(Boolean)
       .map(fl=>({id:fl.id,ext:fl.ext,status:fl.status,pages:fl.pages}));
@@ -4620,9 +4747,11 @@ function exportDiagnostics(){
   if (!A||!(window.EstimationExtractorCore&&window.EstimationExtractorCore.buildDiagnosticExport)){ toast('Run an analysis first'); return; }
   const diag=window.EstimationExtractorCore.buildDiagnosticExport({
     health:A.health||null, coverage:A.coverage||null, files:p.files,
-    pages:A.pageDiagnostics||[], appVersion:'analysis-v'+ANALYSIS_VERSION});
-  download('estimation-diagnostics.json','application/json',JSON.stringify(diag,null,2));
-  toast('Diagnostics exported — reason codes and counts only, no document content');
+    pages:A.pageDiagnostics||[], appVersion:'analysis-v'+ANALYSIS_VERSION,
+    run:{analysisVersion:A.version,calibrationRevision:A.calibrationRevision,aiRecovery:A.aiRecovery,
+      aiPages:A.aiPages,aiErrors:A.aiErrors,aiTimedOut:A.aiTimedOut,recoveryLog:A.recoveryLog}});
+  download('estimation-diagnostics-v2.json','application/json',JSON.stringify(diag,null,2));
+  toast('Page-by-page diagnostics exported — no document content or customer identifiers');
 }
 function evRowHtml(r){
   const p=state.cur;
@@ -5461,6 +5590,118 @@ function renderAssistControls(f){
   const qty=(as.results||[]).reduce((sum,r)=>sum+(Number(r.qty)||1),0);
   $('#vAssistCount').textContent=qty+' match'+(qty===1?'':'es');
 }
+function renderCalibrationControls(f){
+  const p=state.cur,V=state.viewer,cal=V.calibration;
+  ensureCalibrationState(p);
+  const bar=$('#vCalibrationBar'),mode=$('#vCalibrateMode'),roleSelect=$('#vCalibrationRole'),scopeSelect=$('#vCalibrationScope');
+  bar.hidden=!cal.enabled;mode.classList.toggle('calibration-on',cal.enabled);
+  if(!roleSelect.options.length){
+    const groups=[['region','Schedule regions'],['column','Outgoing circuit columns'],['header','Board header fields']];
+    roleSelect.innerHTML=groups.map(([kind,label])=>`<optgroup label="${esc(label)}">${calibrationDefinitions()
+      .filter(item=>item.kind===kind).map(item=>`<option value="${esc(item.role)}">${esc(item.label)}</option>`).join('')}</optgroup>`).join('');
+  }
+  if(!calibrationDefinitions().some(item=>item.role===cal.role))cal.role='outgoing_table';
+  roleSelect.value=cal.role;scopeSelect.value=cal.scope;
+  const fileRecords=f?ensureCalibrationState(p).filter(record=>record.fileId===f.id):[];
+  $('#vCalibrationCount').textContent=`${fileRecords.length} saved`;
+  $('#vCalibrationUndo').disabled=!fileRecords.length;
+  $('#vCalibrationManage').disabled=!fileRecords.length;
+  $('#vCalibrationApply').disabled=!cal.dirty;
+}
+function saveCalibrationSelection(f,pg,bbox){
+  const p=state.cur,V=state.viewer,cal=V.calibration;
+  if(!p||!f||!pg)return;
+  const width=Math.max(1,Number(pg.w)||1),height=Math.max(1,Number(pg.h)||1);
+  const [x,y,w,h]=bbox.map(Number);
+  if(![x,y,w,h].every(Number.isFinite)||w<3||h<3){toast('Highlight a visible section of the page');return;}
+  const definition=calibrationDefinitions().find(item=>item.role===cal.role);
+  if(!definition){toast('Choose what this section contains');return;}
+  const clamp=(value,min,max)=>Math.max(min,Math.min(max,value));
+  const bboxNorm=[clamp(x/width,0,1),clamp(y/height,0,1),clamp(w/width,0,1),clamp(h/height,0,1)];
+  bboxNorm[2]=Math.min(bboxNorm[2],1-bboxNorm[0]);bboxNorm[3]=Math.min(bboxNorm[3],1-bboxNorm[1]);
+  const records=ensureCalibrationState(p);
+  const existing=records.find(record=>record.fileId===f.id&&Number(record.sourcePage)===Number(V.page)
+    &&record.role===definition.role&&record.scope===cal.scope);
+  const now=new Date().toISOString();
+  const record={id:existing?.id||uid(),fileId:f.id,sourcePage:V.page,scope:cal.scope,role:definition.role,kind:definition.kind,
+    bboxNorm,sourceWidth:width,sourceHeight:height,orientation:width>=height?'landscape':'portrait',createdAt:existing?.createdAt||now,updatedAt:now};
+  if(existing)Object.assign(existing,record);else records.push(record);
+  cal.lastId=record.id;markCalibrationChanged(p);saveProject(p);renderProjHeader();void renderViewer();
+  toast(`${definition.label} saved for ${cal.scope==='page'?'this page':cal.scope==='document'?'matching pages':'this and following pages'}`);
+}
+function undoLastCalibration(){
+  const p=state.cur,f=viewerFile(),cal=state.viewer.calibration;if(!p||!f)return;
+  const records=ensureCalibrationState(p).filter(record=>record.fileId===f.id)
+    .sort((left,right)=>String(right.updatedAt||right.createdAt).localeCompare(String(left.updatedAt||left.createdAt)));
+  const target=ensureCalibrationState(p).find(record=>record.id===cal.lastId)||records[0];
+  if(!target)return;
+  p.calibrations=p.calibrations.filter(record=>record.id!==target.id);cal.lastId=null;markCalibrationChanged(p);
+  saveProject(p);void renderViewer();toast(`${calibrationRoleLabel(target.role)} removed`);
+}
+function openCalibrationManager(f){
+  const p=state.cur;if(!p||!f)return;
+  const records=ensureCalibrationState(p).filter(record=>record.fileId===f.id)
+    .sort((left,right)=>Number(left.sourcePage)-Number(right.sourcePage)||left.role.localeCompare(right.role));
+  if(!records.length){toast('No calibrations have been saved for this document');return;}
+  const roleOptions=calibrationDefinitions().map(item=>`<option value="${esc(item.role)}">${esc(item.label)}</option>`).join('');
+  openModal('Manage layout calibrations',`<div class="calibration-manager">${records.map(record=>`
+    <div class="row-editor-grid" data-calibration-id="${esc(record.id)}" style="padding:10px 0;border-bottom:1px solid var(--line)">
+      <div><label class="lbl">Information</label><select class="sel" data-field="role">${roleOptions}</select></div>
+      <div><label class="lbl">Applies to</label><select class="sel" data-field="scope"><option value="following">Page ${record.sourcePage} onward</option><option value="document">All matching pages</option><option value="page">Page ${record.sourcePage} only</option></select></div>
+      <label class="check-row span-2"><input type="checkbox" data-field="remove"> Remove this calibration</label>
+    </div>`).join('')}</div>`,()=>{
+      const definitions=calibrationDefinitions();
+      $$('#modalBody [data-calibration-id]').forEach(row=>{
+        const record=p.calibrations.find(item=>item.id===row.dataset.calibrationId);if(!record)return;
+        if(row.querySelector('[data-field=remove]').checked){p.calibrations=p.calibrations.filter(item=>item.id!==record.id);return;}
+        record.role=row.querySelector('[data-field=role]').value;
+        record.kind=definitions.find(item=>item.role===record.role)?.kind||record.kind;
+        record.scope=row.querySelector('[data-field=scope]').value;record.updatedAt=new Date().toISOString();
+      });
+      markCalibrationChanged(p);saveProject(p);void renderViewer();
+    },'Save calibrations');
+  records.forEach(record=>{
+    const row=$(`#modalBody [data-calibration-id="${record.id}"]`);if(!row)return;
+    row.querySelector('[data-field=role]').value=record.role;row.querySelector('[data-field=scope]').value=record.scope;
+  });
+}
+async function applyCalibrations(){
+  const p=state.cur,cal=state.viewer.calibration;if(!p||!cal.dirty)return;
+  const button=$('#vCalibrationApply');button.disabled=true;
+  const fileId=state.viewer.fileId,page=state.viewer.page;
+  setProcessingDock(STAGES[0],'Applying calibrated layout rules',2,0);await paintProcessing();
+  const result=await runAnalysisWithRecovery({auto:true});
+  if(result){cal.dirty=false;saveProject(p);}
+  state.viewer.fileId=fileId;state.viewer.page=page;void renderViewer();
+}
+function appendCalibrationOverlays(wrap,f,pg,scale){
+  const hint=calibrationHintForPage(state.cur,f.id,state.viewer.page,pg);
+  hint.regions.forEach(region=>{
+    const overlay=document.createElement('div');overlay.className='calibration-overlay';overlay.dataset.label=calibrationRoleLabel(region.role);
+    overlay.style.left=(region.bbox[0]*scale)+'px';overlay.style.top=(region.bbox[1]*scale)+'px';
+    overlay.style.width=Math.max(2,region.bbox[2]*scale)+'px';overlay.style.height=Math.max(2,region.bbox[3]*scale)+'px';wrap.appendChild(overlay);
+  });
+}
+function bindCalibrationDrag(wrap,f,pg,scale){
+  const cal=state.viewer.calibration;if(!cal.enabled)return;
+  wrap.classList.add('calibration-cursor');let start=null,box=null;
+  const point=event=>{const rect=wrap.getBoundingClientRect(),cssScale=parseFloat(wrap.dataset.cssScale||'1')||1;
+    return{x:(event.clientX-rect.left)/cssScale,y:(event.clientY-rect.top)/cssScale};};
+  wrap.addEventListener('pointerdown',event=>{
+    if(event.button!==0)return;event.preventDefault();start=point(event);
+    box=document.createElement('div');box.className='canvas-selection calibration';box.style.left=start.x+'px';box.style.top=start.y+'px';wrap.appendChild(box);
+    wrap.setPointerCapture?.(event.pointerId);
+  });
+  wrap.addEventListener('pointermove',event=>{
+    if(!start||!box)return;const current=point(event),x=Math.min(start.x,current.x),y=Math.min(start.y,current.y);
+    box.style.left=x+'px';box.style.top=y+'px';box.style.width=Math.abs(current.x-start.x)+'px';box.style.height=Math.abs(current.y-start.y)+'px';
+  });
+  wrap.addEventListener('pointerup',event=>{
+    if(!start||!box)return;const end=point(event),x=Math.min(start.x,end.x),y=Math.min(start.y,end.y);
+    const width=Math.abs(end.x-start.x),height=Math.abs(end.y-start.y);box.remove();box=null;start=null;
+    saveCalibrationSelection(f,pg,[x/scale,y/scale,width/scale,height/scale]);
+  });
+}
 function applyAssistedSeed(text,row,evidence={}){
   const p=state.cur,V=state.viewer,A=p&&p.analysis,core=window.EstimationExtractorCore;
   if(!A||!core){toast('Run device analysis before using assisted canvas');return;}
@@ -5840,6 +6081,7 @@ async function renderViewer(){
   stage.classList.toggle('v-dark', !!V.dark);
   const pg=f.pages[V.page-1];
   renderAssistControls(f);
+  renderCalibrationControls(f);
   $('#vOcrBtn').style.display=(f.ext==='pdf'||IMAGE_EXTS.has(f.ext))?'':'none';
   // §5.2 smart-highlight board select
   const bsel=$('#vBoardHl'); const A=p.analysis;
@@ -5872,6 +6114,7 @@ async function renderViewer(){
   const nDets=dets.filter(d=>d.kind!=='boardhl').length;
   const scheduleCandidate=window.EstimationExtractorCore?.scoreScheduleCandidate((pg.lines||[]).map(line=>line.text))||{score:0,signals:[]};
   const scheduleRows=A?.rows?.filter(row=>row.kind==='schedule'&&row.fileId===f.id&&Number(row.page)===Number(V.page))||[];
+  const calibratedRoles=calibrationHintForPage(p,f.id,V.page,pg).roles;
   const schedulePage=SCHEDULE_TYPES.has(pg.type)||(scheduleCandidate.score>=0.45&&scheduleCandidate.signals.length>=2);
   const pageDiagnostic=(A?.pageDiagnostics||[]).find(item=>item.fileId===f.id&&Number(item.page)===Number(V.page));
   const extractionGap=schedulePage&&(scheduleRows.length===0||(pageDiagnostic?.spatialBlockingReasons||[]).length>0
@@ -5880,6 +6123,7 @@ async function renderViewer(){
     ${pg.sub_format&&PAGE_TYPES[pg.sub_format]&&pg.sub_format!==THREE_TO_FINE[pageThreeType(pg)]?`<span class="chip grey">${esc(PAGE_TYPES[pg.sub_format])}</span>`:''}
     ${extractionGap?'<span class="chip red">Extraction incomplete</span>':pg.typeManual?'<span class="chip grey">manually set</span>':confChip(pg.conf||0.3)}
     ${pg.ocr?`<span class="chip purple" title="${esc(pg.ocr.selectedCandidate||'OCR')}">OCR ${Math.round((pg.ocr.qualityScore||0)*100)}%</span>${pg.ocr.corrections?.length?`<span class="chip amber">${pg.ocr.corrections.length} correction${pg.ocr.corrections.length===1?'':'s'} to review</span>`:''}`:(pg.needsOcr?'<span class="chip amber">OCR queued</span>':'')}
+    ${calibratedRoles.length?`<span class="chip green">${calibratedRoles.length} calibrated role${calibratedRoles.length===1?'':'s'}</span>`:''}
     <span class="hint" style="margin:0">${nDets} evidence item${nDets===1?'':'s'} on this page</span>
     ${V.boardHl?`<span class="chip blue">${esc(boardLabel(V.boardHl))} on:</span> `+
       (hlPages.length?hlPages.map(n=>`<span class="chip ${n===V.page?'blue':'grey'}" data-goto="${n}" style="cursor:pointer">p${n}</span>`).join(' '):'<span class="hint" style="margin:0">not found in this document</span>'):''}`;
@@ -5949,6 +6193,8 @@ async function renderViewer(){
           wrap.appendChild(o);
         });
       }
+      if(showOvl||V.calibration.enabled)appendCalibrationOverlays(wrap,f,pg,sc);
+      bindCalibrationDrag(wrap,f,pg,sc);
       bindAssistedDrag(wrap,f,pg,sc);
       if (cssR!==1){
         wrap.style.transform='scale('+cssR+')'; wrap.style.transformOrigin='top left';
@@ -5976,6 +6222,8 @@ async function renderViewer(){
       overlay.style.left=(bbox[0]*scale-2)+'px';overlay.style.top=(bbox[1]*scale-1)+'px';
       overlay.style.width=(bbox[2]*scale+4)+'px';overlay.style.height=(bbox[3]*scale+2)+'px';wrap.appendChild(overlay);
     });
+    if(showOvl||V.calibration.enabled)appendCalibrationOverlays(wrap,f,pg,scale);
+    bindCalibrationDrag(wrap,f,pg,scale);
     bindAssistedDrag(wrap,f,pg,scale);
     stage.innerHTML='';stage.appendChild(wrap);
   } else {
@@ -6023,8 +6271,9 @@ async function renderViewer(){
     : extractionGap
       ? `<div class="p-body"><span class="chip red">Extraction gap</span><h3 style="margin:10px 0 6px;font-size:15px">No schedule rows were captured</h3>
           <p class="hint" style="margin:0 0 12px">Recover a visible way range, add one detailed row, or correct the board identity without leaving the source page.</p>
-          <div class="grow-actions" style="justify-content:flex-start;flex-wrap:wrap">
-            <button class="btn sm primary" id="gapRecoverWays">Recover missing ways</button>
+          <div class="extraction-gap-actions">
+            <button class="btn sm primary" id="gapCalibrate">Calibrate source</button>
+            <button class="btn sm" id="gapRecoverWays">Recover missing ways</button>
             <button class="btn sm" id="gapAddRow">Add one row</button>
             <button class="btn sm" id="gapCorrectBoard">Correct board reference</button>
             <button class="btn sm" id="gapRunOcr">Run OCR again</button>
@@ -6058,10 +6307,20 @@ async function renderViewer(){
         focusViewerDetection(d);
       });
     });
+    $('#gapCalibrate')?.addEventListener('click',event=>{
+      event.preventDefault();
+      event.stopPropagation();
+      V.assist.enabled=false;
+      V.calibration.enabled=true;
+      V.calibration.role='outgoing_table';
+      V.rot=0;
+      $('#vOvl').checked=true;
+      requestAnimationFrame(()=>renderViewer());
+    });
     $('#gapRecoverWays')?.addEventListener('click',()=>openMissingWaysEditor(extractionGap));
     $('#gapAddRow')?.addEventListener('click',()=>openScopedAuditRowEditor(extractionGap));
     $('#gapCorrectBoard')?.addEventListener('click',()=>openBoardEditor(extractionGap.boardNorm,'Viewer'));
-    $('#gapRunOcr')?.addEventListener('click',()=>$('#vOcr')?.click());
+    $('#gapRunOcr')?.addEventListener('click',()=>$('#vOcrBtn')?.click());
   }
   bindViewerDocumentRows(dets);
   if(stale())return;
@@ -6224,7 +6483,7 @@ $('#vSearch').addEventListener('keydown', e=>{ if(e.key==='Enter') $('#vSearchNe
 $('#vStage').addEventListener('wheel', e=>{ if(e.ctrlKey){ e.preventDefault(); vZoomBy(e.deltaY<0?1.15:1/1.15,e); } }, {passive:false});
 let viewerPan=null;
 $('#vStage').addEventListener('pointerdown',e=>{
-  if(e.button!==0||state.viewer.assist.enabled||e.target.closest?.('.row-link')) return;
+  if(e.button!==0||state.viewer.assist.enabled||state.viewer.calibration.enabled||e.target.closest?.('.row-link')) return;
   const stage=$('#vStage');
   viewerPan={id:e.pointerId,x:e.clientX,y:e.clientY,left:stage.scrollLeft,top:stage.scrollTop};
   stage.classList.add('is-panning');stage.setPointerCapture(e.pointerId);e.preventDefault();
@@ -6252,10 +6511,29 @@ document.addEventListener('keydown', e=>{
 });
 $('#vAssistMode').addEventListener('click',()=>{
   const V=state.viewer;V.assist.enabled=!V.assist.enabled;
-  if(V.assist.enabled){V.rot=0;$('#vOvl').checked=true;}
+  if(V.assist.enabled){V.calibration.enabled=false;V.rot=0;$('#vOvl').checked=true;}
   renderViewer();
 });
 $('#vAssistClear').addEventListener('click',clearAssistedMarkup);
+$('#vCalibrateMode').addEventListener('click',()=>{
+  const V=state.viewer;V.calibration.enabled=!V.calibration.enabled;
+  if(V.calibration.enabled){
+    const diagnostic=state.cur?.analysis?.pageDiagnostics?.find(page=>page.fileId===V.fileId&&Number(page.page)===Number(V.page));
+    if(diagnostic?.boardResolved===false)V.calibration.role='board_ref';
+    else if(!(diagnostic?.spatialColumns||[]).includes('way'))V.calibration.role='way';
+    else if(!(diagnostic?.spatialColumns||[]).includes('rating'))V.calibration.role='rating';
+    else if(!(diagnostic?.spatialColumns||[]).some(role=>role==='description'||role==='circuit_reference'))V.calibration.role='description';
+    else if((diagnostic?.rowsParsed||0)===0)V.calibration.role='outgoing_table';
+    V.assist.enabled=false;V.rot=0;$('#vOvl').checked=true;
+  }
+  renderViewer();
+});
+$('#vCalibrationRole').addEventListener('change',event=>{state.viewer.calibration.role=event.target.value;});
+$('#vCalibrationScope').addEventListener('change',event=>{state.viewer.calibration.scope=event.target.value;});
+$('#vCalibrationUndo').addEventListener('click',undoLastCalibration);
+$('#vCalibrationManage').addEventListener('click',()=>openCalibrationManager(viewerFile()));
+$('#vCalibrationApply').addEventListener('click',()=>void applyCalibrations());
+$('#vCalibrationDone').addEventListener('click',()=>{state.viewer.calibration.enabled=false;renderViewer();});
 $('#vOcrBtn').addEventListener('click',()=>{
   const f=viewerFile();if(!f)return;
   ocrPdfPage(f,state.viewer.page).then(()=>renderViewer()).catch(e=>toast(e.message));
