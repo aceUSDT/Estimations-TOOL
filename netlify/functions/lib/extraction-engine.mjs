@@ -3,6 +3,7 @@ import { runAgentTeam } from './agent-team.mjs';
 import {
   providerStatus, extractPage, callGeminiJson, buildInstruction, crossCheckExtractions,
 } from './providers.mjs';
+import { attachPerceptionContract } from './perception-contract.mjs';
 
 export function engineStatus(env = process.env) {
   const nvidia = poolStatus(env);
@@ -25,18 +26,20 @@ export function makeExtractSmart(options = {}) {
   const team = options.team || runAgentTeam;
   const gemini = options.gemini || extractPage;
   const callMaster = options.callMaster || callGeminiJson;
+  const finalise = options.finalise || attachPerceptionContract;
   return async function extractSmart(request) {
     const current = status();
-    if (current.mode !== 'agent-team') return gemini(request);
+    if (current.mode !== 'agent-team') return finalise(await gemini(request), request);
     try {
-      return await team(request, {
+      const output = await team(request, {
         pool: getPool(), crossCheck: crossCheckExtractions, buildInstruction,
         geminiConfigured: current.gemini, callMaster,
       });
+      return finalise(output, request);
     } catch (error) {
       if (error?.code === 'role_exhausted' && current.gemini) {
         const output = await gemini(request);
-        return { ...output, fallback: 'gemini_direct', fallback_reason: 'nvidia_chain_exhausted' };
+        return finalise({ ...output, fallback: 'gemini_direct', fallback_reason: 'nvidia_chain_exhausted' }, request);
       }
       throw error;
     }
