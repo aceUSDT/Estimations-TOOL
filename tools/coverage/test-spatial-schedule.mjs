@@ -518,4 +518,46 @@ assert.deepEqual(schematic.boards.filter((board) => /^DB/.test(board.norm)).map(
 assert.ok(schematic.devices.some((device) => device.boardRef === 'DB-A-01' && device.device === 'Meter'));
 assert.ok(schematic.devices.some((device) => device.boardRef === 'DB-B-02' && device.device === 'SPD'));
 
+// A user-authored calibration is a parser input, not a cosmetic overlay. It
+// must recover an unfamiliar, unlabelled layout, preserve blank/spare ways,
+// and bind optional protection/accessory columns to the same physical row.
+const calibratedWords = [
+  word('DB-CAL-01', 210, 18, 70),
+  word('1', 15, 85), word('L1', 48, 85), word('MCB', 95, 85), word('20', 155, 85),
+  word('Office sockets', 230, 85, 90), word('Y', 345, 85), word('N', 380, 85), word('Y', 420, 85),
+  word('2', 15, 120), word('L2', 48, 120), word('RCBO', 95, 120), word('16', 155, 120),
+  word('Kitchen lighting', 230, 120, 95), word('Y', 345, 120), word('N', 380, 120), word('Y', 455, 120),
+  word('3', 15, 155), word('L3', 48, 155), word('SPARE', 230, 155, 45),
+];
+const calibrated = Core.parseSpatialSchedulePage({
+  lines: [{ text: 'Electrical schedule' }],
+  words: calibratedWords,
+  pageWidth: 520,
+  pageHeight: 220,
+  pageType: 'unknown',
+  calibrationHint: { regions: [
+    { role: 'board_ref', bbox: [205, 10, 82, 24] },
+    { role: 'outgoing_table', bbox: [4, 60, 480, 120] },
+    { role: 'way', bbox: [5, 60, 30, 120] },
+    { role: 'phase', bbox: [36, 60, 34, 120] },
+    { role: 'device_class', bbox: [78, 60, 52, 120] },
+    { role: 'rating', bbox: [140, 60, 40, 120] },
+    { role: 'description', bbox: [205, 60, 125, 120] },
+    { role: 'rcd', bbox: [334, 60, 28, 120] },
+    { role: 'afdd', bbox: [368, 60, 28, 120] },
+    { role: 'contactor', bbox: [406, 60, 28, 120] },
+    { role: 'epo', bbox: [442, 60, 30, 120] },
+  ] },
+});
+assert.equal(calibrated.matched, true);
+assert.equal(calibrated.board.ref, 'DB-CAL-01');
+assert.equal(calibrated.rows.filter((row) => !row.inferredWay).length, 3);
+assert.equal(calibrated.rows.find((row) => row.way === 1).rcdProtected, true);
+assert.equal(calibrated.rows.find((row) => row.way === 1).afdd, false);
+assert.ok(calibrated.rows.find((row) => row.way === 1).associatedDevices.some((item) => item.device === 'Contactor'));
+assert.ok(calibrated.rows.find((row) => row.way === 2).associatedDevices.some((item) => item.device === 'Emergency power off'));
+assert.equal(calibrated.rows.find((row) => row.way === 3).spare, true);
+assert.equal(calibrated.rows.find((row) => row.way === 3).qty, 0);
+assert.ok(calibrated.calibration.roles.includes('outgoing_table'));
+
 console.log('PASS: adaptive spatial schedules, damaged phase repair, precise rows, schematic feeder lanes, policy classification, and provenance.');

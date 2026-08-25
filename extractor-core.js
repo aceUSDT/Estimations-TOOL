@@ -2331,19 +2331,282 @@
     };
   }
 
-  /* Private-safe diagnostic export: counters, reason codes and page shapes
-   * only — NEVER document text, board names, file names, or any customer
-   * content. Safe to email to support. */
-  function buildDiagnosticExport({ health, coverage, files, pages, appVersion }) {
+  const DIAGNOSTIC_SCHEDULE_ROLES = Object.freeze(['way', 'rating', 'circuit_reference_or_description']);
+
+  const DIAGNOSTIC_GUIDANCE = Object.freeze({
+    NO_READABLE_PAGE_INPUT: 'The page supplied no text, positioned words, table cells, or vector geometry; re-acquire it with raster OCR.',
+    POSITIONAL_TEXT_MISSING: 'Text was present but had no usable word positions; run raster OCR to rebuild table geometry.',
+    OCR_REQUIRED: 'Run OCR for this page, then re-run extraction.',
+    TEXT_UNRELIABLE: 'Inspect OCR quality and retry with raster OCR before trusting the page.',
+    SPATIAL_WORDS_INSUFFICIENT: 'The parser did not receive enough positioned words; inspect text/OCR acquisition.',
+    SCHEDULE_ROWS_ZERO: 'Calibrate the outgoing-circuit table or its way column, then re-run extraction.',
+    WAY_ROLE_MISSING: 'Calibrate the way or circuit-number column.',
+    RATING_ROLE_MISSING: 'Calibrate the outgoing protective-device rating column.',
+    CIRCUIT_ROLE_MISSING: 'Calibrate the circuit reference or load-description column.',
+    BOARD_REFERENCE_UNRESOLVED: 'Calibrate the board-reference header field.',
+    GRID_REJECTED: 'Review the rejected grid reasons and calibrate the affected table roles.',
+    OUTPUT_ROWS_UNASSIGNED: 'Resolve or calibrate the board reference so extracted rows can be assigned.',
+    OUTPUT_ROWS_REQUIRE_REVIEW: 'Review incomplete or conflicting row fields before approval.',
+    SCHEMATIC_TOPOLOGY_UNRESOLVED: 'Review unresolved schematic nodes and feeder paths.',
+    PAGE_OK: 'No page-level extraction blocker was detected.',
+  });
+
+  function diagnosticCode(value) {
+    const code = String(value || '').trim();
+    return /^[A-Za-z0-9_.:+-]{1,96}$/.test(code) ? code : null;
+  }
+
+  function diagnosticCodes(values) {
+    return [...new Set((values || []).map(diagnosticCode).filter(Boolean))];
+  }
+
+  function diagnosticNumber(value, digits = 4) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return null;
+    const factor = 10 ** digits;
+    return Math.round(number * factor) / factor;
+  }
+
+  function diagnosticCount(value) {
+    const number = Number(value);
+    return Number.isFinite(number) ? Math.max(0, Math.round(number)) : 0;
+  }
+
+  function diagnosticAttempt(attempt = {}) {
+    const output = {
+      strategy: diagnosticCode(attempt.strategy) || 'unknown',
+      matched: Boolean(attempt.matched),
+      rows: diagnosticCount(attempt.rows),
+    };
+    const numberFields = ['sourcePage', 'confidence', 'completeness', 'spatialWords', 'wayAnchors',
+      'distinctWays', 'populatedRows', 'elapsedMs'];
+    numberFields.forEach((field) => {
+      const value = diagnosticNumber(attempt[field]);
+      if (value != null) output[field] = value;
+    });
+    const codeFields = ['outcome', 'reason', 'schemaSource', 'provider', 'modelClass'];
+    codeFields.forEach((field) => {
+      const value = diagnosticCode(attempt[field]);
+      if (value) output[field] = value;
+    });
+    if (attempt.selected != null) output.selected = Boolean(attempt.selected);
+    if (attempt.deferred != null) output.deferred = Boolean(attempt.deferred);
+    if (attempt.timedOut != null) output.timedOut = Boolean(attempt.timedOut);
+    return output;
+  }
+
+  function scheduleDiagnosticPage(pg = {}) {
+    const type = String(pg.type || '').toLowerCase();
+    return type !== 'sld' && type !== 'schematic' && (
+      type.includes('schedule') || type === 'circuit-chart' || type === 'db'
+      || Number(pg.scheduleScore || 0) >= 0.45 || Boolean(pg.calibrationForcedSchedule)
+    );
+  }
+
+  function buildPageDiagnosticVerdict(pg = {}) {
+    const schedule = scheduleDiagnosticPage(pg);
+    const roles = new Set(diagnosticCodes(pg.spatialColumns));
+    const reasons = [];
+    const add = (code) => { if (!reasons.includes(code)) reasons.push(code); };
+    const spatialWords = diagnosticCount(pg.inputStats?.spatialWords ?? pg.spatialWords);
+    const hasInputEvidence = diagnosticCount(pg.textLines) > 0 || spatialWords > 0
+      || diagnosticCount(pg.inputStats?.tableRows) > 0 || diagnosticCount(pg.inputStats?.vectorSegments) > 0;
+    if (schedule && !hasInputEvidence) add('NO_READABLE_PAGE_INPUT');
+    if (schedule && diagnosticCount(pg.textLines) > 0 && spatialWords === 0) add('POSITIONAL_TEXT_MISSING');
+    if (pg.needsOcr && pg.source !== 'ocr') add('OCR_REQUIRED');
+    if (pg.textQualityUnreliable) add('TEXT_UNRELIABLE');
+    if (schedule && spatialWords > 0 && spatialWords < 8) add('SPATIAL_WORDS_INSUFFICIENT');
+    if (schedule && diagnosticCount(pg.rowsParsed) === 0 && hasInputEvidence) add('SCHEDULE_ROWS_ZERO');
+    if (schedule && !roles.has('way')) add('WAY_ROLE_MISSING');
+    if (schedule && !roles.has('rating')) add('RATING_ROLE_MISSING');
+    if (schedule && !roles.has('circuit_reference') && !roles.has('description')) add('CIRCUIT_ROLE_MISSING');
+    if (schedule && pg.boardResolved === false) add('BOARD_REFERENCE_UNRESOLVED');
+    if (schedule && (pg.spatialGridAccepted === false || (pg.spatialBlockingReasons || []).length)) add('GRID_REJECTED');
+    if (diagnosticCount(pg.rowOutcome?.unassignedRows) > 0) add('OUTPUT_ROWS_UNASSIGNED');
+    if (diagnosticCount(pg.rowOutcome?.reviewRows) > 0 || diagnosticCount(pg.rowOutcome?.invalidRows) > 0
+      || diagnosticCount(pg.rowOutcome?.classConflictRows) > 0 || diagnosticCount(pg.rowOutcome?.phaseConflictRows) > 0) {
+      add('OUTPUT_ROWS_REQUIRE_REVIEW');
+    }
+    if ((pg.schematicUnresolvedBoards || []).length || (pg.schematicAmbiguousBoards || []).length) {
+      add('SCHEMATIC_TOPOLOGY_UNRESOLVED');
+    }
+    if (!reasons.length) add('PAGE_OK');
+    const blocking = reasons.filter((code) => !['PAGE_OK', 'OUTPUT_ROWS_REQUIRE_REVIEW'].includes(code));
+    const status = blocking.length ? 'blocked' : (reasons.includes('OUTPUT_ROWS_REQUIRE_REVIEW') ? 'review' : 'ok');
+    return {
+      status,
+      scheduleCandidate: schedule,
+      reasonCodes: reasons,
+      recommendedActions: reasons.map((code) => DIAGNOSTIC_GUIDANCE[code]).filter(Boolean),
+    };
+  }
+
+  function diagnosticPage(pg, fileTag) {
+    const roles = diagnosticCodes(pg.spatialColumns);
+    const requiredRoles = scheduleDiagnosticPage(pg) ? DIAGNOSTIC_SCHEDULE_ROLES.slice() : [];
+    const missingRoles = [];
+    if (requiredRoles.includes('way') && !roles.includes('way')) missingRoles.push('way');
+    if (requiredRoles.includes('rating') && !roles.includes('rating')) missingRoles.push('rating');
+    if (requiredRoles.includes('circuit_reference_or_description')
+      && !roles.includes('circuit_reference') && !roles.includes('description')) missingRoles.push('circuit_reference_or_description');
+    const result = {
+      file: fileTag(pg.fileId),
+      page: diagnosticCount(pg.page),
+      classification: {
+        type: diagnosticCode(pg.type),
+        scheduleScore: diagnosticNumber(pg.scheduleScore),
+        scheduleSignals: diagnosticCodes(pg.scheduleSignals),
+      },
+      input: {
+        width: diagnosticNumber(pg.pageWidth ?? pg.inputStats?.width, 2),
+        height: diagnosticNumber(pg.pageHeight ?? pg.inputStats?.height, 2),
+        textLines: diagnosticCount(pg.textLines),
+        positionedLines: diagnosticCount(pg.inputStats?.positionedLines),
+        spatialWords: diagnosticCount(pg.inputStats?.spatialWords ?? pg.spatialWords),
+        tableRows: diagnosticCount(pg.inputStats?.tableRows),
+        tableCells: diagnosticCount(pg.inputStats?.tableCells),
+        vectorSegments: diagnosticCount(pg.inputStats?.vectorSegments),
+        source: diagnosticCode(pg.source),
+      },
+      textAcquisition: {
+        needsOcr: Boolean(pg.needsOcr),
+        unreliable: Boolean(pg.textQualityUnreliable),
+        qualityScore: diagnosticNumber(pg.textQualityScore),
+        embeddedLineCount: diagnosticCount(pg.textQualityStats?.embeddedLines),
+        ocrLineCount: diagnosticCount(pg.textQualityStats?.ocrLines),
+        ocrConfidence: diagnosticNumber(pg.textQualityStats?.ocrConfidence),
+        recoveryAttempted: Boolean(pg.recoveryAttempted),
+        recoveryOutcome: diagnosticCode(pg.recoveryOutcome),
+      },
+      boardDetection: {
+        referencesDetected: diagnosticCount(pg.boardDetection?.referencesDetected),
+        primaryReferences: diagnosticCount(pg.boardDetection?.primaryReferences),
+        indexReferences: diagnosticCount(pg.boardDetection?.indexReferences),
+        circuitReferences: diagnosticCount(pg.boardDetection?.circuitReferences),
+        resolved: pg.boardResolved == null ? null : Boolean(pg.boardResolved),
+        headerRoles: diagnosticCodes(pg.boardHeaderRoles),
+      },
+      calibration: {
+        applicable: diagnosticCount(pg.calibration?.applicable),
+        applied: diagnosticCount(pg.calibration?.applied),
+        roles: diagnosticCodes(pg.calibration?.roles),
+        forcedSchedule: Boolean(pg.calibrationForcedSchedule),
+      },
+      extractionAttempts: (pg.extractionAttempts || []).map(diagnosticAttempt),
+      spatial: {
+        matched: Boolean(pg.spatialMatched),
+        confidence: diagnosticNumber(pg.spatialConfidence),
+        dialect: diagnosticCode(pg.spatialDialect),
+        roles,
+        requiredRoles,
+        missingRoles,
+        schemaSourcePage: diagnosticCount(pg.spatialSchemaSourcePage) || null,
+        gridAccepted: pg.spatialGridAccepted == null ? null : Boolean(pg.spatialGridAccepted),
+        blockingReasons: diagnosticCodes(pg.spatialBlockingReasons),
+        reviewReasons: diagnosticCodes(pg.spatialReviewReasons),
+        warnings: diagnosticCodes(pg.spatialWarnings),
+        wayAnchors: diagnosticCount(pg.spatialGridStats?.wayAnchors),
+        distinctWays: diagnosticCount(pg.spatialGridStats?.distinctWays),
+        populatedRows: diagnosticCount(pg.spatialGridStats?.populatedRows),
+        observedRows: diagnosticCount(pg.spatialTableStats?.observedRowCount),
+        inferredRows: diagnosticCount(pg.spatialTableStats?.inferredRowCount),
+      },
+      output: {
+        rowsParsed: diagnosticCount(pg.rowsParsed),
+        countableDeviceRows: diagnosticCount(pg.rowOutcome?.countableDeviceRows),
+        spareRows: diagnosticCount(pg.rowOutcome?.spareRows),
+        blankRows: diagnosticCount(pg.rowOutcome?.blankRows),
+        incomerRows: diagnosticCount(pg.rowOutcome?.incomerRows),
+        unassignedRows: diagnosticCount(pg.rowOutcome?.unassignedRows),
+        reviewRows: diagnosticCount(pg.rowOutcome?.reviewRows),
+        invalidRows: diagnosticCount(pg.rowOutcome?.invalidRows),
+        classConflictRows: diagnosticCount(pg.rowOutcome?.classConflictRows),
+        phaseConflictRows: diagnosticCount(pg.rowOutcome?.phaseConflictRows),
+        feederRelationships: diagnosticCount(pg.rowOutcome?.feeders),
+      },
+      schematic: {
+        topologyMethod: diagnosticCode(pg.schematicTopologyMethod),
+        graphStats: pg.schematicGraphStats || null,
+        vectorStats: pg.schematicVectorStats || null,
+        unresolvedCount: (pg.schematicUnresolvedBoards || []).length,
+        ambiguousCount: (pg.schematicAmbiguousBoards || []).length,
+        warnings: diagnosticCodes(pg.schematicWarnings),
+      },
+    };
+    result.verdict = buildPageDiagnosticVerdict({ ...pg, spatialColumns: roles });
+    return result;
+  }
+
+  function diagnosticFailureSummary(pages) {
+    const increment = (record, key, amount = 1) => { record[key] = (record[key] || 0) + amount; };
+    const summary = {
+      pageStatusCounts: {}, reasonCounts: {}, missingRoleCounts: {},
+      strategyCounts: {}, pagesWithTextButNoRows: 0, pagesWithNoReadableInput: 0,
+    };
+    pages.forEach((page) => {
+      increment(summary.pageStatusCounts, page.verdict.status);
+      page.verdict.reasonCodes.forEach((code) => increment(summary.reasonCounts, code));
+      page.spatial.missingRoles.forEach((role) => increment(summary.missingRoleCounts, role));
+      page.extractionAttempts.forEach((attempt) => {
+        if (!summary.strategyCounts[attempt.strategy]) summary.strategyCounts[attempt.strategy] = { attempted: 0, matched: 0, rows: 0 };
+        summary.strategyCounts[attempt.strategy].attempted += 1;
+        if (attempt.matched) summary.strategyCounts[attempt.strategy].matched += 1;
+        summary.strategyCounts[attempt.strategy].rows += diagnosticCount(attempt.rows);
+      });
+      if (page.input.textLines > 0 && page.output.rowsParsed === 0 && page.verdict.scheduleCandidate) summary.pagesWithTextButNoRows += 1;
+      if (!page.input.textLines && !page.input.spatialWords && !page.input.tableRows && !page.input.vectorSegments) summary.pagesWithNoReadableInput += 1;
+    });
+    return summary;
+  }
+
+  /* Private-safe diagnostic export: counters, page-level acquisition facts,
+   * strategy outcomes and reason codes only. NEVER include document text,
+   * board names, file names, extracted values, or customer content. */
+  function buildDiagnosticExport({ health, coverage, files, pages, appVersion, run }) {
     const anon = new Map();
+    const boardAnon = new Map();
     const fileTag = (id) => {
       if (!anon.has(id)) anon.set(id, `doc-${anon.size + 1}`);
       return anon.get(id);
     };
+    const boardTag = (id) => {
+      if (!boardAnon.has(id)) boardAnon.set(id, `board-${boardAnon.size + 1}`);
+      return boardAnon.get(id);
+    };
+    const pageDetails = (pages || []).map((pg) => diagnosticPage(pg, fileTag));
     return {
-      diagnosticVersion: 1,
+      diagnosticVersion: 2,
       appVersion: appVersion || null,
       generatedAt: new Date().toISOString(),
+      privacy: {
+        contentIncluded: false,
+        filenamesIncluded: false,
+        boardReferencesIncluded: false,
+        coordinatesIncluded: false,
+        shareableWithSupport: true,
+      },
+      run: {
+        analysisVersion: diagnosticCount(run?.analysisVersion) || null,
+        calibrationRevision: diagnosticCount(run?.calibrationRevision),
+        onlineRecovery: {
+          eligiblePages: diagnosticCount(run?.aiRecovery?.eligible),
+          selectedPages: diagnosticCount(run?.aiRecovery?.selected),
+          deferredPages: diagnosticCount(run?.aiRecovery?.deferred),
+          completedPages: diagnosticCount(run?.aiPages),
+          errorPages: diagnosticCount(run?.aiErrors),
+          timedOutPages: diagnosticCount(run?.aiTimedOut),
+          maxPages: diagnosticCount(run?.aiRecovery?.maxPages),
+          pageTimeoutMs: diagnosticCount(run?.aiRecovery?.pageTimeoutMs),
+          totalBudgetMs: diagnosticCount(run?.aiRecovery?.totalBudgetMs),
+          status: diagnosticCode(run?.aiRecovery?.status),
+        },
+        ocrRecoveryAttempts: (run?.recoveryLog || []).map((entry) => ({
+          file: fileTag(entry.fileId),
+          page: diagnosticCount(entry.page),
+          reasons: diagnosticCodes(entry.reasons),
+          outcome: diagnosticCode(entry.outcome),
+        })),
+      },
       health: health ? {
         state: health.state,
         counters: health.counters,
@@ -2353,41 +2616,31 @@
           refs: (r.refs || []).map((ref) => ({
             ...(ref && ref.fileId ? { file: fileTag(ref.fileId) } : {}),
             ...(ref && ref.page ? { page: ref.page } : {}),
+            ...(ref && ref.board ? { board: boardTag(ref.board) } : {}),
             ...(ref && ref.expected != null ? { expected: ref.expected, captured: ref.captured } : {}),
+            ...(ref && ref.count != null ? { affected: ref.count } : {}),
           })),
         })),
       } : null,
       coverageSummary: coverage ? coverage.summary : null,
+      coverageByBoard: (coverage?.perBoard || []).map((board) => ({
+        board: boardTag(board.norm),
+        inScope: board.inScope !== false,
+        expectedWays: board.expectedWays == null ? null : diagnosticCount(board.expectedWays),
+        capturedWays: diagnosticCount(board.capturedWays),
+        unaccountedWays: board.unaccountedWays == null ? null : diagnosticCount(board.unaccountedWays),
+        rowsCaptured: diagnosticCount(board.rowsCaptured),
+        incompleteProtectionRows: diagnosticCount(board.incompleteProtectionRows),
+      })),
       files: (files || []).map((f) => ({
         file: fileTag(f.id),
         ext: f.ext || null,
         status: f.status || null,
         pages: (f.pages || []).length,
       })),
-      pages: (pages || []).map((pg) => ({
-        file: fileTag(pg.fileId),
-        page: pg.page,
-        type: pg.type || null,
-        textLines: pg.textLines || 0,
-        source: pg.source || null,
-        scheduleScore: pg.scheduleScore ?? null,
-        scheduleSignals: pg.scheduleSignals || [],
-        rowsParsed: pg.rowsParsed || 0,
-        spatialConfidence: pg.spatialConfidence ?? null,
-        spatialColumns: pg.spatialColumns || [],
-        spatialWarnings: pg.spatialWarnings || [],
-        spatialDialect: pg.spatialDialect || null,
-        spatialGridAccepted: pg.spatialGridAccepted ?? null,
-        spatialBlockingReasons: pg.spatialBlockingReasons || [],
-        spatialReviewReasons: pg.spatialReviewReasons || [],
-        spatialContinuation: Boolean(pg.spatialContinuation),
-        schematicTopologyMethod: pg.schematicTopologyMethod || null,
-        schematicGraphStats: pg.schematicGraphStats || null,
-        schematicVectorStats: pg.schematicVectorStats || null,
-        schematicUnresolvedCount: (pg.schematicUnresolvedBoards || []).length,
-        schematicAmbiguousCount: (pg.schematicAmbiguousBoards || []).length,
-        schematicWarnings: pg.schematicWarnings || [],
-      })),
+      failureSummary: diagnosticFailureSummary(pageDetails),
+      pages: pageDetails,
+      reasonGuidance: DIAGNOSTIC_GUIDANCE,
     };
   }
 
@@ -2402,6 +2655,7 @@
     planAiRecoveryJobs,
     buildDocumentExtractionScope,
     buildAnalysisHealth,
+    buildPageDiagnosticVerdict,
     buildDiagnosticExport,
     THREE_TYPES,
     toThreeType,
