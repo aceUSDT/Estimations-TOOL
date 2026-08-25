@@ -5,8 +5,13 @@ const ACCESS = 'private';
 
 export const JOB_TTL_MS = 15 * 60 * 1000;
 
+export function extractionBlobToken(env = process.env) {
+  return env.EXTRACTION_BLOB_READ_WRITE_TOKEN || env.BLOB_READ_WRITE_TOKEN || null;
+}
+
 export function extractionJobStoreConfigured(env = process.env) {
-  return Boolean(env.BLOB_READ_WRITE_TOKEN || (env.BLOB_STORE_ID && env.VERCEL_OIDC_TOKEN));
+  return Boolean(extractionBlobToken(env)
+    || ((env.EXTRACTION_BLOB_STORE_ID || env.BLOB_STORE_ID) && env.VERCEL_OIDC_TOKEN));
 }
 
 export function validExtractionJobId(value) {
@@ -31,6 +36,8 @@ export function makeExtractionJobStore(options = {}) {
   const getBlob = options.getBlob || get;
   const deleteBlob = options.deleteBlob || del;
   const now = options.now || (() => Date.now());
+  const token = options.token === undefined ? extractionBlobToken(options.env) : options.token;
+  const auth = token ? { token } : {};
 
   async function write(id, state, record) {
     await putBlob(jobPath(id, state), JSON.stringify(record), {
@@ -38,11 +45,12 @@ export function makeExtractionJobStore(options = {}) {
       addRandomSuffix: false,
       contentType: 'application/json',
       cacheControlMaxAge: 60,
+      ...auth,
     });
   }
 
   async function read(id, state) {
-    const blob = await getBlob(jobPath(id, state), { access: ACCESS, useCache: false });
+    const blob = await getBlob(jobPath(id, state), { access: ACCESS, useCache: false, ...auth });
     if (!blob?.stream) return null;
     return JSON.parse(await streamText(blob.stream));
   }
@@ -52,7 +60,7 @@ export function makeExtractionJobStore(options = {}) {
       jobPath(id, 'pending'),
       jobPath(id, 'result'),
       jobPath(id, 'error'),
-    ]);
+    ], auth);
   }
 
   return {
@@ -84,7 +92,7 @@ export function makeExtractionJobStore(options = {}) {
       });
     },
     async finishProcessing(id) {
-      try { await deleteBlob(jobPath(id, 'pending')); } catch { /* best effort */ }
+      try { await deleteBlob(jobPath(id, 'pending'), auth); } catch { /* best effort */ }
     },
     async status(id) {
       const completed = await read(id, 'result');

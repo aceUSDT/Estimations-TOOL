@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import { handleBackgroundExtraction } from '../../api/extract-background.mjs';
 import { handleExtractionStatus } from '../../api/extract-status.mjs';
-import { JOB_TTL_MS, makeExtractionJobStore } from '../../api/_lib/extraction-job-store.mjs';
+import {
+  JOB_TTL_MS, extractionBlobToken, extractionJobStoreConfigured, makeExtractionJobStore,
+} from '../../api/_lib/extraction-job-store.mjs';
 
 function responseRecorder() {
   const headers = new Map();
@@ -17,24 +19,34 @@ function responseRecorder() {
 
 const blobs = new Map();
 const blobOptions = [];
+const extractionToken = 'vercel_blob_rw_test_token';
 const store = makeExtractionJobStore({
+  env: { EXTRACTION_BLOB_READ_WRITE_TOKEN: extractionToken },
   now: (() => { let value = Date.parse('2026-08-25T10:00:00Z'); return () => (value += 10); })(),
   async putBlob(path, body, options) {
     assert.equal(options.access, 'private');
     assert.equal(options.addRandomSuffix, false);
+    assert.equal(options.token, extractionToken);
     blobOptions.push({ path, options });
     blobs.set(path, String(body));
   },
   async getBlob(path, options) {
     assert.equal(options.access, 'private');
     assert.equal(options.useCache, false);
+    assert.equal(options.token, extractionToken);
     const body = blobs.get(path);
     return body == null ? null : { stream: new Response(body).body };
   },
-  async deleteBlob(paths) {
+  async deleteBlob(paths, options) {
+    assert.equal(options.token, extractionToken);
     for (const path of Array.isArray(paths) ? paths : [paths]) blobs.delete(path);
   },
 });
+
+assert.equal(extractionBlobToken({ EXTRACTION_BLOB_READ_WRITE_TOKEN: extractionToken }), extractionToken);
+assert.equal(extractionBlobToken({ BLOB_READ_WRITE_TOKEN: 'legacy-token' }), 'legacy-token');
+assert.equal(extractionJobStoreConfigured({ EXTRACTION_BLOB_READ_WRITE_TOKEN: extractionToken }), true);
+assert.equal(extractionJobStoreConfigured({ EXTRACTION_BLOB_STORE_ID: 'store', VERCEL_OIDC_TOKEN: 'oidc' }), true);
 
 const scheduled = [];
 const submitReq = {
