@@ -13,7 +13,10 @@ export function engineStatus(env = process.env) {
     mode: teamOn ? 'agent-team' : gemini.configured ? 'gemini' : 'unconfigured',
     configured: teamOn || gemini.configured,
     gemini: gemini.gemini,
+    geminiConfigurationWarning: gemini.configurationWarning,
     nvidia: nvidia.configured,
+    nvidiaKeyCount: nvidia.configuredCount,
+    nvidiaKeySlots: Object.entries(nvidia.keys).filter(([, configured]) => configured).map(([slot]) => Number(slot)),
     primary: teamOn ? 'nvidia' : gemini.primary,
   };
 }

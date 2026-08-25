@@ -8,7 +8,7 @@
  * Env vars:
  *   GEMINI_API_KEY   Gemini extractor/master auditor
  *   GEMINI_MODEL     optional exact-model override (pinned default in providers)
- *   NVIDIA_API_KEY_1..3 optional independent sub-agents
+ *   NVIDIA_API_KEY_1..7 optional independent sub-agents
  *   AGENT_TEAM       set to off to force direct Gemini extraction
  *
  * Note on timeouts: Netlify synchronous functions cap at ~26s; dense pages
@@ -36,6 +36,11 @@ export default async function handler(req) {
       configured: status.configured,
       mode: status.mode,
       providers: { gemini: status.gemini, nvidia: status.nvidia },
+      providerDiagnostics: {
+        geminiConfigurationWarning: status.geminiConfigurationWarning,
+        nvidiaKeyCount: status.nvidiaKeyCount,
+        nvidiaKeySlots: status.nvidiaKeySlots,
+      },
       primary: status.primary,
       model: GEMINI_MODEL,
       fallbackModels: geminiModelCandidates().slice(1),
@@ -45,7 +50,7 @@ export default async function handler(req) {
   }
   if (req.method !== 'POST') return json(405, { error: 'POST only' });
   if (!engineStatus().configured) {
-    return json(503, { error: 'AI extraction is not configured: set GEMINI_API_KEY or NVIDIA_API_KEY_1..3 in the hosting environment.' });
+    return json(503, { error: 'AI extraction is not configured: set GEMINI_API_KEY or NVIDIA_API_KEY_1..7 in the hosting environment.' });
   }
 
   let body;

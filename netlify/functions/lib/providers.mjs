@@ -17,6 +17,10 @@ import { EXTRACTION_SYSTEM_PROMPT, EXTRACTION_SCHEMA, coerceResult } from './dom
 export const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.6-flash';
 export const GEMINI_FALLBACK_MODELS = Object.freeze(['gemini-3.5-flash']);
 
+export function geminiApiKey(env = process.env) {
+  return env.GEMINI_API_KEY || env.Gemini || null;
+}
+
 export function geminiModelCandidates() {
   return [...new Set([GEMINI_MODEL, ...GEMINI_FALLBACK_MODELS])];
 }
@@ -26,8 +30,13 @@ export function isGeminiModelUnavailable(status, detail = '') {
 }
 
 export function providerStatus(env = process.env) {
-  const gemini = Boolean(env.GEMINI_API_KEY);
-  return { gemini, configured: gemini, primary: gemini ? 'gemini' : null };
+  const gemini = Boolean(geminiApiKey(env));
+  return {
+    gemini,
+    configured: gemini,
+    primary: gemini ? 'gemini' : null,
+    configurationWarning: !env.GEMINI_API_KEY && env.Gemini ? 'legacy_gemini_variable_name' : null,
+  };
 }
 
 export function buildInstruction({ filename, pageNumber, hints, textLines, layoutHint }) {
@@ -59,7 +68,7 @@ export function geminiSchema(node) {
 }
 
 async function callGeminiModel({ model, imageBase64, mediaType, instruction, maxTokens }) {
-  const key = process.env.GEMINI_API_KEY;
+  const key = geminiApiKey();
   if (!key) throw new Error('GEMINI_API_KEY unset');
   const parts = [];
   if (imageBase64) parts.push({ inlineData: { mimeType: mediaType || 'image/jpeg', data: imageBase64 } });
@@ -120,7 +129,7 @@ export async function callGemini({ imageBase64, mediaType, instruction, maxToken
 
 export async function callGeminiJson({ instruction, schema, maxTokens = 4000, model = GEMINI_MODEL,
   imageBase64, mediaType, system }) {
-  const key = process.env.GEMINI_API_KEY;
+  const key = geminiApiKey();
   if (!key) throw new Error('GEMINI_API_KEY unset');
   const parts = [];
   if (imageBase64) parts.push({ inlineData: { mimeType: mediaType || 'image/jpeg', data: imageBase64 } });

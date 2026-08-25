@@ -1,7 +1,7 @@
 /* NVIDIA build.nvidia.com model pool — the sub-agent workforce.
  *
  * One OpenAI-compatible endpoint fronts every model; the owner supplies up to
- * three free-tier API keys (one per NVIDIA account), each with its OWN rate
+ * seven server-side API key slots, each with its OWN rate
  * budget (~40 req/min). This module turns that into a dependable workforce:
  *
  *  - MODEL_REGISTRY  : model id → { key slot, vision, verified } (live-probed
@@ -20,7 +20,9 @@
 
 export const NVIDIA_BASE_URL = 'https://integrate.api.nvidia.com/v1';
 
-/* Which key slot (1..3) serves each model — mirrors the owner's key→model
+export const NVIDIA_KEY_SLOTS = Object.freeze([1, 2, 3, 4, 5, 6, 7]);
+
+/* Which key slot serves each model — mirrors the owner's key→model
  * mapping so each free account carries its intended share of the load. */
 export const MODEL_REGISTRY = {
   'deepseek-ai/deepseek-v4-flash':            { key: 1, vision: false, verified: true  },
@@ -43,6 +45,15 @@ export const MODEL_REGISTRY = {
   // conservative over-capture; deterministic code filters). ~107s latency →
   // needs the long per-model timeout and an async budget when routed.
   'nvidia/llama-3.1-nemotron-nano-vl-8b-v1':  { key: 3, vision: true,  verified: true, timeoutMs: 150000 },
+  // Omni is a multimodal document-reasoning worker, not a coordinate OCR
+  // engine. Slots 4..7 provide independent rate budgets for this hosted model;
+  // specialist OCR/table NIMs use /v1/infer adapters and must not be sent to
+  // this OpenAI-compatible chat endpoint.
+  'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning': {
+    keys: [4, 5, 6, 7], vision: true, verified: true, timeoutMs: 180000,
+    maxTokensCap: 12000,
+    requestBody: { top_k: 1, chat_template_kwargs: { enable_thinking: false } },
+  },
 };
 
 /* Ordered fallback chains per sub-agent role. Verified-responsive models
@@ -69,6 +80,7 @@ export const ROLE_CHAINS = {
     'z-ai/glm-5.2',
   ],
   vision_parse: [
+    'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning',
     'nvidia/llama-3.1-nemotron-nano-vl-8b-v1',   // the proven row reader
     'nvidia/nemotron-nano-12b-v2-vl',
   ],
@@ -80,7 +92,7 @@ export const ROLE_CHAINS = {
 
 export function poolKeysFromEnv(env = process.env) {
   const keys = {};
-  for (const n of [1, 2, 3]) {
+  for (const n of NVIDIA_KEY_SLOTS) {
     const v = env[`NVIDIA_API_KEY_${n}`];
     if (typeof v === 'string' && v.length > 8) keys[n] = v;
   }
@@ -90,7 +102,8 @@ export function poolStatus(env = process.env) {
   const keys = poolKeysFromEnv(env);
   return {
     configured: Object.keys(keys).length > 0,
-    keys: { 1: Boolean(keys[1]), 2: Boolean(keys[2]), 3: Boolean(keys[3]) },
+    configuredCount: Object.keys(keys).length,
+    keys: Object.fromEntries(NVIDIA_KEY_SLOTS.map((slot) => [slot, Boolean(keys[slot])])),
   };
 }
 
@@ -128,7 +141,7 @@ export function createPool(opts = {}) {
   const registry = opts.registry || MODEL_REGISTRY;
   const chains = opts.chains || ROLE_CHAINS;
 
-  const stamps = { 1: [], 2: [], 3: [] };          // per-key request timestamps (60s window)
+  const stamps = Object.fromEntries(NVIDIA_KEY_SLOTS.map((slot) => [slot, []]));
   const health = new Map();                        // model → { fails, lastFailAt }
 
   function paceDelay(keyId) {
@@ -150,15 +163,29 @@ export function createPool(opts = {}) {
     return Boolean(h && h.fails >= 2 && now() - h.lastFailAt < cooldownMs);
   }
 
+  function configuredKeyIds(meta) {
+    const candidates = Array.isArray(meta.keys) ? meta.keys : [meta.key];
+    return candidates.filter((keyId) => keys[keyId]);
+  }
+
+  function selectKeyId(meta) {
+    const candidates = configuredKeyIds(meta);
+    if (!candidates.length) return null;
+    const t = now();
+    for (const keyId of candidates) stamps[keyId] = stamps[keyId].filter((s) => t - s < 60000);
+    return candidates.sort((a, b) => stamps[a].length - stamps[b].length || a - b)[0];
+  }
+
   async function callModel(model, req = {}) {
     const meta = registry[model];
     if (!meta) throw poolError('unknown_model', model);
-    const key = keys[meta.key];
-    if (!key) throw poolError('no_key', `slot ${meta.key} for ${model}`);
+    const keyId = selectKeyId(meta);
+    const key = keyId == null ? null : keys[keyId];
+    if (!key) throw poolError('no_key', `configured slot for ${model}`);
 
-    const delay = paceDelay(meta.key);
+    const delay = paceDelay(keyId);
     if (delay > 0) await sleep(delay);
-    stamps[meta.key].push(now());
+    stamps[keyId].push(now());
 
     const messages = [];
     if (req.system && !meta.imageOnly) messages.push({ role: 'system', content: req.system });
@@ -187,6 +214,7 @@ export function createPool(opts = {}) {
           messages,
           max_tokens: maxTokens,
           temperature: req.temperature != null ? req.temperature : 0,
+          ...(meta.requestBody || {}),
         }),
       });
     } catch (e) {
@@ -212,7 +240,7 @@ export function createPool(opts = {}) {
     }
     if (typeof content !== 'string' || !content) { markResult(model, false); throw poolError('empty_reply', model); }
     markResult(model, true);
-    return { content, model, keyId: meta.key, ms: now() - t0 };
+    return { content, model, keyId, ms: now() - t0 };
   }
 
   /* Walk a role's chain: skip excluded + cooling-down models, try the rest in
@@ -226,7 +254,7 @@ export function createPool(opts = {}) {
       if (exclude.has(model)) { attempts.push({ model, skipped: 'excluded' }); continue; }
       if (isCoolingDown(model)) { attempts.push({ model, skipped: 'cooldown' }); continue; }
       const meta = registry[model];
-      if (!meta || !keys[meta.key]) { attempts.push({ model, skipped: 'no_key' }); continue; }
+      if (!meta || !configuredKeyIds(meta).length) { attempts.push({ model, skipped: 'no_key' }); continue; }
       try {
         const out = await callModel(model, req);
         return { ...out, role, attempts };

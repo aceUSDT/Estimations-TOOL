@@ -57,6 +57,9 @@ check('geminiSchema keeps enum/required/items', translated.properties.a.enum.len
 
 /* ---------- provider gating ---------- */
 check('no key → unconfigured', providerStatus().configured === false && providerStatus().primary === null);
+check('legacy Vercel Gemini variable remains functional but is diagnosed',
+  providerStatus({ Gemini: 'test-not-a-real-key' }).configured === true
+  && providerStatus({ Gemini: 'test-not-a-real-key' }).configurationWarning === 'legacy_gemini_variable_name');
 let unconfigured = await handler(new Request('http://x/extract', { method: 'GET' }));
 let body = await unconfigured.json();
 check('health: unconfigured reported honestly', body.configured === false);

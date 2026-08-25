@@ -128,10 +128,11 @@ export async function runAgentTeam(page, deps) {
     maxTokens: 12000,
   };
 
-  // 1) primary extraction — route to vision_parse if image is present but text is absent
-  // (image-only pages silently fail on non-vision models). Extract chain handles pages
-  // with text + optional image; vision_parse handles image-only pages.
-  const role = imageBase64 && (!textLines || textLines.length === 0) ? 'vision_parse' : 'extract';
+  // 1) primary extraction — every rendered page starts with a vision worker so
+  // flattened OCR/native text cannot erase column, row, merged-cell or drawing
+  // geometry. Text remains corroborating evidence in the prompt. Text-only
+  // inputs retain the non-vision extraction chain.
+  const role = imageBase64 ? 'vision_parse' : 'extract';
   const primaryRead = await readExtractionRole(deps.pool, role, req);
   const a = primaryRead.response;
   const primary = primaryRead.result;
