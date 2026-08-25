@@ -79,7 +79,7 @@ const required = [
   'function viewerBoardOnPage(',
   'function syncViewerBoardToPage(',
   'syncViewerBoardToPage(f,V.page);',
-  'Review from first board',
+  'Start audit',
   'Board ${Math.min(boardOrder.length,boardPosition+1)} of ${boardOrder.length}',
   'function openReportSources(',
   'function openReportBoardSources(',

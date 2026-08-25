@@ -282,7 +282,7 @@
   .tree .cable-lbl{font-size:11px;color:var(--cyan);font-family:var(--mono);overflow-wrap:anywhere;}
 
   /* viewer */
-  .viewer-layout{--viewer-left:132px;--viewer-right:320px;display:grid;
+  .viewer-layout{--viewer-left:132px;--viewer-right:360px;display:grid;
     grid-template-columns:var(--viewer-left) 6px minmax(0,1fr) 6px var(--viewer-right);gap:0;
     align-items:stretch;height:calc(100vh - 250px);min-height:560px;}
   .viewer-layout.left-closed{grid-template-columns:0 0 minmax(0,1fr) 6px var(--viewer-right);}
@@ -391,7 +391,12 @@
   .det-source{margin-top:4px;color:var(--txt3);font:10.5px/1.45 var(--mono);white-space:normal;overflow-wrap:anywhere;}
   .det-count{margin-top:6px;color:var(--txt2);font-size:10.5px;font-weight:700;}
   .det-protection{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px;}
-  .v-toolbar,.v-doctabs,.assist-bar,.guided-review-bar,#vMetaRow{flex-shrink:0;}
+  .v-toolbar,.v-doctabs,.assist-bar,.guided-review-bar,.audit-workspace-head,#vMetaRow{flex-shrink:0;}
+  .audit-workspace-head{display:flex;align-items:center;gap:12px;min-height:48px;padding:7px 12px;border-bottom:1px solid var(--line);border-left:4px solid var(--blue);background:#fff;}
+  .audit-workspace-copy{display:grid;gap:1px;min-width:0;}
+  .audit-workspace-copy .step{font-size:10px;font-weight:800;text-transform:uppercase;color:var(--blue);}
+  .audit-workspace-copy strong{font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .audit-workspace-metrics{display:flex;align-items:center;gap:6px;margin-left:auto;flex-wrap:wrap;justify-content:flex-end;}
   .guided-review-bar{display:flex;align-items:center;gap:9px;min-height:43px;padding:7px 12px;border-bottom:1px solid #c8d9ef;background:#eef6ff;}
   .guided-review-bar[hidden]{display:none;}
   .guided-review-copy{display:grid;gap:1px;min-width:0;}
@@ -411,7 +416,7 @@
     .viewer-side{position:absolute;top:0;bottom:0;z-index:12;height:100%;box-shadow:0 8px 30px rgba(15,28,44,.2);}
     .viewer-side.is-closed{display:none;}
     #vThumbPanel{left:0;width:min(44vw,190px);}
-    #vInfoPanel{right:0;width:min(82vw,360px);}
+    #vInfoPanel{right:0;width:min(100%,430px);}
     .viewer-resizer{display:none;}
     #pt-viewer:fullscreen .viewer-layout,.viewer-fullscreen .viewer-layout{height:100%;}
   }
@@ -625,6 +630,8 @@
     .guided-review-copy{width:auto;}
     .guided-review-actions{grid-column:1/-1;width:100%;margin-left:0;}
     .guided-review-actions .btn{flex:1;}
+    .audit-workspace-head{align-items:flex-start;}
+    .audit-workspace-metrics{max-width:52%;}
     .report-source-fields{grid-template-columns:1fr;}
     .report-source-item-head{align-items:flex-start;flex-wrap:wrap;}
     .report-source-item-head .chip:first-of-type{margin-left:0;}
@@ -718,7 +725,7 @@
       <button class="ptab" data-pt="analysis">Boards &amp; devices <span class="badge"><span id="bBoards">0</span> boards</span><span class="badge"><span id="bDev">0</span> devices</span></button>
       <button class="ptab" data-pt="review">Review <span class="badge" id="bRev">0</span></button>
       <button class="ptab" data-pt="reports">Reports</button>
-      <button class="ptab" data-pt="viewer">Viewer</button>
+      <button class="ptab" data-pt="viewer">Audit</button>
       <button class="ptab" data-pt="compare">Compare</button>
     </div>
 
@@ -769,7 +776,7 @@
       </div>
     </div>
 
-    <!-- ==== VIEWER ==== -->
+    <!-- ==== AUDIT WORKSPACE ==== -->
     <div class="subview" id="pt-viewer">
       <div class="viewer-layout" id="vLayout">
         <aside class="panel viewer-side viewer-thumbnails" id="vThumbPanel" aria-label="Page thumbnails">
@@ -778,10 +785,14 @@
         </aside>
         <div class="viewer-resizer viewer-resizer-left" id="vResizeLeft" role="separator" tabindex="0" aria-label="Resize page thumbnails" aria-orientation="vertical" aria-valuemin="92" aria-valuemax="320"></div>
         <div class="panel viewer-document" id="vDocumentPanel" style="overflow:hidden">
+          <div class="audit-workspace-head">
+            <div class="audit-workspace-copy"><span class="step">Audit workspace</span><strong id="vAuditContext">Source evidence</strong></div>
+            <div class="audit-workspace-metrics"><span class="chip amber" id="vAuditPending">0 awaiting decision</span><span class="chip red" id="vAuditIssues" hidden>0 blocking issues</span></div>
+          </div>
           <div class="v-doctabs" id="vDocTabs"></div>
           <div class="v-toolbar">
             <button class="btn sm" id="vThumbToggle" title="Show or hide page thumbnails" aria-label="Show or hide page thumbnails" aria-controls="vThumbPanel" aria-pressed="true">▤</button>
-            <button class="btn sm" id="vInfoToggle" title="Show or hide page detections" aria-label="Show or hide page detections" aria-controls="vInfoPanel" aria-pressed="true">☷</button>
+            <button class="btn sm" id="vInfoToggle" title="Show or hide audit evidence" aria-label="Show or hide audit evidence" aria-controls="vInfoPanel" aria-pressed="true">☷</button>
             <div class="vsep"></div>
             <button class="btn sm" id="vPrev" title="Previous page (←)">‹</button>
             <span style="font-size:12px;color:var(--txt2)"><span id="vPageNo">1</span> / <span id="vPageCt">1</span></span>
@@ -797,13 +808,13 @@
             <select class="sel" id="vOvlFilter">
               <option value="all">All detections</option>
               <option value="confirmed">Confirmed</option>
-              <option value="review">Needs review</option>
+              <option value="review">Needs decision</option>
               <option value="cable">Cables</option>
               <option value="board">Boards</option>
             </select>
             <select class="sel" id="vBoardHl" aria-label="Current board and go to board" title="Shows the board on the current page; choose another board to open it"><option value="">No board on this page</option></select>
             <div class="vsep"></div>
-            <button class="btn sm" id="vReviewStart" title="Start at the first board and review every required row in document order">Review from first board</button>
+            <button class="btn sm" id="vReviewStart" title="Start at the first board and audit every required row in document order">Start audit</button>
             <button class="btn sm" id="vAssistMode" title="Select one device row and find the same protection device on this board">Find similar</button>
             <button class="btn sm" id="vOcrBtn" title="Read a scanned page with OCR">OCR page</button>
             <button class="btn sm" id="vDark" title="Dark / light canvas">◐</button>
@@ -822,17 +833,17 @@
             <span class="ocr-progress" id="vOcrStatus"></span>
           </div>
           <div class="guided-review-bar" id="vReviewBar" hidden>
-            <span class="chip blue">Guided review</span>
+            <span class="chip blue">Audit queue</span>
             <div class="guided-review-copy"><strong id="vReviewTitle">Current row</strong><span id="vReviewProgress"></span></div>
-            <div class="guided-review-actions"><button class="btn sm" id="vReviewFocus">Begin at first board</button><button class="btn sm ghost" id="vReviewStop">Stop</button></div>
+            <div class="guided-review-actions"><button class="btn sm" id="vReviewFocus">Begin audit</button><button class="btn sm ghost" id="vReviewStop">Pause</button></div>
           </div>
           <div style="padding:7px 12px;border-bottom:1px solid var(--line);display:flex;gap:8px;align-items:center;flex-wrap:wrap" id="vMetaRow"></div>
           <div class="v-stage" id="vStage"><div class="empty">Select a document to view.</div></div>
         </div>
-        <div class="viewer-resizer viewer-resizer-right" id="vResizeRight" role="separator" tabindex="0" aria-label="Resize page detections" aria-orientation="vertical" aria-valuemin="260" aria-valuemax="520"></div>
-        <aside class="panel viewer-side v-info" id="vInfoPanel" aria-label="Page detections">
-          <div class="viewer-side-head"><span>On this page</span><button class="btn sm" id="vInfoClose" title="Hide page detections" aria-label="Hide page detections">×</button></div>
-          <div id="vDetList"><div class="empty">No detections.</div></div>
+        <div class="viewer-resizer viewer-resizer-right" id="vResizeRight" role="separator" tabindex="0" aria-label="Resize audit evidence" aria-orientation="vertical" aria-valuemin="280" aria-valuemax="560"></div>
+        <aside class="panel viewer-side v-info" id="vInfoPanel" aria-label="Audit evidence and decisions">
+          <div class="viewer-side-head"><span>Evidence &amp; decisions</span><button class="btn sm" id="vInfoClose" title="Hide audit evidence" aria-label="Hide audit evidence">×</button></div>
+          <div id="vDetList"><div class="empty">No evidence on this page.</div></div>
         </aside>
       </div>
     </div>
@@ -894,7 +905,7 @@
             <div style="display:flex;gap:8px;align-items:center;padding:11px 18px;flex-wrap:wrap">
               <span style="font-weight:800;font-size:13px">Take-off</span>
               <span class="sub" style="margin-left:2px">roll-up across all boards — select a board to drill in</span>
-              <button class="btn sm" id="guidedReviewBtn" style="margin-left:auto">Review from first board</button>
+              <button class="btn sm" id="guidedReviewBtn" style="margin-left:auto">Start audit</button>
               <button class="btn sm" id="bulkApproveBtn">Approve high-confidence rows</button>
               <button class="btn sm" id="addManualBtn">Add device</button>
               <button class="btn sm primary" id="openReportBtn">Open report</button>
@@ -1145,7 +1156,7 @@ const state = {
   projects: [],
   cur: null,           // current project
   nextId: 1,
-  viewer: {fileId:null, page:1, zoom:1, rot:0, dark:false, fullscreen:false, boardHl:null, evidenceId:null, pdfDocs:{}, panels:{leftOpen:true,rightOpen:true,leftWidth:132,rightWidth:320}, assist:{enabled:false,boardNorm:null,seed:null,results:[]}},
+  viewer: {fileId:null, page:1, zoom:1, rot:0, dark:false, fullscreen:false, boardHl:null, evidenceId:null, pdfDocs:{}, panels:{leftOpen:true,rightOpen:true,leftWidth:132,rightWidth:360}, assist:{enabled:false,boardNorm:null,seed:null,results:[]}},
   selectedBoard: null,  // §5.4 — board selected in the merged Boards & Devices page ('__none__' = unassigned rows), null = roll-up
   reportMode: 'board',
   reviewFlow: {active:false,currentRowId:null,initialCount:0,moving:false,boardOrder:[],initialByBoard:{},rowOrderByBoard:{}},
@@ -3928,7 +3939,7 @@ function renderGuidedReviewControls(){
   const analysisButton=$('#guidedReviewBtn'),viewerButton=$('#vReviewStart'),bar=$('#vReviewBar'),focus=$('#vReviewFocus'),stop=$('#vReviewStop');
   [analysisButton,viewerButton].filter(Boolean).forEach(button=>{
     button.disabled=!flow.active&&!queue.length&&!gap;
-    button.textContent=flow.active?(button===analysisButton?'Continue guided review':'Show current row'):'Review from first board';
+    button.textContent=flow.active?(button===analysisButton?'Continue audit':'Show current finding'):'Start audit';
     button.title=gap?`${guidedBoardName(gap.boardNorm)} must be extracted before approval can continue`
       :queue.length?`${queue.length} row${queue.length===1?'':'s'} awaiting a decision`:'No rows are awaiting a decision';
   });
@@ -3938,7 +3949,7 @@ function renderGuidedReviewControls(){
     if(gap){
       $('#vReviewTitle').textContent=`Extraction required for ${guidedBoardName(gap.boardNorm)}`;
       $('#vReviewProgress').textContent=`Page ${gap.page} is the first unresolved board · no schedule rows were captured · approval is paused`;
-      if(focus){focus.hidden=false;focus.textContent='Open first board';}
+      if(focus){focus.hidden=false;focus.textContent='Open first issue';}
       if(stop)stop.hidden=true;
       return;
     }
@@ -3946,11 +3957,11 @@ function renderGuidedReviewControls(){
     const first=queue[0],boardKeys=guidedReviewBoardKeys(queue);
     $('#vReviewTitle').textContent=`Ready to begin with ${guidedBoardName(first.boardNorm||'__none__')}`;
     $('#vReviewProgress').textContent=`${queue.length} required row${queue.length===1?'':'s'} across ${boardKeys.length} board${boardKeys.length===1?'':'s'}; starts on page ${first.page||1}`;
-    if(focus){focus.hidden=false;focus.textContent='Begin at first board';}
+    if(focus){focus.hidden=false;focus.textContent='Begin audit';}
     if(stop)stop.hidden=true;
     return;
   }
-  if(focus){focus.hidden=false;focus.textContent='Show current';}
+  if(focus){focus.hidden=false;focus.textContent='Show current finding';}
   if(stop)stop.hidden=false;
   const activeCurrent=current&&reviewDecisionPending(current)?current:queue[0];
   const total=Math.max(flow.initialCount,queue.length),completed=Math.max(0,total-queue.length);
@@ -4003,7 +4014,7 @@ async function startGuidedReview(){
   syncGuidedReviewSession();
   if(!await persistProjectNow(state.cur)){
     state.reviewFlow=emptyGuidedReviewFlow();
-    toast('Guided review could not start because local storage is unavailable');
+    toast('Audit could not start because local storage is unavailable');
     return;
   }
   await showGuidedReviewRow(queue[0]);
@@ -4013,7 +4024,7 @@ async function focusGuidedReview(){
   if(!state.reviewFlow.active)return startGuidedReview();
   const current=guidedReviewCurrentRow();
   const row=current&&reviewDecisionPending(current)?current:queue[0];
-  if(!row){stopGuidedReview(false);toast('Guided review is complete');return;}
+  if(!row){stopGuidedReview(false);toast('Audit is complete');return;}
   await showGuidedReviewRow(row);
 }
 function stopGuidedReview(showToast=true){
@@ -4022,7 +4033,7 @@ function stopGuidedReview(showToast=true){
   state.reviewFlow=emptyGuidedReviewFlow();
   if(state.cur){syncGuidedReviewSession();saveProject(state.cur);}
   renderGuidedReviewControls();
-  if(showToast&&wasActive)toast('Guided review stopped');
+  if(showToast&&wasActive)toast('Audit paused');
 }
 async function advanceGuidedReview(completedRow,action='decision saved'){
   const flow=state.reviewFlow;
@@ -4042,7 +4053,7 @@ async function advanceGuidedReview(completedRow,action='decision saved'){
     stopGuidedReview(false);
     await persistProjectNow(state.cur);
     await renderViewer();
-    toast(`Guided review complete · ${total} decision${total===1?'':'s'} saved`);
+    toast(`Audit complete · ${total} decision${total===1?'':'s'} saved`);
     return;
   }
   const sameBoard=queue.filter(row=>(row.boardNorm||'__none__')===previousBoard);
@@ -5579,11 +5590,11 @@ async function ensureThumbs(f){
 }
 function ensureViewerPanels(){
   const V=state.viewer;
-  V.panels=V.panels||{leftOpen:true,rightOpen:true,leftWidth:132,rightWidth:320};
+  V.panels=V.panels||{leftOpen:true,rightOpen:true,leftWidth:132,rightWidth:360};
   V.panels.leftOpen=V.panels.leftOpen!==false;
   V.panels.rightOpen=V.panels.rightOpen!==false;
   V.panels.leftWidth=Math.max(92,Math.min(320,Number(V.panels.leftWidth)||132));
-  V.panels.rightWidth=Math.max(260,Math.min(520,Number(V.panels.rightWidth)||320));
+  V.panels.rightWidth=Math.max(280,Math.min(560,Number(V.panels.rightWidth)||360));
   return V.panels;
 }
 function syncViewerLayout(){
@@ -5719,6 +5730,14 @@ async function renderViewer(){
   const stale=()=>renderSequence!==viewerRenderSequence;
   syncViewerLayout();
   const p=state.cur; if(!p) return;
+  const auditRows=p.analysis?.rows||[];
+  const pendingAuditRows=auditRows.filter(reviewDecisionPending).length;
+  const blockingAuditRows=auditRows.filter(row=>Boolean(rowApprovalIssue(row))).length;
+  const pendingChip=$('#vAuditPending'),issuesChip=$('#vAuditIssues');
+  pendingChip.textContent=pendingAuditRows?`${pendingAuditRows} awaiting decision`:'Audit decisions complete';
+  pendingChip.className=`chip ${pendingAuditRows?'amber':'green'}`;
+  issuesChip.hidden=!blockingAuditRows;
+  issuesChip.textContent=`${blockingAuditRows} blocking issue${blockingAuditRows===1?'':'s'}`;
   const f=viewerFile();
   const ready=p.files.filter(x=>x.status==='ready');
   // §5.2 multi-document tabs
@@ -5726,7 +5745,11 @@ async function renderViewer(){
   tabs.innerHTML=ready.map(x=>`<div class="v-doctab${f&&x.id===f.id?' act':''}" data-id="${x.id}" title="${esc(x.name)}">${esc(x.name)}</div>`).join('');
   tabs.querySelectorAll('.v-doctab').forEach(t=>t.addEventListener('click',()=>{ state.viewer.fileId=t.dataset.id; state.viewer.page=1; renderViewer(); }));
   const stage=$('#vStage');
-  if (!f){ renderGuidedReviewControls();stage.innerHTML='<div class="empty">Upload a document first.</div>'; $('#vThumbs').innerHTML=''; $('#vDetList').innerHTML='<div class="empty">No detections.</div>'; return; }
+  if (!f){
+    $('#vAuditContext').textContent='No source document selected';
+    renderGuidedReviewControls();stage.innerHTML='<div class="empty">Upload a document first.</div>';
+    $('#vThumbs').innerHTML='';$('#vDetList').innerHTML='<div class="empty">No evidence available.</div>';return;
+  }
   state.viewer.fileId=f.id;
   const V=state.viewer;
   if (f.ext==='pdf' && rawStore[f.id] && !window.pdfjsLib){
@@ -5734,6 +5757,7 @@ async function renderViewer(){
     catch (error) { if(stale())return;stage.innerHTML='<div class="empty">PDF preview is unavailable: '+esc(error.message)+'</div>'; return; }
   }
   V.page=Math.min(Math.max(1,V.page), f.pages.length);
+  $('#vAuditContext').textContent=`${f.name} · Page ${V.page} of ${f.pages.length}`;
   syncViewerBoardToPage(f,V.page);
   renderGuidedReviewControls();
   $('#vPageNo').textContent=V.page; $('#vPageCt').textContent=f.pages.length;
@@ -5781,7 +5805,7 @@ async function renderViewer(){
     ${pg.sub_format&&PAGE_TYPES[pg.sub_format]&&pg.sub_format!==THREE_TO_FINE[pageThreeType(pg)]?`<span class="chip grey">${esc(PAGE_TYPES[pg.sub_format])}</span>`:''}
     ${extractionGap?'<span class="chip red">Extraction incomplete</span>':pg.typeManual?'<span class="chip grey">manually set</span>':confChip(pg.conf||0.3)}
     ${pg.ocr?`<span class="chip purple" title="${esc(pg.ocr.selectedCandidate||'OCR')}">OCR ${Math.round((pg.ocr.qualityScore||0)*100)}%</span>${pg.ocr.corrections?.length?`<span class="chip amber">${pg.ocr.corrections.length} correction${pg.ocr.corrections.length===1?'':'s'} to review</span>`:''}`:(pg.needsOcr?'<span class="chip amber">OCR queued</span>':'')}
-    <span class="hint" style="margin:0">${nDets} detection${nDets===1?'':'s'} on this page</span>
+    <span class="hint" style="margin:0">${nDets} evidence item${nDets===1?'':'s'} on this page</span>
     ${V.boardHl?`<span class="chip blue">${esc(boardLabel(V.boardHl))} on:</span> `+
       (hlPages.length?hlPages.map(n=>`<span class="chip ${n===V.page?'blue':'grey'}" data-goto="${n}" style="cursor:pointer">p${n}</span>`).join(' '):'<span class="hint" style="margin:0">not found in this document</span>'):''}`;
   $('#vMetaRow').querySelectorAll('[data-goto]').forEach(ch=>ch.addEventListener('click',()=>{ V.page=+ch.dataset.goto; renderViewer(); }));
@@ -5923,7 +5947,7 @@ async function renderViewer(){
     dl.innerHTML = listDets.length? listDets.map(viewerDetectionCardHtml).join('')
     : extractionGap
       ? '<div class="empty"><b>Schedule rows were not extracted.</b><br>Run Analyse documents before reviewing this page.</div>'
-      : '<div class="empty">No detections on this page.</div>';
+      : '<div class="empty">No audit evidence on this page.</div>';
     dl.querySelectorAll('.det').forEach(el=>{
       const d=listDets[+el.dataset.i];
       el.querySelectorAll('[data-action]').forEach(button=>button.addEventListener('click',async event=>{
@@ -5980,7 +6004,7 @@ $('#vThumbClose').addEventListener('click',()=>setViewerPanel('left',false));
 $('#vInfoClose').addEventListener('click',()=>setViewerPanel('right',false));
 function bindViewerResizer(id,side){
   const handle=$(id),widthKey=side==='left'?'leftWidth':'rightWidth';
-  const min=side==='left'?92:260,max=side==='left'?320:520;
+  const min=side==='left'?92:280,max=side==='left'?320:560;
   let resize=null;
   handle.addEventListener('pointerdown',event=>{
     if(event.button!==0)return;
