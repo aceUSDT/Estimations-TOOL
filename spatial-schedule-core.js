@@ -1800,6 +1800,19 @@
       && !row.validation?.invalidSensitivity && !row.validation?.invalidBreakingCapacity);
   }
 
+  function spatialOccupancyContinuationEligible(result) {
+    if (!result?.matched || !result.rows?.length || result.grid?.accepted === false) return false;
+    const observed = result.rows.filter((row) => !row.inferredWay);
+    const occupancyRows = observed.filter((row) => row.way != null && (row.spare || row.space));
+    const activeRows = observed.filter((row) => Core.isPopulatedProtectionRow
+      ? Core.isPopulatedProtectionRow(row) : !row.space && !row.spare);
+    if (activeRows.length || !occupancyRows.length) return false;
+    if (occupancyRows.length !== observed.length) return false;
+    if (new Set(occupancyRows.map((row) => String(row.way))).size < 1) return false;
+    return occupancyRows.every((row) => !row.classConflict && !row.phaseConflict
+      && !row.validation?.invalidSensitivity && !row.validation?.invalidBreakingCapacity);
+  }
+
   function parseSpatialScheduleDocument(pageInputs = [], options = {}) {
     const pages = (pageInputs || []).map((input, index) => ({
       ...input,
@@ -1865,13 +1878,15 @@
           const completeRows = activeRows.filter((row) => row.device && row.rating != null);
           const unresolvedPhaseRows = recovered.rows.filter((row) => row.phaseConflict).length;
           const completeness = activeRows.length ? completeRows.length / activeRows.length : 1;
+          const occupancyContinuation = spatialOccupancyContinuationEligible(recovered);
           const transferAccepted = Number(recovered.confidence || 0) >= 0.62
             && Number(recovered.grid?.populatedRows || 0) > 0
-            && completeness >= 0.5
             && unresolvedPhaseRows <= Math.max(1, Math.floor(recovered.rows.length * 0.5))
-            && spatialSchemaTransferEligible(recovered);
+            && (occupancyContinuation
+              || (completeness >= 0.5 && spatialSchemaTransferEligible(recovered)));
           entry.attempts[entry.attempts.length - 1].matched = transferAccepted;
           entry.attempts[entry.attempts.length - 1].completeness = Number(completeness.toFixed(2));
+          entry.attempts[entry.attempts.length - 1].occupancyContinuation = occupancyContinuation;
           if (transferAccepted) candidates.push({ result: recovered, hint, completeness });
         }
       }
