@@ -3,6 +3,12 @@
   "functions": {
     "api/extract.mjs": {
       "maxDuration": 300
+    },
+    "api/extract-background.mjs": {
+      "maxDuration": 300
+    },
+    "api/extract-status.mjs": {
+      "maxDuration": 30
     }
   },
   "headers": [
@@ -17,6 +23,8 @@
     }
   ],
   "rewrites": [
-    { "source": "/.netlify/functions/extract", "destination": "/api/extract" }
+    { "source": "/.netlify/functions/extract", "destination": "/api/extract" },
+    { "source": "/.netlify/functions/extract-background", "destination": "/api/extract-background" },
+    { "source": "/.netlify/functions/extract-status", "destination": "/api/extract-status" }
   ]
 }

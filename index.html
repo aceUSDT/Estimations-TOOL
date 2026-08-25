@@ -498,6 +498,8 @@
   .report-board-open{display:flex;align-items:center;gap:10px;min-width:0;color:#fff;text-align:left;}
   .report-board-open strong{font-size:14px;line-height:1.25;overflow-wrap:anywhere;}
   .report-board-open span{font-size:11px;color:#c9d0d8;}
+  .report-board-evidence{flex:0 0 auto;padding:6px 9px;border:1px solid #5d6671;color:#fff;background:#252a30;font-size:10.5px;font-weight:700;}
+  .report-board-evidence:hover{background:#343b43;border-color:#8d98a5;}
   .report-board-metrics{display:flex;align-items:center;gap:7px;margin-left:auto;flex:0 0 auto;}
   .report-board-metrics .metric{min-width:72px;text-align:right;}
   .report-board-metrics b{display:block;font-size:14px;}
@@ -1014,6 +1016,8 @@
 <script src="./vendor/exceljs.min.js"></script>
 <script src="./report-core.js"></script>
 <script src="./extractor-core.js"></script>
+<script src="./decision-core.js"></script>
+<script src="./review-core.js"></script>
 <script src="./spatial-schedule-core.js"></script>
 <script src="./schematic-topology-core.js"></script>
 <script>
@@ -1221,6 +1225,13 @@ function saveProject(p){
   if (!idbOk) return;
   clearTimeout(saveTimers[p.id]);
   saveTimers[p.id]=setTimeout(()=>{delete saveTimers[p.id];putProjectRecord(p);},200);
+}
+async function persistProjectNow(p){
+  if(!p||p.testFixture)return true;
+  clearTimeout(saveTimers[p.id]);delete saveTimers[p.id];
+  p.updated=todayStr();
+  if(!idbOk)return true;
+  return putProjectRecord(p);
 }
 async function flushProjectSaves(){
   const pending=Object.keys(saveTimers).map(id=>{
@@ -1699,7 +1710,7 @@ function setTab(name){
   return null;
 }
 $$('.ptab').forEach(t=>t.addEventListener('click',()=>setTab(t.dataset.pt)));
-$('#backBtn').addEventListener('click', ()=>{ stopGuidedReview(false);state.cur=null;if(!analysisBusy)hideProcessing();renderProjects(); show('home'); });
+$('#backBtn').addEventListener('click', ()=>{ pauseGuidedReview();state.cur=null;if(!analysisBusy)hideProcessing();renderProjects(); show('home'); });
 $('#backupProjectBtn').addEventListener('click',()=>backupProject(state.cur));
 $('#restoreProjectBtn').addEventListener('click',()=>$('#restoreProjectInput').click());
 $('#newProjectBtn').addEventListener('click',()=>$('.proj-card.new')?.click());
@@ -1711,7 +1722,7 @@ $('#restoreProjectInput').addEventListener('change',async event=>{
 /* ============================ PROJECT MODEL ============================ */
 function newProject(name){
   return { id:uid(), name, created:todayStr(), updated:todayStr(), status:'Not analysed',
-    files:[], analysis:null, assistedMarkups:[], approvalLog:[] };
+    files:[], analysis:null, assistedMarkups:[], approvalLog:[], correctionLog:[], reviewSession:null, contractVersions:{decisions:1,review:1} };
 }
 function bufferToBase64(buffer){
   const bytes=new Uint8Array(buffer);let binary='';
@@ -1770,7 +1781,15 @@ function ensureAssistedState(p){
 function ensureProjectState(p){
   if(!p)return p;
   ensureAssistedState(p);
-  if(!Array.isArray(p.approvalLog))p.approvalLog=[];
+  if(window.EstimationDecisionCore)window.EstimationDecisionCore.ensureProject(p);
+  else{
+    if(!Array.isArray(p.approvalLog))p.approvalLog=[];
+    if(!Array.isArray(p.correctionLog))p.correctionLog=[];
+  }
+  if(window.EstimationReviewCore){
+    p.contractVersions=p.contractVersions||{};
+    p.contractVersions.review=window.EstimationReviewCore.CONTRACT_VERSION;
+  }
   return p;
 }
 function isSchematicTopologyEvidence(row){
@@ -1871,11 +1890,12 @@ function renderProjects(){
   g.appendChild(add);
 }
 function openProject(id){
-  stopGuidedReview(false);
+  pauseGuidedReview();
   state.cur = state.projects.find(p=>p.id===id);
   if (!state.cur) return;
   if(!analysisBusy)hideProcessing();
   ensureProjectState(state.cur);
+  restoreGuidedReviewSession(state.cur);
   show('proj');
   $('#projTitle').textContent=state.cur.name;
   state.viewer={fileId:null,page:1,zoom:1,rot:0,dark:state.viewer.dark,fullscreen:false,boardHl:null,evidenceId:null,pdfDocs:state.viewer.pdfDocs,panels:state.viewer.panels,assist:{enabled:false,boardNorm:null,seed:null,results:[]}};
@@ -2186,8 +2206,8 @@ let aiProbePromise=null;
 window.__aiStatus='unknown';
 window.__aiExecutionMode='background';
 const AI_RECOVERY_MAX_PAGES=3;
-const AI_RECOVERY_PAGE_TIMEOUT_MS=25000;
-const AI_RECOVERY_TOTAL_BUDGET_MS=45000;
+const AI_RECOVERY_PAGE_TIMEOUT_MS=180000;
+const AI_RECOVERY_TOTAL_BUDGET_MS=360000;
 const AI_PROBE_TIMEOUT_MS=5000;
 function aiExtractReady(){
   if(!appSettings.onlineExtraction){window.__aiStatus='local only';return Promise.resolve(false);}
@@ -2281,18 +2301,29 @@ async function aiExtractPage(f,pageNo,pg,{signal=null,timeoutMs=AI_RECOVERY_PAGE
     if(!response.ok)throw new Error(result.error||('HTTP '+response.status));
     return result;
   }
-  const jobId=uid()+'_'+Date.now();
   const r=await fetchWithTimeout(AI_BG_ENDPOINT,{method:'POST',headers:{'content-type':'application/json'},
-    body:JSON.stringify({...payload,job_id:jobId})},remaining(),signal);
-  if(!r.ok && r.status!==202){ const err=await r.json().catch(()=>({})); throw new Error(err.error||('HTTP '+r.status)); }
+    body:JSON.stringify(payload)},remaining(),signal);
+  const submission=await r.json().catch(()=>({}));
+  if(!r.ok || r.status!==202)throw new Error(submission.error||('HTTP '+r.status));
+  const jobId=submission.jobId;
+  if(!jobId)throw new Error('Background extraction did not return a job id');
+  const acknowledge=()=>fetch(AI_STATUS_ENDPOINT+'?id='+encodeURIComponent(jobId),{method:'DELETE',keepalive:true}).catch(()=>{});
   while(Date.now()<deadline){
     await abortableDelay(Math.min(2500,remaining()),signal);
     let s; try{
       const statusResponse=await fetchWithTimeout(AI_STATUS_ENDPOINT+'?id='+encodeURIComponent(jobId),{},Math.min(5000,remaining()),signal);
       s=await statusResponse.json();
+      if(!statusResponse.ok){
+        if(statusResponse.status===404)throw new Error(s.error||'Background extraction job is no longer available');
+        continue;
+      }
     }catch(e){if(signal?.aborted)throw e;continue;}
-    if(s.status==='done') return s;   // {result, verification?, provider, model}
-    if(s.status==='error') throw new Error(s.error||'extraction failed');
+    if(s.status==='done'){
+      if(!s.result||typeof s.result!=='object'){void acknowledge();throw new Error('Background extraction returned no structured result');}
+      void acknowledge();return s.result;
+    }
+    if(s.status==='error'){void acknowledge();throw new Error(s.error||'extraction failed');}
+    if(s.status==='missing')throw new Error('Background extraction job is no longer available');
   }
   throw new DOMException('Enhanced extraction page deadline reached','TimeoutError');
 }
@@ -2409,6 +2440,30 @@ function mergeAiResult(A,out,fileId,pageNo,pageType){
   (out.flags||[]).forEach(fl=>{ (A.aiFlags=A.aiFlags||[]).push({fileId, page:pageNo, kind:fl.kind, message:fl.message}); });
 }
 function applyAiAudit(A,response,fileId,pageNo){
+  const contract=response?.contract||response?.result?.contract;
+  if(contract){
+    const summary={...contract,document:{...(contract.document||{}),fileId,filename:undefined,pageNumber:pageNo}};
+    (A.perceptionContracts=A.perceptionContracts||[]).push(summary);
+    const reasonLabels={
+      duplicate_board_reference:'AI perception found duplicate board identities on this page',
+      device_without_board_reference:'AI perception found a device row without a board reference',
+      device_class_missing:'AI perception found a row without a resolved device class',
+      device_rating_missing:'AI perception found a protective device without a current rating',
+      feed_endpoint_missing:'AI perception found a feeder without both endpoints',
+      possible_missing_rows:'AI perception indicates that schedule rows may be missing',
+      unreadable_region:'AI perception found an unreadable source region',
+    };
+    (contract.validation?.reasonCodes||[]).forEach(reasonCode=>{
+      const message=reasonLabels[reasonCode]||`AI perception requires review: ${reasonCode}`;
+      (A.aiAuditFindings=A.aiAuditFindings||[]).push({fileId,page:pageNo,boardNorm:null,way:null,kind:`perception_${reasonCode}`,message});
+      if(!['possible_missing_rows','unreadable_region'].includes(reasonCode))return;
+      const sourceKey=`perception-contract|${fileId}|${pageNo}|${reasonCode}`;
+      if(!A.rows.some(row=>row.sourceKey===sourceKey))A.rows.push({id:uid(),sourceKey,boardNorm:null,fileId,page:pageNo,line:null,
+        status:'pending',kind:'ai',way:null,phase:null,desc:message,device:null,rating:null,poles:null,curve:null,sens:null,
+        rcdProtected:null,afdd:null,ka:null,cable:null,spare:false,space:false,incomer:false,qty:0,srcText:message,
+        conf:0.3,requiresReview:true,contractReview:true,extractionMethod:'AI perception contract'});
+    });
+  }
   const verification=response?.verification;
   if(verification){
     A.xcheck=A.xcheck||{pages:0,errors:0,mismatches:0,provider:null};
@@ -2991,8 +3046,16 @@ const SCHEDULE_TYPES=new Set(['db-schedule','main-schedule','equipment-schedule'
 const MENTION_TYPES=new Set(['lighting-plan','power-plan','fire-plan','containment-plan','unknown','spec']);
 function stableRowSourceKey(row){
   if(row?.sourceKey)return row.sourceKey;
+  if(window.EstimationDecisionCore?.canonicalRowSourceKey)return window.EstimationDecisionCore.canonicalRowSourceKey(row);
   const bbox=row?.highlightBbox||row?.bbox||row?.sourceCell?.bbox||null;
-  return [row?.fileId||'',row?.page??'',Array.isArray(bbox)?bbox.map(value=>Number(value).toFixed(2)).join(','):'',row?.line??'',row?.srcText||''].join('|');
+  const geometry=Array.isArray(bbox)?bbox.map(value=>Number(value).toFixed(2)).join(','):'';
+  const line=row?.line==null?'':String(row.line);
+  const anchor=geometry||line?'':String(row?.srcText||row?.originalOcrText||'').trim();
+  return [row?.fileId||'',row?.page??'',geometry,line,anchor].join('|');
+}
+function canonicalRowSourceKey(row){
+  if(window.EstimationDecisionCore?.canonicalRowSourceKey)return window.EstimationDecisionCore.canonicalRowSourceKey(row);
+  return stableRowSourceKey({...row,sourceKey:null});
 }
 function sourceTrace(row,line,pg,fileName){
   if(!line)return {fileName,extractionMethod:pg?.source==='ocr'?'OCR':'Embedded text / deterministic parser'};
@@ -3451,10 +3514,14 @@ async function runAnalysis(opts){
   // Carry forward approvals and user corrections against stable source evidence.
   if (prev){
     const key=r=>stableRowSourceKey(r);
-    const prevMap={}; prev.rows.forEach(r=>{ if(r.kind!=='manual') prevMap[key(r)]=r; });
-    const correctedFields=['boardNorm','way','phase','device','qty','rating','curve','poleConfiguration','poles','protectionStandard','tripUnit','ka','rcdProtected','rcdArrangement','sens','afdd','afddIndicated','circuitReference','desc'];
+    const prevMap={}; prev.rows.forEach(r=>{
+      if(r.kind==='manual')return;
+      prevMap[key(r)]=r;
+      prevMap[canonicalRowSourceKey(r)]=r;
+    });
+    const correctedFields=['boardNorm','way','phase','device','qty','rating','curve','poleConfiguration','poles','protectionStandard','tripUnit','protectionCode','ka','rcdProtected','rcdArrangement','rcdType','sens','afdd','afddIndicated','earthFaultDevice','arcFlashDevice','circuitReference','circuitConfig','serviceCode','discipline','cable','spare','space','incomer','desc'];
     A.rows.forEach(r=>{
-      const o=prevMap[key(r)];if(!o)return;
+      const o=prevMap[key(r)]||prevMap[canonicalRowSourceKey(r)];if(!o)return;
       if(o.status!=='pending')r.status=o.status;
       if(o.edited){
         correctedFields.forEach(field=>{if(Object.prototype.hasOwnProperty.call(o,field))r[field]=o[field];});
@@ -3464,7 +3531,19 @@ async function runAnalysis(opts){
       }
     });
     prev.rows.filter(r=>r.kind==='manual').forEach(r=>A.rows.push(r));
-    Object.values(prev.boards).forEach(b=>{ if(b.manual){ if(!A.boards[b.norm]) A.boards[b.norm]=b; A.boards[b.norm].parent=b.parent; A.boards[b.norm].manual=true; } });
+    Object.values(prev.boards).forEach(previousBoard=>{
+      if(!previousBoard.manual)return;
+      const sourceNorm=previousBoard.sourceNorm||previousBoard.norm;
+      const detected=A.boards[sourceNorm]||A.boards[previousBoard.norm]||null;
+      if(sourceNorm!==previousBoard.norm&&window.EstimationDecisionCore){
+        window.EstimationDecisionCore.renameBoardReferences(p,A,sourceNorm,previousBoard.norm);
+        delete A.boards[sourceNorm];
+      }
+      const pages=[...(detected?.pages||[]),...(previousBoard.pages||[])].filter((item,index,all)=>
+        all.findIndex(candidate=>candidate.fileId===item.fileId&&Number(candidate.page)===Number(item.page)&&Boolean(candidate.primary)===Boolean(item.primary))===index);
+      A.boards[previousBoard.norm]={...(detected||{}),...JSON.parse(JSON.stringify(previousBoard)),pages,
+        header:{...(detected?.header||{}),...(previousBoard.header||{})},manual:true};
+    });
   }
   if(window.EstimationExtractorCore?.reconcileCombinedProtection){
     A.rows=A.rows.map(row=>window.EstimationExtractorCore.reconcileCombinedProtection(row));
@@ -3811,6 +3890,29 @@ function firstBlockingReviewGap(queue=orderedPendingReviewRows()){
 function guidedReviewBoardKeys(rows=orderedPendingReviewRows()){
   return [...new Set(rows.map(row=>row.boardNorm||'__none__'))];
 }
+function emptyGuidedReviewFlow(){
+  return window.EstimationReviewCore?.emptySession?.()
+    ||{active:false,currentRowId:null,initialCount:0,moving:false,boardOrder:[],initialByBoard:{},rowOrderByBoard:{}};
+}
+function syncGuidedReviewSession(project=state.cur){
+  if(!project)return;
+  project.reviewSession=window.EstimationReviewCore?.serialise
+    ?window.EstimationReviewCore.serialise(state.reviewFlow)
+    :JSON.parse(JSON.stringify(state.reviewFlow||emptyGuidedReviewFlow()));
+  project.contractVersions=project.contractVersions||{};
+  project.contractVersions.review=window.EstimationReviewCore?.CONTRACT_VERSION||1;
+}
+function pauseGuidedReview(){
+  if(state.cur&&state.reviewFlow?.active){syncGuidedReviewSession(state.cur);saveProject(state.cur);}
+  state.reviewFlow=emptyGuidedReviewFlow();
+}
+function restoreGuidedReviewSession(project){
+  const queue=orderedPendingReviewRows();
+  state.reviewFlow=window.EstimationReviewCore?.restoreSession
+    ?window.EstimationReviewCore.restoreSession(project?.reviewSession,queue)
+    :emptyGuidedReviewFlow();
+  if(state.reviewFlow.active)syncGuidedReviewSession(project);
+}
 function guidedReviewCurrentRow(){
   return state.cur?.analysis?.rows?.find(row=>row.id===state.reviewFlow.currentRowId)||null;
 }
@@ -3869,6 +3971,7 @@ function renderGuidedReviewControls(){
 async function showGuidedReviewRow(row){
   if(!row)return;
   state.reviewFlow.currentRowId=row.id;
+  syncGuidedReviewSession();
   if(row.boardNorm)state.selectedBoard=row.boardNorm;
   state.viewer.boardHl=row.boardNorm||null;
   state.viewer.assist.boardNorm=row.boardNorm||null;
@@ -3894,13 +3997,15 @@ async function startGuidedReview(){
   const gap=firstBlockingReviewGap(queue);
   if(gap){await showGuidedReviewGap(gap);return;}
   if(!queue.length){toast('Every extracted row already has a decision');renderGuidedReviewControls();return;}
-  const boardOrder=guidedReviewBoardKeys(queue),initialByBoard={},rowOrderByBoard={};
-  queue.forEach(row=>{
-    const key=row.boardNorm||'__none__';
-    initialByBoard[key]=(initialByBoard[key]||0)+1;
-    (rowOrderByBoard[key]=rowOrderByBoard[key]||[]).push(row.id);
-  });
-  state.reviewFlow={active:true,currentRowId:queue[0].id,initialCount:queue.length,moving:false,boardOrder,initialByBoard,rowOrderByBoard};
+  state.reviewFlow=window.EstimationReviewCore?.startSession
+    ?window.EstimationReviewCore.startSession(queue)
+    :{active:true,currentRowId:queue[0].id,initialCount:queue.length,moving:false,boardOrder:guidedReviewBoardKeys(queue),initialByBoard:{},rowOrderByBoard:{}};
+  syncGuidedReviewSession();
+  if(!await persistProjectNow(state.cur)){
+    state.reviewFlow=emptyGuidedReviewFlow();
+    toast('Guided review could not start because local storage is unavailable');
+    return;
+  }
   await showGuidedReviewRow(queue[0]);
 }
 async function focusGuidedReview(){
@@ -3914,7 +4019,8 @@ async function focusGuidedReview(){
 function stopGuidedReview(showToast=true){
   if(!state.reviewFlow)return;
   const wasActive=state.reviewFlow.active;
-  state.reviewFlow={active:false,currentRowId:null,initialCount:0,moving:false,boardOrder:[],initialByBoard:{},rowOrderByBoard:{}};
+  state.reviewFlow=emptyGuidedReviewFlow();
+  if(state.cur){syncGuidedReviewSession();saveProject(state.cur);}
   renderGuidedReviewControls();
   if(showToast&&wasActive)toast('Guided review stopped');
 }
@@ -3934,18 +4040,30 @@ async function advanceGuidedReview(completedRow,action='decision saved'){
   if(!queue.length){
     const total=flow.initialCount;
     stopGuidedReview(false);
+    await persistProjectNow(state.cur);
     await renderViewer();
     toast(`Guided review complete · ${total} decision${total===1?'':'s'} saved`);
     return;
   }
   const sameBoard=queue.filter(row=>(row.boardNorm||'__none__')===previousBoard);
   const next=sameBoard[0]||queue[0],nextBoard=next.boardNorm||'__none__';
-  flow.currentRowId=next.id;flow.moving=false;
+  state.reviewFlow=window.EstimationReviewCore?.nextSession
+    ?window.EstimationReviewCore.nextSession(flow,queue,completedRow)
+    :{...flow,currentRowId:next.id,moving:false};
+  syncGuidedReviewSession();
+  if(!await persistProjectNow(state.cur)){
+    toast('Decision was saved, but review progress could not move because local storage failed');
+    return;
+  }
   await showGuidedReviewRow(next);
   toast(previousBoard===nextBoard?`${action} · moved to the next row`:`${guidedBoardName(previousBoard)} complete · moved to ${guidedBoardName(nextBoard)}`);
 }
-function scheduleGuidedAdvance(row,action){
-  if(state.reviewFlow.active&&state.reviewFlow.currentRowId===row?.id)setTimeout(()=>advanceGuidedReview(row,action),0);
+async function scheduleGuidedAdvance(row,action){
+  if(!state.reviewFlow.active||state.reviewFlow.currentRowId!==row?.id)return;
+  syncGuidedReviewSession();
+  const saved=await persistProjectNow(state.cur);
+  if(!saved){toast('Decision kept in this session, but local storage failed. Review has not advanced.');return;}
+  await advanceGuidedReview(row,action);
 }
 /* Stable specification colours keep visually different devices distinct even
    when they share a broad family such as MCB or RCBO. */
@@ -4141,7 +4259,124 @@ function boardHeaderCard(b){
     ['Fault rating', h.fault_ka!=null&&h.fault_ka!==''?h.fault_ka+'kA':'—'],
     ['Metering', val(h.metering)],
   ];
-  return `<div class="bd-hdr">${fields.map(([k,v,wide])=>`<div${wide?' class="wide"':''}><div class="k">${esc(k)}</div><div class="v">${esc(String(v))}</div></div>`).join('')}</div>`;
+  const corrected=Array.isArray(b.corrections)&&b.corrections.length
+    ?`<div class="wide"><span class="chip blue">${b.corrections.length} correction${b.corrections.length===1?'':'s'}</span><span class="hint" style="display:inline;margin-left:8px">Corrected values are used in review and reports.</span></div>`:'';
+  return `<div class="bd-hdr">${fields.map(([k,v,wide])=>`<div${wide?' class="wide"':''}><div class="k">${esc(k)}</div><div class="v">${esc(String(v))}</div></div>`).join('')}${corrected}</div>`;
+}
+function openBoardEditor(boardNorm,surface='Boards & Devices'){
+  const p=ensureProjectState(state.cur),A=p?.analysis;
+  if(!p||!A){toast('Board details are no longer available');return;}
+  const existingBoard=A.boards?.[boardNorm]||null,createdForCorrection=!existingBoard&&Boolean(boardNorm);
+  let b=existingBoard||(createdForCorrection?{norm:boardNorm,orig:boardNorm,type:'UNK',family:'unknown',pages:[],parent:null,parentConf:0,manual:true,edited:true,header:{},corrections:[]}:null);
+  if(!b){toast('Board details are no longer available');return;}
+  const h=b.header||{},value=key=>h[key]??'';
+  const boardTypeOptions=Object.entries(BOARD_TYPES).map(([key,label])=>`<option value="${key}" ${b.type===key?'selected':''}>${esc(label)}</option>`).join('');
+  const familyOptions=[['','Not specified'],['distribution_board','Distribution board'],['consumer_unit','Consumer unit'],['panelboard','Panelboard'],['switchboard','Switchboard'],['unknown','Unresolved']]
+    .map(([key,label])=>`<option value="${key}" ${String(b.family||'')===key?'selected':''}>${label}</option>`).join('');
+  const currentParent=b.parent||h.fed_from_ref||null;
+  const parentCandidates=Object.values(A.boards).filter(candidate=>candidate.norm!==boardNorm&&candidate.inScope!==false);
+  if(currentParent&&!parentCandidates.some(candidate=>candidate.norm===currentParent)){
+    parentCandidates.push({norm:currentParent,orig:currentParent,referenceOnly:true});
+  }
+  const parentOptions=parentCandidates
+    .sort((left,right)=>String(left.orig||left.norm).localeCompare(String(right.orig||right.norm),undefined,{numeric:true,sensitivity:'base'}))
+    .map(candidate=>`<option value="${esc(candidate.norm)}" ${currentParent===candidate.norm?'selected':''}>${esc(candidate.orig||candidate.norm)}${candidate.referenceOnly?' (reference only)':''}</option>`).join('');
+  const field=(id,label,current,options={})=>`<div${options.wide?' class="span-2"':''}><label class="lbl">${label}</label><input class="in" id="${id}" ${options.input||''} value="${esc(current)}" placeholder="Not specified"></div>`;
+  openModal('Correct board details',`
+    <div class="row-editor-grid">
+      ${field('bReference','Board reference',b.orig||b.norm,{wide:true})}
+      ${field('bJobReference','Job reference',value('job_reference'))}
+      ${field('bJobNumber','Job number',value('job_number'))}
+      <div><label class="lbl">Board type</label><select class="sel" id="bType">${boardTypeOptions}</select></div>
+      <div><label class="lbl">Equipment family</label><select class="sel" id="bFamily">${familyOptions}</select></div>
+      <div><label class="lbl">Phase configuration</label><select class="sel" id="bPhase"><option value="" ${!value('phase_config')?'selected':''}>Not specified</option>${['SPN','TPN','mixed','ambiguous'].map(item=>`<option value="${item}" ${value('phase_config')===item?'selected':''}>${item}</option>`).join('')}</select></div>
+      <div><label class="lbl">Supplied from</label><select class="sel" id="bParent"><option value="">Not specified</option>${parentOptions}</select></div>
+      ${field('bParentNew','New / corrected supplied-from reference','')}
+      ${field('bSuppliedFromText','Supplied-from source text',value('supplied_from_text'),{wide:true})}
+      ${field('bRating','Board rating (A)',value('board_rating_a'),{input:'inputmode="decimal"'})}
+      ${field('bVoltage','Voltage (V)',value('voltage_v'),{input:'inputmode="decimal"'})}
+      ${field('bPhaseCount','Phase count',value('phase_count'),{input:'inputmode="numeric"'})}
+      ${field('bSize','Board type / size',value('board_type_text'))}
+      ${field('bDescription','Board description',value('description'),{wide:true})}
+      ${field('bWays','Ways total',value('ways_total'),{input:'inputmode="numeric"'})}
+      ${field('bWaysSp','SP ways',value('ways_sp'),{input:'inputmode="numeric"'})}
+      ${field('bWaysTp','TP ways',value('ways_tp'),{input:'inputmode="numeric"'})}
+      ${field('bIncomerClass','Incomer class',value('incomer_class'))}
+      ${field('bIncomerRating','Incomer rating (A)',value('incomer_rating_a'),{input:'inputmode="decimal"'})}
+      ${field('bIncomerPoles','Incomer poles',value('incomer_poles'),{input:'inputmode="numeric"'})}
+      ${field('bSupplyCpdClass','Supply CPD class',value('supply_cpd_class'))}
+      ${field('bSupplyCpdRating','Supply CPD rating (A)',value('supply_cpd_rating_a'),{input:'inputmode="decimal"'})}
+      ${field('bSupplyCpdStandard','Supply CPD standard',value('supply_cpd_standard'))}
+      ${field('bSupplyCpdTrip','Supply CPD trip unit',value('supply_cpd_trip_unit'))}
+      ${field('bFault','Fault rating (kA)',value('fault_ka'),{input:'inputmode="decimal"'})}
+      ${field('bPurpose','Purpose',value('purpose'),{wide:true})}
+      ${field('bServing','Serving',value('serving'),{wide:true})}
+      ${field('bLocation','Location',value('location'),{wide:true})}
+      ${field('bSupplyCable','Supply cable',value('supply_cable_details'),{wide:true})}
+      ${field('bSupplyCpd','Supply CPD',value('supply_cpd_details'),{wide:true})}
+      ${field('bIsolator','Internal isolator',value('internal_isolator_details'),{wide:true})}
+      ${field('bIsolatorClass','Internal isolator class',value('internal_isolator_class'))}
+      ${field('bIsolatorRating','Internal isolator rating (A)',value('internal_isolator_rating_a'),{input:'inputmode="decimal"'})}
+      ${field('bModel','Board model',value('board_model'))}
+      ${field('bMetering','Metering',value('metering'))}
+      ${field('bSpare','Spare capacity (%)',value('spare_capacity_pct'),{input:'inputmode="decimal"'})}
+      ${field('bFamilyReason','Equipment family basis',value('board_family_reason'),{wide:true})}
+      ${field('bPhaseEvidence','Phase configuration evidence',value('phase_config_evidence'),{wide:true})}
+      <div><label class="lbl">Continuation page</label><select class="sel" id="bContinuation"><option value="" ${value('continuation')===''?'selected':''}>Not specified</option><option value="yes" ${value('continuation')===true?'selected':''}>Yes</option><option value="no" ${value('continuation')===false?'selected':''}>No</option></select></div>
+      <div class="span-2"><label class="lbl">Correction note <span class="hint" style="display:inline;margin:0">optional</span></label><input class="in" id="bCorrectionReason" placeholder="Why these board details were changed"></div>
+    </div>
+  `,()=>{
+    const reference=$('#bReference').value.trim();
+    if(!reference){toast('Board reference is required');return false;}
+    const canonical=window.EstimationExtractorCore?.canonicalBoardReference?.(reference)||{display:reference.toUpperCase(),normalised:normBoard(reference)};
+    if(!canonical.normalised){toast('Enter a valid board reference');return false;}
+    const numberOrNull=id=>{const raw=$(id).value.trim();if(!raw)return null;const number=Number(raw);if(!Number.isFinite(number)){toast('Enter a valid number for '+$(id).previousElementSibling?.textContent);return undefined;}return number;};
+    const numeric={
+      board_rating_a:numberOrNull('#bRating'),voltage_v:numberOrNull('#bVoltage'),ways_total:numberOrNull('#bWays'),ways_sp:numberOrNull('#bWaysSp'),ways_tp:numberOrNull('#bWaysTp'),
+      phase_count:numberOrNull('#bPhaseCount'),incomer_rating_a:numberOrNull('#bIncomerRating'),incomer_poles:numberOrNull('#bIncomerPoles'),
+      supply_cpd_rating_a:numberOrNull('#bSupplyCpdRating'),internal_isolator_rating_a:numberOrNull('#bIsolatorRating'),fault_ka:numberOrNull('#bFault'),spare_capacity_pct:numberOrNull('#bSpare'),
+    };
+    if(Object.values(numeric).some(item=>item===undefined))return false;
+    const textOrNull=id=>$(id).value.trim()||null;
+    const typedParent=textOrNull('#bParentNew');
+    const parentCanonical=typedParent?(window.EstimationExtractorCore?.canonicalBoardReference?.(typedParent)||{display:typedParent.toUpperCase(),normalised:normBoard(typedParent)}):null;
+    const selectedParent=$('#bParent').value||null;
+    const nextParent=parentCanonical?.normalised||selectedParent;
+    const parentChanged=Boolean(typedParent)||selectedParent!==currentParent;
+    const boardParent=parentChanged?nextParent:(b.parent??null);
+    const headerParent=parentChanged?nextParent:(h.fed_from_ref??null);
+    if(nextParent===canonical.normalised){toast('A board cannot be supplied from itself');return false;}
+    if(parentCanonical&&nextParent&&!A.boards[nextParent]){
+      A.boards[nextParent]={norm:nextParent,orig:parentCanonical.display,type:'UNK',family:'unknown',pages:[],parent:null,parentConf:0,manual:true,edited:true,header:{},corrections:[]};
+    }
+    const continuationValue=$('#bContinuation').value;
+    try{
+      if(createdForCorrection){A.boards=A.boards||{};A.boards[boardNorm]=b;}
+      const result=window.EstimationDecisionCore.applyBoardPatch(p,A,boardNorm,{
+        norm:canonical.normalised,orig:canonical.display,type:$('#bType').value||'UNK',family:$('#bFamily').value||null,parent:boardParent,
+        header:{...numeric,job_reference:textOrNull('#bJobReference'),job_number:textOrNull('#bJobNumber'),description:textOrNull('#bDescription'),
+          phase_config:$('#bPhase').value||null,phase_config_evidence:textOrNull('#bPhaseEvidence'),board_type_text:textOrNull('#bSize'),board_family_reason:textOrNull('#bFamilyReason'),
+          fed_from_ref:headerParent,supplied_from_text:textOrNull('#bSuppliedFromText'),continuation:continuationValue===''?null:continuationValue==='yes',purpose:textOrNull('#bPurpose'),serving:textOrNull('#bServing'),
+          location:textOrNull('#bLocation'),supply_cable_details:textOrNull('#bSupplyCable'),supply_cpd_details:textOrNull('#bSupplyCpd'),internal_isolator_details:textOrNull('#bIsolator'),
+          supply_cpd_class:textOrNull('#bSupplyCpdClass'),supply_cpd_standard:textOrNull('#bSupplyCpdStandard'),supply_cpd_trip_unit:textOrNull('#bSupplyCpdTrip'),
+          internal_isolator_class:textOrNull('#bIsolatorClass'),incomer_class:textOrNull('#bIncomerClass'),board_model:textOrNull('#bModel'),metering:textOrNull('#bMetering')},
+      },{surface,reason:textOrNull('#bCorrectionReason')||'User correction in '+surface});
+      const next=result.boardNorm;
+      if(state.selectedBoard===boardNorm)state.selectedBoard=next;
+      if(state.viewer.boardHl===boardNorm)state.viewer.boardHl=next;
+      if(state.viewer.assist?.boardNorm===boardNorm)state.viewer.assist.boardNorm=next;
+      if(window.EstimationReviewCore?.renameBoard)state.reviewFlow=window.EstimationReviewCore.renameBoard(state.reviewFlow,boardNorm,next);
+      else{
+        if(state.reviewFlow?.boardOrder)state.reviewFlow.boardOrder=state.reviewFlow.boardOrder.map(item=>item===boardNorm?next:item);
+        if(state.reviewFlow?.initialByBoard?.[boardNorm]!=null){state.reviewFlow.initialByBoard[next]=state.reviewFlow.initialByBoard[boardNorm];delete state.reviewFlow.initialByBoard[boardNorm];}
+        if(state.reviewFlow?.rowOrderByBoard?.[boardNorm]){state.reviewFlow.rowOrderByBoard[next]=state.reviewFlow.rowOrderByBoard[boardNorm];delete state.reviewFlow.rowOrderByBoard[boardNorm];}
+      }
+      syncGuidedReviewSession();
+      refreshAnalysisHealth();renderTakeoff();renderReport();renderProjHeader();saveProject(p);
+      toast(result.changedFields.length?`Board corrected · ${result.changedFields.length} field${result.changedFields.length===1?'':'s'} updated`:'No board details changed');
+    }catch(error){if(createdForCorrection&&A.boards?.[boardNorm]===b)delete A.boards[boardNorm];toast(error.message||String(error));return false;}
+  });
+  $('#modalBk .modal')?.classList.add('row-editor-modal','is-flexible');
 }
 function boardEvidenceLocation(norm){
   const p=state.cur,A=p&&p.analysis,b=A&&A.boards[norm];if(!p||!A||!b)return null;
@@ -4181,11 +4416,18 @@ function boardHealthHtml(norm,rows,b){
   return `<div class="bd-health ${cls}"><b>${esc(title)}</b><span>${esc(detail)}</span></div>`;
 }
 function boardApprovalLogHtml(norm){
-  const entries=ensureProjectState(state.cur).approvalLog.filter(item=>(item.boardNorm||'__none__')===norm).slice(0,30);
-  return `<div class="approval-log"><div style="padding:11px 18px;font-weight:800;font-size:13px">Decision history <span class="chip grey" style="margin-left:6px">${entries.length}</span></div>${entries.length?entries.map(item=>{
+  const project=ensureProjectState(state.cur);
+  const decisionBoard=item=>item.canonicalBoardNorm||item.boardNorm||'__none__';
+  const decisions=project.approvalLog.filter(item=>decisionBoard(item)===norm);
+  const corrections=project.correctionLog.filter(item=>decisionBoard(item)===norm).map(item=>({
+    ...item,action:`Corrected ${item.fieldLabel||item.field||'field'}`,summary:`${window.EstimationDecisionCore?.displayValue?.(item.before)??item.before??'Not specified'} → ${window.EstimationDecisionCore?.displayValue?.(item.after)??item.after??'Not specified'}`,
+    note:item.reason,surface:item.surface||'App',isCorrection:true,
+  }));
+  const entries=[...decisions,...corrections].sort((left,right)=>String(right.createdAt||'').localeCompare(String(left.createdAt||''))).slice(0,50);
+  return `<div class="approval-log"><div style="padding:11px 18px;font-weight:800;font-size:13px">Decision and correction history <span class="chip grey" style="margin-left:6px">${entries.length}</span></div>${entries.length?entries.map(item=>{
     const when=new Date(item.createdAt);const stamp=Number.isNaN(when.getTime())?item.createdAt:when.toLocaleString('en-GB',{dateStyle:'medium',timeStyle:'short'});
-    return `<div class="approval-entry"><b>${esc(item.action)} · ${esc(item.summary||'Evidence row')}</b><span class="chip ${/Reject/i.test(item.action)?'red':'green'}">${esc(item.surface||'App')}</span><div class="meta">${esc(stamp)}${item.note?' · '+esc(item.note):''}</div><div class="meta">${item.page!=null?'Page '+item.page:''}</div></div>`;
-  }).join(''):'<div class="empty">No decisions logged for this board yet.</div>'}</div>`;
+    return `<div class="approval-entry"><b>${esc(item.action)} · ${esc(item.summary||'Evidence row')}</b><span class="chip ${item.isCorrection?'blue':/Reject/i.test(item.action)?'red':'green'}">${esc(item.surface||'App')}</span><div class="meta">${esc(stamp)}${item.note?' · '+esc(item.note):''}</div><div class="meta">${item.page!=null?'Page '+item.page:''}</div></div>`;
+  }).join(''):'<div class="empty">No decisions or corrections logged for this board yet.</div>'}</div>`;
 }
 function selectBoard(norm){
   state.selectedBoard = state.selectedBoard===norm ? null : norm;
@@ -4218,10 +4460,12 @@ function renderBoardDetail(){
   const blockedPendingRows=pendingRows.length-approvablePendingRows.length;
   head.innerHTML=`<button class="btn sm ghost" id="bdBack">‹ All boards</button> <b style="margin-left:6px">${esc(label)}</b>
     <span style="margin-left:auto;display:flex;gap:7px;align-items:center;flex-wrap:wrap">
+      ${b?'<button class="btn sm" id="bdCorrectBoard">Correct board</button>':''}
       ${approvablePendingRows.length?`<button class="btn sm primary" id="bdApproveRemaining">Approve ready (${approvablePendingRows.length})</button>`:''}
       ${blockedPendingRows?`<span class="chip red" title="Correct the blocked evidence before approval">${blockedPendingRows} blocked</span>`:''}
       ${location?'<button class="btn sm" id="bdViewSource">View source</button>':''}</span>`;
   $('#bdBack').addEventListener('click', ()=>{ state.selectedBoard=null; renderTakeoff(); });
+  $('#bdCorrectBoard')?.addEventListener('click',()=>openBoardEditor(norm));
   $('#bdViewSource')?.addEventListener('click',()=>openBoardInViewer(norm));
   $('#bdApproveRemaining')?.addEventListener('click',()=>openModal('Approve remaining rows',
     `<p style="line-height:1.6">Approve all <b>${approvablePendingRows.length}</b> ready row${approvablePendingRows.length===1?'':'s'} for <b>${esc(label)}</b>?</p>
@@ -4359,12 +4603,16 @@ function openRowEditor(r, isNew, surface='Boards & Devices'){
   const rcdArrangementValue=r.rcdArrangement||'';
   const afddSource=Object.prototype.hasOwnProperty.call(r,'afddIndicated')?r.afddIndicated:r.afdd;
   const afddValue=afddSource===true?'yes':afddSource===false?'no':'';
+  const rowRole=r.spare?'spare':r.space?'space':r.incomer?'incomer':'device';
   openModal(isNew?'Add device manually':'Correct this row', `
     <div class="row-editor-grid">
-      <div class="span-2"><label class="lbl">Board</label><select class="sel" id="eBoard">${boards.map(b=>`<option value="${esc(b.norm)}" ${r.boardNorm===b.norm?'selected':''}>${esc(b.orig)}</option>`).join('')}<option value="" ${!r.boardNorm?'selected':''}>- none -</option></select></div>
+      <div><label class="lbl">Board</label><select class="sel" id="eBoard">${boards.map(b=>`<option value="${esc(b.norm)}" ${r.boardNorm===b.norm?'selected':''}>${esc(b.orig)}</option>`).join('')}<option value="" ${!r.boardNorm?'selected':''}>- none -</option></select></div>
+      <div><label class="lbl">New / corrected board reference</label><input class="in" id="eBoardNew" placeholder="Type a reference not listed"></div>
+      <div><label class="lbl">Row classification</label><select class="sel" id="eRole"><option value="device" ${rowRole==='device'?'selected':''}>Outgoing device</option><option value="incomer" ${rowRole==='incomer'?'selected':''}>Incomer</option><option value="spare" ${rowRole==='spare'?'selected':''}>Unpopulated spare way</option><option value="space" ${rowRole==='space'?'selected':''}>Fitted blank</option></select></div>
       <div><label class="lbl">Way</label><input class="in" id="eWay" value="${esc(r.way??'')}" maxlength="12" placeholder="1, L7 or P1"></div>
       <div><label class="lbl">Phase</label><select class="sel" id="ePhase"><option value="" ${!r.phase?'selected':''}>Not specified</option>${['L1','L2','L3','3PH'].map(value=>`<option ${r.phase===value?'selected':''}>${value}</option>`).join('')}</select></div>
       <div><label class="lbl">Device type</label><select class="sel" id="eDev">${deviceOptions(r.device)}</select></div>
+      <div><label class="lbl">Protection code</label><input class="in" id="eProtectionCode" value="${esc(r.protectionCode||'')}" placeholder="P1, J, etc."></div>
       <div><label class="lbl">Quantity</label><input class="in" id="eQty" type="number" min="1" value="${r.qty||1}"></div>
       <div><label class="lbl">Rating (A)</label><input class="in" id="eRat" inputmode="decimal" value="${r.rating??''}" placeholder="Not specified"></div>
       <div><label class="lbl">Curve</label><select class="sel" id="eCur"><option ${!r.curve?'selected':''} value="">Not specified</option>${['B','C','D','K','Z'].map(value=>`<option ${r.curve===value?'selected':''}>${value}</option>`).join('')}</select></div>
@@ -4375,20 +4623,31 @@ function openRowEditor(r, isNew, surface='Boards & Devices'){
       <div><label class="lbl">RCD protection</label><select class="sel" id="eRcd"><option value="" ${!rcdValue?'selected':''}>Not specified</option><option value="yes" ${rcdValue==='yes'?'selected':''}>Yes</option><option value="no" ${rcdValue==='no'?'selected':''}>No</option></select></div>
       <div><label class="lbl">RCD sensitivity (mA)</label><input class="in" id="eSens" inputmode="decimal" value="${r.sens??''}" placeholder="Not specified"></div>
       <div><label class="lbl">RCD arrangement</label><select class="sel" id="eRcdArrangement"><option value="" ${!rcdArrangementValue?'selected':''}>Not specified</option><option value="integral" ${rcdArrangementValue==='integral'?'selected':''}>Integral to device</option><option value="separate" ${rcdArrangementValue==='separate'?'selected':''}>Separate RCD</option><option value="shared" ${rcdArrangementValue==='shared'?'selected':''}>Shared RCD</option><option value="upstream" ${rcdArrangementValue==='upstream'?'selected':''}>Upstream RCD</option><option value="separate_or_unspecified" ${rcdArrangementValue==='separate_or_unspecified'?'selected':''}>Separate / unclear</option></select></div>
+      <div><label class="lbl">RCD type</label><select class="sel" id="eRcdType"><option value="" ${!r.rcdType?'selected':''}>Not specified</option>${['AC','A','F','B'].map(value=>`<option ${r.rcdType===value?'selected':''}>${value}</option>`).join('')}</select></div>
       <div><label class="lbl">AFDD protection</label><select class="sel" id="eAfdd"><option value="" ${!afddValue?'selected':''}>Not specified</option><option value="yes" ${afddValue==='yes'?'selected':''}>Yes</option><option value="no" ${afddValue==='no'?'selected':''}>No</option></select></div>
+      <div><label class="lbl">Earth fault device</label><input class="in" id="eEarthFault" value="${esc(r.earthFaultDevice?.descriptor||r.earthFaultDevice||'')}" placeholder="Not specified"></div>
+      <div><label class="lbl">Arc flash device</label><input class="in" id="eArcFlash" value="${esc(r.arcFlashDevice||'')}" placeholder="Not specified"></div>
       <div><label class="lbl">Circuit reference</label><input class="in" id="eCircuit" value="${esc(r.circuitReference||'')}" placeholder="Not specified"></div>
+      <div><label class="lbl">Circuit configuration</label><select class="sel" id="eCircuitConfig"><option value="" ${!r.circuitConfig?'selected':''}>Not specified</option>${['radial','ring','busbar','other'].map(value=>`<option value="${value}" ${String(r.circuitConfig||'').toLowerCase()===value?'selected':''}>${value[0].toUpperCase()+value.slice(1)}</option>`).join('')}</select></div>
+      <div><label class="lbl">Service code</label><input class="in" id="eService" value="${esc(r.serviceCode||'')}" placeholder="Not specified"></div>
+      <div><label class="lbl">Discipline</label><input class="in" id="eDiscipline" value="${esc(r.discipline||'')}" placeholder="Lighting, power, etc."></div>
+      <div class="span-2"><label class="lbl">Cable details</label><input class="in" id="eCable" value="${esc(r.cable?.orig||'')}" placeholder="Not specified"></div>
       <div class="span-2"><label class="lbl">Description / note</label><input class="in" id="eDesc" value="${esc(r.desc||'')}"></div>
     </div>
     ${isNew?'':`<div class="hint">Original text: <span class="mono">${esc(r.srcText)}</span></div>`}
+    <div style="margin-top:12px"><label class="lbl">Correction note <span class="hint" style="display:inline;margin:0">optional</span></label><input class="in" id="eCorrectionReason" placeholder="Why this value was changed"></div>
   `, ()=>{
     const before={boardNorm:r.boardNorm||null,way:r.way??null,phase:r.phase||null,device:r.device||null,qty:r.qty??1,rating:r.rating??null,curve:r.curve||null,
-      poleConfiguration:r.poleConfiguration||poleValue||null,ka:r.ka??null,protectionStandard:r.protectionStandard||null,tripUnit:r.tripUnit||null,
-      rcdProtected:r.rcdProtected??null,rcdArrangement:r.rcdArrangement||null,sens:r.sens??null,afdd:afddSource??null,circuitReference:r.circuitReference||null,desc:r.desc||null};
+      poleConfiguration:r.poleConfiguration||poleValue||null,ka:r.ka??null,protectionStandard:r.protectionStandard||null,tripUnit:r.tripUnit||null,protectionCode:r.protectionCode||null,
+      rcdProtected:r.rcdProtected??null,rcdArrangement:r.rcdArrangement||null,rcdType:r.rcdType||null,sens:r.sens??null,afdd:afddSource??null,
+      earthFaultDevice:r.earthFaultDevice||null,arcFlashDevice:r.arcFlashDevice||null,circuitReference:r.circuitReference||null,circuitConfig:r.circuitConfig||null,
+      serviceCode:r.serviceCode||null,discipline:r.discipline||null,cable:r.cable||null,spare:Boolean(r.spare),space:Boolean(r.space),incomer:Boolean(r.incomer),desc:r.desc||null};
     const numberOrNull=id=>{const raw=$(id).value.trim(),value=Number(raw);return raw===''||!Number.isFinite(value)?null:value;};
     const wayOrNull=()=>{const raw=$('#eWay').value.trim().toUpperCase();if(!raw)return null;
       if(!/^(?:\d{1,3}|[A-Z]{1,3}\d{1,3})$/.test(raw)){toast('Way must be a number or an identifier such as L7 or P1');return undefined;}
       return /^\d+$/.test(raw)?Number(raw):raw;};
-    const nextDevice=$('#eDev').value||null,nextRcd=$('#eRcd').value,nextSens=numberOrNull('#eSens');
+    const nextRole=$('#eRole').value,nextRcd=$('#eRcd').value,nextSens=numberOrNull('#eSens');
+    const nextDevice=nextRole==='spare'||nextRole==='space'?null:($('#eDev').value||null);
     let nextRcdArrangement=$('#eRcdArrangement').value||null;
     if(nextSens!=null&&nextRcd==='no'){toast('RCD sensitivity cannot be set when RCD protection is No');return false;}
     if(nextRcd!=='yes')nextRcdArrangement=null;
@@ -4399,54 +4658,51 @@ function openRowEditor(r, isNew, surface='Boards & Devices'){
       toast('An MCB can be RCD protected, but the RCD arrangement must be separate, shared, upstream, or unclear');return false;
     }
     const nextWay=wayOrNull();if(nextWay===undefined)return false;
-    r.boardNorm=$('#eBoard').value||null;
-    r.way=nextWay;
+    const typedBoard=$('#eBoardNew').value.trim();
+    const typedCanonical=typedBoard?(window.EstimationExtractorCore?.canonicalBoardReference?.(typedBoard)||{display:typedBoard.toUpperCase(),normalised:normBoard(typedBoard)}):null;
+    const nextBoardNorm=typedCanonical?.normalised||$('#eBoard').value||null;
+    if(typedCanonical&&nextBoardNorm&&!A.boards[nextBoardNorm]){
+      A.boards[nextBoardNorm]={norm:nextBoardNorm,orig:typedCanonical.display,type:'UNK',family:'unknown',pages:r.fileId&&r.page?[{fileId:r.fileId,page:r.page,primary:true,source:'user_correction'}]:[],parent:null,parentConf:0,manual:true,edited:true,header:{},corrections:[]};
+    }
     const nextPhase=$('#ePhase').value||null;
     const phaseChanged=String(before.phase||'')!==String(nextPhase||'');
-    r.phase=nextPhase;
+    const nextQty=Math.max(1,parseInt($('#eQty').value,10)||1);
+    const nextRating=numberOrNull('#eRat'),nextCurve=$('#eCur').value||null;
+    const nextPoleConfiguration=$('#ePol').value||null;
+    const poleConfigurationChanged=String(before.poleConfiguration||'')!==String(nextPoleConfiguration||'');
+    const nextAfddValue=$('#eAfdd').value,nextAfdd=nextAfddValue===''?null:nextAfddValue==='yes';
+    const cableText=$('#eCable').value.trim();
+    const earthFaultText=$('#eEarthFault').value.trim();
+    const rowPatch={
+      boardNorm:nextBoardNorm,way:nextWay,phase:nextPhase,device:nextDevice,qty:nextQty,
+      rating:nextRating,curve:nextCurve,poleConfiguration:nextPoleConfiguration,ka:numberOrNull('#eKa'),
+      protectionStandard:$('#eStandard').value.trim()||null,tripUnit:$('#eTrip').value.trim()||null,protectionCode:$('#eProtectionCode').value.trim()||null,
+      rcdProtected:nextRcd===''?null:nextRcd==='yes',rcdArrangement:nextRcdArrangement,rcdType:$('#eRcdType').value||null,sens:nextSens,
+      afdd:nextAfdd,earthFaultDevice:earthFaultText?{descriptor:earthFaultText}:null,arcFlashDevice:$('#eArcFlash').value.trim()||null,
+      circuitReference:$('#eCircuit').value.trim()||null,circuitConfig:$('#eCircuitConfig').value||null,serviceCode:$('#eService').value.trim()||null,
+      discipline:$('#eDiscipline').value.trim()||null,cable:cableText?{orig:cableText,manual:true}:null,
+      spare:nextRole==='spare',space:nextRole==='space',incomer:nextRole==='incomer',desc:$('#eDesc').value,
+    };
+    const correctionNote=$('#eCorrectionReason').value.trim();
+    const correctionResult=window.EstimationDecisionCore
+      ?window.EstimationDecisionCore.applyRowPatch(p,r,rowPatch,{surface,reason:correctionNote||'User correction in '+surface})
+      :{changedFields:[]};
+    if(!window.EstimationDecisionCore)Object.assign(r,rowPatch);
     if(phaseChanged||isNew){
       r.phaseEvidenceExplicit=Boolean(r.phase);
       r.phaseEvidenceBasis=r.phase?'user_correction':null;
     }
-    r.device=nextDevice;
-    r.qty=Math.max(1,parseInt($('#eQty').value,10)||1);
-    r.rating=numberOrNull('#eRat');
-    r.curve=$('#eCur').value||null;
-    const nextPoleConfiguration=$('#ePol').value||null;
-    const poleConfigurationChanged=String(before.poleConfiguration||'')!==String(nextPoleConfiguration||'');
-    r.poleConfiguration=nextPoleConfiguration;
     r.poles={SP:1,SPN:1,DP:2,DPN:2,TP:3,TPN:3,'4P':4}[r.poleConfiguration]||null;
     if(poleConfigurationChanged||isNew){
       r.poleEvidenceExplicit=Boolean(r.poleConfiguration);
       r.poleEvidenceBasis=r.poleConfiguration?'user_correction':null;
     }
-    r.ka=numberOrNull('#eKa');
-    r.protectionStandard=$('#eStandard').value.trim()||null;
-    r.tripUnit=$('#eTrip').value.trim()||null;
-    r.rcdProtected=nextRcd===''?null:nextRcd==='yes';
-    r.rcdArrangement=nextRcdArrangement;
-    r.sens=nextSens;
     if(r.sens!=null&&r.rcdProtected==null)r.rcdProtected=true;
-    const afdd=$('#eAfdd').value;r.afddIndicated=afdd===''?null:afdd==='yes';r.afdd=r.afddIndicated;
-    r.circuitReference=$('#eCircuit').value.trim()||null;
-    r.desc=$('#eDesc').value;
+    r.afddIndicated=nextAfdd;r.afdd=nextAfdd;
     if(window.EstimationExtractorCore?.reconcileCombinedProtection){
       Object.assign(r,window.EstimationExtractorCore.reconcileCombinedProtection(r));
     }
-    const changed=[['Board Reference','boardNorm'],['Way','way'],['Phase','phase'],['Device Family','device'],['Quantity','qty'],['Current Rating','rating'],
-      ['Tripping Curve','curve'],['Pole Configuration','poleConfiguration'],['Breaking Capacity','ka'],['Protection Standard','protectionStandard'],['Trip Unit','tripUnit'],
-      ['RCD Protection','rcdProtected'],['RCD Arrangement','rcdArrangement'],['RCD Sensitivity','sens'],['AFDD Protection','afdd'],['Circuit Reference','circuitReference'],['Description','desc']];
-    r.corrections=Array.isArray(r.corrections)?r.corrections:[];r.fieldEvidence=r.fieldEvidence||{};
-    const changedFields=[];
-    changed.forEach(([field,key])=>{
-      const prior=before[key],next=r[key]??null;if(String(prior??'')===String(next??''))return;
-      const display=value=>value==null?'Not specified':typeof value==='boolean'?(value?'Yes':'No'):String(value);
-      const correction={field,original:display(prior),corrected:display(next),reason:'User correction in '+surface};
-      const existing=r.fieldEvidence[field]||{};
-      r.corrections.push(correction);r.fieldEvidence[field]={...existing,originalText:existing.originalText||r.originalOcrText||r.srcText,
-        normalisedValue:correction.corrected,correction:correction.corrected,correctionReason:correction.reason,reviewStatus:'Approved',method:'User correction'};
-      changedFields.push(field);
-    });
+    const changedFields=correctionResult.changedFields||[];
     if(changedFields.includes('Device Family')||changedFields.includes('Protection Standard'))r.classConflict=null;
     if(changedFields.includes('Phase')||changedFields.includes('Pole Configuration'))r.poleConflict=null;
     if(changedFields.includes('RCD Sensitivity'))r.validation={...(r.validation||{}),invalidSensitivity:false};
@@ -4465,10 +4721,10 @@ function openRowEditor(r, isNew, surface='Boards & Devices'){
     toast(approvalIssue?'Correction saved, but approval remains blocked: '+approvalIssue
       :isNew?'Device added':changedFields.length?'Row corrected and confirmed':'Row reviewed and confirmed');
     const advancesGuidedReview=!isNew&&!approvalIssue&&state.reviewFlow.active&&state.reviewFlow.currentRowId===r.id;
-    if(advancesGuidedReview)void advanceGuidedReview(r,changedFields.length?'Correction saved':'Review saved');
+    if(advancesGuidedReview)void scheduleGuidedAdvance(r,changedFields.length?'Correction saved':'Review saved');
     else if(surface==='Viewer')void renderViewer();
   });
-  const deviceEditor=$('#eDev'),rcdEditor=$('#eRcd'),sensitivityEditor=$('#eSens'),arrangementEditor=$('#eRcdArrangement');
+  const roleEditor=$('#eRole'),deviceEditor=$('#eDev'),rcdEditor=$('#eRcd'),sensitivityEditor=$('#eSens'),arrangementEditor=$('#eRcdArrangement');
   const syncProtectionEditor=()=>{const disabled=rcdEditor.value!=='yes';sensitivityEditor.disabled=rcdEditor.value==='no';arrangementEditor.disabled=disabled;};
   deviceEditor.addEventListener('change',()=>{
     const device=deviceEditor.value;
@@ -4483,6 +4739,9 @@ function openRowEditor(r, isNew, surface='Boards & Devices'){
     else if(rcdEditor.value==='yes'&&!arrangementEditor.value)arrangementEditor.value=deviceEditor.value==='MCB'?'separate':/^(?:RCBO|AFDD\+RCBO|RCD)$/i.test(deviceEditor.value)?'integral':'separate_or_unspecified';
     syncProtectionEditor();
   });
+  const syncRoleEditor=()=>{deviceEditor.disabled=roleEditor.value==='spare'||roleEditor.value==='space';};
+  roleEditor.addEventListener('change',syncRoleEditor);
+  syncRoleEditor();
   syncProtectionEditor();
   $('#modalBk .modal')?.classList.add('row-editor-modal','is-flexible');
 }
@@ -4535,6 +4794,30 @@ function reportSourceValue(label,value){
   const shown=value===null||value===undefined||value===''?'Not specified':value;
   return `<div class="report-source-field"><dt>${esc(label)}</dt><dd>${esc(shown)}</dd></div>`;
 }
+function openReportBoardSources(boardNorm){
+  const p=ensureProjectState(state.cur),A=p?.analysis,b=A?.boards?.[boardNorm];
+  if(!p||!A||!b){toast('That board is no longer available');return;}
+  const pages=(b.pages||[]).filter(item=>item?.fileId&&Number.isFinite(Number(item.page)));
+  const corrections=Array.isArray(b.corrections)?b.corrections:[];
+  const body=`<div class="report-source-summary"><div><strong>${esc(b.orig||b.norm)}</strong><span>${pages.length} source page${pages.length===1?'':'s'} · ${corrections.length} correction${corrections.length===1?'':'s'} · corrected values feed the live report</span></div></div>
+    ${boardHeaderCard(b)}
+    <div class="report-source-list" style="margin-top:12px">${pages.map((source,index)=>{
+      const file=p.files.find(item=>item.id===source.fileId);
+      return `<article class="report-source-item" data-report-board-page="${index}"><div class="report-source-item-head"><strong>${esc(file?.name||'Document')} · page ${source.page}</strong><span class="chip grey">${esc(source.sourceRole||source.source||'board evidence')}</span></div><div class="report-source-actions"><button class="btn sm" data-report-board-action="view">View source</button></div></article>`;
+    }).join('')||'<div class="empty">No page coordinate was retained for this board. Its values can still be corrected.</div>'}</div>
+    <div class="report-source-actions" style="margin-top:12px;padding:0"><button class="btn sm primary" id="reportCorrectBoard">Correct board details</button></div>`;
+  openModal('Board source evidence',body,null,'Close');
+  $('#modalBk .modal')?.classList.add('report-source-modal');
+  $('#mCancel').hidden=true;
+  $('#mBody').querySelectorAll('[data-report-board-page]').forEach(item=>{
+    const source=pages[Number(item.dataset.reportBoardPage)];
+    item.querySelector('[data-report-board-action="view"]')?.addEventListener('click',()=>{
+      closeModal();ensureViewerPanels().rightOpen=true;
+      jumpToEvidence({id:`board-${boardNorm}-${source.page}`,boardNorm,fileId:source.fileId,page:source.page,bbox:source.bbox||source.region||null});
+    });
+  });
+  $('#reportCorrectBoard')?.addEventListener('click',()=>{closeModal();openBoardEditor(boardNorm,'Report');});
+}
 function openReportSources(scope,key,boardNorm=null){
   const model=currentReportModel();
   const reportRow=reportRowsForScope(model,scope).find(row=>row.key===key);
@@ -4558,8 +4841,10 @@ function openReportSources(scope,key,boardNorm=null){
       return `<article class="report-source-item" data-report-source-id="${sourceId}"><div class="report-source-item-head"><strong>${index+1}. ${esc(sourceLocation)}</strong><span class="chip ${item.reviewStatus==='Approved'?'green':'amber'}">${esc(item.reviewStatus)}</span>${corrections.length?`<span class="chip blue">${corrections.length} correction${corrections.length===1?'':'s'}</span>`:''}</div>
         <dl class="report-source-fields">${[
           reportSourceValue('Board',item.board),reportSourceValue('Circuit / phase',wayPhase),reportSourceValue('Device',item.deviceFamily),reportSourceValue('Rating',item.rating==null?'Not specified':item.rating+'A'),reportSourceValue('Poles',item.pole),
-          reportSourceValue('Curve',item.curve),reportSourceValue('Breaking capacity',capacity),reportSourceValue('Protection standard',item.protectionStandard),reportSourceValue('Trip unit',item.tripUnit),reportSourceValue('RCD protection',rcdLabel(item)),
-          reportSourceValue('AFDD protection',afddLabel(item)),reportSourceValue('Description',item.description),reportSourceValue('Confidence',Math.round((Number(item.confidence)||0)*100)+'%'),reportSourceValue('Extraction method',item.extractionMethod),reportSourceValue('Purpose',item.purpose),
+          reportSourceValue('Curve',item.curve),reportSourceValue('Breaking capacity',capacity),reportSourceValue('Protection standard',item.protectionStandard),reportSourceValue('Trip unit',item.tripUnit),reportSourceValue('Protection code',item.protectionCode),
+          reportSourceValue('RCD protection',rcdLabel(item)),reportSourceValue('RCD type',item.rcdType),reportSourceValue('AFDD protection',afddLabel(item)),reportSourceValue('Earth fault device',item.earthFaultDevice),reportSourceValue('Arc flash device',item.arcFlashDevice),
+          reportSourceValue('Circuit configuration',item.circuitConfig),reportSourceValue('Cable details',item.cableDetails),reportSourceValue('Service code',item.serviceCode),reportSourceValue('Discipline',item.discipline),
+          reportSourceValue('Description',item.description),reportSourceValue('Confidence',Math.round((Number(item.confidence)||0)*100)+'%'),reportSourceValue('Extraction method',item.extractionMethod),reportSourceValue('Purpose',item.purpose),
         ].join('')}</dl>
         <div class="report-source-text">${esc(item.sourceText||item.originalOcrText||'No source text was retained for this row.')}</div>
         <div class="report-source-actions"><button class="btn sm" data-report-source-action="view" ${item.fileId?'':'disabled'}>View source</button><button class="btn sm primary" data-report-source-action="edit" ${sourceRow?'':'disabled'}>Correct row</button></div></article>`;
@@ -4670,6 +4955,7 @@ function renderReport(){
     available.forEach(board=>{
       html+=`<section class="report-board-section"><header class="report-board-head">
         <button class="report-board-open" data-report-board="${esc(board.norm)}" title="Open ${esc(board.label)} in Boards & Devices"><strong>${esc(board.label)}</strong><span>Open board</span></button>
+        <button class="report-board-evidence" data-report-board-source="${esc(board.norm)}">Review board source</button>
         <div class="report-board-metrics"><div class="metric"><b>${board.total}</b><span>Devices</span></div><div class="metric"><b>${board.reviewCount}</b><span>To review</span></div></div>
       </header><table class="report-board-table"><thead><tr><th>Specification and circuit</th><th>Qty</th><th>Protection</th><th>Circuits / ways</th><th>Source pages</th><th>Status</th></tr></thead><tbody>`;
       board.families.forEach(family=>{
@@ -4731,6 +5017,7 @@ function renderReport(){
     state.selectedBoard=control.dataset.reportBoard;
     setTab('analysis');
   }));
+  host.querySelectorAll('[data-report-board-source]').forEach(control=>control.addEventListener('click',()=>openReportBoardSources(control.dataset.reportBoardSource)));
   host.querySelectorAll('[data-report-source-key]').forEach(control=>control.addEventListener('click',()=>{
     openReportSources(control.dataset.reportSourceScope,decodeURIComponent(control.dataset.reportSourceKey||''),control.dataset.reportSourceBoard?decodeURIComponent(control.dataset.reportSourceBoard):null);
   }));
@@ -4895,11 +5182,16 @@ function renderBoards(){
     : '<div class="empty">No possible duplicates found.</div>';
   dl.querySelectorAll('[data-m]').forEach(btn=>btn.addEventListener('click',()=>{
     const [keep,drop]=btn.dataset.m.split('|');
-    A.rows.forEach(r=>{ if(r.boardNorm===drop) r.boardNorm=keep; });
-    A.cables.forEach(c=>{ if(c.boardNorm===drop) c.boardNorm=keep; });
-    ensureProjectState(p).approvalLog.forEach(item=>{if(item.boardNorm===drop)item.boardNorm=keep;});
+    const project=ensureProjectState(p);
+    window.EstimationDecisionCore?.appendEvent(project,{entityType:'board',entityId:drop,boardNorm:drop,canonicalBoardNorm:keep,
+      field:'merge',fieldLabel:'Board Merge',before:drop,after:keep,reason:'User confirmed duplicate board',surface:'Review'});
+    if(window.EstimationDecisionCore?.renameBoardReferences)window.EstimationDecisionCore.renameBoardReferences(project,A,drop,keep);
+    else{
+      A.rows.forEach(r=>{ if(r.boardNorm===drop) r.boardNorm=keep; });
+      A.cables.forEach(c=>{ if(c.boardNorm===drop) c.boardNorm=keep; });
+      Object.values(A.boards).forEach(b=>{ if(b.parent===drop) b.parent=keep; });
+    }
     if (A.boards[drop]){ A.boards[keep].pages.push(...A.boards[drop].pages); delete A.boards[drop]; }
-    Object.values(A.boards).forEach(b=>{ if(b.parent===drop) b.parent=keep; });
     if (state.selectedBoard===drop) state.selectedBoard=keep;
     renderTakeoff(); renderProjHeader(); saveProject(p); toast('Boards merged');
   }));
@@ -4959,17 +5251,37 @@ function renderXref(){
       <div class="racts">${open&&(d.kind==='rating'||d.kind==='rating_mismatch')?`
           <button class="btn sm" data-a="use-schematic">Use schematic (${d.detail.schematicRating}A)</button>
           <button class="btn sm" data-a="use-schedule">Use schedule (${d.detail.scheduleRating}A)</button>
+          ${d.scheduleNorm&&A.boards[d.scheduleNorm]?'<button class="btn sm" data-a="correct-board">Correct board</button>':''}
           <button class="btn sm ghost" data-a="ack">Acknowledge</button>`
-        : open?`<button class="btn sm ghost" data-a="ack">Acknowledge</button>`:''}</div>`;
-    div.querySelectorAll('[data-a]').forEach(btn=>btn.addEventListener('click',()=>{
+        : open?`${d.scheduleNorm&&A.boards[d.scheduleNorm]?'<button class="btn sm" data-a="correct-board">Correct board</button>':''}<button class="btn sm ghost" data-a="ack">Acknowledge</button>`:''}</div>`;
+    div.querySelectorAll('[data-a]').forEach(btn=>btn.addEventListener('click',async()=>{
       const a=btn.dataset.a;
-      d.status='resolved';
-      d.chosenSource = a==='use-schematic'?'schematic': a==='use-schedule'?'schedule':'acknowledged';
-      if (a==='use-schematic'&&d.scheduleNorm&&A.boards[d.scheduleNorm]){
-        A.boards[d.scheduleNorm].header=A.boards[d.scheduleNorm].header||{};
-        A.boards[d.scheduleNorm].header.incomer_rating_a=d.detail.schematicRating;
+      if(a==='correct-board'){openBoardEditor(d.scheduleNorm,'Schematic cross-reference');return;}
+      const decisionBefore={status:d.status,chosenSource:d.chosenSource};
+      const boardBefore=d.scheduleNorm&&A.boards[d.scheduleNorm]?JSON.parse(JSON.stringify(A.boards[d.scheduleNorm])):null;
+      const correctionsBefore=ensureProjectState(p).correctionLog.slice();
+      const approvalsBefore=p.approvalLog.slice();
+      try{
+        if (a==='use-schematic'&&d.scheduleNorm&&A.boards[d.scheduleNorm]){
+          window.EstimationDecisionCore?.applyBoardPatch(p,A,d.scheduleNorm,{header:{incomer_rating_a:d.detail.schematicRating}},
+            {surface:'Schematic cross-reference',reason:'User selected the schematic rating while resolving a source conflict'});
+        }
+        d.status='resolved';
+        d.chosenSource = a==='use-schematic'?'schematic': a==='use-schedule'?'schedule':'acknowledged';
+        p.approvalLog.unshift({id:uid(),entityType:'discrepancy',entityId:d.id,boardNorm:d.scheduleNorm||d.schematicNorm||null,
+          action:'Cross-reference resolved',surface:'Schematic cross-reference',summary:d.message,note:`Kept ${d.chosenSource}`,
+          fileId:null,page:null,sourceText:'',createdAt:new Date().toISOString()});
+        if(p.approvalLog.length>2500)p.approvalLog.length=2500;
+        refreshAnalysisHealth();
+        if(!await persistProjectNow(p))throw new Error('The decision could not be stored on this computer');
+      }catch(error){
+        d.status=decisionBefore.status;d.chosenSource=decisionBefore.chosenSource;
+        if(boardBefore&&d.scheduleNorm)A.boards[d.scheduleNorm]=boardBefore;
+        p.correctionLog=correctionsBefore;p.approvalLog=approvalsBefore;
+        refreshAnalysisHealth();renderXref();renderTakeoff();renderReport();renderProjHeader();
+        toast(error?.message||'The conflict decision could not be saved');return;
       }
-      renderXref(); renderTakeoff(); saveProject(p); toast('Discrepancy resolved');
+      renderXref();renderTakeoff();renderReport();renderProjHeader();toast('Discrepancy resolved');
     }));
     host.appendChild(div);
   });
@@ -5305,6 +5617,7 @@ function viewerDetectionCardHtml(d,index){
   if(d.kind!=='row')return `<div class="det${state.viewer.evidenceId===d.r?.id?' current':''}" data-i="${index}" data-kind="${esc(d.kind)}" data-evidence-id="${esc(d.r?.id||'')}">
     <div class="det-head"><span class="chip ${d.color}">${esc(d.kind)}</span><b>${esc(d.label)}</b><span class="det-actions">
       ${d.r?.boardNorm?'<button class="btn sm ghost" data-action="board">Board</button>':''}
+      ${d.kind==='board'&&d.r?.boardNorm?'<button class="btn sm ghost" data-action="edit-board">Correct</button>':''}
     </span></div><div class="det-source">${esc(d.r?.srcText||'')}</div></div>`;
   const row=d.r,primary=row.device||(row.spare?'Spare way':row.space?'Fitted blank way':'Unclassified device');
   const current=state.viewer.evidenceId===row.id;
@@ -5618,16 +5931,18 @@ async function renderViewer(){
         if(button.dataset.action==='approve'){
           if(!setRowDecision(d.r,'confirmed','Viewer'))return;
           saveProject(p);renderProjHeader();toast(d.label+' approved');
-          if(state.reviewFlow.active&&state.reviewFlow.currentRowId===d.r.id)await advanceGuidedReview(d.r,'Approval saved');
+          if(state.reviewFlow.active&&state.reviewFlow.currentRowId===d.r.id)await scheduleGuidedAdvance(d.r,'Approval saved');
           else await renderViewer();
         }else if(button.dataset.action==='reject'){
           setRowDecision(d.r,'rejected','Viewer');saveProject(p);renderProjHeader();toast(d.label+' rejected');
-          if(state.reviewFlow.active&&state.reviewFlow.currentRowId===d.r.id)await advanceGuidedReview(d.r,'Rejection saved');
+          if(state.reviewFlow.active&&state.reviewFlow.currentRowId===d.r.id)await scheduleGuidedAdvance(d.r,'Rejection saved');
           else await renderViewer();
         }else if(button.dataset.action==='undo'){
           undoRowDecision(d.r,'Viewer');saveProject(p);renderProjHeader();await renderViewer();toast('Approval returned to pending review');
         }else if(button.dataset.action==='edit'){
           openRowEditor(d.r,false,'Viewer');
+        }else if(button.dataset.action==='edit-board'){
+          openBoardEditor(d.r.boardNorm,'Viewer');
         }else if(button.dataset.action==='board'){
           state.selectedBoard=d.r.boardNorm;setTab('analysis');
         }

@@ -43,6 +43,36 @@ try {
   assert.equal(new Set(repeatedBoardSpecification.map((item) => item.colour)).size, 1, 'one specification must keep the same colour across boards');
   if (shotsDir) await page.screenshot({ path: join(shotsDir, 'report-board-desktop.png'), fullPage: true });
 
+  const reportBoardControl = boardReport.locator('[data-report-board-source]').first();
+  const reportBoardNorm = await reportBoardControl.getAttribute('data-report-board-source');
+  const boardCorrectionBefore = await page.evaluate((boardNorm) => ({
+    correctionCount: state.cur.analysis.boards[boardNorm].corrections?.length || 0,
+    logCount: ensureProjectState(state.cur).correctionLog.length,
+  }), reportBoardNorm);
+  await reportBoardControl.click();
+  await page.locator('#modalBk.show #reportCorrectBoard').waitFor();
+  assert.ok(await page.locator('#modalBk [data-report-board-action="view"]').count() > 0, 'board evidence window must link to its source page');
+  await page.locator('#reportCorrectBoard').click();
+  await page.waitForFunction(() => document.querySelector('#mHead')?.textContent === 'Correct board details');
+  await page.locator('#bDescription').fill('Corrected from report evidence');
+  await page.locator('#bCorrectionReason').fill('Browser regression for report board correction');
+  await page.locator('#mOk').click();
+  await page.locator('#modalBk').waitFor({ state: 'hidden' });
+  const boardCorrectionAfter = await page.evaluate((boardNorm) => {
+    const board = state.cur.analysis.boards[boardNorm];
+    return {
+      description: board.header.description,
+      correctionCount: board.corrections?.length || 0,
+      logCount: ensureProjectState(state.cur).correctionLog.length,
+      reportEvent: ensureProjectState(state.cur).correctionLog.some((event) => event.boardNorm === boardNorm
+        && event.surface === 'Report' && event.field === 'header.description'),
+    };
+  }, reportBoardNorm);
+  assert.equal(boardCorrectionAfter.description, 'Corrected from report evidence');
+  assert.equal(boardCorrectionAfter.correctionCount, boardCorrectionBefore.correctionCount + 1, 'board correction must append one board-level history item');
+  assert.equal(boardCorrectionAfter.logCount, boardCorrectionBefore.logCount + 1, 'board correction must append one project-level audit event');
+  assert.equal(boardCorrectionAfter.reportEvent, true, 'board correction must record the Report surface and corrected field');
+
   await boardReport.locator('.report-source-open').first().click();
   await page.locator('#modalBk.show .report-source-item').first().waitFor();
   assert.ok(await page.locator('#modalBk [data-report-source-action="view"]').count() > 0, 'source window must link to document evidence');
@@ -88,7 +118,7 @@ try {
   if (shotsDir) await page.screenshot({ path: join(shotsDir, 'report-device-mobile.png'), fullPage: true });
 
   assert.deepEqual(browserErrors, [], `browser errors: ${browserErrors.join('; ')}`);
-  console.log('PASS: Board Take-Off, transposed Device Take-Off, source review, correction launch, and responsive report viewport.');
+  console.log('PASS: Board Take-Off, board correction audit, transposed Device Take-Off, source review, correction launch, and responsive report viewport.');
 } finally {
   await browser.close();
 }

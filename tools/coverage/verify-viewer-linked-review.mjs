@@ -179,6 +179,27 @@ try {
   const firstBoard = await page.evaluate(() => guidedReviewCurrentRow().boardNorm || '__none__');
   await page.waitForFunction(() => document.querySelector('#vDetList .det.current')?.dataset.rowId === state.reviewFlow.currentRowId);
 
+  const restoredReview = await page.evaluate(async () => {
+    const projectId = state.cur.id;
+    const currentRowId = state.reviewFlow.currentRowId;
+    openProject(projectId);
+    await setTab('viewer');
+    await focusGuidedReview();
+    return {
+      currentRowId,
+      restoredRowId: state.reviewFlow.currentRowId,
+      storedRowId: state.cur.reviewSession?.currentRowId,
+      active: state.reviewFlow.active,
+    };
+  });
+  assert.deepEqual(restoredReview, {
+    currentRowId: restoredReview.currentRowId,
+    restoredRowId: restoredReview.currentRowId,
+    storedRowId: restoredReview.currentRowId,
+    active: true,
+  }, 'reopening a project must restore the same unresolved review row');
+  await page.waitForFunction(() => document.querySelector('#vDetList .det.current')?.dataset.rowId === state.reviewFlow.currentRowId);
+
   await page.locator('#vFullscreen').click();
   await page.waitForFunction(() => state.viewer.fullscreen === true);
   const correctionRowId = await page.evaluate(() => {
@@ -337,7 +358,7 @@ try {
   if (shotsDir) await page.screenshot({ path: join(shotsDir, 'viewer-guided-review-mobile.png'), fullPage: false });
 
   assert.deepEqual(browserErrors, [], `browser errors: ${browserErrors.join('; ')}`);
-  console.log('PASS: linked Viewer rows, specification colours and counts, fullscreen correction, guided board progression, board approval audit, and responsive layout.');
+  console.log('PASS: linked Viewer rows, specification colours and counts, durable review restoration, fullscreen correction, guided board progression, board approval audit, and responsive layout.');
 } finally {
   await browser.close();
 }

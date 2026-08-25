@@ -26,6 +26,8 @@ export default async function handler(req) {
   if (req.method === 'GET') {
     // health probe used by the front-end to decide whether AI extraction is on
     const status = engineStatus();
+    const vercelBackgroundReady = Boolean(process.env.BLOB_READ_WRITE_TOKEN
+      || (process.env.BLOB_STORE_ID && process.env.VERCEL_OIDC_TOKEN));
     return json(200, {
       status: 'ok',
       configured: status.configured,
@@ -34,7 +36,8 @@ export default async function handler(req) {
       primary: status.primary,
       model: GEMINI_MODEL,
       fallbackModels: geminiModelCandidates().slice(1),
-      executionMode: process.env.VERCEL ? 'sync' : 'background',
+      executionMode: process.env.VERCEL && !vercelBackgroundReady ? 'sync' : 'background',
+      backgroundConfigured: process.env.VERCEL ? vercelBackgroundReady : true,
     });
   }
   if (req.method !== 'POST') return json(405, { error: 'POST only' });
