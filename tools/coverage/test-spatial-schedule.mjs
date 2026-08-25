@@ -371,6 +371,50 @@ const boardlessSourceTransfer = Core.parseSpatialScheduleDocument([
 assert.equal(boardlessSourceTransfer.catalogue.length, 0, 'a boardless page must never teach a reusable document schema');
 assert.equal(boardlessSourceTransfer.pages[0].schemaSourcePage, null);
 
+// A continuation page can legitimately contain only merged spare or blank
+// bands. It may consume a proven adjacent schema, but it must not become a
+// schema source itself because it has no printed board identity or headers.
+const spareContinuationWords = [];
+[
+  ['L-3', 90, 'SPARE'],
+  ['L-4', 150, 'FITTED BLANK'],
+].forEach(([way, centreY, occupancy]) => {
+  spareContinuationWords.push(word(way, 12, centreY));
+  ['L1', 'L2', 'L3'].forEach((phase, phaseIndex) => {
+    const y = centreY + (phaseIndex - 1) * 12;
+    spareContinuationWords.push(word(phase, 47, y));
+  });
+  spareContinuationWords.push(word(occupancy, 225, centreY, 40));
+});
+const occupancyContinuation = Core.parseSpatialScheduleDocument([
+  {
+    documentPage: 1,
+    lines: [{ text: 'DISTRIBUTION BOARD SCHEDULE' }, { text: 'Board Reference: DB-CONT-01' }],
+    words: sourcePageWords,
+    pageWidth: 260,
+    pageHeight: 220,
+    pageType: 'db-schedule',
+  },
+  {
+    documentPage: 2,
+    lines: [{ text: 'L-3 SPARE' }, { text: 'L-4 FITTED BLANK' }],
+    words: spareContinuationWords,
+    pageWidth: 260,
+    pageHeight: 220,
+    pageType: 'db-schedule',
+  },
+]);
+const recoveredOccupancyPage = occupancyContinuation.pages.find((entry) => entry.input.documentPage === 2);
+assert.equal(recoveredOccupancyPage.result.matched, true, 'an all-spare continuation must survive document schema recovery');
+assert.equal(recoveredOccupancyPage.schemaSourcePage, 1);
+assert.ok(recoveredOccupancyPage.attempts.some((attempt) => attempt.strategy === 'geometry-document-schema'
+  && attempt.matched && attempt.occupancyContinuation));
+assert.deepEqual([...new Set(recoveredOccupancyPage.result.rows.map((row) => row.way))], ['L-3', 'L-4']);
+assert.ok(recoveredOccupancyPage.result.rows.every((row) => row.spare || row.space));
+assert.ok(recoveredOccupancyPage.result.rows.some((row) => row.spare));
+assert.ok(recoveredOccupancyPage.result.rows.some((row) => row.space));
+assert.equal(occupancyContinuation.catalogue.length, 1, 'only the identified source page may teach the document schema');
+
 // Mirrored schedules are valid layouts too; the way column is discovered by
 // sequence and phase support rather than a hard-coded left-page position.
 const mirroredCompact = compactWords.map((item) => {

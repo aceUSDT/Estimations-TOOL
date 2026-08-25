@@ -166,10 +166,37 @@ try {
   assert.equal(await page.evaluate(() => state.reviewFlow.active), false, 'guided review must not skip an earlier board with zero extracted rows');
   assert.match(await page.locator('#vReviewTitle').textContent(), /Extraction required for DB-FIRST-GAP/);
   assert.match(await page.locator('#vReviewProgress').textContent(), /Page 1 is the first unresolved board/);
+  await page.evaluate(() => openMissingWaysEditor(unresolvedReviewExtractionGaps()[0]));
+  await page.locator('#gapWayStart').fill('L-7');
+  await page.locator('#gapWayEnd').fill('L-10');
+  await page.locator('#gapRole').selectOption('spare');
+  await page.locator('#gapPhaseModel').selectOption('tp');
+  await page.locator('#gapRecoveryReason').fill('Visible merged spare bands restored during audit');
+  await page.locator('#mOk').click();
+  await page.locator('#modalBk').waitFor({ state: 'hidden' });
+  const recoveredGap = await page.evaluate(() => {
+    const rows=state.cur.analysis.rows.filter((row) => row.resolutionSource === 'user_guided_recovery');
+    const diagnostic=state.cur.analysis.pageDiagnostics.find((item) => item.testReviewGap);
+    return {
+      ways: rows.map((row) => row.way),
+      phases: rows.map((row) => row.phase),
+      quantities: rows.map((row) => row.qty),
+      statuses: rows.map((row) => row.status),
+      rowsParsed: diagnostic.rowsParsed,
+      recoveryRows: diagnostic.humanGuidedRecovery?.rowsAdded,
+      unresolved: unresolvedReviewExtractionGaps().length,
+      logged: state.cur.approvalLog.filter((item) => /Visible merged spare bands/.test(item.note || '')).length,
+    };
+  });
+  assert.deepEqual(recoveredGap, {
+    ways: ['L-7', 'L-8', 'L-9', 'L-10'], phases: ['3PH', '3PH', '3PH', '3PH'],
+    quantities: [0, 0, 0, 0], statuses: ['confirmed', 'confirmed', 'confirmed', 'confirmed'],
+    rowsParsed: 4, recoveryRows: 4, unresolved: 0, logged: 4,
+  }, 'human-guided recovery must create page-linked, approved spare ways and close the extraction gap');
   await page.evaluate(({ fileId }) => {
     delete state.cur.analysis.boards.DBFIRSTGAP;
     state.cur.analysis.pageDiagnostics = state.cur.analysis.pageDiagnostics.filter((item) => !item.testReviewGap);
-    state.cur.analysis.rows = state.cur.analysis.rows.filter((item) => !item.testReviewGap);
+    state.cur.analysis.rows = state.cur.analysis.rows.filter((item) => !item.testReviewGap && item.resolutionSource !== 'user_guided_recovery');
     state.viewer.fileId = fileId;
     renderGuidedReviewControls();
   }, extractionGap);
