@@ -26,8 +26,11 @@ export default async function handler(req) {
   if (req.method === 'GET') {
     // health probe used by the front-end to decide whether AI extraction is on
     const status = engineStatus();
-    const vercelBackgroundReady = Boolean(process.env.BLOB_READ_WRITE_TOKEN
-      || (process.env.BLOB_STORE_ID && process.env.VERCEL_OIDC_TOKEN));
+    const vercelBackgroundReady = Boolean(
+      process.env.EXTRACTION_BLOB_READ_WRITE_TOKEN
+      || process.env.BLOB_READ_WRITE_TOKEN
+      || ((process.env.EXTRACTION_BLOB_STORE_ID || process.env.BLOB_STORE_ID) && process.env.VERCEL_OIDC_TOKEN)
+    );
     return json(200, {
       status: 'ok',
       configured: status.configured,

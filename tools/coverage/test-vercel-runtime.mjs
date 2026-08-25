@@ -40,8 +40,10 @@ const healthReq = {
 const healthRes = responseRecorder();
 const priorVercel = process.env.VERCEL;
 const priorBlobToken = process.env.BLOB_READ_WRITE_TOKEN;
+const priorExtractionBlobToken = process.env.EXTRACTION_BLOB_READ_WRITE_TOKEN;
 process.env.VERCEL = '1';
 delete process.env.BLOB_READ_WRITE_TOKEN;
+delete process.env.EXTRACTION_BLOB_READ_WRITE_TOKEN;
 await handler(healthReq, healthRes);
 if (priorVercel == null) delete process.env.VERCEL;
 else process.env.VERCEL = priorVercel;
@@ -57,10 +59,20 @@ await handler({ ...healthReq, headers: { ...healthReq.headers, 'x-forwarded-for'
 assert.equal(backgroundHealthRes.statusCode, 200);
 assert.equal(backgroundHealthRes.json.executionMode, 'background');
 assert.equal(backgroundHealthRes.json.backgroundConfigured, true);
+
+delete process.env.BLOB_READ_WRITE_TOKEN;
+process.env.EXTRACTION_BLOB_READ_WRITE_TOKEN = 'prefixed-test-token';
+const prefixedBackgroundHealthRes = responseRecorder();
+await handler({ ...healthReq, headers: { ...healthReq.headers, 'x-forwarded-for': 'test-prefixed-background-health' } }, prefixedBackgroundHealthRes);
+assert.equal(prefixedBackgroundHealthRes.statusCode, 200);
+assert.equal(prefixedBackgroundHealthRes.json.executionMode, 'background');
+assert.equal(prefixedBackgroundHealthRes.json.backgroundConfigured, true);
 if (priorVercel == null) delete process.env.VERCEL;
 else process.env.VERCEL = priorVercel;
 if (priorBlobToken == null) delete process.env.BLOB_READ_WRITE_TOKEN;
 else process.env.BLOB_READ_WRITE_TOKEN = priorBlobToken;
+if (priorExtractionBlobToken == null) delete process.env.EXTRACTION_BLOB_READ_WRITE_TOKEN;
+else process.env.EXTRACTION_BLOB_READ_WRITE_TOKEN = priorExtractionBlobToken;
 
 const crossOriginRes = responseRecorder();
 await handler({
