@@ -41,7 +41,13 @@
   ];
 
   const CALIBRATION_ROLE_DEFINITIONS = Object.freeze([
-    { role: 'outgoing_table', kind: 'region', label: 'Outgoing circuit table' },
+    { role: 'board_header', kind: 'region', group: 'Board and table regions', label: 'Board details section' },
+    { role: 'incomer_section', kind: 'region', group: 'Board and table regions', label: 'Incoming device section' },
+    { role: 'outgoing_table', kind: 'region', group: 'Board and table regions', label: 'Outgoing circuit table' },
+    { role: 'outgoing_row_group', kind: 'region', group: 'Board and table regions', label: 'One complete outgoing way / row group' },
+    { role: 'single_phase_rows', kind: 'layout', group: 'Phase and row layout', label: 'Single-phase rows (one circuit per row)' },
+    { role: 'three_phase_rows', kind: 'layout', group: 'Phase and row layout', label: 'Three-phase way split into L1 / L2 / L3 rows' },
+    { role: 'three_phase_merged', kind: 'layout', group: 'Phase and row layout', label: 'One three-phase device spanning L1 / L2 / L3' },
     { role: 'way', kind: 'column', label: 'Way / circuit number column' },
     { role: 'phase', kind: 'column', label: 'Phase column' },
     { role: 'device_standard', kind: 'column', label: 'Device BS / EN standard column' },
@@ -66,6 +72,7 @@
     { role: 'epo', kind: 'column', label: 'EPO / emergency stop column' },
     { role: 'spd', kind: 'column', label: 'Surge protection column' },
     { role: 'board_ref', kind: 'header', label: 'Board reference field' },
+    { role: 'board_type', kind: 'header', label: 'Board type / size field' },
     { role: 'ways_total', kind: 'header', label: 'Number of ways field' },
     { role: 'board_rating', kind: 'header', label: 'Board rating field' },
     { role: 'phase_config', kind: 'header', label: 'Board phase configuration field' },
@@ -84,6 +91,8 @@
     .filter((definition) => definition.kind === 'column').map((definition) => definition.role));
   const CALIBRATION_HEADER_ROLES = new Set(CALIBRATION_ROLE_DEFINITIONS
     .filter((definition) => definition.kind === 'header').map((definition) => definition.role));
+  const CALIBRATION_LAYOUT_ROLES = new Set(CALIBRATION_ROLE_DEFINITIONS
+    .filter((definition) => definition.kind === 'layout').map((definition) => definition.role));
 
   const CRITICAL_COLUMNS = ['way', 'rating', 'device_standard'];
 
@@ -564,7 +573,9 @@
     const regions = calibrationRegions(input);
     const columnRegions = regions.filter((region) => CALIBRATION_COLUMN_ROLES.has(region.role));
     const tableRegion = regions.find((region) => region.role === 'outgoing_table');
-    if (!columnRegions.length && !tableRegion) return schema;
+    const rowGroupRegion = regions.find((region) => region.role === 'outgoing_row_group');
+    const layoutRegions = regions.filter((region) => CALIBRATION_LAYOUT_ROLES.has(region.role));
+    if (!columnRegions.length && !tableRegion && !rowGroupRegion && !layoutRegions.length) return schema;
     const byRole = new Map((schema?.columns || []).map((column) => [column.role, { ...column }]));
     columnRegions.forEach((region) => {
       byRole.set(region.role, {
@@ -584,7 +595,8 @@
       columns[index].right = index < columns.length - 1 ? (columns[index].x + columns[index + 1].x) / 2 : pageWidth;
     }
     const anchorYs = wayAnchors.map((word) => word.cy);
-    const rowSpacing = schema?.rowSpacing || median(anchorYs.slice(1).map((value, index) => value - anchorYs[index]).filter((value) => value > 2)) || 22;
+    const rowSpacing = rowGroupRegion ? Math.max(4, rowGroupRegion.box.y1 - rowGroupRegion.box.y0)
+      : schema?.rowSpacing || median(anchorYs.slice(1).map((value, index) => value - anchorYs[index]).filter((value) => value > 2)) || 22;
     const dataTop = tableRegion?.box.y0 ?? schema?.dataBand?.[1]
       ?? (anchorYs.length ? Math.max(0, Math.min(...anchorYs) - rowSpacing * 0.55) : 0);
     const dataBottom = tableRegion?.box.y1 ?? (schema?.dataBand ? schema.dataBand[1] + schema.dataBand[3]
@@ -602,7 +614,13 @@
         tableRegion ? Math.max(1, tableRegion.box.x1 - tableRegion.box.x0) : pageWidth,
         Math.max(1, dataBottom - dataTop)],
       rowSpacing,
-      calibrationRoles: [...new Set([...calibratedRoles, ...(tableRegion ? ['outgoing_table'] : [])])],
+      calibrationRoles: [...new Set([
+        ...calibratedRoles,
+        ...(tableRegion ? ['outgoing_table'] : []),
+        ...(rowGroupRegion ? ['outgoing_row_group'] : []),
+        ...layoutRegions.map((region) => region.role),
+      ])],
+      calibratedPhaseLayout: layoutRegions[layoutRegions.length - 1]?.role || null,
       calibrated: true,
     };
   }
@@ -633,13 +651,39 @@
     const result = parsed || { header: {}, evidence: {} };
     result.header = result.header || {};
     result.evidence = result.evidence || {};
+    const regions = calibrationRegions(input);
+    const sectionRegions = regions.filter((region) => region.role === 'board_header' || region.role === 'incomer_section');
+    for (const region of sectionRegions) {
+      const regionWords = wordsInsideCalibration(words, region, Math.max(1, region.box.y1 - region.box.y0) * 0.02);
+      const regionLines = spatialRows(regionWords).map((row) => sourceCell(row.words)).filter(Boolean);
+      const section = Core.extractBoardHeader(regionLines);
+      Object.entries(section.header || {}).forEach(([field, value]) => {
+        if (value == null || value === '') return;
+        result.header[field] = value;
+        const source = section.evidence?.[field] || sourceCell(regionWords, field);
+        if (source) result.evidence[field] = { ...source, extractionMethod: 'User layout calibration + spatial parser' };
+      });
+    }
+    const phaseLayout = regions.filter((region) => CALIBRATION_LAYOUT_ROLES.has(region.role)).at(-1)?.role || null;
+    if (phaseLayout) {
+      const threePhase = phaseLayout === 'three_phase_rows' || phaseLayout === 'three_phase_merged';
+      result.header.phase_config = threePhase ? 'TPN' : 'SPN';
+      result.header.phase_count = threePhase ? 3 : 1;
+      result.header.phase_layout_calibration = phaseLayout;
+      const region = regions.filter((item) => item.role === phaseLayout).at(-1);
+      const source = region ? sourceCell(wordsInsideCalibration(words, region, 1), 'phase_config') : null;
+      result.evidence.phase_config = source
+        ? { ...source, extractionMethod: 'User phase-layout calibration + spatial parser' }
+        : { text: phaseLayout, originalText: phaseLayout, bbox: null, confidence: 1, extractionMethod: 'User phase-layout calibration', words: [] };
+      result.evidence.phase_count = result.evidence.phase_config;
+    }
     const fieldMap = {
-      board_ref: 'board_ref', ways_total: 'ways_total', board_rating: 'board_rating_a', phase_config: 'phase_config',
+      board_ref: 'board_ref', board_type: 'board_type_text', ways_total: 'ways_total', board_rating: 'board_rating_a', phase_config: 'phase_config',
       incomer_class: 'incomer_class', incomer_rating: 'incomer_rating_a', supply_source: 'fed_from_ref',
       supply_cable: 'supply_cable_details', fault_rating: 'fault_ka', location: 'location', purpose: 'purpose',
       metering: 'metering', board_model: 'board_model',
     };
-    calibrationRegions(input).filter((region) => CALIBRATION_HEADER_ROLES.has(region.role)).forEach((region) => {
+    regions.filter((region) => CALIBRATION_HEADER_ROLES.has(region.role)).forEach((region) => {
       const cell = sourceCell(wordsInsideCalibration(words, region, Math.max(1, region.box.y1 - region.box.y0) * 0.03), region.role);
       if (!cell) return;
       const value = calibratedHeaderValue(region.role, cell.text);
@@ -820,7 +864,8 @@
         family = 'consumer_unit'; confidence = 0.78; reasons.push('Single-phase final-circuit context within consumer-unit policy');
       } else if (Number.isFinite(rating) && rating >= policy.distributionBoardMinAmps && rating <= policy.distributionBoardMaxAmps) {
         family = 'distribution_board'; confidence = 0.86; reasons.push(`${policy.id}: rating within distribution-board range`);
-      } else if (/\bDB\b|DISTRIBUTION\s+BOARD/.test(text) || /^DB/i.test(header.board_ref || '')) {
+      } else if (/\bDB\b|DISTRIBUTION\s+BOARD|LIGHTING\s*(?:&|AND)\s*POWER\s+(?:BOARD|PANEL)/.test(text)
+        || /^DB/i.test(header.board_ref || '') || /(?:^|[-_/])L\s*&\s*P(?:[-_/]|$)/i.test(header.board_ref || '')) {
         family = 'distribution_board'; confidence = 0.68; reasons.push('Distribution-board identity without decisive rating evidence');
       }
     }
@@ -907,7 +952,7 @@
     const resolvedDeviceClassText = deviceClassText || typeDevice || '';
     const typeCurve = typeDevice ? null : typeText.match(/^\s*([BCD])\s*$/i)?.[1]?.toUpperCase() || null;
     const tripUnit = typeCurve || typeDevice ? null : (typeText || null);
-    const curve = (cellText(cells, 'trip_curve').match(/\b[BCD]\b/i)?.[0] || typeCurve || '').toUpperCase() || null;
+    let curve = (cellText(cells, 'trip_curve').match(/\b[BCD]\b/i)?.[0] || typeCurve || '').toUpperCase() || null;
     const rating = numberValue(cells.rating, { max: 6300 });
     const ka = numberValue(cells.breaking_capacity, { max: 150 });
     const circuitText = cellText(cells, 'circuit_reference');
@@ -938,6 +983,8 @@
       sensitivityMa: rcdMa,
       afdd: afddIndicator === true,
     }, context);
+    const inferredCurve = inferredDistributionCurve(context.boardHeader, resolution.device, curve);
+    if (inferredCurve) curve = inferredCurve.curve;
     const hasDeviceEvidence = Boolean(resolution.device || rating != null || standardText || resolvedDeviceClassText);
     const occupancyConflict = occupancyLabels.size > 1;
     const spare = spareText;
@@ -954,7 +1001,7 @@
     const installMethod = cableType || referenceMethod;
     const confidence = Math.min(resolution.confidence || 0.55, schemaConfidence || 0.55,
       ...Object.values(cells).filter(Boolean).map((cell) => Number(cell.confidence) || 0.6));
-    const requiresReview = space || occupancyConflict || (!spare && (!resolution.device || rating == null
+    const requiresReview = Boolean(inferredCurve) || space || occupancyConflict || (!spare && (!resolution.device || rating == null
       || ((resolution.device === 'RCBO' || resolution.device === 'AFDD+RCBO') && rcdMa == null))) || confidence < 0.78;
     const rowCells = Object.entries(cells)
       .filter(([role, cell]) => Boolean(cell) && !(context.phaseLane && role === 'way'))
@@ -967,8 +1014,10 @@
     if (afddIndicator === true) protectionReasons.push('Explicit AFDD indicator');
     if (spareText && hasDeviceEvidence) protectionReasons.push('Explicit fitted-spare label with populated device cells');
     if (occupancyConflict) protectionReasons.push('Conflicting SPARE and SPACE occupancy cells');
+    if (inferredCurve) protectionReasons.push(inferredCurve.reason);
     const row = {
       way, phase, rating, device: resolution.device, class_basis: resolution.classBasis, curve, tripUnit,
+      curveInferred: Boolean(inferredCurve),
       poleConfiguration: poles === 3 ? 'TP' : poles === 1 ? 'SP' : null,
       protectionStandard: resolution.protectionStandard, protectionStandardCode: resolution.standardCode,
       sens: rcdMa, rcdProtected, afdd: afddIndicator === true, afddIndicated: afddIndicator, poles, ka,
@@ -1212,6 +1261,28 @@
     const technical = phaseRows.filter((row) => row.device || row.rating != null || row.protectionStandard
       || row.circuitReference || row.cable || row.sens != null || row.afdd);
     const explicitOccupancies = phaseRows.filter((row) => row.explicitOccupancy || row.spare);
+    const calibratedLayout = context.calibratedPhaseLayout || schema.calibratedPhaseLayout || null;
+    if (calibratedLayout === 'three_phase_merged' && aggregate && phases.length >= 2) {
+      aggregate.phase = '3PH';
+      aggregate.poles = 3;
+      aggregate.poleConfiguration = 'TP';
+      aggregate.occupies_ways = 3;
+      aggregate.sharedPhaseSpan = true;
+      aggregate.phaseSlotIndependent = false;
+      aggregate.poleEvidenceBasis = 'user_calibrated_merged_three_phase_geometry';
+      aggregate.calibratedPhaseLayout = calibratedLayout;
+      aggregate.requiresReview = true;
+      aggregate.conf = Math.min(Number(aggregate.conf) || 0.9, 0.9);
+      aggregate.resolutionReasons = [...(aggregate.resolutionReasons || []), 'User calibrated this row group as one device spanning L1/L2/L3'];
+      return [aggregate];
+    }
+    if (calibratedLayout === 'three_phase_rows' && phaseRows.length >= 2) {
+      phaseRows.forEach((row) => {
+        row.calibratedPhaseLayout = calibratedLayout;
+        row.resolutionReasons = [...(row.resolutionReasons || []), 'User calibrated this way as independent L1/L2/L3 phase rows'];
+      });
+      return phaseRows;
+    }
     if (!meaningful.length) return [aggregate];
     // A bounded SPARE/SPACE cell belongs to its own physical phase lane. It is
     // decisive evidence against treating a lone populated middle lane as a
@@ -1505,11 +1576,21 @@
     const incomerTypeCell = sourceCell((incomerRow?.words || []).filter((item) => item.cx >= pageWidth * 0.455
       && item.cx < pageWidth * 0.67 && !/^DEVICE$|^TYPE$/i.test(normaliseLabel(item.text))), 'incomer_class');
     const incomerType = String(incomerTypeCell?.text || '').replace(/\s+/g, ' ').trim() || null;
+    const nameAnchor = (waysRow?.words || []).find((item) => item.cx < pageWidth * 0.12 && /^NAME$/.test(normaliseLabel(item.text)));
+    const waysAnchor = (waysRow?.words || []).find((item) => item.cx >= pageWidth * 0.2 && /^(?:NO|WAYS)$/.test(normaliseLabel(item.text)));
+    const nameCell = sourceCell((waysRow?.words || []).filter((item) => item.x0 > (nameAnchor?.x1 || pageWidth * 0.04)
+      && item.x1 < (waysAnchor?.x0 || pageWidth * 0.31)), 'description');
+    const boardName = String(nameCell?.text || '').replace(/\s+/g, ' ').trim() || null;
+    const modelCell = sourceCell((identityRow?.words || []).filter((item) => item.x0 > (modelAnchor?.x1 || pageWidth)
+      && item.x1 < pageWidth * 0.68 && !/^L[123]$/i.test(item.text)), 'board_model');
+    const boardModel = String(modelCell?.text || '').replace(/\s+/g, ' ').trim() || null;
 
     const header = {
       board_ref: boardRef,
-      description: boardRef,
-      board_type_text: boardRef,
+      description: boardName || boardRef,
+      purpose: boardName || undefined,
+      board_type_text: [boardRef, boardName].filter(Boolean).join(' - '),
+      board_model: boardModel || undefined,
       ways_total: ways.value,
       size_text: ways.value ? `${ways.value} WAY TPN` : null,
       spare_capacity_pct: spare.value,
@@ -1526,8 +1607,10 @@
     };
     const evidence = {
       board_ref: identityCell,
-      description: identityCell,
-      board_type_text: identityCell,
+      description: nameCell || identityCell,
+      purpose: nameCell || undefined,
+      board_type_text: nameCell || identityCell,
+      board_model: modelCell || undefined,
       ways_total: ways.cell,
       size_text: ways.cell,
       spare_capacity_pct: spare.cell,
@@ -1580,7 +1663,7 @@
     };
   }
 
-  function trimbleRow(groupWords, anchor, top, bottom, schema, boardRef) {
+  function trimbleRow(groupWords, anchor, top, bottom, schema, boardRef, boardHeader = {}) {
     const { bounds } = schema;
     const records = trimbleProtectionRecords(groupWords, schema, top, bottom);
     const descriptor = parseProtectionDescriptor(records.overcurrent?.text || '');
@@ -1645,7 +1728,8 @@
     const invalidSensitivity = sensitivity != null && ![10, 30, 100, 300, 500].includes(Number(sensitivity));
     const invalidBreakingCapacity = descriptor.breakingCapacityKa != null
       && (descriptor.breakingCapacityKa < 3 || descriptor.breakingCapacityKa > 150);
-    const requiresReview = Boolean(resolution.classConflict || poleConflict || invalidSensitivity || invalidBreakingCapacity
+    const inferredCurve = inferredDistributionCurve(boardHeader, resolution.device, descriptor.curve);
+    const requiresReview = Boolean(inferredCurve || resolution.classConflict || poleConflict || invalidSensitivity || invalidBreakingCapacity
       || (!spare && !space && (!resolution.device || rating == null || !poles)));
     const reasons = [...resolution.reasons];
     if (earthPresent) reasons.push('Separate earth-fault protective-device record bound by vertical header position');
@@ -1653,6 +1737,7 @@
     if (poleConflict) reasons.push(poleConflict.reason);
     if (invalidSensitivity) reasons.push(`RCD sensitivity ${sensitivity}mA is outside the supported evidence domain`);
     if (invalidBreakingCapacity) reasons.push(`Breaking capacity ${descriptor.breakingCapacityKa}kA is outside the supported evidence domain`);
+    if (inferredCurve) reasons.push(inferredCurve.reason);
     return {
       way: extractWayIdentifier(anchor.text),
       boardRef,
@@ -1661,7 +1746,8 @@
       device: resolution.device,
       class_basis: resolution.classBasis,
       classConflict: resolution.classConflict,
-      curve: descriptor.curve,
+      curve: descriptor.curve || inferredCurve?.curve || null,
+      curveInferred: Boolean(inferredCurve),
       tripUnit: descriptor.tripUnit,
       poleConfiguration,
       protectionStandard: descriptor.protectionStandard || resolution.protectionStandard,
@@ -1725,6 +1811,408 @@
     };
   }
 
+  function parseCableScheduleIdentifier(value) {
+    const original = String(value || '').replace(/\s+/g, '').trim();
+    if (!original || original.length > 90) return null;
+    const match = original.match(/^(.{2,48}?)\/(L|P)\/?(\d{1,3})[-/](L[123]|L1[-/]L2[-/]L3|TP(?:&?N)?|3PH)$/i);
+    if (!match) return null;
+    const wayNumber = Number(match[3]);
+    if (!Number.isInteger(wayNumber) || wayNumber < 1 || wayNumber > 200) return null;
+    const phaseToken = match[4].toUpperCase();
+    const threePhase = /^(?:L1[-/]L2[-/]L3|TP(?:&?N)?|3PH)$/.test(phaseToken);
+    return {
+      original,
+      boardRef: match[1],
+      section: match[2].toUpperCase(),
+      wayNumber,
+      way: `${match[2].toUpperCase()}${wayNumber}`,
+      phase: threePhase ? '3PH' : phaseToken,
+      poles: threePhase ? 3 : 1,
+      poleConfiguration: threePhase ? 'TP' : 'SP',
+    };
+  }
+
+  function trimbleCableScheduleProfile(words, pageWidth) {
+    const rows = spatialRows(words, 3.2);
+    const text = rows.map((row) => rowText(row)).join('\n');
+    const width = Number(pageWidth) || Math.max(1, ...words.map((word) => word.x1));
+    const identifiers = [];
+    const seen = new Set();
+    for (const word of words) {
+      const parsed = parseCableScheduleIdentifier(word.text);
+      if (!parsed || seen.has(word.id)) continue;
+      seen.add(word.id);
+      identifiers.push({ ...word, parsed });
+    }
+    if (!identifiers.length) {
+      for (const row of rows) {
+        const cell = sourceCell(row.words.filter((word) => word.cx < width * 0.22), 'hierarchical_id');
+        const parsed = parseCableScheduleIdentifier(cell?.text);
+        if (!cell || !parsed) continue;
+        const anchor = normaliseWord({ text: cell.text, bbox: cell.bbox, confidence: cell.confidence });
+        if (anchor) identifiers.push({ ...anchor, parsed });
+      }
+    }
+    identifiers.sort((left, right) => left.cy - right.cy || left.cx - right.cx);
+    const signals = [
+      /\bCABLE\s+SCHEDULE\b/i.test(text),
+      /CONNECTED\s+FROM/i.test(text) && /CONNECTED\s+TO/i.test(text),
+      /PROTECTIVE\s+DEVIC/i.test(text),
+      /\bRCD\b/i.test(text),
+      /\bAFDD\b|\bAFFD\b/i.test(text),
+      /CREATED\s+USING|TRIMBLE\s+INC/i.test(text),
+      identifiers.length > 0,
+    ].filter(Boolean).length;
+    return {
+      matched: identifiers.length > 0 && /\bCABLE\s+SCHEDULE\b/i.test(text)
+        && /PROTECTIVE\s+DEVIC/i.test(text) && signals >= 5,
+      confidence: Math.min(0.98, 0.42 + signals * 0.07 + Math.min(0.12, identifiers.length * 0.02)),
+      rows,
+      text,
+      identifiers,
+    };
+  }
+
+  function lastHeaderWord(words, pattern, maximumY, minimumX = -Infinity, maximumX = Infinity) {
+    return words.filter((word) => word.cy < maximumY && word.cx >= minimumX && word.cx < maximumX
+      && pattern.test(normaliseLabel(word.text)))
+      .sort((left, right) => right.cy - left.cy || left.cx - right.cx)[0] || null;
+  }
+
+  function trimbleCableSchema(input, words, profile, pageWidth, pageHeight) {
+    const firstIdentifier = profile.identifiers[0];
+    if (!firstIdentifier) return null;
+    const headerBottom = firstIdentifier.cy;
+    const id = lastHeaderWord(words, /^ID$/, headerBottom, 0, pageWidth * 0.18)
+      || { cx: pageWidth * 0.07, x0: pageWidth * 0.05, x1: pageWidth * 0.09 };
+    const connected = lastHeaderWord(words, /^CONNECTED$/, headerBottom, pageWidth * 0.08, pageWidth * 0.44);
+    const cores = lastHeaderWord(words, /^CORES$/, headerBottom, pageWidth * 0.25, pageWidth * 0.52);
+    const cable = lastHeaderWord(words, /^CABLE$/, headerBottom, pageWidth * 0.36, pageWidth * 0.72);
+    const length = lastHeaderWord(words, /^LENGTH$/, headerBottom, pageWidth * 0.55, pageWidth * 0.78);
+    const ir = lastHeaderWord(words, /^IR\s*A$/, headerBottom, pageWidth * 0.7, pageWidth);
+    const rating = lastHeaderWord(words, /^IN\s*A$/, headerBottom, pageWidth * 0.72, pageWidth);
+    const device = lastHeaderWord(words, /^TYPE$/, headerBottom, pageWidth * 0.76, pageWidth);
+    const rcd = lastHeaderWord(words, /^RCD$/, headerBottom, pageWidth * 0.82, pageWidth);
+    const afdd = lastHeaderWord(words, /^A(?:F|FF)DD$/, headerBottom, pageWidth * 0.88, pageWidth);
+    if (!connected || !cores || !cable || !length || !rating || !device || !rcd || !afdd) return null;
+    const midpoint = (left, right) => (Number(left.cx) + Number(right.cx)) / 2;
+    const bounds = {
+      idLeft: 0,
+      idRight: midpoint(id, connected),
+      connectedLeft: midpoint(id, connected),
+      connectedRight: Math.max(connected.x1 + 4, cores.x0 - 5),
+      cableLeft: Math.max(0, cores.x0 - 5),
+      cableRight: Math.max(cable.x1 + 8, length.x0 - 5),
+      irLeft: ir ? midpoint(length, ir) : Math.max(length.x1, pageWidth * 0.77),
+      irRight: ir ? midpoint(ir, rating) : midpoint(length, rating),
+      ratingLeft: ir ? midpoint(ir, rating) : midpoint(length, rating),
+      ratingRight: midpoint(rating, device),
+      deviceLeft: midpoint(rating, device),
+      deviceRight: midpoint(device, rcd),
+      rcdLeft: midpoint(device, rcd),
+      rcdRight: midpoint(rcd, afdd),
+      afddLeft: midpoint(rcd, afdd),
+      afddRight: pageWidth,
+    };
+    const calibrations = calibrationRegions(input);
+    const applyColumn = (roles, leftKey, rightKey) => {
+      const region = calibrations.filter((item) => roles.includes(item.role)).at(-1);
+      if (!region) return;
+      bounds[leftKey] = region.box.x0;
+      bounds[rightKey] = region.box.x1;
+    };
+    applyColumn(['way', 'phase'], 'idLeft', 'idRight');
+    applyColumn(['description', 'circuit_reference'], 'connectedLeft', 'connectedRight');
+    applyColumn(['cable_type'], 'cableLeft', 'cableRight');
+    applyColumn(['trip_unit'], 'irLeft', 'irRight');
+    applyColumn(['rating'], 'ratingLeft', 'ratingRight');
+    applyColumn(['device_class', 'device_standard', 'trip_curve'], 'deviceLeft', 'deviceRight');
+    applyColumn(['rcd', 'rcd_ma'], 'rcdLeft', 'rcdRight');
+    applyColumn(['afdd'], 'afddLeft', 'afddRight');
+    const footer = profile.rows.find((row) => row.cy > pageHeight * 0.72 && /^(?:PROJECT\s*:|CREATED\s+USING)/i.test(rowText(row)));
+    const tableRegion = calibrations.find((region) => region.role === 'outgoing_table');
+    const spacing = median(profile.identifiers.slice(1).map((anchor, index) => anchor.cy - profile.identifiers[index].cy).filter((value) => value > 3)) || 40;
+    const dataTop = tableRegion?.box.y0 ?? Math.max(0, firstIdentifier.cy - spacing * 0.58);
+    const dataBottom = tableRegion?.box.y1 ?? Math.max(dataTop + 1, footer?.cy || pageHeight);
+    return {
+      dialect: 'trimble_cable_schedule',
+      bounds,
+      confidence: profile.confidence,
+      columns: [
+        { role: 'hierarchical_id', x: id.cx, left: bounds.idLeft, right: bounds.idRight, source: 'trimble_cable_header' },
+        { role: 'connected_to', x: connected.cx, left: bounds.connectedLeft, right: bounds.connectedRight, source: 'trimble_cable_header' },
+        { role: 'cable', x: cable.cx, left: bounds.cableLeft, right: bounds.cableRight, source: 'trimble_cable_header' },
+        { role: 'trip_unit', x: ir?.cx ?? bounds.irLeft, left: bounds.irLeft, right: bounds.irRight, source: 'trimble_cable_header' },
+        { role: 'rating', x: rating.cx, left: bounds.ratingLeft, right: bounds.ratingRight, source: 'trimble_cable_header' },
+        { role: 'device_class', x: device.cx, left: bounds.deviceLeft, right: bounds.deviceRight, source: 'trimble_cable_header' },
+        { role: 'rcd', x: rcd.cx, left: bounds.rcdLeft, right: bounds.rcdRight, source: 'trimble_cable_header' },
+        { role: 'afdd', x: afdd.cx, left: bounds.afddLeft, right: bounds.afddRight, source: 'trimble_cable_header' },
+      ],
+      headerBand: [0, 0, pageWidth, dataTop],
+      dataBand: [0, dataTop, pageWidth, dataBottom - dataTop],
+      rowSpacing: spacing,
+      transferEligible: true,
+    };
+  }
+
+  function cleanedSourceCell(words, role, prefixPattern = null) {
+    const cell = sourceCell(words, role);
+    if (!cell) return null;
+    const originalText = cell.text;
+    const text = prefixPattern ? originalText.replace(prefixPattern, '').replace(/\s+/g, ' ').trim() : originalText;
+    return { ...cell, text, originalText };
+  }
+
+  function cableScheduleProtectionState(cell) {
+    const text = String(cell?.text || '').trim();
+    if (!text) return null;
+    if (recordIsEmpty(text)) return false;
+    const indicator = indicatorValue(text);
+    if (indicator != null) return indicator;
+    if (/\bRCD\b|\bAFDD\b|\bAFFD\b/i.test(text) || /\b\d+(?:\.\d+)?\s*(?:MA|A)\b/i.test(text)) return true;
+    return null;
+  }
+
+  function inferredDistributionCurve(header, device, explicitCurve) {
+    if (explicitCurve || !/^(?:MCB|RCBO|AFDD\+RCBO)$/i.test(device || '')) return null;
+    const rating = Number(header?.board_rating_a ?? header?.incomer_rating_a ?? header?.internal_isolator_rating_a);
+    if (!Number.isFinite(rating) || rating < 100 || rating > 250) return null;
+    return { curve: 'C', reason: `${rating}A distribution-board policy default where the source omits a trip curve` };
+  }
+
+  function parseTrimbleCableSchedulePage(input, words, profile, pageWidth, pageHeight) {
+    const schema = trimbleCableSchema(input, words, profile, pageWidth, pageHeight);
+    if (!schema) {
+      return {
+        matched: false, confidence: Math.min(profile.confidence, 0.55), words: words.length, schema: null,
+        rows: [], feeds: [], references: [], warnings: ['trimble_cable_columns_not_resolved'],
+      };
+    }
+    const boardRefs = [...new Set(profile.identifiers.map((anchor) => anchor.parsed.boardRef))];
+    const printedBoardRef = boardRefs.length === 1 ? boardRefs[0] : null;
+    const ys = profile.identifiers.map((anchor) => anchor.cy);
+    const groupCells = profile.identifiers.map((anchor, index) => {
+      const rowOffset = Math.max(5, Number(schema.rowSpacing || 40) * 0.37);
+      const top = Math.max(schema.dataBand[1], anchor.cy - rowOffset);
+      const bottom = Math.min(schema.dataBand[1] + schema.dataBand[3],
+        index < profile.identifiers.length - 1 ? profile.identifiers[index + 1].cy - rowOffset : anchor.cy + Number(schema.rowSpacing || 40) * 0.65);
+      const groupWords = words.filter((word) => word.cy >= top && word.cy < bottom);
+      const connectedWords = wordsInRegion(groupWords, schema.bounds.connectedLeft, schema.bounds.connectedRight, top, bottom);
+      const connectedRows = spatialRows(connectedWords, 3.2);
+      const fromRow = connectedRows.find((row) => /CONNECTED\s+FROM/i.test(rowText(row)));
+      const toTop = anchor.cy + Math.max(4, Number(schema.rowSpacing || 40) * 0.1);
+      const connectedTo = cleanedSourceCell(connectedWords.filter((word) => word.cy >= toTop), 'connected_to', /\bCONNECTED\s+TO\s*:?\s*(?:---\s*)?/i);
+      const connectedFrom = cleanedSourceCell(connectedWords.filter((word) => word.cy >= (fromRow?.cy || top) - 4 && word.cy < toTop),
+        'connected_from', /^CONNECTED\s+FROM\s*:?\s*/i);
+      return { anchor, top, bottom, groupWords, connectedTo, connectedFrom };
+    });
+    const suppliedFromCell = groupCells.map((group) => group.connectedFrom).find((cell) => cell?.text) || null;
+    const suppliedFromText = String(suppliedFromCell?.text || '').replace(/\s+(\d+)\/\d+\/L[123]\s*$/i, ' $1').trim() || null;
+    const observedPhases = new Set(profile.identifiers.map((anchor) => anchor.parsed.phase).filter((phase) => /^L[123]$/.test(phase)));
+    const phaseConfig = profile.identifiers.some((anchor) => anchor.parsed.poles === 3) || observedPhases.size >= 2 ? 'TPN' : 'SPN';
+    const baseHeader = {
+      board_ref: printedBoardRef,
+      description: suppliedFromText || printedBoardRef,
+      purpose: suppliedFromText || undefined,
+      supplied_from_text: suppliedFromText || undefined,
+      board_type_text: /L\s*&\s*P/i.test(printedBoardRef || '') || /LIGHTING\s*&\s*POWER/i.test(suppliedFromText || '')
+        ? 'Lighting and power board' : 'Cable schedule board',
+      phase_config: phaseConfig,
+      phase_count: phaseConfig === 'TPN' ? 3 : 1,
+      ways_observed: new Set(profile.identifiers.map((anchor) => anchor.parsed.way)).size,
+    };
+    const boardEvidence = printedBoardRef ? cleanedSourceCell([profile.identifiers[0]], 'board_ref') : null;
+    if (boardEvidence) {
+      boardEvidence.originalText = profile.identifiers[0].parsed.original;
+      boardEvidence.text = printedBoardRef;
+      boardEvidence.extractionMethod = 'Trimble cable-schedule hierarchical identifier';
+    }
+    const calibrated = applyHeaderCalibrations({
+      header: baseHeader,
+      evidence: {
+        board_ref: boardEvidence,
+        description: suppliedFromCell || boardEvidence,
+        purpose: suppliedFromCell || boardEvidence,
+        supplied_from_text: suppliedFromCell || undefined,
+        phase_config: boardEvidence,
+        phase_count: boardEvidence,
+      },
+    }, input, words);
+    const boardRef = calibrated.header.board_ref || printedBoardRef;
+    const rows = groupCells.map((group) => {
+      const { anchor, top, bottom, groupWords, connectedTo } = group;
+      const deviceCell = regionCell(groupWords, schema.bounds.deviceLeft, schema.bounds.deviceRight, top, bottom, 'device_class');
+      const ratingCell = regionCell(groupWords, schema.bounds.ratingLeft, schema.bounds.ratingRight, top, bottom, 'rating');
+      const tripCell = regionCell(groupWords, schema.bounds.irLeft, schema.bounds.irRight, top, bottom, 'trip_unit');
+      const rcdCell = regionCell(groupWords, schema.bounds.rcdLeft, schema.bounds.rcdRight, top, bottom, 'rcd');
+      const afddCell = regionCell(groupWords, schema.bounds.afddLeft, schema.bounds.afddRight, top, bottom, 'afdd');
+      const cableCell = regionCell(groupWords, schema.bounds.cableLeft, schema.bounds.cableRight, top, bottom, 'cable');
+      const descriptor = parseProtectionDescriptor(deviceCell?.text || '');
+      const rating = numberValue(ratingCell, { min: 0.1, max: 6300 });
+      const rcdProtected = cableScheduleProtectionState(rcdCell);
+      const afdd = cableScheduleProtectionState(afddCell);
+      const rcdRaw = numberValue(rcdCell, { min: 0.001, max: 1000 });
+      const sensitivity = rcdRaw == null ? descriptor.sensitivityMa : (rcdRaw < 1 ? Math.round(rcdRaw * 1000) : rcdRaw);
+      const integralRcd = descriptor.explicitDevice === 'RCBO' || descriptor.standardCode === '61009';
+      const rcdArrangement = integralRcd ? 'integral' : (rcdProtected === true ? 'separate_or_unspecified' : null);
+      const resolution = resolveProtectionDevice({
+        standard: descriptor.protectionStandard,
+        deviceClass: descriptor.explicitDevice || deviceCell?.text,
+        tripUnit: tripCell?.text,
+        rating,
+        rcdProtected,
+        rcdArrangement,
+        sensitivityMa: sensitivity,
+        afdd,
+      });
+      const inferredCurve = inferredDistributionCurve(calibrated.header, resolution.device, descriptor.curve);
+      const source = sourceCell(groupWords, 'row');
+      const description = String(connectedTo?.text || '').trim();
+      const connectedIdentifiers = description.match(/\b[A-Z]{1,5}(?:-[A-Z0-9&]+){1,5}\b/g) || [];
+      const circuitReferences = [...new Set([
+        ...Core.extractBoardReferences(description).map((item) => item.original),
+        ...connectedIdentifiers,
+      ])].filter((reference) => Core.normaliseBoardReference(reference) !== Core.normaliseBoardReference(boardRef));
+      const missingCurve = /^(?:MCB|RCBO|AFDD\+RCBO)$/i.test(resolution.device || '')
+        && !descriptor.curve && !inferredCurve;
+      const requiresReview = Boolean(resolution.classConflict || !resolution.device || rating == null
+        || inferredCurve || missingCurve || rcdProtected == null || afdd == null || boardRefs.length !== 1);
+      const reasons = [...resolution.reasons];
+      if (rcdProtected === false) reasons.push('RCD column explicitly states N/A / not applicable');
+      if (afdd === false) reasons.push('AFDD column explicitly states N/A / not applicable');
+      if (inferredCurve) reasons.push(inferredCurve.reason);
+      if (missingCurve) reasons.push('Trip curve is not printed and the board rating does not prove the 100A-250A distribution-board default');
+      return {
+        way: anchor.parsed.way,
+        wayNumber: anchor.parsed.wayNumber,
+        waySection: anchor.parsed.section,
+        boardRef,
+        phase: anchor.parsed.phase,
+        rating,
+        device: resolution.device,
+        class_basis: resolution.classBasis,
+        classConflict: resolution.classConflict,
+        curve: descriptor.curve || inferredCurve?.curve || null,
+        curveInferred: Boolean(inferredCurve),
+        tripUnit: String(tripCell?.text || '').trim() && !recordIsEmpty(tripCell?.text) ? tripCell.text : null,
+        poleConfiguration: anchor.parsed.poleConfiguration,
+        protectionStandard: descriptor.protectionStandard || resolution.protectionStandard,
+        protectionStandardCode: descriptor.standardCode || resolution.standardCode,
+        sens: sensitivity,
+        rcdProtected: rcdProtected == null ? null : rcdProtected,
+        rcdArrangement,
+        afdd: afdd == null ? null : afdd,
+        afddIndicated: afdd == null ? null : afdd,
+        poles: anchor.parsed.poles,
+        ka: descriptor.breakingCapacityKa,
+        desc: description,
+        circuitId: anchor.parsed.original,
+        circuitReference: circuitReferences[0] || null,
+        circuitReferences,
+        circuitReferenceText: description || null,
+        circuitConfig: null,
+        associatedDevices: Core.extractAssociatedEquipment(description),
+        cable: cableCell ? { orig: cableCell.text, description: cableCell.text } : null,
+        spare: false,
+        space: false,
+        incomer: false,
+        qty: resolution.device ? 1 : 0,
+        occupies_ways: anchor.parsed.poles === 3 ? 3 : 1,
+        sharedPhaseSpan: anchor.parsed.poles === 3,
+        phaseSlotIndependent: anchor.parsed.poles === 1,
+        poleEvidenceBasis: 'trimble_cable_hierarchical_identifier',
+        inferredDevice: resolution.classBasis !== 'explicit' && resolution.classBasis !== 'bs_en',
+        requiresReview,
+        resolutionSource: 'trimble_cable_schedule_geometry',
+        resolutionReasons: reasons,
+        srcText: source?.text || '',
+        sourceCell: source,
+        highlightBbox: source?.bbox || null,
+        fieldSources: {
+          way: cleanedSourceCell([anchor], 'way'),
+          phase: cleanedSourceCell([anchor], 'phase'),
+          device: deviceCell || source,
+          rating: ratingCell || source,
+          curve: deviceCell || source,
+          tripUnit: tripCell || source,
+          poles: cleanedSourceCell([anchor], 'phase'),
+          rcdProtection: rcdCell || source,
+          rcdSensitivity: rcdCell || source,
+          afdd: afddCell || source,
+          circuitReference: connectedTo || source,
+          description: connectedTo || source,
+          circuitId: cleanedSourceCell([anchor], 'circuit_id'),
+          installMethod: cableCell || source,
+        },
+        conf: requiresReview ? Math.min(0.78, resolution.confidence || 0.78) : Math.min(0.97, resolution.confidence || 0.94),
+      };
+    });
+    const blockingReasons = [];
+    if (!boardRef || boardRefs.length !== 1) blockingReasons.push('primary_board_not_resolved');
+    if (!rows.length) blockingReasons.push('hierarchical_rows_not_resolved');
+    if (!rows.some((row) => row.device || row.rating != null)) blockingReasons.push('no_bounded_schedule_rows');
+    const reviewReasons = [];
+    if (rows.some((row) => row.requiresReview)) reviewReasons.push('row_review_required');
+    const grid = {
+      accepted: blockingReasons.length === 0,
+      reasons: [...blockingReasons, ...reviewReasons],
+      blockingReasons,
+      reviewReasons,
+      roles: schema.columns.map((column) => column.role),
+      wayAnchors: profile.identifiers.length,
+      distinctWays: new Set(rows.map((row) => row.way)).size,
+      populatedRows: rows.filter((row) => row.device || row.rating != null).length,
+    };
+    const references = [];
+    if (boardRef) references.push({ role: 'primary_board', original: boardRef, normalised: Core.normaliseBoardReference(boardRef), line: null });
+    rows.flatMap((row) => row.circuitReferences || []).forEach((reference) => {
+      const normalised = Core.normaliseBoardReference(reference);
+      if (!normalised || references.some((item) => item.role === 'circuit_reference' && item.normalised === normalised)) return;
+      references.push({ role: 'circuit_reference', original: reference, normalised, line: null });
+    });
+    const classification = classifyBoardFamily(calibrated.header, { devices: rows, policy: input.boardPolicy });
+    const feeds = boardRef ? rows.flatMap((row) => (row.circuitReferences || []).map((reference) => ({
+      fromRef: boardRef,
+      toRef: reference,
+      way: row.way,
+      device: row.device,
+      rating: row.rating,
+      poles: row.poles,
+      cable: row.cable,
+      confidence: row.conf,
+      sourceCell: row.fieldSources.circuitReference,
+    }))) : [];
+    return {
+      matched: grid.accepted,
+      confidence: grid.accepted ? profile.confidence : Math.min(profile.confidence, 0.58),
+      words: words.length,
+      dialect: schema.dialect,
+      schema,
+      calibration: {
+        applied: calibrationRegions(input).length,
+        roles: [...new Set(calibrationRegions(input).map((region) => region.role))],
+      },
+      grid,
+      table: {
+        bbox: unionBox(words.filter((word) => word.cy >= schema.dataBand[1] && word.cy <= schema.dataBand[1] + schema.dataBand[3])),
+        rowCount: rows.length,
+        observedRowCount: rows.length,
+        inferredRowCount: 0,
+      },
+      board: boardRef ? {
+        ref: boardRef,
+        header: calibrated.header,
+        evidence: calibrated.evidence,
+        classification,
+        type: familyTypeCode(classification.family),
+      } : null,
+      rows,
+      feeds,
+      references,
+      warnings: [...blockingReasons, ...reviewReasons.map((reason) => `schedule_grid_review:${reason}`)],
+    };
+  }
+
   function parseTrimbleStackedSchedulePage(input, words, profile, pageWidth, pageHeight) {
     const schema = trimbleColumnSchema(profile, pageWidth, pageHeight);
     if (!schema) {
@@ -1750,7 +2238,7 @@
         Number.isFinite(nextTop) ? nextTop - Math.max(1, anchors[index].height * 0.2) : schema.dataBand[1] + schema.dataBand[3]);
       const groupWords = words.filter((item) => item.cy >= top && item.cy < bottom
         && item.x0 < schema.bounds.ratingRight);
-      const row = trimbleRow(groupWords, anchors[index], top, bottom, schema, header.boardRef);
+      const row = trimbleRow(groupWords, anchors[index], top, bottom, schema, header.boardRef, header.header);
       if (row) rows.push(row);
     }
     schema.rowSpacing = median(anchors.slice(1).map((anchor, index) => anchor.cy - anchors[index].cy).filter((value) => value > 2));
@@ -1842,10 +2330,12 @@
       return { matched: false, confidence: 0, words: words.length, rows: [], feeds: [], references: [], warnings: ['insufficient_spatial_words'] };
     }
     const calibrations = calibrationRegions(input);
-    const structuralCalibration = calibrations.some((region) => region.role === 'outgoing_table'
-      || CALIBRATION_COLUMN_ROLES.has(region.role));
+    const cableProfile = trimbleCableScheduleProfile(words, pageWidth);
+    if (cableProfile.matched) {
+      return parseTrimbleCableSchedulePage(input, words, cableProfile, pageWidth, pageHeight);
+    }
     const trimbleProfile = trimbleDialectProfile(words);
-    if (trimbleProfile.matched && !structuralCalibration) {
+    if (trimbleProfile.matched) {
       return parseTrimbleStackedSchedulePage(input, words, trimbleProfile, pageWidth, pageHeight);
     }
     const tableRegion = calibrations.find((region) => region.role === 'outgoing_table');
@@ -1865,9 +2355,17 @@
       return { matched: false, confidence: schema?.confidence || 0, words: words.length, schema, rows: [], feeds: [], references: [], warnings: ['way_column_not_resolved'] };
     }
     const header = extractSpatialBoardHeader(input, words, schema);
+    const phaseLaneModel = inferPhaseLaneModel(words, wayAnchors, schema, header.header);
+    if (schema.calibratedPhaseLayout === 'three_phase_rows' || schema.calibratedPhaseLayout === 'three_phase_merged') {
+      phaseLaneModel.expectedSequence = ['L1', 'L2', 'L3'];
+      phaseLaneModel.explicitColumnSequence = true;
+      phaseLaneModel.headerSupportsThreePhase = true;
+    }
     const context = {
       boardProtectionText: header.header.supply_cpd_details || '',
-      phaseLaneModel: inferPhaseLaneModel(words, wayAnchors, schema, header.header),
+      boardHeader: header.header,
+      phaseLaneModel,
+      calibratedPhaseLayout: schema.calibratedPhaseLayout || header.header.phase_layout_calibration || null,
     };
     const ys = wayAnchors.map((word) => word.cy);
     const rows = [];
@@ -2433,6 +2931,7 @@
     familyTypeCode,
     parseSpatialSchedulePage,
     parseSpatialScheduleDocument,
+    trimbleCableScheduleProfile,
     assessScheduleGrid,
     parseSpatialSchematicPage,
     buildSpatialLayoutHint,

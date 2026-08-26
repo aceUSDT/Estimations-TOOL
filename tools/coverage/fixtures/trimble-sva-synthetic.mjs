@@ -77,9 +77,11 @@ function headerWords(board) {
   tokens(words, ['Id', 'No:'], 22, 163, 3);
   tokens(words, board.ref.split(/\s+/), 90, 163, 4);
   words.push(word('ModelNo:', 238, 163));
+  words.push(word('Schneider', 303, 163));
   tokens(words, ['L1', 'L2', 'L3'], 697, 163, 35);
 
   words.push(word('Name:', 22, 182));
+  tokens(words, ['Power', 'TPN'], 90, 182, 4);
   tokens(words, ['No.', 'of', 'Ways:'], 238, 182, 4);
   words.push(word(String(board.ways), 329, 182));
   words.push(word('Spare:', 393, 182));

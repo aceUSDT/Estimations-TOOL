@@ -12,6 +12,8 @@ const ROOT = path.resolve(HERE, '..', '..');
 const fixtures = process.argv.slice(2).map((fixture) => path.resolve(fixture));
 assert.ok(fixtures.length, 'Pass at least one PDF to verify-real-viewer.mjs');
 fixtures.forEach((fixture) => assert.ok(fs.existsSync(fixture), `Missing fixture: ${fixture}`));
+const expectedHealthReasons = new Set(String(process.env.EXPECTED_HEALTH_REASONS || '')
+  .split(',').map((value) => value.trim()).filter(Boolean));
 
 const playwrightSpecifier = process.env.PLAYWRIGHT_CORE_PATH
   ? pathToFileURL(process.env.PLAYWRIGHT_CORE_PATH).href
@@ -83,6 +85,19 @@ try {
 
   const extraction = await page.evaluate(() => {
     const scheduleRows = state.cur.analysis.rows.filter((row) => row.kind === 'schedule' && row.fileId);
+    const sourcePage = state.cur.files[0]?.pages?.[0];
+    const spatialProbe = window.EstimationExtractorCore?.parseSpatialSchedulePage?.({
+      lines: sourcePage?.lines || [],
+      tableRows: sourcePage?.tableRows || [],
+      pageWidth: sourcePage?.w,
+      pageHeight: sourcePage?.h,
+      pageType: sourcePage?.type,
+    });
+    const issueCounts = {};
+    scheduleRows.forEach((row) => {
+      const issue = rowApprovalIssue(row) || 'none';
+      issueCounts[issue] = (issueCounts[issue] || 0) + 1;
+    });
     scheduleRows.filter((row) => !rowApprovalIssue(row)).forEach((row) => { row.status = 'pending'; });
     const first = orderedPendingReviewRows().find((row) => row.kind === 'schedule' && row.fileId);
     return {
@@ -98,12 +113,50 @@ try {
       firstId: first?.id || null,
       firstBoard: first?.boardNorm || null,
       firstPage: first?.page || null,
+      issueCounts,
+      pageInput: {
+        type: sourcePage?.type || null,
+        lineCount: sourcePage?.lines?.length || 0,
+        wordCount: (sourcePage?.lines || []).reduce((sum, line) => sum + (line.words?.length || 0), 0),
+        tokenGeometry: (sourcePage?.lines || []).flatMap((line) => line.words || [])
+          .filter((word) => /^(?:DB-?2|WAY|PHASE|MCB|50|125)$/i.test(String(word.text || '')))
+          .slice(0, 20).map((word) => ({ text: word.text, bbox: word.bbox, rotation: word.rotation })),
+      },
+      spatialProbe: spatialProbe ? {
+        matched: spatialProbe.matched,
+        dialect: spatialProbe.dialect || spatialProbe.schema?.dialect || null,
+        board: spatialProbe.board?.ref || null,
+        rows: spatialProbe.rows?.length || 0,
+        warnings: spatialProbe.warnings || [],
+      } : null,
+      pageDiagnostics: (state.cur.analysis.pageDiagnostics || []).map((diagnostic) => ({
+        page: diagnostic.page,
+        type: diagnostic.type,
+        rowsParsed: diagnostic.rowsParsed,
+        spatialMatched: diagnostic.spatialMatched,
+        spatialDialect: diagnostic.spatialDialect,
+        spatialBlockingReasons: diagnostic.spatialBlockingReasons,
+        spatialWarnings: diagnostic.spatialWarnings,
+        boardResolved: diagnostic.boardResolved,
+      })),
+      rowSample: scheduleRows.slice(0, 5).map((row) => ({
+        boardNorm: row.boardNorm || null,
+        device: row.device || null,
+        rating: row.rating ?? null,
+        status: row.status || null,
+        outOfScope: Boolean(row.outOfScope),
+        issue: rowApprovalIssue(row),
+      })),
       health: state.cur.analysis.health,
     };
   });
-  assert.equal(extraction.analysisVersion, 21, 'real project must use the current analysis model');
-  assert.ok(extraction.scheduleRows > 0, 'schedule rows must be extracted before opening Viewer');
-  assert.ok(extraction.firstId && extraction.firstBoard, 'guided review must have a first schedule row');
+  assert.equal(extraction.analysisVersion, 24, 'real project must use the current analysis model');
+  assert.ok(extraction.scheduleRows > 0,
+    `schedule rows must be extracted before opening Viewer: ${JSON.stringify({ pageInput: extraction.pageInput,
+      spatialProbe: extraction.spatialProbe, pageDiagnostics: extraction.pageDiagnostics, health: extraction.health })}`);
+  assert.ok(extraction.firstId && extraction.firstBoard,
+    `guided review must have a first schedule row: ${JSON.stringify({ issueCounts: extraction.issueCounts, rowSample: extraction.rowSample,
+      pageInput: extraction.pageInput, spatialProbe: extraction.spatialProbe })}`);
   assert.equal(extraction.firstPage, 1, 'guided review must begin on the earliest schedule page');
   if (extraction.schematicPages) {
     assert.ok(extraction.schematicVectorSegments > 100, 'schematic PDF vectors must be captured in the browser pipeline');
@@ -112,7 +165,13 @@ try {
     assert.equal(extraction.unresolvedSchematicBoards, 0, 'the supplied schematic must have no unresolved board endpoints');
     assert.ok(extraction.linkedCrossReferences > 0, 'at least one schematic board must link exactly to its supplied schedule');
   } else {
-    assert.notEqual(extraction.health?.state, 'failed', 'schedule-only extraction health must not fail');
+    const healthCodes = new Set((extraction.health?.reasons || []).map((reason) => reason.code));
+    const unexpected = [...healthCodes].filter((code) => !expectedHealthReasons.has(code));
+    if (extraction.health?.state === 'failed') {
+      assert.ok(expectedHealthReasons.size > 0 && unexpected.length === 0,
+        `schedule-only extraction health must not fail unexpectedly: ${JSON.stringify({ health: extraction.health, pageDiagnostics: extraction.pageDiagnostics })}`);
+    }
+    expectedHealthReasons.forEach((code) => assert.ok(healthCodes.has(code), `expected health reason ${code} was not emitted`));
   }
 
   await page.evaluate(async (rowId) => {
@@ -158,6 +217,9 @@ try {
   assert.equal(viewer.focused, 1, 'only the selected row may use the red attention overlay');
   assert.ok(viewer.canvasReady, 'Viewer canvas must render nonblank dimensions');
   assert.doesNotMatch(viewer.meta, /Extraction incomplete/i, 'a parsed schedule must not be labelled incomplete');
+  if (extraction.spatialProbe?.dialect === 'trimble_cable_schedule') {
+    assert.match(viewer.meta, /Cable Schedule/i, 'a structurally proven cable schedule must not remain labelled as a specification');
+  }
   await page.screenshot({ path: path.join(shotsDir, 'real-viewer-desktop.png'), fullPage: false });
 
   await page.locator('#vReviewStart').click();

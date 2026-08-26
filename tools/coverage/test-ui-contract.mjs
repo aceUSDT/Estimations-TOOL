@@ -19,7 +19,7 @@ const required = [
   'host.requestFullscreen',
   "document.addEventListener('fullscreenchange'",
   'function syncViewerLayout()',
-  'const ANALYSIS_VERSION=23;',
+  'const ANALYSIS_VERSION=24;',
   'id="processingCancelBtn"',
   'const AI_RECOVERY_MAX_PAGES=3;',
   'const AI_RECOVERY_PAGE_TIMEOUT_MS=180000;',
@@ -112,13 +112,20 @@ const required = [
   'id="vCalibrationRole"',
   'id="vCalibrationScope"',
   'function calibrationHintForPage(',
+  'function calibrationRoleGroups(',
   'function bindCalibrationDrag(',
   'function applyCalibrations(',
   'calibrationHint.regions.length>0',
+  'function viewerAuditTakeoffSummary(',
+  'approved take-off',
 ];
 required.forEach((value) => assert.ok(html.includes(value), `missing UI contract: ${value}`));
 assert.ok(!html.includes("automaticScope?.enforced&&!automaticScope.pageSet.has(pageNo)"),
   'content-derived scope must never exclude pages from deterministic or enhanced analysis');
+assert.ok(!html.includes("pg.type!=='cable-schedule'"),
+  'cable schedules with protective-device columns must enter spatial schedule analysis');
+assert.match(html, /trimbleCableScheduleProfile\(spatialWords,pg\.w\)\.matched/,
+  'structurally proven cable schedules must bypass a wrong page-type label');
 assert.ok(!html.includes('id="vAssistBoard"'), 'viewer must not contain a duplicate board selector');
 assert.ok(!/\bSpace way(?:s)?\b/i.test(html), 'user-facing empty positions must be labelled as fitted blanks, not Space ways');
 assert.ok(html.includes('Fitted blank way'), 'viewer must use the commercial fitted-blank label');

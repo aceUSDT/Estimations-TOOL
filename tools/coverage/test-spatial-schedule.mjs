@@ -163,6 +163,25 @@ assert.equal(compact.rows.find((row) => row.way === 2).sens, 30);
 assert.deepEqual(compact.rows.filter((row) => row.inferredWay).map((row) => row.way), [3, 4, 5, 6]);
 assert.equal(compact.board.classification.family, 'distribution_board');
 
+const inferredCurveWords = compactWords.filter((item) => !(item.text === 'B' && item.bbox[1] === 80));
+const inferredCurveSchedule = Core.parseSpatialSchedulePage({
+  lines: [
+    { text: 'DISTRIBUTION BOARD SCHEDULE' },
+    { text: 'Board Reference: DB-TEST-CURVE' },
+    { text: 'Size: 6 WAY TPN' },
+    { text: 'Internal Isolator Details: 125A' },
+  ],
+  words: inferredCurveWords,
+  pageWidth: 520,
+  pageHeight: 220,
+  pageType: 'db-schedule',
+});
+const inferredCurveRow = inferredCurveSchedule.rows.find((row) => row.way === 1);
+assert.equal(inferredCurveRow.curve, 'C');
+assert.equal(inferredCurveRow.curveInferred, true);
+assert.equal(inferredCurveRow.requiresReview, true);
+assert.match(inferredCurveRow.resolutionReasons.join(' '), /125A distribution-board policy default/i);
+
 // A TPN way can contain either one merged three-pole device or three distinct
 // single-pole phase rows. Repeated per-phase evidence must remain three devices.
 const phaseRowWords = [
@@ -523,6 +542,7 @@ assert.ok(schematic.devices.some((device) => device.boardRef === 'DB-B-02' && de
 // and bind optional protection/accessory columns to the same physical row.
 const calibratedWords = [
   word('DB-CAL-01', 210, 18, 70),
+  word('TP&N distribution board', 315, 18, 145),
   word('1', 15, 85), word('L1', 48, 85), word('MCB', 95, 85), word('20', 155, 85),
   word('Office sockets', 230, 85, 90), word('Y', 345, 85), word('N', 380, 85), word('Y', 420, 85),
   word('2', 15, 120), word('L2', 48, 120), word('RCBO', 95, 120), word('16', 155, 120),
@@ -537,7 +557,9 @@ const calibrated = Core.parseSpatialSchedulePage({
   pageType: 'unknown',
   calibrationHint: { regions: [
     { role: 'board_ref', bbox: [205, 10, 82, 24] },
+    { role: 'board_type', bbox: [305, 10, 165, 24] },
     { role: 'outgoing_table', bbox: [4, 60, 480, 120] },
+    { role: 'single_phase_rows', bbox: [4, 60, 480, 120] },
     { role: 'way', bbox: [5, 60, 30, 120] },
     { role: 'phase', bbox: [36, 60, 34, 120] },
     { role: 'device_class', bbox: [78, 60, 52, 120] },
@@ -551,6 +573,8 @@ const calibrated = Core.parseSpatialSchedulePage({
 });
 assert.equal(calibrated.matched, true);
 assert.equal(calibrated.board.ref, 'DB-CAL-01');
+assert.equal(calibrated.board.header.board_type_text, 'TP&N distribution board');
+assert.equal(calibrated.board.classification.family, 'distribution_board');
 assert.equal(calibrated.rows.filter((row) => !row.inferredWay).length, 3);
 assert.equal(calibrated.rows.find((row) => row.way === 1).rcdProtected, true);
 assert.equal(calibrated.rows.find((row) => row.way === 1).afdd, false);
@@ -559,5 +583,7 @@ assert.ok(calibrated.rows.find((row) => row.way === 2).associatedDevices.some((i
 assert.equal(calibrated.rows.find((row) => row.way === 3).spare, true);
 assert.equal(calibrated.rows.find((row) => row.way === 3).qty, 0);
 assert.ok(calibrated.calibration.roles.includes('outgoing_table'));
+assert.ok(calibrated.calibration.roles.includes('single_phase_rows'));
+assert.equal(calibrated.board.header.phase_config, 'SPN');
 
 console.log('PASS: adaptive spatial schedules, damaged phase repair, precise rows, schematic feeder lanes, policy classification, and provenance.');

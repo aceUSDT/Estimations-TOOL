@@ -44,6 +44,16 @@ check('summary pct', cov.summary.pctComplete === Math.round((8 / 18) * 100), `go
 check('missing protection fields are surfaced', mech.incompleteProtectionRows === 8, `got ${mech.incompleteProtectionRows}`);
 check('board protection gap is summarized', cov.summary.boardsWithProtectionGaps === 1, `got ${cov.summary.boardsWithProtectionGaps}`);
 
+const spatialHeaderCoverage = core.buildCoverage({
+  boards: { DB2: { norm: 'DB2', orig: 'DB-2', pages: [{ fileId: 'f-spatial', page: 1, primary: true }],
+    header: { ways_total: 12 }, headerEvidence: { ways_total: { text: '12', confidence: 0.98, extractionMethod: 'Spatial board header parser' } } } },
+  rows: [{ boardNorm: 'DB2', way: 1, page: 1, fileId: 'f-spatial', kind: 'schedule', device: 'MCB', rating: 50 }],
+  pages: [{ fileId: 'f-spatial', page: 1,
+    text: 'No. of Ways 125 Device Rating 125A\nWay Phase Overcurrent Protective Device', type: 'db-schedule' }],
+});
+check('trusted spatial way count overrides ambiguous text adjacency', spatialHeaderCoverage.perBoard[0].expectedWays === 12,
+  `got ${spatialHeaderCoverage.perBoard[0].expectedWays}`);
+
 /* board with no header — no phantom expectation */
 const cov2 = core.buildCoverage({
   boards: { DBX: { norm: 'DBX', orig: 'DB-X', pages: [{ fileId: 'f1', page: 1 }] } },
