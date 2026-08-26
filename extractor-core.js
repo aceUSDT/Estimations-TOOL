@@ -1883,18 +1883,25 @@
         const type = String(pageMap.get(`${ref.fileId}#${ref.page}`)?.type || '').toLowerCase();
         return type !== 'sld' && type !== 'schematic';
       });
-      for (const ref of boardPages) {
-        const pg = pageMap.get(`${ref.fileId}#${ref.page}`);
-        const found = pg && expectedWaysFromText(pg.text);
-        if (found && (!expected || found.ways > expected)) {
-          expected = found.ways;
-          evidence = { fileId: ref.fileId, page: ref.page, text: found.evidence };
+      const extractedWayCount = Number(board.header?.ways_total);
+      const headerWaySource = board.headerEvidence?.ways_total || null;
+      const validExtractedWayCount = Number.isInteger(extractedWayCount) && extractedWayCount > 0 && extractedWayCount <= 200;
+      const trustedHeaderWayCount = validExtractedWayCount && Boolean(headerWaySource)
+        && (Number(headerWaySource?.confidence) >= 0.8
+          || /(?:SPATIAL|USER|MANUAL|CALIBRAT)/i.test(String(headerWaySource?.extractionMethod || '')));
+      if (!trustedHeaderWayCount) {
+        for (const ref of boardPages) {
+          const pg = pageMap.get(`${ref.fileId}#${ref.page}`);
+          const found = pg && expectedWaysFromText(pg.text);
+          if (found && (!expected || found.ways > expected)) {
+            expected = found.ways;
+            evidence = { fileId: ref.fileId, page: ref.page, text: found.evidence };
+          }
         }
       }
-      const extractedWayCount = Number(board.header?.ways_total);
-      if (expected == null && Number.isInteger(extractedWayCount) && extractedWayCount > 0 && extractedWayCount <= 200) {
+      if (trustedHeaderWayCount || (expected == null && validExtractedWayCount)) {
         expected = extractedWayCount;
-        const source = board.headerEvidence?.ways_total || null;
+        const source = headerWaySource;
         evidence = {
           fileId: boardPages[0]?.fileId || null,
           page: boardPages[0]?.page || null,

@@ -4,6 +4,7 @@ await import('../../extractor-core.js');
 await import('../../spatial-schedule-core.js');
 const Core = globalThis.EstimationExtractorCore;
 const { createTrimbleSvaSyntheticDocument } = await import('./fixtures/trimble-sva-synthetic.mjs');
+const { createTrimbleCableScheduleSyntheticPage } = await import('./fixtures/trimble-cable-schedule-synthetic.mjs');
 
 const pages = createTrimbleSvaSyntheticDocument();
 const parseStarted = performance.now();
@@ -25,6 +26,8 @@ assert.ok(results.every((result) => result.matched), 'all healthy Trimble pages 
 assert.ok(results.every((result) => result.schema?.dialect === 'trimble_stacked_protection'));
 assert.equal(boards.size, 7, 'all Board Data / Id No identities must be bound');
 assert.deepEqual(countItems(boardRecords, (board) => board.classification.family), { switchboard: 1, distribution_board: 6 });
+assert.ok(boardRecords.every((board) => board.header.description === 'Power TPN'));
+assert.ok(boardRecords.every((board) => board.header.board_model === 'Schneider'));
 assert.equal(activeRows.length, 246, 'every printed active row group must be captured exactly once');
 assert.ok(activeRows.every((row) => row.boardRef), 'no active row may be boardless');
 
@@ -68,4 +71,28 @@ assert.equal(conflictingRow?.device, 'MCB', 'explicit source class remains visib
 assert.equal(conflictingRow?.requiresReview, true);
 assert.match(conflictingRow?.classConflict?.reason || '', /conflict/i);
 
-console.log('PASS: Trimble/SVA stacked schedules bind 7 boards, 246 row groups, independent protection records, exact classes, phases, units, and fail-closed conflicts.');
+const cableSchedule = Core.parseSpatialSchedulePage(createTrimbleCableScheduleSyntheticPage());
+assert.equal(cableSchedule.matched, true, 'the cable-schedule dialect must prove its own bounded grid');
+assert.equal(cableSchedule.schema.dialect, 'trimble_cable_schedule');
+assert.equal(cableSchedule.board.ref, 'FF-L&P-3');
+assert.equal(cableSchedule.board.classification.family, 'distribution_board');
+assert.equal(cableSchedule.board.header.phase_config, 'TPN');
+assert.equal(cableSchedule.board.header.ways_observed, 3);
+assert.deepEqual(cableSchedule.rows.map((row) => [row.way, row.phase, row.device, row.rating, row.poles]), [
+  ['L1', 'L1', 'MCB', 10, 1],
+  ['L1', 'L2', 'MCB', 10, 1],
+  ['L1', 'L3', 'MCB', 10, 1],
+  ['L2', 'L1', 'MCB', 10, 1],
+  ['L2', 'L2', 'MCB', 10, 1],
+  ['P1', '3PH', 'MCB', 32, 3],
+]);
+assert.ok(cableSchedule.rows.every((row) => row.boardRef === 'FF-L&P-3'));
+assert.ok(cableSchedule.rows.every((row) => row.rcdProtected === false && row.afdd === false));
+assert.ok(cableSchedule.rows.every((row) => row.curve == null && row.requiresReview),
+  'an unprinted curve must remain reviewable when the cable schedule has no board-rating evidence');
+assert.ok(cableSchedule.references.some((reference) => reference.role === 'primary_board' && reference.original === 'FF-L&P-3'));
+assert.ok(cableSchedule.references.filter((reference) => reference.role === 'circuit_reference').length >= 6);
+assert.equal(cableSchedule.references.filter((reference) => reference.role === 'primary_board').length, 1,
+  'connected-to circuit references must not be promoted to schedule boards');
+
+console.log('PASS: Trimble/SVA stacked and cable schedules bind hierarchical boards, rows, protection records, phases, units, and fail-closed conflicts.');

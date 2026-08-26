@@ -390,6 +390,16 @@
   .ocr-progress{min-width:120px;font-size:11px;color:var(--txt2);font-weight:700;}
   .v-info{min-height:0;overflow:hidden;}
   .v-info #vDetList{min-height:0;overflow-y:auto;flex:1;}
+  .audit-takeoff-summary{position:sticky;top:0;z-index:3;padding:10px 12px;background:#fff;border-bottom:1px solid var(--line);box-shadow:0 2px 5px rgba(22,32,46,.06);}
+  .audit-takeoff-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;}
+  .audit-takeoff-head strong{display:block;font-size:12px;line-height:1.35;}
+  .audit-takeoff-head span{display:block;margin-top:2px;color:var(--txt3);font-size:10.5px;}
+  .audit-takeoff-progress{font-size:12px;font-weight:900;color:var(--blue);white-space:nowrap;}
+  .audit-takeoff-groups{display:grid;gap:4px;margin-top:8px;}
+  .audit-takeoff-row{display:grid;grid-template-columns:10px minmax(0,1fr) auto;align-items:center;gap:7px;min-height:22px;font-size:11px;}
+  .audit-takeoff-row .swatch{width:9px;height:16px;border-radius:2px;background:var(--spec-color);}
+  .audit-takeoff-row .label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--txt2);}
+  .audit-takeoff-row .qty{font-weight:900;color:var(--txt);}
   .v-info .det{padding:9px 12px;border-bottom:1px solid #edf0f5;font-size:12px;color:var(--txt2);cursor:pointer;}
   .v-info .det:hover{background:#f7f9fc;}
   .v-info .det.current{background:#eef6ff;box-shadow:inset 4px 0 0 var(--red);}
@@ -1190,7 +1200,7 @@ const state = {
   reportMode: 'board',
   reviewFlow: {active:false,currentRowId:null,initialCount:0,moving:false,boardOrder:[],initialByBoard:{},rowOrderByBoard:{}},
 };
-const ANALYSIS_VERSION=23;
+const ANALYSIS_VERSION=24;
 const uid = () => 'x'+(state.nextId++)+'_'+Math.random().toString(36).slice(2,6);
 
 /* ====================== PERSISTENCE (IndexedDB) ====================== */
@@ -1840,6 +1850,24 @@ function calibrationDefinitions(){
   ];
 }
 function calibrationRoleLabel(role){return calibrationDefinitions().find(item=>item.role===role)?.label||role.replaceAll('_',' ');}
+function calibrationRoleGroups(){
+  const fallback={region:'Board and table regions',layout:'Phase and row layout',column:'Outgoing circuit columns',header:'Board header fields'};
+  const order=['Board and table regions','Phase and row layout','Outgoing circuit columns','Board header fields'];
+  const groups=new Map();
+  calibrationDefinitions().forEach(item=>{
+    const label=item.group||fallback[item.kind]||'Other information';
+    if(!groups.has(label))groups.set(label,[]);
+    groups.get(label).push(item);
+  });
+  return [...groups.entries()].sort((left,right)=>{
+    const a=order.indexOf(left[0]),b=order.indexOf(right[0]);
+    return (a<0?order.length:a)-(b<0?order.length:b)||left[0].localeCompare(right[0]);
+  });
+}
+function calibrationRoleOptions(selected=''){
+  return calibrationRoleGroups().map(([label,items])=>`<optgroup label="${esc(label)}">${items
+    .map(item=>`<option value="${esc(item.role)}" ${item.role===selected?'selected':''}>${esc(item.label)}</option>`).join('')}</optgroup>`).join('');
+}
 function calibrationApplies(record,fileId,pageNo,pageRecord){
   if(!record||record.fileId!==fileId)return false;
   if(record.scope==='page'&&Number(record.sourcePage)!==Number(pageNo))return false;
@@ -2659,14 +2687,20 @@ async function runAiExtraction(A,f,p,pageSet,{signal=null}={}){
 
 /* reconstruct lines (text + bbox) from a pdf.js text content object */
 function linesFromTextContent(tc, vp){
-  const items = tc.items.map((it,index)=>{
+  const items = tc.items.flatMap((it,index)=>{
     const tx = window.pdfjsLib.Util.transform(vp.transform, it.transform);
     const w=Math.max(1,Math.abs(it.width*vp.scale)),h=Math.max(1,Math.hypot(tx[2],tx[3])||10);
-    const angle=Math.atan2(tx[1],tx[0]),ux=Math.cos(angle)*w,uy=Math.sin(angle)*w,nx=-Math.sin(angle)*h,ny=Math.cos(angle)*h;
-    const corners=[[tx[4],tx[5]],[tx[4]+ux,tx[5]+uy],[tx[4]-nx,tx[5]-ny],[tx[4]+ux-nx,tx[5]+uy-ny]];
-    const xs=corners.map(point=>point[0]),ys=corners.map(point=>point[1]),x0=Math.min(...xs),y0=Math.min(...ys),x1=Math.max(...xs),y1=Math.max(...ys);
-    return {str:it.str, x:tx[4], y:tx[5], w, h, word:{id:`pdf-word-${index}`,text:it.str,
-      bbox:[x0,y0,x1-x0,y1-y0],confidence:1,rotation:Number((angle*180/Math.PI).toFixed(2))}};
+    const angle=Math.atan2(tx[1],tx[0]),cos=Math.cos(angle),sin=Math.sin(angle),nx=-sin*h,ny=cos*h;
+    const source=String(it.str||''),matches=[...source.matchAll(/\S+/g)];
+    return matches.map((match,tokenIndex)=>{
+      const start=source.length?match.index/source.length:0,end=source.length?(match.index+match[0].length)/source.length:1;
+      const x=tx[4]+cos*w*start,y=tx[5]+sin*w*start,tokenWidth=Math.max(1,w*(end-start));
+      const ux=cos*tokenWidth,uy=sin*tokenWidth;
+      const corners=[[x,y],[x+ux,y+uy],[x-nx,y-ny],[x+ux-nx,y+uy-ny]];
+      const xs=corners.map(point=>point[0]),ys=corners.map(point=>point[1]),x0=Math.min(...xs),y0=Math.min(...ys),x1=Math.max(...xs),y1=Math.max(...ys);
+      return {str:match[0],x,y,w:tokenWidth,h,word:{id:`pdf-word-${index}-${tokenIndex}`,text:match[0],
+        bbox:[x0,y0,x1-x0,y1-y0],confidence:1,rotation:Number((angle*180/Math.PI).toFixed(2))}};
+    });
   }).filter(i=>i.str.trim());
   items.sort((a,b)=> Math.abs(a.y-b.y)>5 ? a.y-b.y : a.x-b.x);
   const lines=[];
@@ -3273,10 +3307,13 @@ async function runAnalysis(opts){
       const sched=core.scoreScheduleCandidate?core.scoreScheduleCandidate(lines):{score:0,signals:[]};
       const schematic=pg.type==='sld'||pg.type==='schematic';
       const headerEvidence=hasScheduleBoardHeader(lines);
-      const spatialEvidence=core.collectSpatialWords?core.collectSpatialWords({lines:pg.lines||[],tableRows:pg.tableRows||[]}).length>=8:false;
-      const regular=!schematic&&pg.type!=='cable-schedule'
+      const spatialWords=core.collectSpatialWords?core.collectSpatialWords({lines:pg.lines||[],tableRows:pg.tableRows||[]}):[];
+      const spatialEvidence=spatialWords.length>=8;
+      const cableScheduleDialect=spatialEvidence&&core.trimbleCableScheduleProfile
+        ? core.trimbleCableScheduleProfile(spatialWords,pg.w).matched : false;
+      const regular=!schematic
         &&(SCHEDULE_TYPES.has(pg.type)||(sched.score>=0.45&&sched.signals.length>=2)||(headerEvidence&&spatialEvidence)
-          ||calibrationHint.regions.length>0);
+          ||cableScheduleDialect||calibrationHint.regions.length>0);
       if(!regular)return;
       candidates.push({documentPage:pageNo,lines:pg.lines||[],tableRows:pg.tableRows||[],pageWidth:pg.w,pageHeight:pg.h,
         pageType:pg.type,allowSingleWay:sched.score>=0.55&&sched.signals.length>=2,calibrationHint});
@@ -3327,7 +3364,7 @@ async function runAnalysis(opts){
       const calibrationHint=calibrationHintForPage(p,id,pageNo,pg);
       const schematicPage=pg.type==='sld'||pg.type==='schematic';
       const documentSpatial=documentSpatialByFile.get(id)?.get(pageNo)||null;
-      const regularSchedule=!schematicPage&&pg.type!=='cable-schedule'
+      const regularSchedule=!schematicPage
         && (SCHEDULE_TYPES.has(pg.type) || (schedCandidate.score>=0.45&&schedCandidate.signals.length>=2)
           || Boolean(documentSpatial?.result?.matched&&documentSpatial.result.rows?.length)
           || calibrationHint.regions.length>0);
@@ -3365,6 +3402,10 @@ async function runAnalysis(opts){
         if(spatialContinuation)spatial=continuation;
       }
       const isSched=regularSchedule||spatialContinuation;
+      if(isSched&&spatial?.matched&&!pg.typeManual&&!SCHEDULE_TYPES.has(pg.type)){
+        pg.type=spatial.dialect==='trimble_cable_schedule'?'cable-schedule':'db-schedule';
+        pg.sub_format=pg.type;pg.threeType=toThreeType(pg.type);
+      }
       const contextualRefs=core?.extractContextualBoardReferences
         ? core.extractContextualBoardReferences(pg.lines||lines,{pageType:pg.type,isSchedule:isSched}) : [];
       const spatialWordCount=core?.collectSpatialWords
@@ -4476,6 +4517,29 @@ function boardHeaderCard(b){
     ?`<div class="wide"><span class="chip blue">${b.corrections.length} correction${b.corrections.length===1?'':'s'}</span><span class="hint" style="display:inline;margin-left:8px">Corrected values are used in review and reports.</span></div>`:'';
   return `<div class="bd-hdr">${fields.map(([k,v,wide])=>`<div${wide?' class="wide"':''}><div class="k">${esc(k)}</div><div class="v">${esc(String(v))}</div></div>`).join('')}${corrected}</div>`;
 }
+function viewerAuditTakeoffSummary(boardNorm,rows){
+  if(!boardNorm)return '';
+  const boardRows=(rows||[]).filter(row=>row.boardNorm===boardNorm&&isTakeoffEvidenceRow(row));
+  const counted=boardRows.filter(row=>isCountedDeviceRow(row));
+  const approved=counted.filter(row=>row.status==='confirmed');
+  const total=counted.reduce((sum,row)=>sum+countedRowQuantity(row),0);
+  const approvedTotal=approved.reduce((sum,row)=>sum+countedRowQuantity(row),0);
+  const colours=buildSpecificationColorMap(counted);
+  const groups=new Map();
+  approved.forEach(row=>{
+    const key=deviceSpecificationKey(row);if(!key)return;
+    const current=groups.get(key)||{key,label:deviceSpecificationLabel(row),qty:0,colour:colours.get(key)||deviceColor(row.device)};
+    current.qty+=countedRowQuantity(row);groups.set(key,current);
+  });
+  const groupRows=[...groups.values()].sort((left,right)=>right.qty-left.qty||left.label.localeCompare(right.label,undefined,{numeric:true,sensitivity:'base'}));
+  return `<section class="audit-takeoff-summary" aria-label="Live approved take-off for ${esc(boardLabel(boardNorm))}">
+    <div class="audit-takeoff-head"><div><strong>${esc(boardLabel(boardNorm))} approved take-off</strong>
+      <span>${groupRows.length?`${groupRows.length} consolidated device group${groupRows.length===1?'':'s'}`:'Approve or correct a row to build this take-off'}</span></div>
+      <div class="audit-takeoff-progress">${approvedTotal} / ${total}</div></div>
+    ${groupRows.length?`<div class="audit-takeoff-groups">${groupRows.map(group=>`<div class="audit-takeoff-row" style="--spec-color:${group.colour}">
+      <span class="swatch" aria-hidden="true"></span><span class="label" title="${esc(group.label)}">${esc(group.label)}</span><span class="qty">x${group.qty}</span></div>`).join('')}</div>`:''}
+  </section>`;
+}
 function openBoardEditor(boardNorm,surface='Boards & Devices'){
   const p=ensureProjectState(state.cur),A=p?.analysis;
   if(!p||!A){toast('Board details are no longer available');return;}
@@ -4813,6 +4877,9 @@ function deviceOptions(sel){
 function openRowEditor(r, isNew, surface='Boards & Devices'){
   const p=state.cur, A=p.analysis;
   const boards=Object.values(A.boards);
+  const sourceFile=r.fileId?p.files.find(file=>file.id===r.fileId):null;
+  const pageBoard=surface==='Viewer'&&sourceFile?viewerBoardOnPage(sourceFile,r.page||state.viewer.page,state.viewer.boardHl):null;
+  const editorBoardNorm=r.boardNorm||(pageBoard&&A.boards[pageBoard]?pageBoard:null);
   const poleValue=r.poleConfiguration||(r.poles===1?'SP':r.poles===2?'DP':r.poles===3?'TP':r.poles===4?'4P':'');
   const rcdValue=r.rcdProtected===true?'yes':r.rcdProtected===false?'no':'';
   const rcdArrangementValue=r.rcdArrangement||'';
@@ -4821,7 +4888,7 @@ function openRowEditor(r, isNew, surface='Boards & Devices'){
   const rowRole=r.spare?'spare':r.space?'space':r.incomer?'incomer':'device';
   openModal(isNew?'Add device manually':'Correct this row', `
     <div class="row-editor-grid">
-      <div><label class="lbl">Board</label><select class="sel" id="eBoard">${boards.map(b=>`<option value="${esc(b.norm)}" ${r.boardNorm===b.norm?'selected':''}>${esc(b.orig)}</option>`).join('')}<option value="" ${!r.boardNorm?'selected':''}>- none -</option></select></div>
+      <div><label class="lbl">Board</label><select class="sel" id="eBoard">${boards.map(b=>`<option value="${esc(b.norm)}" ${editorBoardNorm===b.norm?'selected':''}>${esc(b.orig)}</option>`).join('')}<option value="" ${!editorBoardNorm?'selected':''}>- none -</option></select></div>
       <div><label class="lbl">New / corrected board reference</label><input class="in" id="eBoardNew" placeholder="Type a reference not listed"></div>
       <div><label class="lbl">Row classification</label><select class="sel" id="eRole"><option value="device" ${rowRole==='device'?'selected':''}>Outgoing device</option><option value="incomer" ${rowRole==='incomer'?'selected':''}>Incomer</option><option value="spare" ${rowRole==='spare'?'selected':''}>Unpopulated spare way</option><option value="space" ${rowRole==='space'?'selected':''}>Fitted blank</option></select></div>
       <div><label class="lbl">Way</label><input class="in" id="eWay" value="${esc(r.way??'')}" maxlength="12" placeholder="1, L7 or P1"></div>
@@ -5596,9 +5663,7 @@ function renderCalibrationControls(f){
   const bar=$('#vCalibrationBar'),mode=$('#vCalibrateMode'),roleSelect=$('#vCalibrationRole'),scopeSelect=$('#vCalibrationScope');
   bar.hidden=!cal.enabled;mode.classList.toggle('calibration-on',cal.enabled);
   if(!roleSelect.options.length){
-    const groups=[['region','Schedule regions'],['column','Outgoing circuit columns'],['header','Board header fields']];
-    roleSelect.innerHTML=groups.map(([kind,label])=>`<optgroup label="${esc(label)}">${calibrationDefinitions()
-      .filter(item=>item.kind===kind).map(item=>`<option value="${esc(item.role)}">${esc(item.label)}</option>`).join('')}</optgroup>`).join('');
+    roleSelect.innerHTML=calibrationRoleOptions();
   }
   if(!calibrationDefinitions().some(item=>item.role===cal.role))cal.role='outgoing_table';
   roleSelect.value=cal.role;scopeSelect.value=cal.scope;
@@ -5643,7 +5708,7 @@ function openCalibrationManager(f){
   const records=ensureCalibrationState(p).filter(record=>record.fileId===f.id)
     .sort((left,right)=>Number(left.sourcePage)-Number(right.sourcePage)||left.role.localeCompare(right.role));
   if(!records.length){toast('No calibrations have been saved for this document');return;}
-  const roleOptions=calibrationDefinitions().map(item=>`<option value="${esc(item.role)}">${esc(item.label)}</option>`).join('');
+  const roleOptions=calibrationRoleOptions();
   openModal('Manage layout calibrations',`<div class="calibration-manager">${records.map(record=>`
     <div class="row-editor-grid" data-calibration-id="${esc(record.id)}" style="padding:10px 0;border-bottom:1px solid var(--line)">
       <div><label class="lbl">Information</label><select class="sel" data-field="role">${roleOptions}</select></div>
@@ -5796,9 +5861,15 @@ function pageDetections(f, pageNo){
         label:`${source} to ${target}${detail?' · '+detail:''}`});
     });
   }
-  (f.pages[pageNo-1].lines||[]).forEach((l,li)=>{
-    detectBoards(l.text).forEach(b=>out.push({kind:'board', line:li, color:'blue', label:'Board '+b.orig, r:{srcText:l.text,boardNorm:b.norm}}));
-  });
+  if(A){
+    Object.values(A.boards).forEach(board=>{
+      const pageRef=(board.pages||[]).find(ref=>ref.fileId===f.id&&Number(ref.page)===Number(pageNo)&&ref.primary);
+      if(!pageRef)return;
+      const evidence=board.headerEvidence?.board_ref||null;
+      out.push({kind:'board',line:null,bbox:evidence?.bbox||null,color:'blue',label:'Board '+board.orig,
+        r:{srcText:evidence?.originalText||evidence?.text||board.orig,boardNorm:board.norm}});
+    });
+  }
   (p.assistedMarkups||[]).forEach(m=>m.matches?.forEach(match=>{
     if(match.fileId===f.id&&match.page===pageNo){
       const row=A&&A.rows.find(r=>r.id===match.rowId);
@@ -6267,9 +6338,11 @@ async function renderViewer(){
     }));
   } else {
     const listDets=dets.filter(d=>d.kind!=='boardhl');
-    dl.innerHTML = listDets.length? listDets.map(viewerDetectionCardHtml).join('')
+    const summaryBoard=V.boardHl||viewerBoardOnPage(f,V.page,null);
+    const auditSummary=viewerAuditTakeoffSummary(summaryBoard,A?.rows||[]);
+    dl.innerHTML = listDets.length? auditSummary+listDets.map(viewerDetectionCardHtml).join('')
     : extractionGap
-      ? `<div class="p-body"><span class="chip red">Extraction gap</span><h3 style="margin:10px 0 6px;font-size:15px">No schedule rows were captured</h3>
+      ? `${auditSummary}<div class="p-body"><span class="chip red">Extraction gap</span><h3 style="margin:10px 0 6px;font-size:15px">No schedule rows were captured</h3>
           <p class="hint" style="margin:0 0 12px">Recover a visible way range, add one detailed row, or correct the board identity without leaving the source page.</p>
           <div class="extraction-gap-actions">
             <button class="btn sm primary" id="gapCalibrate">Calibrate source</button>
@@ -6278,7 +6351,7 @@ async function renderViewer(){
             <button class="btn sm" id="gapCorrectBoard">Correct board reference</button>
             <button class="btn sm" id="gapRunOcr">Run OCR again</button>
           </div></div>`
-      : '<div class="empty">No audit evidence on this page.</div>';
+      : auditSummary+'<div class="empty">No audit evidence on this page.</div>';
     dl.querySelectorAll('.det').forEach(el=>{
       const d=listDets[+el.dataset.i];
       el.querySelectorAll('[data-action]').forEach(button=>button.addEventListener('click',async event=>{
@@ -6554,7 +6627,7 @@ function fileSchedule(f){
   let prevBoard=null;
   f.pages.forEach((pg,pi)=>{
     const lines=(pg.lines||[]).map(l=>l.text);
-    const isSched=SCHEDULE_TYPES.has(pg.type)&&pg.type!=='cable-schedule';
+    const isSched=SCHEDULE_TYPES.has(pg.type);
     if (!isSched){ prevBoard=null; return; }
     let ctxBoard=scheduleBoardFromLines(lines);
     if (!ctxBoard&&prevBoard) ctxBoard=prevBoard;
