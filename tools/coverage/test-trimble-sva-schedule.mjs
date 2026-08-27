@@ -37,10 +37,12 @@ const countBy = (key) => activeRows.reduce((counts, row) => {
   return counts;
 }, {});
 
-assert.deepEqual(countBy('device'), { MCCB: 17, MCB: 200, RCBO: 29 });
+assert.deepEqual(countBy('device'), { MCCB: 17, MCB: 191, RCBO: 38 });
 assert.deepEqual(countBy((row) => row.poleConfiguration === 'TP' ? 'TP' : 'SP'), { TP: 34, SP: 212 });
 assert.deepEqual(countBy('ka'), { 10: 168, 15: 61, 18: 2, 25: 15 });
 assert.equal(activeRows.filter((row) => row.separateRcd?.device === 'RCD').length, 9);
+assert.equal(activeRows.filter((row) => row.sourceDeviceClass === 'MCB').length, 9,
+  'outgoing MCB + 30mA RCD rows must group as RCBOs while preserving the printed MCB class');
 assert.equal(activeRows.filter((row) => row.rcdArrangement === 'integral').length, 29);
 assert.ok(activeRows.filter((row) => row.rcdProtected).every((row) => row.sens === 30));
 assert.ok(activeRows.every((row) => row.arcFlashDevice == null && row.afdd !== true));

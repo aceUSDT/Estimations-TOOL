@@ -4,6 +4,14 @@ await import('../../extractor-core.js');
 await import('../../spatial-schedule-core.js');
 const Core = globalThis.EstimationExtractorCore;
 
+assert.equal(Core.parseProtectionDescriptor('Hager h3+ MCCB P160 25kA 3-4P LSI 160').tripUnit, 'LSI');
+assert.equal(Core.parseProtectionDescriptor('MCCB X250 TM-D').tripUnit, 'TM');
+assert.equal(Core.parseProtectionDescriptor('MCCB LSNI').tripUnit, 'LSNI');
+assert.equal(Core.parseProtectionDescriptor('MCCB ATFM').tripUnit, 'ATFM');
+assert.equal(Core.parseProtectionDescriptor('MCCB ATAM').tripUnit, 'ATAM');
+assert.equal(Core.parseProtectionDescriptor('MCCB LI').tripUnit, 'LI');
+assert.equal(Core.parseProtectionDescriptor('Hager h3+ MCCB P160 LSI').productRange, 'H3+ / P160');
+
 const word = (text, x, y, width = Math.max(8, String(text).length * 4.5), height = 10, rotation = 0) => ({
   text,
   bbox: [x, y, width, height],

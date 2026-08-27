@@ -86,8 +86,13 @@ assert.equal(incompleteRcbo.device, 'RCBO');
 assert.equal(incompleteRcbo.requiresReview, true, 'an RCBO without a sensitivity must remain in review');
 
 const reconciledAiRow = Core.reconcileCombinedProtection({device:'MCB',rating:10,curve:'C',rcdProtected:true,sens:30,afdd:false});
-assert.equal(reconciledAiRow.device, 'MCB', 'reconciliation must not overwrite an evidenced MCB class');
+assert.equal(reconciledAiRow.device, 'RCBO', 'an outgoing MCB with explicit 30mA protection belongs in the RCBO procurement group');
 assert.equal(reconciledAiRow.rcdArrangement, 'separate_or_unspecified');
+assert.equal(reconciledAiRow.sourceDeviceClass, 'MCB', 'the printed MCB class must remain available in the evidence trail');
+assert.match(reconciledAiRow.resolutionReasons.join(' '), /30mA residual protection classified in the RCBO procurement group/);
+const reconciledPrintedRow = Core.reconcileCombinedProtection(mcbWithRcdColumn);
+assert.equal(reconciledPrintedRow.device, 'RCBO', 'the commercial rule must also apply to deterministic table rows');
+assert.equal(reconciledPrintedRow.rcdArrangement, 'separate', 'the printed separate-RCD arrangement must not be erased');
 const unstatedRcd = Core.reconcileCombinedProtection({device:'MCB',rating:20,rcdProtected:null,sens:null});
 assert.equal(unstatedRcd.rcdProtected, null, 'reconciliation must preserve an unstated RCD field instead of inventing No RCD');
 

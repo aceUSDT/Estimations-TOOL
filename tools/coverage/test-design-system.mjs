@@ -11,7 +11,7 @@ assert.ok(html.includes('<link rel="stylesheet" href="./assets/app-redesign.css"
 assert.ok(html.includes('Stored on this computer'), 'local-first storage wording has regressed');
 assert.ok(html.includes('class="brand-accent"'), 'EstimationTools wordmark accent is missing');
 
-const expectedTabs = ['docs', 'analysis', 'review', 'reports', 'viewer', 'compare'];
+const expectedTabs = ['docs', 'viewer', 'analysis', 'review', 'reports', 'compare'];
 const actualTabs = [...html.matchAll(/class="ptab[^"\n]*"\s+data-pt="([^"]+)"/g)].map((match) => match[1]);
 assert.deepEqual(actualTabs.slice(0, expectedTabs.length), expectedTabs, 'project navigation order has regressed');
 

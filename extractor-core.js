@@ -1212,7 +1212,7 @@
     };
   }
 
-  /** Reconcile protection attributes without overwriting an evidenced class. */
+  /** Reconcile the printed device with the commercial outgoing-protection group. */
   function reconcileCombinedProtection(row) {
     if (!row) return row;
     const next = reconcilePoleEvidence(reconcileRowOccupancy(row));
@@ -1228,6 +1228,13 @@
     } else if (current === 'MCB' && rcdProtected && !rcdArrangement) {
       rcdArrangement = next.separateRcd ? 'separate' : 'separate_or_unspecified';
     }
+    const outgoingThirtyMaMcb = current === 'MCB' && !next.incomer && rcdProtected === true
+      && Number(next.sens) === 30;
+    if (outgoingThirtyMaMcb) {
+      next.sourceDeviceClass = next.sourceDeviceClass || next.device;
+      device = afdd && next.afddArrangement !== 'separate' ? 'AFDD+RCBO' : 'RCBO';
+      next.commercialClassificationBasis = 'outgoing_30ma_residual_protection';
+    }
     if ((current === 'RCBO' || current === 'AFDD+RCBO') && afdd && next.afddArrangement !== 'separate') {
       device = 'AFDD+RCBO';
     }
@@ -1240,8 +1247,10 @@
     next.rcdProtected = reconciledRcd;
     next.rcdArrangement = rcdArrangement;
     const reasons = Array.isArray(next.resolutionReasons) ? [...next.resolutionReasons] : [];
-    const reason = device !== row.device
-      ? 'RCBO with integral AFDD row evidence classified as AFDD+RCBO'
+    const reason = outgoingThirtyMaMcb
+      ? 'Outgoing MCB with explicit 30mA residual protection classified in the RCBO procurement group'
+      : device !== row.device
+        ? 'RCBO with integral AFDD row evidence classified as AFDD+RCBO'
       : (current === 'MCB' && reconciledRcd
         ? 'MCB class retained; RCD protection recorded as a separate attribute'
         : 'Integral residual-current protection normalised from the device class');
