@@ -150,7 +150,7 @@ try {
       health: state.cur.analysis.health,
     };
   });
-  assert.equal(extraction.analysisVersion, 24, 'real project must use the current analysis model');
+  assert.equal(extraction.analysisVersion, 25, 'real project must use the current analysis model');
   assert.ok(extraction.scheduleRows > 0,
     `schedule rows must be extracted before opening Viewer: ${JSON.stringify({ pageInput: extraction.pageInput,
       spatialProbe: extraction.spatialProbe, pageDiagnostics: extraction.pageDiagnostics, health: extraction.health })}`);

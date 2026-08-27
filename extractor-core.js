@@ -2102,7 +2102,7 @@
   function planAiRecoveryJobs(jobs = [], options = {}) {
     const requestedLimit = Number(options.maxPages);
     const maxPages = Number.isFinite(requestedLimit)
-      ? Math.max(0, Math.min(10, Math.floor(requestedLimit))) : 3;
+      ? Math.max(0, Math.min(500, Math.floor(requestedLimit))) : Math.min(500, (jobs || []).length);
     const seen = new Set();
     const ranked = [];
     (jobs || []).forEach((job, index) => {

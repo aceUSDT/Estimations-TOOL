@@ -413,18 +413,21 @@ assert.equal(Core.selectAiRecoveryReason({ pageType: 'db-schedule', scheduleCand
 assert.equal(Core.selectAiRecoveryReason({ pageType: 'legend', scheduleCandidate: { score: 0.9, signals: ['device-tokens', 'rating-tokens'] },
   scheduleRows: [], expectedWays: 0 }), null, 'legend and drawing vocabulary must not trigger expensive schedule AI');
 
-const recoveryPlan = Core.planAiRecoveryJobs(Array.from({ length: 40 }, (_, index) => ({
+const recoveryJobs = Array.from({ length: 40 }, (_, index) => ({
   id: 'perryfields',
   pageNo: index + 1,
   reason: index === 19 ? 'schedule-rows-missing' : index < 10 ? 'schedule-protection-fields-missing' : 'schedule-coverage-gap',
   unresolvedRatio: index / 40,
   candidateScore: 0.9,
-})), { maxPages: 3 });
+}));
+const priorityPlan = Core.planAiRecoveryJobs(recoveryJobs, { maxPages: 3 });
+assert.equal(priorityPlan.selected.length, 3, 'a recovery batch can still be bounded for concurrent execution');
+assert.equal(priorityPlan.selected[0].pageNo, 20, 'a page with no deterministic rows has first recovery priority');
+assert.deepEqual(priorityPlan.selected.slice(1).map((job) => job.pageNo), [10, 9], 'remaining pages are ordered by unresolved protection evidence');
+const recoveryPlan = Core.planAiRecoveryJobs(recoveryJobs);
 assert.equal(recoveryPlan.eligible, 40);
-assert.equal(recoveryPlan.selected.length, 3, 'a large document must never create an unbounded enhanced-extraction batch');
-assert.equal(recoveryPlan.deferred.length, 37);
-assert.equal(recoveryPlan.selected[0].pageNo, 20, 'a page with no deterministic rows has first recovery priority');
-assert.deepEqual(recoveryPlan.selected.slice(1).map((job) => job.pageNo), [10, 9], 'remaining pages are ordered by unresolved protection evidence');
+assert.equal(recoveryPlan.selected.length, 40, 'all unresolved pages remain eligible for iterative recovery');
+assert.equal(recoveryPlan.deferred.length, 0, 'the planner must not silently abandon pages after the first batch');
 
 const derivedCoverage = Core.buildCoverage({
   boards: { DBG9: { norm: 'DBG9', orig: 'DB-G9', type: 'DB', header: perryfields.board.header, pages: [{ fileId: 'perry', page: 1, primary: true }] } },
