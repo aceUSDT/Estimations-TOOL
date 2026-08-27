@@ -398,7 +398,7 @@
   .audit-takeoff-groups{display:grid;gap:4px;margin-top:8px;}
   .audit-takeoff-row{display:grid;grid-template-columns:10px minmax(0,1fr) auto;align-items:center;gap:7px;min-height:22px;font-size:11px;}
   .audit-takeoff-row .swatch{width:9px;height:16px;border-radius:2px;background:var(--spec-color);}
-  .audit-takeoff-row .label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--txt2);}
+  .audit-takeoff-row .label{min-width:0;color:var(--txt2);line-height:1.35;overflow-wrap:anywhere;}
   .audit-takeoff-row .qty{font-weight:900;color:var(--txt);}
   .v-info .det{padding:9px 12px;border-bottom:1px solid #edf0f5;font-size:12px;color:var(--txt2);cursor:pointer;}
   .v-info .det:hover{background:#f7f9fc;}
@@ -746,10 +746,10 @@
 
     <div class="ptabs">
       <button class="ptab active" data-pt="docs">Documents <span class="badge" id="bDocs">0</span></button>
+      <button class="ptab" data-pt="viewer">Audit</button>
       <button class="ptab" data-pt="analysis">Boards &amp; devices <span class="badge"><span id="bBoards">0</span> boards</span><span class="badge"><span id="bDev">0</span> devices</span></button>
       <button class="ptab" data-pt="review">Review <span class="badge" id="bRev">0</span></button>
       <button class="ptab" data-pt="reports">Reports</button>
-      <button class="ptab" data-pt="viewer">Audit</button>
       <button class="ptab" data-pt="compare">Compare</button>
     </div>
 
@@ -1151,10 +1151,10 @@ function placeModalInActiveSurface(){
   (inViewer?viewer:document.body).appendChild(backdrop);
   backdrop.classList.toggle('in-viewer',inViewer);
 }
-function openModal(title, bodyHtml, onOk, okLabel='Save'){
+function openModal(title, bodyHtml, onOk, okLabel='Save', cancelLabel='Cancel'){
   $('#modalBk .modal')?.classList.remove('row-editor-modal','report-source-modal','is-flexible');
   resetFlexibleModal();placeModalInActiveSurface();
-  $('#mCancel').hidden=false;
+  $('#mCancel').hidden=false;$('#mCancel').textContent=cancelLabel;
   $('#mHead').textContent=title; $('#mBody').innerHTML=bodyHtml;
   $('#mOk').textContent=okLabel; modalOk=onOk;
   $('#modalBk').classList.add('show');
@@ -1162,7 +1162,7 @@ function openModal(title, bodyHtml, onOk, okLabel='Save'){
 function closeModal(){
   const backdrop=$('#modalBk');backdrop.classList.remove('show','in-viewer');
   $('#modalBk .modal')?.classList.remove('row-editor-modal','report-source-modal','is-flexible');
-  $('#mCancel').hidden=false;modalOk=null;document.body.appendChild(backdrop);
+  $('#mCancel').hidden=false;$('#mCancel').textContent='Cancel';modalOk=null;document.body.appendChild(backdrop);
 }
 $('#mCancel').addEventListener('click', closeModal);
 $('#modalBk').addEventListener('click', e=>{ if(e.target===$('#modalBk')) closeModal(); });
@@ -1200,7 +1200,7 @@ const state = {
   reportMode: 'board',
   reviewFlow: {active:false,currentRowId:null,initialCount:0,moving:false,boardOrder:[],initialByBoard:{},rowOrderByBoard:{}},
 };
-const ANALYSIS_VERSION=25;
+const ANALYSIS_VERSION=26;
 const uid = () => 'x'+(state.nextId++)+'_'+Math.random().toString(36).slice(2,6);
 
 /* ====================== PERSISTENCE (IndexedDB) ====================== */
@@ -3235,7 +3235,8 @@ function stopActiveAnalysis(){
   const detail=$('#processingDetail');if(detail)detail.textContent='Stopping analysis and keeping the last saved result';
 }
 $('#processingCancelBtn').addEventListener('click',stopActiveAnalysis);
-const SCHEDULE_TYPES=new Set(['db-schedule','main-schedule','equipment-schedule','cable-schedule']);
+const BOARD_SCHEDULE_TYPES=new Set(['db-schedule','main-schedule','equipment-schedule']);
+const SCHEDULE_TYPES=new Set([...BOARD_SCHEDULE_TYPES,'cable-schedule']);
 const MENTION_TYPES=new Set(['lighting-plan','power-plan','fire-plan','containment-plan','unknown','spec']);
 function stableRowSourceKey(row){
   if(row?.sourceKey)return row.sourceKey;
@@ -3263,6 +3264,7 @@ function sourceTrace(row,line,pg,fileName){
     if(field==='Breaking Capacity')return sources.breakingCapacity||line;
     if(field==='Protection Standard')return sources.protectionStandard||sources.device||line;
     if(field==='Trip Unit')return sources.tripUnit||line;
+    if(field==='Product Range / Frame')return sources.productRange||sources.device||line;
     if(field==='RCD Protection')return sources.rcdProtection||sources.rcdSensitivity||line;
     if(field==='RCD Arrangement')return sources.rcdProtection||sources.rcdSensitivity||line;
     if(field==='RCD Sensitivity')return sources.rcdSensitivity||sources.rcdProtection||line;
@@ -3307,6 +3309,7 @@ function sourceTrace(row,line,pg,fileName){
       'Breaking Capacity':evidence('Breaking Capacity',row.ka==null?'Not specified':row.ka+'kA'),
       'Protection Standard':evidence('Protection Standard',row.protectionStandard||'Not specified'),
       'Trip Unit':evidence('Trip Unit',row.tripUnit||'Not specified'),
+      'Product Range / Frame':evidence('Product Range / Frame',row.productRange||'Not specified'),
       'RCD Protection':evidence('RCD Protection',row.rcdProtected==null?'Not specified':row.rcdProtected?'Yes':'No'),
       'RCD Arrangement':evidence('RCD Arrangement',row.rcdArrangement||'Not specified'),
       'RCD Sensitivity':evidence('RCD Sensitivity',row.sens==null?'Not specified':row.sens+'mA'),
@@ -3776,7 +3779,7 @@ async function runAnalysis(opts){
       prevMap[key(r)]=r;
       prevMap[canonicalRowSourceKey(r)]=r;
     });
-    const correctedFields=['boardNorm','way','phase','device','qty','rating','curve','poleConfiguration','poles','protectionStandard','tripUnit','protectionCode','ka','rcdProtected','rcdArrangement','rcdType','sens','afdd','afddIndicated','earthFaultDevice','arcFlashDevice','circuitReference','circuitConfig','serviceCode','discipline','cable','spare','space','incomer','desc'];
+    const correctedFields=['boardNorm','way','phase','device','qty','rating','curve','poleConfiguration','poles','protectionStandard','tripUnit','productRange','protectionCode','ka','rcdProtected','rcdArrangement','rcdType','sens','afdd','afddIndicated','earthFaultDevice','arcFlashDevice','circuitReference','circuitConfig','serviceCode','discipline','cable','spare','space','incomer','desc'];
     A.rows.forEach(r=>{
       const o=prevMap[key(r)]||prevMap[canonicalRowSourceKey(r)];if(!o)return;
       if(o.status!=='pending')r.status=o.status;
@@ -3922,15 +3925,40 @@ function recoveryCandidates(analysis,project){
     .forEach(page=>add(page.fileId,page.page,'SCHEDULE_PAGE_UNPARSED'));
   return [...keys.values()].slice(0,3);
 }
+const promptedAnalysisAudits=new WeakSet();
+function queueAnalysisAuditPrompt(analysis,opts,project){
+  if(!analysis||opts?.suppressAuditPrompt||state.cur!==project||promptedAnalysisAudits.has(analysis))return analysis;
+  promptedAnalysisAudits.add(analysis);
+  setTimeout(()=>{
+    if(state.cur!==project||project.analysis!==analysis)return;
+    const pending=orderedPendingReviewRows().length,gap=firstBlockingReviewGap();
+    const boards=Object.values(analysis.boards||{}).filter(board=>board.inScope!==false).length;
+    const devices=(analysis.rows||[]).filter(isCountedDeviceRow).reduce((sum,row)=>sum+countedRowQuantity(row),0);
+    const health=analysis.health?.state||'complete';
+    const title=health==='complete'?'Analysis ready for audit':'Analysis needs audit attention';
+    const nextStep=gap
+      ? `${guidedBoardName(gap.boardNorm)} on page ${gap.page} is the first blocking extraction issue.`
+      : pending
+        ? `${pending} evidence row${pending===1?' is':'s are'} ready for a decision in board and document order.`
+        : 'No extracted rows are waiting for a decision; the evidence remains available for inspection.';
+    openModal(title,`<div class="analysis-audit-prompt">
+      <div class="sumgrid" style="margin-bottom:12px"><div class="sumchip"><div class="v">${boards}</div><div class="k">Boards</div></div>
+        <div class="sumchip"><div class="v">${devices}</div><div class="k">Devices</div></div>
+        <div class="sumchip"><div class="v">${pending}</div><div class="k">Awaiting decision</div></div></div>
+      <p>${esc(nextStep)}</p><p class="hint">Open Audit to start at the first unresolved board. Each saved decision advances automatically to the next row, then the next board.</p>
+    </div>`,()=>{if(gap||pending)void startGuidedReview();else void setTab('viewer');},'Open audit','Stay here');
+  },0);
+  return analysis;
+}
 async function runAnalysisWithRecovery(opts={}){
   const project=state.cur;
   const first=await runAnalysis(opts);
   if(!first||opts.noRecovery||!opts.recoverLowConfidence||state.cur!==project){
     if(first&&!opts.noRecovery)first.recoveryLog=[];
-    return first;
+    return queueAnalysisAuditPrompt(first,opts,project);
   }
   const candidates=recoveryCandidates(first,project);
-  if(!candidates.length){first.recoveryLog=[];return first;}
+  if(!candidates.length){first.recoveryLog=[];return queueAnalysisAuditPrompt(first,opts,project);}
   const clone=value=>value==null?value:JSON.parse(JSON.stringify(value));
   const firstStatus=project.status,firstScore=analysisQualityScore(first),snapshots=[];
   setProcessingDock('Retrying low-confidence pages',`${candidates.length} page${candidates.length===1?'':'s'} selected by analysis health checks`,88,7);
@@ -3948,7 +3976,7 @@ async function runAnalysisWithRecovery(opts={}){
   const secondScore=analysisQualityScore(second);
   if(second&&secondScore>firstScore){
     second.recoveryLog=candidates.map(candidate=>({fileId:candidate.file.id,page:candidate.page,reasons:[...candidate.reasons],outcome:'accepted'}));
-    saveProject(project);return second;
+    saveProject(project);return queueAnalysisAuditPrompt(second,opts,project);
   }
   snapshots.forEach(snapshot=>{
     const recovery=snapshot.record.recovery;
@@ -3957,7 +3985,7 @@ async function runAnalysisWithRecovery(opts={}){
   project.analysis=first;project.status=firstStatus;
   first.recoveryLog=candidates.map(candidate=>({fileId:candidate.file.id,page:candidate.page,reasons:[...candidate.reasons],outcome:'rolled_back'}));
   renderTakeoff();renderProjHeader();renderAnalysisControls();renderPgclass();saveProject(project);
-  return first;
+  return queueAnalysisAuditPrompt(first,opts,project);
 }
 $('#anRunBtn').addEventListener('click', ()=>runAnalysisWithRecovery());
 $('#reanalyzeBtn').addEventListener('click', async ()=>{ setTab('analysis');setProcessingDock(STAGES[0],'Checking document text',2,0);await paintProcessing();await autoOcrScannedFiles();await runAnalysisWithRecovery(); });
@@ -4141,7 +4169,7 @@ function unresolvedReviewExtractionGaps(){
     const candidates=locations.map(location=>{
       const diagnostic=(A.pageDiagnostics||[]).find(page=>page.fileId===location.fileId&&Number(page.page)===Number(location.page)
         && page.type!=='sld'&&page.type!=='schematic'&&(page.rowsParsed||0)===0
-        && ((page.scheduleScore||0)>=0.45||SCHEDULE_TYPES.has(page.type)));
+        && ((page.scheduleScore||0)>=0.45||BOARD_SCHEDULE_TYPES.has(page.type)));
       return diagnostic?{boardNorm,fileId:location.fileId,page:Number(location.page),diagnostic}:null;
     }).filter(Boolean);
     if(!candidates.length)return [];
@@ -4441,8 +4469,10 @@ function deviceSpecificationKey(row){
 }
 function deviceSpecificationLabel(row){
   if(!row)return 'Unclassified row';
-  if(row.device)return [row.rating!=null?row.rating+'A':null,row.curve?row.curve+' curve':null,row.device]
-    .filter(Boolean).join(' ');
+  if(window.EstimationReport?.deviceSpecificationLabel&&row.device)return window.EstimationReport.deviceSpecificationLabel(row);
+  if(row.device)return [row.rating!=null?row.rating+'A':null,row.poleConfiguration||(row.poles?row.poles+'P':null),
+    row.curve?row.curve+' curve':null,row.productRange||null,row.tripUnit?row.tripUnit+' trip':null,
+    row.ka!=null?row.ka+'kA':null,row.device].filter(Boolean).join(' ');
   if(row.spare)return 'Spare way';
   if(row.space)return 'Fitted blank way';
   return 'Unclassified device';
@@ -4966,6 +4996,13 @@ function deviceOptions(sel){
   if (sel && !names.includes(sel)) names.unshift(sel);
   return names.map(n=>`<option ${n===sel?'selected':''}>${n}</option>`).join('')+`<option value="" ${!sel?'selected':''}>— none —</option>`;
 }
+const TRIP_UNIT_OPTIONS=window.EstimationReport?.TRIP_UNIT_OPTIONS||['LSI','LSIG','LSNI','TM','ATFM','ATAM','LI'];
+function tripUnitOptions(value){
+  const normalised=window.EstimationReport?.normaliseTripUnit?.(value)||value||'';
+  const selected=normalised==='Not specified'?'':normalised;
+  return `<option value="" ${!selected?'selected':''}>Not specified</option>`
+    +TRIP_UNIT_OPTIONS.map(option=>`<option value="${option}" ${selected===option?'selected':''}>${option}</option>`).join('');
+}
 function openRowEditor(r, isNew, surface='Boards & Devices'){
   const p=state.cur, A=p.analysis;
   const boards=Object.values(A.boards);
@@ -4993,7 +5030,8 @@ function openRowEditor(r, isNew, surface='Boards & Devices'){
       <div><label class="lbl">Pole configuration</label><select class="sel" id="ePol"><option value="" ${!poleValue?'selected':''}>Unclear</option>${['SP','SPN','DP','DPN','TP','TPN','4P'].map(value=>`<option ${value===poleValue?'selected':''}>${value}</option>`).join('')}</select></div>
       <div><label class="lbl">Breaking capacity (kA)</label><input class="in" id="eKa" inputmode="decimal" value="${r.ka??''}" placeholder="Not specified"></div>
       <div><label class="lbl">Protection standard</label><input class="in" id="eStandard" value="${esc(r.protectionStandard||'')}" placeholder="Not specified"></div>
-      <div><label class="lbl">Trip unit</label><input class="in" id="eTrip" value="${esc(r.tripUnit||'')}" placeholder="Not specified"></div>
+      <div><label class="lbl">Trip unit</label><select class="sel" id="eTrip">${tripUnitOptions(r.tripUnit)}</select></div>
+      <div><label class="lbl">Product range / frame</label><input class="in" id="eProductRange" value="${esc(r.productRange||'')}" placeholder="h3+, X160, P160, etc."></div>
       <div><label class="lbl">RCD protection</label><select class="sel" id="eRcd"><option value="" ${!rcdValue?'selected':''}>Not specified</option><option value="yes" ${rcdValue==='yes'?'selected':''}>Yes</option><option value="no" ${rcdValue==='no'?'selected':''}>No</option></select></div>
       <div><label class="lbl">RCD sensitivity (mA)</label><input class="in" id="eSens" inputmode="decimal" value="${r.sens??''}" placeholder="Not specified"></div>
       <div><label class="lbl">RCD arrangement</label><select class="sel" id="eRcdArrangement"><option value="" ${!rcdArrangementValue?'selected':''}>Not specified</option><option value="integral" ${rcdArrangementValue==='integral'?'selected':''}>Integral to device</option><option value="separate" ${rcdArrangementValue==='separate'?'selected':''}>Separate RCD</option><option value="shared" ${rcdArrangementValue==='shared'?'selected':''}>Shared RCD</option><option value="upstream" ${rcdArrangementValue==='upstream'?'selected':''}>Upstream RCD</option><option value="separate_or_unspecified" ${rcdArrangementValue==='separate_or_unspecified'?'selected':''}>Separate / unclear</option></select></div>
@@ -5012,7 +5050,7 @@ function openRowEditor(r, isNew, surface='Boards & Devices'){
     <div style="margin-top:12px"><label class="lbl">Correction note <span class="hint" style="display:inline;margin:0">optional</span></label><input class="in" id="eCorrectionReason" placeholder="Why this value was changed"></div>
   `, ()=>{
     const before={boardNorm:r.boardNorm||null,way:r.way??null,phase:r.phase||null,device:r.device||null,qty:r.qty??1,rating:r.rating??null,curve:r.curve||null,
-      poleConfiguration:r.poleConfiguration||poleValue||null,ka:r.ka??null,protectionStandard:r.protectionStandard||null,tripUnit:r.tripUnit||null,protectionCode:r.protectionCode||null,
+      poleConfiguration:r.poleConfiguration||poleValue||null,ka:r.ka??null,protectionStandard:r.protectionStandard||null,tripUnit:r.tripUnit||null,productRange:r.productRange||null,protectionCode:r.protectionCode||null,
       rcdProtected:r.rcdProtected??null,rcdArrangement:r.rcdArrangement||null,rcdType:r.rcdType||null,sens:r.sens??null,afdd:afddSource??null,
       earthFaultDevice:r.earthFaultDevice||null,arcFlashDevice:r.arcFlashDevice||null,circuitReference:r.circuitReference||null,circuitConfig:r.circuitConfig||null,
       serviceCode:r.serviceCode||null,discipline:r.discipline||null,cable:r.cable||null,spare:Boolean(r.spare),space:Boolean(r.space),incomer:Boolean(r.incomer),desc:r.desc||null};
@@ -5050,7 +5088,7 @@ function openRowEditor(r, isNew, surface='Boards & Devices'){
     const rowPatch={
       boardNorm:nextBoardNorm,way:nextWay,phase:nextPhase,device:nextDevice,qty:nextQty,
       rating:nextRating,curve:nextCurve,poleConfiguration:nextPoleConfiguration,ka:numberOrNull('#eKa'),
-      protectionStandard:$('#eStandard').value.trim()||null,tripUnit:$('#eTrip').value.trim()||null,protectionCode:$('#eProtectionCode').value.trim()||null,
+      protectionStandard:$('#eStandard').value.trim()||null,tripUnit:$('#eTrip').value||null,productRange:$('#eProductRange').value.trim()||null,protectionCode:$('#eProtectionCode').value.trim()||null,
       rcdProtected:nextRcd===''?null:nextRcd==='yes',rcdArrangement:nextRcdArrangement,rcdType:$('#eRcdType').value||null,sens:nextSens,
       afdd:nextAfdd,earthFaultDevice:earthFaultText?{descriptor:earthFaultText}:null,arcFlashDevice:$('#eArcFlash').value.trim()||null,
       circuitReference:$('#eCircuit').value.trim()||null,circuitConfig:$('#eCircuitConfig').value||null,serviceCode:$('#eService').value.trim()||null,
@@ -5215,7 +5253,7 @@ function openReportSources(scope,key,boardNorm=null){
       return `<article class="report-source-item" data-report-source-id="${sourceId}"><div class="report-source-item-head"><strong>${index+1}. ${esc(sourceLocation)}</strong><span class="chip ${item.reviewStatus==='Approved'?'green':'amber'}">${esc(item.reviewStatus)}</span>${corrections.length?`<span class="chip blue">${corrections.length} correction${corrections.length===1?'':'s'}</span>`:''}</div>
         <dl class="report-source-fields">${[
           reportSourceValue('Board',item.board),reportSourceValue('Circuit / phase',wayPhase),reportSourceValue('Device',item.deviceFamily),reportSourceValue('Rating',item.rating==null?'Not specified':item.rating+'A'),reportSourceValue('Poles',item.pole),
-          reportSourceValue('Curve',item.curve),reportSourceValue('Breaking capacity',capacity),reportSourceValue('Protection standard',item.protectionStandard),reportSourceValue('Trip unit',item.tripUnit),reportSourceValue('Protection code',item.protectionCode),
+          reportSourceValue('Curve',item.curve),reportSourceValue('Breaking capacity',capacity),reportSourceValue('Protection standard',item.protectionStandard),reportSourceValue('Trip unit',item.tripUnit),reportSourceValue('Product range / frame',item.productRange),reportSourceValue('Protection code',item.protectionCode),
           reportSourceValue('RCD protection',rcdLabel(item)),reportSourceValue('RCD type',item.rcdType),reportSourceValue('AFDD protection',afddLabel(item)),reportSourceValue('Earth fault device',item.earthFaultDevice),reportSourceValue('Arc flash device',item.arcFlashDevice),
           reportSourceValue('Circuit configuration',item.circuitConfig),reportSourceValue('Cable details',item.cableDetails),reportSourceValue('Service code',item.serviceCode),reportSourceValue('Discipline',item.discipline),
           reportSourceValue('Description',item.description),reportSourceValue('Confidence',Math.round((Number(item.confidence)||0)*100)+'%'),reportSourceValue('Extraction method',item.extractionMethod),reportSourceValue('Purpose',item.purpose),
@@ -5312,6 +5350,7 @@ function renderReport(){
     if(row.breakingCapacity&&row.breakingCapacity!=='Not specified')values.push(row.breakingCapacity);
     if(row.protectionStandard&&row.protectionStandard!=='Not specified')values.push(row.protectionStandard);
     if(row.tripUnit&&row.tripUnit!=='Not specified')values.push('Trip '+row.tripUnit);
+    if(row.productRange&&row.productRange!=='Not specified')values.push(row.productRange);
     return values.map(value=>`<span class="chip grey">${esc(value)}</span>`).join('');
   };
   const protectionHtml=row=>{
@@ -6109,7 +6148,8 @@ function viewerDetectionCardHtml(d,index){
       ${d.r?.boardNorm?'<button class="btn sm ghost" data-action="board">Board</button>':''}
       ${d.kind==='board'&&d.r?.boardNorm?'<button class="btn sm ghost" data-action="edit-board">Correct</button>':''}
     </span></div><div class="det-source">${esc(d.r?.srcText||'')}</div></div>`;
-  const row=d.r,primary=row.device||(row.spare?'Spare way':row.space?'Fitted blank way':'Unclassified device');
+  const row=d.r,specification=row.device&&window.EstimationReport?.deviceSpecification?window.EstimationReport.deviceSpecification(row):null;
+  const primary=specification?.deviceFamily||row.device||(row.spare?'Spare way':row.space?'Fitted blank way':'Unclassified device');
   const current=state.viewer.evidenceId===row.id;
   const circuit=row.circuitReference||null,description=String(row.desc||'').trim();
   const protection=[];
@@ -6121,11 +6161,15 @@ function viewerDetectionCardHtml(d,index){
   if(row.afdd===true)protection.push('<span class="chip purple">AFDD</span>');
   else if(row.afdd===false)protection.push('<span class="chip grey">No AFDD</span>');
   if(row.protectionStandard)protection.push(`<span class="chip grey">${esc(row.protectionStandard)}</span>`);
+  if(specification?.tripUnitRelevant&&specification.tripUnit!=='Not specified')protection.push(`<span class="chip blue">Trip ${esc(specification.tripUnit)}</span>`);
+  if(specification?.tripUnitRelevant&&specification.productRange!=='Not specified')protection.push(`<span class="chip grey">${esc(specification.productRange)}</span>`);
   if(row.spare&&row.device)protection.push('<span class="chip amber">Fitted spare</span>');
   if(row.occupancy==='fitted_spare_unresolved')protection.push('<span class="chip amber">Fitted spare · device unresolved</span>');
   if(row.occupancyConflict)protection.push('<span class="chip amber">Occupancy conflict · review required</span>');
-  if(row.poleConfiguration||row.poles)protection.push(`<span class="chip grey">${esc(row.poleConfiguration||row.poles+'P')}</span>`);
-  if(row.ka!=null)protection.push(`<span class="chip grey">${esc(row.ka)}kA</span>`);
+  if(specification?.pole&&specification.pole!=='Unclear'&&specification.pole!=='Not specified')protection.push(`<span class="chip grey">${esc(specification.pole)}</span>`);
+  else if(row.poleConfiguration||row.poles)protection.push(`<span class="chip grey">${esc(row.poleConfiguration||row.poles+'P')}</span>`);
+  if(specification?.breakingCapacity&&specification.breakingCapacity!=='Not specified')protection.push(`<span class="chip grey">${esc(specification.breakingCapacity)}</span>`);
+  else if(row.ka!=null)protection.push(`<span class="chip grey">${esc(row.ka)}kA</span>`);
   const countText=d.specKey
     ? `${d.counts.group} matching ${d.specLabel} on this board · ${d.counts.board} counted device${d.counts.board===1?'':'s'} in board total`
     : 'This row is not counted as a protective device';
@@ -6137,7 +6181,7 @@ function viewerDetectionCardHtml(d,index){
   return `<div class="det${current?' current':''}" data-i="${index}" data-row-id="${esc(row.id)}" aria-current="${current?'true':'false'}"
       style="--spec-color:${d.stateColor||d.specColor||'#8a95a5'}" title="${esc(d.countTitle)}">
     <div class="det-head"><div class="det-spec"><span class="det-spec-swatch" aria-hidden="true"></span><span class="det-primary">${esc(primary)}</span>
-      ${row.rating!=null?`<span class="chip grey">${esc(row.rating)}A</span>`:''}${row.curve?`<span class="chip grey">${esc(row.curve)} curve</span>`:''}</div>
+      ${row.rating!=null?`<span class="chip grey">${esc(row.rating)}A</span>`:''}${specification?.curveRelevant&&specification.curve!=='Not specified'?`<span class="chip grey">${esc(specification.curve)} curve</span>`:''}</div>
       <span class="det-actions">${row.boardNorm?'<button class="btn sm ghost" data-action="board">Board</button>':''}
         <button class="btn sm ghost" data-action="edit">Correct</button>
         ${decisionAction}</span></div>
@@ -6156,7 +6200,7 @@ function syncViewerDetectionList(rowId,{scroll=true}={}){
     .find(element=>element.dataset.rowId===String(rowId)||element.dataset.evidenceId===String(rowId));
   if(!target)return;
   target.classList.add('current');target.setAttribute('aria-current','true');
-  if(scroll)scrollViewerElementIntoView(list,target,{horizontal:false});
+  if(scroll)scrollViewerElementIntoView(list,target,{horizontal:false,behavior:state.reviewFlow?.active?'auto':'smooth'});
 }
 function scrollViewerElementIntoView(container,target,{horizontal=true,behavior='smooth'}={}){
   if(!container||!target)return;
@@ -6278,7 +6322,7 @@ async function renderViewer(){
   const scheduleCandidate=window.EstimationExtractorCore?.scoreScheduleCandidate((pg.lines||[]).map(line=>line.text))||{score:0,signals:[]};
   const scheduleRows=A?.rows?.filter(row=>row.kind==='schedule'&&row.fileId===f.id&&Number(row.page)===Number(V.page))||[];
   const calibratedRoles=calibrationHintForPage(p,f.id,V.page,pg).roles;
-  const schedulePage=SCHEDULE_TYPES.has(pg.type)||(scheduleCandidate.score>=0.45&&scheduleCandidate.signals.length>=2);
+  const schedulePage=BOARD_SCHEDULE_TYPES.has(pg.type)||(scheduleCandidate.score>=0.45&&scheduleCandidate.signals.length>=2);
   const pageDiagnostic=(A?.pageDiagnostics||[]).find(item=>item.fileId===f.id&&Number(item.page)===Number(V.page));
   const extractionGap=schedulePage&&(scheduleRows.length===0||(pageDiagnostic?.spatialBlockingReasons||[]).length>0
     ||scheduleRows.some(row=>Boolean(rowApprovalIssue(row))));

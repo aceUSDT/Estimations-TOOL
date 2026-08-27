@@ -38,6 +38,73 @@ try {
   assert.match(await firstCard.getAttribute('title'), /counted device|on DB-/i, 'row hover title must include board-wide counts');
   assert.equal(await page.locator('#vDetList .det .chip').filter({ hasText: /^row$/i }).count(), 0, 'ROW badges must not return');
 
+  const largeDeviceRows = await page.evaluate(async () => {
+    const A = state.cur.analysis;
+    const source = pageDetections(viewerFile(), state.viewer.page).find((item) => item.kind === 'row' && item.r.boardNorm)?.r;
+    const base = {
+      ...source,
+      boardNorm: source.boardNorm,
+      fileId: source.fileId,
+      page: source.page,
+      line: null,
+      kind: 'schedule',
+      device: 'MCCB',
+      rating: 160,
+      curve: null,
+      poles: 3,
+      poleConfiguration: 'TP',
+      ka: 25,
+      productRange: 'H3+ P160',
+      rcdProtected: false,
+      afdd: false,
+      spare: false,
+      space: false,
+      incomer: false,
+      qty: 1,
+      conf: 0.99,
+      status: 'confirmed',
+      requiresReview: false,
+      edited: false,
+    };
+    const rows = [
+      { ...base, id: 'viewer-trip-lsi', way: 'MCCB-1', phase: '3PH', tripUnit: 'LSI', desc: 'Submain LSI', srcText: 'Hager h3+ MCCB P160 160A 3P 25kA LSI' },
+      { ...base, id: 'viewer-trip-lsig', way: 'MCCB-2', phase: '3PH', tripUnit: 'LSIG', desc: 'Submain LSIG', srcText: 'Hager h3+ MCCB P160 160A 3P 25kA LSIG' },
+    ];
+    A.rows.push(...rows);
+    await renderViewer();
+    return rows.map((row) => row.id);
+  });
+  const lsiCard = page.locator(`#vDetList .det[data-row-id="${largeDeviceRows[0]}"]`);
+  await lsiCard.waitFor();
+  const lsiCardText = await lsiCard.textContent();
+  assert.match(lsiCardText, /Trip LSI/, 'large-device evidence must display the canonical trip unit');
+  assert.match(lsiCardText, /H3\+\s*\/\s*P160/, 'large-device evidence must display product range and frame');
+  assert.match(lsiCardText, /\bTP\b/, 'large-device evidence must display pole configuration');
+  assert.match(lsiCardText, /25kA/, 'large-device evidence must display breaking capacity');
+  assert.doesNotMatch(lsiCardText, /\b[BCDKZ] curve\b/, 'MCCB evidence must not be grouped by an MCB-style tripping curve');
+  const largeSummaryRows = page.locator('.audit-takeoff-summary .audit-takeoff-row').filter({ hasText: /160A/ });
+  assert.equal(await largeSummaryRows.filter({ hasText: /LSI trip/ }).count(), 1, 'LSI must have its own approved take-off group');
+  assert.equal(await largeSummaryRows.filter({ hasText: /LSIG trip/ }).count(), 1, 'LSIG must have its own approved take-off group');
+  assert.match(await largeSummaryRows.filter({ hasText: /LSI trip/ }).textContent(), /x1/, 'approved take-off must display the detailed device sum');
+
+  await page.evaluate((rowId) => {
+    const row = state.cur.analysis.rows.find((item) => item.id === rowId);
+    openRowEditor(row, false, 'Viewer');
+  }, largeDeviceRows[0]);
+  await page.locator('#modalBk.show #eTrip').waitFor();
+  assert.deepEqual(
+    await page.locator('#eTrip option').evaluateAll((options) => options.map((option) => option.value)),
+    ['', 'LSI', 'LSIG', 'LSNI', 'TM', 'ATFM', 'ATAM', 'LI'],
+    'trip-unit correction must expose only the approved canonical options',
+  );
+  assert.equal(await page.locator('#eTrip').inputValue(), 'LSI');
+  assert.equal(await page.locator('#eProductRange').inputValue(), 'H3+ P160');
+  await page.locator('#mCancel').click();
+  await page.evaluate(async (rowIds) => {
+    state.cur.analysis.rows = state.cur.analysis.rows.filter((row) => !rowIds.includes(row.id));
+    await renderViewer();
+  }, largeDeviceRows);
+
   const pendingColours = await cards.evaluateAll((elements) => [...new Set(elements.map((element) => element.style.getPropertyValue('--spec-color')).filter(Boolean))]);
   assert.deepEqual(pendingColours, ['#c87d0e'], 'pending rows must use the amber review state colour');
   const stateRows = await page.evaluate(async () => {
@@ -201,8 +268,21 @@ try {
     renderGuidedReviewControls();
   }, extractionGap);
 
-  await page.locator('#vReviewStart').click();
-  await page.waitForFunction(() => state.reviewFlow.active && Boolean(state.reviewFlow.currentRowId));
+  const expectedFirstAuditRow = await page.evaluate(() => {
+    pauseGuidedReview();
+    const first = orderedPendingReviewRows()[0];
+    queueAnalysisAuditPrompt(state.cur.analysis, {}, state.cur);
+    return first?.id || null;
+  });
+  assert.ok(expectedFirstAuditRow, 'fixture must retain at least one unresolved audit row');
+  await page.locator('#modalBk.show').waitFor();
+  assert.match(await page.locator('#mHead').textContent(), /Analysis .*audit/i);
+  assert.equal(await page.locator('#mOk').textContent(), 'Open audit');
+  assert.equal(await page.locator('#mCancel').textContent(), 'Stay here');
+  assert.match(await page.locator('#mBody').textContent(), /first unresolved board/i);
+  await page.locator('#mOk').click();
+  await page.waitForFunction((rowId) => state.reviewFlow.active && state.reviewFlow.currentRowId === rowId, expectedFirstAuditRow);
+  assert.equal(await page.evaluate(() => document.body.dataset.projectTab), 'viewer', 'Open audit must enter the Viewer audit workspace');
   const firstBoard = await page.evaluate(() => guidedReviewCurrentRow().boardNorm || '__none__');
   await page.waitForFunction(() => document.querySelector('#vDetList .det.current')?.dataset.rowId === state.reviewFlow.currentRowId);
 

@@ -39,7 +39,7 @@ try {
 
   await page.locator('.proj-card', { hasText: 'Riverside Office Fit-Out' }).click();
   const tabOrder = await page.locator('.ptab').evaluateAll((tabs) => tabs.map((tab) => tab.dataset.pt));
-  assert.deepEqual(tabOrder, ['docs', 'analysis', 'review', 'reports', 'viewer', 'compare']);
+  assert.deepEqual(tabOrder, ['docs', 'viewer', 'analysis', 'review', 'reports', 'compare']);
   assert.equal(await page.locator('#docBody tr').count(), 5, 'fixture document queue did not render');
 
   await page.setViewportSize({ width: 390, height: 844 });

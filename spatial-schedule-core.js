@@ -754,14 +754,39 @@
     return { code, label: `BS EN ${code}`, correctedFrom };
   }
 
+  function canonicalTripUnit(value) {
+    const source = String(value || '').toUpperCase().replace(/\s+/g, ' ').trim();
+    const compact = source.replace(/[^A-Z0-9]+/g, '');
+    if (/\bLSIG\b/.test(source) || compact === 'LSIG') return 'LSIG';
+    if (/\bLSNI\b/.test(source) || compact === 'LSNI') return 'LSNI';
+    if (/\bLSI\b/.test(source) || compact === 'LSI') return 'LSI';
+    if (/\bATFM\b/.test(source) || compact === 'ATFM') return 'ATFM';
+    if (/\bATAM\b/.test(source) || compact === 'ATAM') return 'ATAM';
+    if (/\bTM(?:\s*[-/]?\s*D)?\b/.test(source) || /THERMAL\s*[- ]?\s*MAGNETIC/.test(source)
+      || compact === 'TM' || compact === 'TMD') return 'TM';
+    if (/\bLI\b/.test(source) || compact === 'LI') return 'LI';
+    return null;
+  }
+
+  function protectionProductRange(value) {
+    const source = String(value || '').toUpperCase().replace(/\s+/g, ' ');
+    const tokens = [];
+    const add = (token) => { if (token && !tokens.includes(token)) tokens.push(token); };
+    if (/\bH\s*3\s*\+(?!\w)/i.test(source)) add('H3+');
+    for (const match of source.matchAll(/\b([XP])\s*(\d{2,4})\b/gi)) add(`${match[1].toUpperCase()}${match[2]}`);
+    return tokens.length ? tokens.join(' / ') : null;
+  }
+
   function parseProtectionDescriptor(value) {
     const text = String(value || '').replace(/\s+/g, ' ').trim();
     const standard = protectionStandard(text);
     const explicit = text.match(/\b(AFDD\s*\+\s*RCBO|RCBO|MCCB|MCB|ACB|RCCB|RCD|HRC\s+FUSE|FUSE|SWITCH\s+DISCONNECTOR|ISOLATOR)\b/i)?.[1] || null;
     const rating = Number(text.match(/\b(\d+(?:\.\d+)?)\s*A(?:MPS?)?\b/i)?.[1]) || null;
-    const tripUnit = text.match(/\bMICROLOGIC\s*([0-9]+(?:\.[0-9]+)?)\b/i)?.[1]
-      || text.match(/\b(TMD|TM-D|LSI|LSIG|ELECTRONIC\s+TRIP(?:\s+UNIT)?)\b/i)?.[1]
+    const tripUnit = canonicalTripUnit(text)
+      || text.match(/\bMICROLOGIC\s*([0-9]+(?:\.[0-9]+)?)\b/i)?.[1]
+      || text.match(/\b(ELECTRONIC\s+TRIP(?:\s+UNIT)?)\b/i)?.[1]
       || null;
+    const productRange = protectionProductRange(text);
     const curve = (text.match(/\b(?:TYPE|CURVE|CHARACTERISTIC)\s*([BCD])\b/i)?.[1]
       || text.match(/\b([BCD])\s*CURVE\b/i)?.[1] || '').toUpperCase() || null;
     const breakingCapacityKa = Number(text.match(/\b(\d+(?:\.\d+)?)\s*KA\b/i)?.[1]) || null;
@@ -775,7 +800,7 @@
     const poleConfiguration = poles === 3 ? 'TP' : (poles === 2 ? 'DP' : (poles === 1 ? 'SP' : null));
     return {
       text, standardCode: standard.code, protectionStandard: standard.label, explicitDevice: explicit,
-      rating, tripUnit, curve, breakingCapacityKa, sensitivityMa, rcdType, poleToken, poles, poleConfiguration,
+      rating, tripUnit, productRange, curve, breakingCapacityKa, sensitivityMa, rcdType, poleToken, poles, poleConfiguration,
     };
   }
 
@@ -824,7 +849,8 @@
     } else if (standard.code === '60947-3') {
       classBasis = 'bs_en';
       device = 'Isolator'; confidence = 0.97; reasons.push('BS EN 60947-3');
-    } else if (standard.code === '60947' && (/^(?:\d+(?:\.\d+)?|TMD|TM-D|LSI|LSIG)$/i.test(tripUnit)
+    } else if (standard.code === '60947' && (/^(?:\d+(?:\.\d+)?)$/i.test(tripUnit)
+      || /^(?:TM|LSI|LSIG|LSNI|ATFM|ATAM|LI)$/i.test(canonicalTripUnit(tripUnit) || '')
       || /MICROLOGIC|MCCB/i.test(context.boardProtectionText || ''))) {
       classBasis = 'bs_en_context';
       device = 'MCCB'; confidence = 0.91; reasons.push('BS 60947 with MCCB trip-unit evidence');
@@ -960,11 +986,18 @@
     const typeDevice = typeText.match(/^\s*(AFDD\s*\+\s*RCBO|RCBO|MCCB|MCB|ACB|RCCB|RCD|FUSE|ISOLATOR)\s*$/i)?.[1] || null;
     const resolvedDeviceClassText = deviceClassText || typeDevice || '';
     const typeCurve = typeDevice ? null : typeText.match(/^\s*([BCD])\s*$/i)?.[1]?.toUpperCase() || null;
-    const tripUnit = typeCurve || typeDevice ? null : (typeText || null);
+    const tripUnit = typeCurve || typeDevice ? null
+      : (parseProtectionDescriptor(typeText).tripUnit || (/^\d+(?:\.\d+)?$/.test(typeText) ? typeText : null));
+    const productRange = protectionProductRange([standardText, deviceClassText, typeText, allText].join(' '));
     let curve = (cellText(cells, 'trip_curve').match(/\b[BCD]\b/i)?.[0] || typeCurve || '').toUpperCase() || null;
     const rating = numberValue(cells.rating, { max: 6300 });
     const ka = numberValue(cells.breaking_capacity, { max: 150 });
-    const circuitText = cellText(cells, 'circuit_reference');
+    const circuitBaseText = cellText(cells, 'circuit_reference');
+    const spdCellText = cellText(cells, 'spd');
+    const spdDescriptionOverflow = spdCellText && indicatorValue(cells.spd) == null
+      && !/\b(?:SPD|SURGE\s+PROTECTION|TYPE\s*[12]|T[12])\b/i.test(spdCellText)
+      ? spdCellText : '';
+    const circuitText = [circuitBaseText, spdDescriptionOverflow].filter(Boolean).join(' ').trim();
     const detectedReference = Core.extractBoardReferences(circuitText)[0] || null;
     const circuitReference = detectedReference?.original || null;
     const descriptionCellText = cellText(cells, 'description');
@@ -1025,7 +1058,7 @@
     if (occupancyConflict) protectionReasons.push('Conflicting SPARE and SPACE occupancy cells');
     if (inferredCurve) protectionReasons.push(inferredCurve.reason);
     const row = {
-      way, phase, rating, device: resolution.device, class_basis: resolution.classBasis, curve, tripUnit,
+      way, phase, rating, device: resolution.device, class_basis: resolution.classBasis, curve, tripUnit, productRange,
       curveInferred: Boolean(inferredCurve),
       poleConfiguration: poles === 3 ? 'TP' : poles === 1 ? 'SP' : null,
       protectionStandard: resolution.protectionStandard, protectionStandardCode: resolution.standardCode,
@@ -1737,6 +1770,7 @@
       standard: records.overcurrent?.text || descriptor.protectionStandard,
       deviceClass: descriptor.explicitDevice,
       tripUnit: descriptor.tripUnit,
+      productRange: descriptor.productRange,
       rating,
       rcdProtected,
       rcdArrangement,
@@ -1803,6 +1837,7 @@
       curve: descriptor.curve || inferredCurve?.curve || null,
       curveInferred: Boolean(inferredCurve),
       tripUnit: descriptor.tripUnit,
+      productRange: descriptor.productRange,
       poleConfiguration,
       protectionStandard: descriptor.protectionStandard || resolution.protectionStandard,
       protectionStandardCode: descriptor.standardCode || resolution.standardCode,
@@ -2148,7 +2183,8 @@
         classConflict: resolution.classConflict,
         curve: descriptor.curve || inferredCurve?.curve || null,
         curveInferred: Boolean(inferredCurve),
-        tripUnit: String(tripCell?.text || '').trim() && !recordIsEmpty(tripCell?.text) ? tripCell.text : null,
+        tripUnit: String(tripCell?.text || '').trim() && !recordIsEmpty(tripCell?.text) ? canonicalTripUnit(tripCell.text) : null,
+        productRange: descriptor.productRange,
         poleConfiguration: anchor.parsed.poleConfiguration,
         protectionStandard: descriptor.protectionStandard || resolution.protectionStandard,
         protectionStandardCode: descriptor.standardCode || resolution.standardCode,

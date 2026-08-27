@@ -19,7 +19,7 @@ const required = [
   'host.requestFullscreen',
   "document.addEventListener('fullscreenchange'",
   'function syncViewerLayout()',
-  'const ANALYSIS_VERSION=25;',
+  'const ANALYSIS_VERSION=26;',
   'id="processingCancelBtn"',
   'const AI_RECOVERY_BATCH_SIZE=3;',
   'const AI_RECOVERY_PAGE_TIMEOUT_MS=180000;',
@@ -122,6 +122,13 @@ const required = [
   'deterministic_primary_board:',
   'function viewerAuditTakeoffSummary(',
   'approved take-off',
+  'function queueAnalysisAuditPrompt(',
+  "'Open audit','Stay here'",
+  "const BOARD_SCHEDULE_TYPES=new Set(['db-schedule','main-schedule','equipment-schedule']);",
+  '||BOARD_SCHEDULE_TYPES.has(page.type)',
+  'const schedulePage=BOARD_SCHEDULE_TYPES.has(pg.type)',
+  "const TRIP_UNIT_OPTIONS=window.EstimationReport?.TRIP_UNIT_OPTIONS||['LSI','LSIG','LSNI','TM','ATFM','ATAM','LI'];",
+  'id="eProductRange"',
 ];
 required.forEach((value) => assert.ok(html.includes(value), `missing UI contract: ${value}`));
 assert.ok(!html.includes("automaticScope?.enforced&&!automaticScope.pageSet.has(pageNo)"),

@@ -67,6 +67,12 @@ try {
     { timeout: 180000 },
   );
   await page.waitForFunction(() => Boolean(state.cur?.analysis) && analysisBusy === false, null, { timeout: 240000 });
+  await page.waitForTimeout(50);
+  if (await page.locator('#modalBk.show').isVisible()) {
+    assert.equal(await page.locator('#mCancel').textContent(), 'Stay here', 'completed analysis must offer the Audit handoff');
+    await page.locator('#mCancel').click();
+    await page.locator('#modalBk').waitFor({ state: 'hidden' });
+  }
 
   const seeded = await page.evaluate(async () => {
     const file = state.cur.files[0];

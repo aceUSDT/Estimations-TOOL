@@ -109,7 +109,12 @@
       .trim()
       .replace(/S$/i, "");
     const compact = raw.replace(/\s+/g, "");
-    return DEVICE_NAMES[raw] || DEVICE_NAMES[compact] || original || "Other device";
+    const canonical = DEVICE_NAMES[raw] || DEVICE_NAMES[compact] || original || "Other device";
+    const residualSensitivity = row && (row.sens ?? row.rcdSensitivity);
+    const outgoingThirtyMaMcb = canonical === "MCB" && !(row && row.incomer)
+      && (row && (row.rcdProtected === true || residualSensitivity != null)) && Number(residualSensitivity) === 30;
+    if (outgoingThirtyMaMcb) return row && (row.afdd === true || row.afddIndicated === true) ? "AFDD+RCBO" : "RCBO";
+    return canonical;
   }
 
   function groupForDevice(device) {
@@ -160,6 +165,46 @@
     if (compact) return compact[1].toUpperCase();
     const match = source.match(/(?:^|\b)(?:TYPE|CURVE|CHARACTERISTIC)?\s*[-:]?\s*([BCDKZ])(?:\s*[- ]?CURVE)?(?:\b|$)/i);
     return match ? match[1].replace(/\s/g, "").toUpperCase() : source;
+  }
+
+  const CURVE_CATEGORISED_DEVICES = new Set(["MCB", "RCBO", "AFDD+RCBO"]);
+  const TRIP_UNIT_CATEGORISED_DEVICES = new Set(["MCCB", "ACB"]);
+  const TRIP_UNIT_OPTIONS = Object.freeze(["LSI", "LSIG", "LSNI", "TM", "ATFM", "ATAM", "LI"]);
+
+  function usesTrippingCurve(deviceFamily) {
+    return CURVE_CATEGORISED_DEVICES.has(text(deviceFamily).toUpperCase());
+  }
+
+  function usesTripUnit(deviceFamily) {
+    return TRIP_UNIT_CATEGORISED_DEVICES.has(text(deviceFamily).toUpperCase());
+  }
+
+  function normaliseTripUnit(value) {
+    const source = text(value).toUpperCase().replace(/\s+/g, " ");
+    if (!source || source === NOT_SPECIFIED.toUpperCase()) return NOT_SPECIFIED;
+    const compact = source.replace(/[^A-Z0-9]+/g, "");
+    if (/\bLSIG\b/.test(source) || compact === "LSIG") return "LSIG";
+    if (/\bLSNI\b/.test(source) || compact === "LSNI") return "LSNI";
+    if (/\bLSI\b/.test(source) || compact === "LSI") return "LSI";
+    if (/\bATFM\b/.test(source) || compact === "ATFM") return "ATFM";
+    if (/\bATAM\b/.test(source) || compact === "ATAM") return "ATAM";
+    if (/\bTM(?:\s*[-/]?\s*D)?\b/.test(source) || /THERMAL\s*[- ]?\s*MAGNETIC/.test(source)
+      || compact === "TM" || compact === "TMD") return "TM";
+    if (/\bLI\b/.test(source) || compact === "LI") return "LI";
+    return NOT_SPECIFIED;
+  }
+
+  function normaliseProductRange(value, row, deviceFamily) {
+    if (!usesTripUnit(deviceFamily)) return NOT_SPECIFIED;
+    const explicit = text(value || (row && (row.productRange || row.deviceRange || row.frameSize || row.deviceFrame)));
+    const source = [explicit, row && row.deviceModel, row && row.srcText, row && row.originalOcrText]
+      .map(text).filter(Boolean).join(" ").toUpperCase();
+    const tokens = [];
+    const add = (token) => { if (token && !tokens.includes(token)) tokens.push(token); };
+    if (/\bH\s*3\s*\+(?!\w)/i.test(source)) add("H3+");
+    for (const match of source.matchAll(/\b([XP])\s*(\d{2,4})\b/gi)) add(`${match[1].toUpperCase()}${match[2]}`);
+    if (tokens.length) return tokens.join(" / ");
+    return explicit ? explicit.toUpperCase().replace(/\s+/g, " ").slice(0, 80) : NOT_SPECIFIED;
   }
 
   function normaliseBreakingCapacity(value) {
@@ -247,7 +292,7 @@
     const afdd = hasAfddIndicator ? normaliseBoolean(row.afddIndicated) : normaliseBoolean(row && row.afdd);
     return {
       protectionStandard: normaliseProtectionStandard(row && (row.protectionStandard || row.standard)),
-      tripUnit: text(row && row.tripUnit) || NOT_SPECIFIED,
+      tripUnit: normaliseTripUnit(row && row.tripUnit),
       rcdProtected,
       rcdSensitivity,
       rcdType: normaliseRcdType(row && row.rcdType),
@@ -298,6 +343,23 @@
     const rating = formatRating(row && row.rating);
     const poles = /^(MCB|RCBO|AFDD\+RCBO|MCCB|ACB|RCD)$/i.test(device) ? poleLabel(row) : "";
     return [rating ? `${rating}A` : NOT_SPECIFIED, poles, device].filter(Boolean).join(" ");
+  }
+
+  function deviceSpecificationLabel(row) {
+    const specification = row && row.deviceFamily && row.key ? row : deviceSpecification(row);
+    const fields = [
+      specification.rating == null ? NOT_SPECIFIED : `${formatRating(specification.rating)}A`,
+      deliverableValue(specification.pole),
+      specification.curveRelevant && deliverableValue(specification.curve) ? `${specification.curve} curve` : null,
+      specification.tripUnitRelevant ? deliverableValue(specification.productRange) : null,
+      specification.tripUnitRelevant && deliverableValue(specification.tripUnit) ? `${specification.tripUnit} trip` : null,
+      deliverableValue(specification.breakingCapacity),
+      specification.rcdProtected === true ? rcdProtectionLabel(true, specification.rcdSensitivity, specification.rcdArrangement)
+        : specification.rcdProtected === false ? "No RCD" : null,
+      specification.afdd === true ? "AFDD" : specification.afdd === false ? "No AFDD" : null,
+      specification.deviceFamily,
+    ].filter(Boolean);
+    return fields.join(" ");
   }
 
   function includeRow(row) {
@@ -498,8 +560,15 @@
     const breakingCapacity = normaliseBreakingCapacity(row && (row.breakingCapacity ?? row.breakingCapacityKa ?? row.ka));
     const pole = poleLabel(row);
     const protection = protectionSpecification(row);
+    const curveRelevant = usesTrippingCurve(deviceFamily);
+    const tripUnitRelevant = usesTripUnit(deviceFamily);
+    const productRange = normaliseProductRange(row && row.productRange, row, deviceFamily);
     const key = [
-      deviceFamily.toUpperCase(), rating == null ? NOT_SPECIFIED : formatRating(rating), curve, pole,
+      deviceFamily.toUpperCase(), rating == null ? NOT_SPECIFIED : formatRating(rating),
+      curveRelevant ? curve : NOT_SPECIFIED,
+      tripUnitRelevant ? protection.tripUnit : NOT_SPECIFIED,
+      tripUnitRelevant ? productRange : NOT_SPECIFIED,
+      pole,
       protection.rcdProtected == null ? NOT_SPECIFIED : protection.rcdProtected ? 'RCD' : 'NO RCD',
       protection.rcdSensitivity == null ? NOT_SPECIFIED : `${formatRating(protection.rcdSensitivity)}mA`,
       protection.rcdType,
@@ -508,7 +577,10 @@
       protection.afdd == null ? NOT_SPECIFIED : protection.afdd ? 'AFDD' : 'NO AFDD',
     ]
       .join("|");
-    return { key, deviceFamily, rating, curve, breakingCapacity, pole, ...protection };
+    return {
+      key, deviceFamily, rating, curve, breakingCapacity, pole, productRange,
+      curveRelevant, tripUnitRelevant, ...protection,
+    };
   }
 
   function specificationKey(row) {
@@ -544,29 +616,48 @@
         field: "curve",
         identity: (row) => [row.deviceFamily, row.rating, row.pole, row.breakingCapacity],
         missing: (value) => value === NOT_SPECIFIED,
+        applies: (row) => Boolean(row.curveRelevant),
         reason: "Conflicting tripping curves appear for otherwise identical devices",
         note: "Multiple tripping curves were extracted for the same family, rating, pole configuration, and breaking capacity. Lines remain separate; confirm each source selection before procurement.",
       },
       {
-        field: "breakingCapacity",
-        identity: (row) => [row.deviceFamily, row.rating, row.pole, row.curve],
+        field: "tripUnit",
+        identity: (row) => [row.deviceFamily, row.rating, row.productRange, row.pole, row.breakingCapacity],
         missing: (value) => value === NOT_SPECIFIED,
+        applies: (row) => Boolean(row.tripUnitRelevant),
+        reason: "Conflicting trip units appear for otherwise identical devices",
+        note: "Multiple trip units were extracted for the same family, rating, product range, pole configuration, and breaking capacity. Lines remain separate; confirm each source selection before procurement.",
+      },
+      {
+        field: "productRange",
+        identity: (row) => [row.deviceFamily, row.rating, row.tripUnit, row.pole, row.breakingCapacity],
+        missing: (value) => value === NOT_SPECIFIED,
+        applies: (row) => Boolean(row.tripUnitRelevant),
+        reason: "Conflicting product ranges appear for otherwise identical devices",
+        note: "Multiple product ranges or frames were extracted for the same family, rating, trip unit, pole configuration, and breaking capacity. Lines remain separate; confirm each source selection before procurement.",
+      },
+      {
+        field: "breakingCapacity",
+        identity: (row) => [row.deviceFamily, row.rating, row.pole, row.curveRelevant ? row.curve : row.tripUnit, row.productRange],
+        missing: (value) => value === NOT_SPECIFIED,
+        applies: () => true,
         reason: "Conflicting breaking capacities appear for otherwise identical devices",
-        note: "Multiple breaking capacities were extracted for the same family, rating, pole configuration, and tripping curve. Lines remain separate; confirm each source selection before procurement.",
+        note: "Multiple breaking capacities were extracted for otherwise identical device specifications. Lines remain separate; confirm each source selection before procurement.",
       },
       {
         field: "pole",
-        identity: (row) => [row.deviceFamily, row.rating, row.curve, row.breakingCapacity],
+        identity: (row) => [row.deviceFamily, row.rating, row.curveRelevant ? row.curve : row.tripUnit, row.productRange, row.breakingCapacity],
         missing: (value) => value === NOT_SPECIFIED || value === UNCLEAR,
+        applies: () => true,
         reason: "Conflicting pole configurations appear for otherwise identical devices",
-        note: "Multiple pole configurations were extracted for the same family, rating, tripping curve, and breaking capacity. Lines remain separate; confirm each source selection before procurement.",
+        note: "Multiple pole configurations were extracted for otherwise identical device specifications. Lines remain separate; confirm each source selection before procurement.",
       },
     ];
 
     checks.forEach((check) => {
       const candidates = new Map();
       reportRows.forEach((row) => {
-        if (check.missing(row[check.field])) return;
+        if (!check.applies(row) || check.missing(row[check.field])) return;
         const identity = check.identity(row).map((value) => text(value).toUpperCase()).join("|");
         if (!candidates.has(identity)) candidates.set(identity, []);
         candidates.get(identity).push(row);
@@ -613,6 +704,7 @@
       breakingCapacity: specification.breakingCapacity,
       protectionStandard: specification.protectionStandard,
       tripUnit: specification.tripUnit,
+      productRange: specification.productRange,
       protectionCode: text(row && row.protectionCode) || null,
       rcdProtected: specification.rcdProtected,
       rcdSensitivity: specification.rcdSensitivity,
@@ -730,7 +822,7 @@
         return;
       }
       const specification = deviceSpecification(source);
-      const label = deviceLabel({ ...source, rating: specification.rating, poleConfiguration: specification.pole });
+      const label = deviceSpecificationLabel(specification);
       const group = groupForDevice(specification.deviceFamily);
       const key = specification.key;
       if (!grouped.has(key)) {
@@ -745,6 +837,9 @@
           breakingCapacity: specification.breakingCapacity,
           protectionStandard: specification.protectionStandard,
           tripUnit: specification.tripUnit,
+          productRange: specification.productRange,
+          curveRelevant: specification.curveRelevant,
+          tripUnitRelevant: specification.tripUnitRelevant,
           rcdProtected: specification.rcdProtected,
           rcdSensitivity: specification.rcdSensitivity,
           rcdType: specification.rcdType,
@@ -788,9 +883,17 @@
         reportRow.notes.push(QUALIFICATIONS.rating);
         reportRow.reviewReasons.push("Current rating is missing");
       }
-      if (reportRow.curve === NOT_SPECIFIED) {
+      if (reportRow.curveRelevant && reportRow.curve === NOT_SPECIFIED) {
         reportRow.notes.push(QUALIFICATIONS.curve);
         reportRow.reviewReasons.push("Tripping curve is not specified");
+      }
+      if (reportRow.tripUnitRelevant && reportRow.tripUnit === NOT_SPECIFIED) {
+        reportRow.reviewReasons.push("Trip unit is not specified");
+        reportRow.notes.push(`Trip unit must be one of ${TRIP_UNIT_OPTIONS.join(", ")}; confirm it from the source before procurement.`);
+      }
+      if (reportRow.tripUnitRelevant && reportRow.productRange === NOT_SPECIFIED) {
+        reportRow.reviewReasons.push("Product range or frame is not specified");
+        reportRow.notes.push("Product range or frame is not specified in the source document. Confirm it before procurement or final quotation.");
       }
       if (reportRow.breakingCapacity === NOT_SPECIFIED) {
         reportRow.notes.push(QUALIFICATIONS.breakingCapacity);
@@ -832,6 +935,8 @@
           (a.rating == null ? Number.MAX_SAFE_INTEGER : a.rating) - (b.rating == null ? Number.MAX_SAFE_INTEGER : b.rating) ||
           (poleRank[a.pole] || 9) - (poleRank[b.pole] || 9) ||
           naturalCompare(a.curve, b.curve) ||
+          naturalCompare(a.tripUnit, b.tripUnit) ||
+          naturalCompare(a.productRange, b.productRange) ||
           naturalCompare(a.breakingCapacity, b.breakingCapacity) ||
           naturalCompare(a.label, b.label),
         ),
@@ -1182,7 +1287,9 @@
       row.deviceFamily,
       row.rating == null ? null : `${formatRating(row.rating)}A`,
       deliverableValue(row.pole),
-      deliverableValue(row.curve) ? `${row.curve} curve` : null,
+      row.curveRelevant && deliverableValue(row.curve) ? `${row.curve} curve` : null,
+      row.tripUnitRelevant ? deliverableValue(row.productRange) : null,
+      row.tripUnitRelevant && deliverableValue(row.tripUnit) ? `${row.tripUnit} trip` : null,
       deliverableValue(row.breakingCapacity),
       row.rcdProtected === true ? rcdProtectionLabel(true, row.rcdSensitivity, row.rcdArrangement) : row.rcdProtected === false ? 'No RCD' : null,
       deliverableValue(row.rcdType) ? `RCD Type ${row.rcdType}` : null,
@@ -1192,7 +1299,7 @@
   }
 
   function createBoardTakeOffWorksheet(workbook, model) {
-    const lastColumn = 13;
+    const lastColumn = 14;
     const sheet = workbook.addWorksheet('Board Take-Off', {
       views: [{ state: 'frozen', ySplit: 3, activeCell: 'A4' }],
       pageSetup: {
@@ -1207,7 +1314,7 @@
     addTitleRows(sheet, model, 'Board-by-board device take-off', lastColumn);
     const headers = [
       'Circuit Description', 'Quantity', 'Current Rating (A)', 'Pole Configuration', 'Tripping Curve', 'Trip Unit',
-      'Breaking Capacity', 'RCD Protection', 'AFDD Protection', 'Circuit / Way', 'Protection Standard', 'Source Pages', 'Review Status',
+      'Product Range / Frame', 'Breaking Capacity', 'RCD Protection', 'AFDD Protection', 'Circuit / Way', 'Protection Standard', 'Source Pages', 'Review Status',
     ];
     headers.forEach((value, index) => { sheet.getCell(3, index + 1).value = value; });
     styleHeaderRow(sheet, 3, lastColumn);
@@ -1244,6 +1351,7 @@
             deliverableValue(item.pole),
             deliverableValue(item.curve),
             deliverableValue(item.tripUnit),
+            deliverableValue(item.productRange),
             deliverableValue(item.breakingCapacity),
             deliverableValue(item.rcdLabel),
             deliverableValue(item.afddLabel),
@@ -1272,7 +1380,7 @@
         });
       });
     });
-    const widths = [36, 10, 14, 15, 14, 14, 16, 18, 17, 28, 20, 32, 17];
+    const widths = [36, 10, 14, 15, 14, 14, 21, 16, 18, 17, 28, 20, 32, 17];
     widths.forEach((width, index) => { sheet.getColumn(index + 1).width = width; });
     sheet.pageSetup.printArea = `A1:${columnName(lastColumn)}${Math.max(3, rowNumber - 1)}`;
     sheet.pageSetup.printTitlesRow = '1:3';
@@ -1413,6 +1521,7 @@
       item.breakingCapacity,
       item.protectionStandard,
       item.tripUnit,
+      item.productRange,
       rcdProtectionLabel(item.rcdProtected, item.rcdSensitivity, item.rcdArrangement),
       item.rcdSensitivity == null ? NOT_SPECIFIED : item.rcdSensitivity,
       afddProtectionLabel(item.afdd),
@@ -1431,12 +1540,16 @@
     const rows = [];
     allReportGroups(model).forEach((group) => group.rows.forEach((reportRow) => {
       reportRow.reviewReasons.forEach((reason) => {
-        const field = /curve/i.test(reason) ? "Tripping Curve"
+        const field = /trip unit/i.test(reason) ? "Trip Unit"
+          : /product range/i.test(reason) ? "Product Range / Frame"
+            : /curve/i.test(reason) ? "Tripping Curve"
           : /breaking/i.test(reason) ? "Breaking Capacity"
             : /pole/i.test(reason) ? "Pole Configuration"
               : /rating/i.test(reason) ? "Current Rating"
                 : "Source Record";
-        const note = field === "Tripping Curve" ? QUALIFICATIONS.curve
+        const note = field === "Trip Unit" ? `Use one of ${TRIP_UNIT_OPTIONS.join(", ")}; confirm the printed trip unit before procurement.`
+          : field === "Product Range / Frame" ? "Confirm the printed device range or frame before procurement."
+            : field === "Tripping Curve" ? QUALIFICATIONS.curve
           : field === "Breaking Capacity" ? QUALIFICATIONS.breakingCapacity
             : field === "Pole Configuration" ? QUALIFICATIONS.poles
               : field === "Current Rating" ? QUALIFICATIONS.rating
@@ -1502,6 +1615,7 @@
         ["Breaking Capacity", item.breakingCapacity],
         ["Protection Standard", item.protectionStandard],
         ["Trip Unit", item.tripUnit],
+        ["Product Range / Frame", item.productRange],
         ["RCD Protection", rcdProtectionLabel(item.rcdProtected, item.rcdSensitivity, item.rcdArrangement)],
         ["RCD Sensitivity", item.rcdSensitivity == null ? NOT_SPECIFIED : `${formatRating(item.rcdSensitivity)}mA`],
         ["AFDD Protection", afddProtectionLabel(item.afdd)],
@@ -1573,6 +1687,7 @@
     DEVICE_PALETTE,
     GROUP_ORDER,
     SPECIFICATION_PALETTE,
+    TRIP_UNIT_OPTIONS,
     buildModel,
     buildSpecificationColorMap,
     canonicalDevice,
@@ -1580,11 +1695,14 @@
     csv,
     deduplicateRows,
     deviceSpecification,
+    deviceSpecificationLabel,
     deviceLabel,
     matrixRows,
     normaliseBreakingCapacity,
     normaliseCurve,
     normalisePole,
+    normaliseProductRange,
+    normaliseTripUnit,
     safeFileName,
     specificationKey,
     tintColour,

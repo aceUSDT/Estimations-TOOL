@@ -158,6 +158,30 @@ assert.equal(hiddenMetadataVariants.length, 1, "supporting standard and trip-uni
 assert.equal(hiddenMetadataVariants[0].total, 3);
 assert.equal(hiddenMetadataVariants[0].contributors.length, 2, "every source must remain available beneath the consolidated device");
 
+const mccbTripUnits = groupedRows([
+  row("tu1", "DB02", 1, { device: "MCCB", rating: 160, poles: 3, curve: null, ka: 25, tripUnit: "LSI", productRange: "h3+ P160" }),
+  row("tu2", "DB02", 1, { device: "MCCB", rating: 160, poles: 3, curve: null, ka: 25, tripUnit: "LSIG", productRange: "H3+ / P160" }),
+  row("tu3", "DB02", 1, { device: "MCCB", rating: 160, poles: 3, curve: null, ka: 25, tripUnit: "TM-D", productRange: "h3+ P160" }),
+  row("tu4", "DB02", 2, { device: "MCCB", rating: 160, poles: 3, curve: null, ka: 25, tripUnit: "Thermal magnetic", productRange: "H3+ / P160" }),
+]);
+assert.equal(mccbTripUnits.length, 3, "LSI, LSIG, and TM MCCBs must remain separate procurement groups");
+assert.deepEqual(Array.from(mccbTripUnits, (item) => item.tripUnit).sort(), ["LSI", "LSIG", "TM"]);
+assert.equal(mccbTripUnits.find((item) => item.tripUnit === "TM").total, 3, "TM-D and thermal-magnetic notation must canonicalise to TM");
+assert.ok(mccbTripUnits.every((item) => item.productRange === "H3+ / P160"));
+assert.ok(mccbTripUnits.every((item) => /TP/.test(item.label) && /25kA/.test(item.label) && /trip/.test(item.label)),
+  "the consolidated label must display poles, capacity, and trip unit");
+
+const rangeVariants = groupedRows([
+  row("range1", "DB02", 1, { device: "MCCB", rating: 160, poles: 3, curve: null, ka: 25, tripUnit: "LSI", productRange: "H3+ P160" }),
+  row("range2", "DB02", 1, { device: "MCCB", rating: 160, poles: 3, curve: null, ka: 25, tripUnit: "LSI", productRange: "X160" }),
+]);
+assert.equal(rangeVariants.length, 2, "different MCCB product ranges must remain separate procurement groups");
+assert.deepEqual(Array.from(rangeVariants, (item) => item.productRange).sort(), ["H3+ / P160", "X160"]);
+
+assert.deepEqual(Array.from(Report.TRIP_UNIT_OPTIONS), ["LSI", "LSIG", "LSNI", "TM", "ATFM", "ATAM", "LI"]);
+assert.equal(Report.normaliseTripUnit("TMD"), "TM");
+assert.equal(Report.normaliseTripUnit("Micrologic 5.0"), "Not specified", "unsupported trip-unit text must not create a new category");
+
 const reconciliation = Report.validateModel(riverside);
 assert.equal(reconciliation.valid, true);
 assert.equal(reconciliation.sourceTotal, 21);
