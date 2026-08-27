@@ -1,7 +1,8 @@
-export const PERCEPTION_CONTRACT_VERSION = 1;
+export const PERCEPTION_CONTRACT_VERSION = 2;
 
 const list = (value) => Array.isArray(value) ? value : [];
 const text = (value) => String(value ?? '').trim();
+const canonicalReference = (value) => text(value).toUpperCase().replace(/[^A-Z0-9]/g, '');
 
 function extractionPayload(output) {
   return output?.result && typeof output.result === 'object' ? output.result : output;
@@ -36,11 +37,19 @@ export function buildPerceptionContract(output, context = {}) {
   const feeds = list(payload.feeds);
   const entities = [...boards, ...devices, ...feeds];
   const reasonCodes = [];
+  const deterministicPrimaryBoard = text(context?.hints?.deterministic_primary_board
+    || context?.deterministicPrimaryBoard || context?.layoutHint?.deterministicPrimaryBoard?.ref);
+  const deterministicPrimaryNorm = canonicalReference(deterministicPrimaryBoard);
 
   const duplicateBoards = boards.map((board) => text(board.ref).toUpperCase()).filter(Boolean)
     .filter((ref, index, values) => values.indexOf(ref) !== index);
   if (duplicateBoards.length) reasonCodes.push('duplicate_board_reference');
   if (devices.some((device) => !text(device.board_ref))) reasonCodes.push('device_without_board_reference');
+  if (deterministicPrimaryNorm && (
+    devices.some((device) => canonicalReference(device.board_ref)
+      && canonicalReference(device.board_ref) !== deterministicPrimaryNorm)
+    || boards.some((board) => canonicalReference(board.ref) && canonicalReference(board.ref) !== deterministicPrimaryNorm)
+  )) reasonCodes.push('board_ref_conflicts_with_primary');
   if (devices.some((device) => !text(device.device_class))) reasonCodes.push('device_class_missing');
   if (devices.some((device) => !['spare', 'space'].includes(text(device.device_class).toLowerCase())
     && (device.rating_a == null || device.rating_a === ''))) reasonCodes.push('device_rating_missing');
@@ -71,6 +80,7 @@ export function buildPerceptionContract(output, context = {}) {
     validation: {
       status: reasonCodes.length ? 'review_required' : 'valid',
       reasonCodes: [...new Set(reasonCodes)],
+      deterministicPrimaryBoard: deterministicPrimaryBoard || null,
     },
   };
   return contract;

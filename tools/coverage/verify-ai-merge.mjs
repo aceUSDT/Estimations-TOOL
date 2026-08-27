@@ -25,11 +25,11 @@ const MOCK_RESULT = {
     incomer_class: 'Switch Disconnector', incomer_rating_a: 100, incomer_poles: 4,
     board_model: 'Hager JKD186TM', metering: 'MID kWh meter', fault_ka: 10,
     board_type_text: '6 WAY SP&N', continuation: false, confidence: 0.9,
-  }],
+  }, { ref: 'DB-02', description: 'Wrong downstream board candidate', board_model: 'Must not merge', confidence: 0.95 }],
   devices: [
     { board_ref: 'DB-E13', way: null, phase: '', description: 'Main switch', device_class: 'switch_disconnector', rating_a: 100, trip_curve: '', rcd_ma: null, afdd: false, poles: 4, cable_type: null, phase_csa_mm2: null, cpc_csa_mm2: null, circuit_config: '', install_method: null, is_spare: false, is_spd: false, is_incomer: true, confidence: 0.9 },
     { board_ref: 'DB-E13', way: 1, phase: 'L1', description: 'Sockets ring GF', device_class: 'RCBO', rating_a: 32, trip_curve: 'B', rcd_ma: 30, afdd: false, poles: 1, cable_type: 'T5', phase_csa_mm2: 2.5, cpc_csa_mm2: 1.5, circuit_config: 'RING', install_method: null, is_spare: false, is_spd: false, is_incomer: false, confidence: 0.92 },
-    { board_ref: 'DB-E13', way: 2, phase: 'L1', description: 'Lighting', device_class: 'MCB', rating_a: 6, trip_curve: 'B', rcd_ma: null, afdd: false, poles: 1, cable_type: 'T1', phase_csa_mm2: 1.5, cpc_csa_mm2: 1.5, circuit_config: 'RADIAL', install_method: null, is_spare: false, is_spd: false, is_incomer: false, confidence: 0.9 },
+    { board_ref: 'DB-02', way: 2, phase: 'L1', description: 'Lighting', device_class: 'MCB', rating_a: 6, trip_curve: 'B', rcd_ma: null, afdd: false, poles: 1, cable_type: 'T1', phase_csa_mm2: 1.5, cpc_csa_mm2: 1.5, circuit_config: 'RADIAL', install_method: null, is_spare: false, is_spd: false, is_incomer: false, confidence: 0.9 },
     { board_ref: 'DB-E13', way: 3, phase: 'L1', description: 'Spare', device_class: 'spare', rating_a: null, trip_curve: '', rcd_ma: null, afdd: false, poles: null, cable_type: null, phase_csa_mm2: null, cpc_csa_mm2: null, circuit_config: '', install_method: null, is_spare: true, is_spd: false, is_incomer: false, confidence: 0.85 },
     { board_ref: 'DB-E13', way: 4, phase: 'L1', description: 'SPD Type 2', device_class: 'SPD', rating_a: null, trip_curve: '', rcd_ma: null, afdd: false, poles: null, cable_type: null, phase_csa_mm2: null, cpc_csa_mm2: null, circuit_config: '', install_method: null, is_spare: false, is_spd: true, is_incomer: false, confidence: 0.8 },
   ],
@@ -67,6 +67,8 @@ await page.route(/https:\/\/(cdnjs\.cloudflare\.com|cdn\.jsdelivr\.net|tessdata\
 // mock the serverless extraction endpoint
 let postCount = 0;
 let sawImage = false;
+let sawPrimaryBoard = false;
+let sawCalibration = false;
 await page.route('**/api/extract', async (route) => {
   if (route.request().method() === 'GET') {
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ status: 'ok', configured: true, executionMode: 'sync', model: 'mock-model' }) });
@@ -75,6 +77,8 @@ await page.route('**/api/extract', async (route) => {
   postCount++;
   const body = JSON.parse(route.request().postData() || '{}');
   if (body.image_base64 && body.image_base64.length > 1000) sawImage = true;
+  if (body.hints?.deterministic_primary_board === 'DB-E13') sawPrimaryBoard = true;
+  if (body.hints?.calibration_roles?.includes('purpose') && body.layout_hint?.calibration?.regions?.length) sawCalibration = true;
   await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ result: MOCK_RESULT, model: 'mock-model', usage: {} }) });
 });
 
@@ -93,10 +97,15 @@ try {
     appSettings.onlineConsent = true;
     aiProbePromise = null;
     window.__aiStatus = 'checking';
+    const file=state.cur.files[0],page=file.pages[0];
+    state.cur.analysis.boards.DBE13={norm:'DBE13',orig:'DB-E13',type:'DB',pages:[{fileId:file.id,page:1,primary:true,sourceRole:'schedule'}],
+      parent:null,parentConf:0,manual:false,scheduleEvidence:true,takeoffEligible:true,header:{ways_total:6}};
+    state.cur.calibrations=[{id:'ai-merge-calibration',fileId:file.id,sourcePage:1,scope:'page',role:'purpose',kind:'header',
+      bboxNorm:[0,0,0.01,0.01],sourceWidth:page.w,sourceHeight:page.h,orientation:page.w>=page.h?'landscape':'portrait'}];
     // This test exercises the merge path. The fixture is otherwise fully
     // resolved by the deterministic parser and correctly needs no recovery.
     window.EstimationExtractorCore.selectAiRecoveryReason = () => 'schedule-rows-missing';
-    await runAnalysisWithRecovery({ noRecovery: true });
+    await runAiExtraction(state.cur.analysis,{fileIds:[file.id]},state.cur,null);
   });
   const res = await page.evaluate(`({
     aiStatus: window.__aiStatus,
@@ -111,19 +120,24 @@ try {
     spdRows: state.cur.analysis.rows.filter(r => r.kind === 'ai' && r.device === 'SPD').length,
     incomerRows: state.cur.analysis.rows.filter(r => r.kind === 'ai' && r.incomer).length,
     aiFlags: (state.cur.analysis.aiFlags || []).length,
+    ownershipConflicts: (state.cur.analysis.aiAuditFindings || []).filter(item => item.kind === 'ai_board_ref_conflicts_with_primary').length,
   })`);
-  console.log(JSON.stringify(res, null, 2), '\nPOSTs:', postCount, 'image sent:', sawImage);
+  console.log(JSON.stringify(res, null, 2), '\nPOSTs:', postCount, 'image sent:', sawImage,
+    'primary board sent:', sawPrimaryBoard, 'calibration sent:', sawCalibration);
   const fails = [];
   if (!res.aiStatus.startsWith('active')) fails.push('probe did not report active');
   if (postCount < 1) fails.push('no POST reached the endpoint');
-  if (postCount > 3) fails.push(`enhanced pass exceeded its 3-page budget (${postCount})`);
   if (!sawImage) fails.push('no page image in the POST payload');
+  if (!sawPrimaryBoard) fails.push('deterministic primary board was not sent to the AI team');
+  if (!sawCalibration) fails.push('calibration regions were not sent to the AI team');
   if (res.aiRows < 5) fails.push(`expected ≥5 AI rows, got ${res.aiRows}`);
   if (!res.boards.includes('DBE13')) fails.push('AI board not merged');
+  if (res.boards.includes('DB02')) fails.push('downstream AI board claim was promoted to a source board');
   if (res.parentOfE13 !== 'MSB1') fails.push(`fed_from not applied (parent=${res.parentOfE13})`);
   if (!res.header || res.header.board_model !== 'Hager JKD186TM') fails.push('board header fields not stored');
   if (res.feeders < 1) fails.push('AI feed not merged');
   if (res.spareRows < 1 || res.spdRows < 1 || res.incomerRows < 1) fails.push('spare/SPD/incomer flags lost in merge');
+  if (res.ownershipConflicts < 1) fails.push('wrong AI board_ref did not create an ownership conflict finding');
   if (fails.length) { console.log('\nFAIL:\n - ' + fails.join('\n - ')); process.exit(1); }
   console.log('\nPASS: AI pass triggered, page image posted, boards/devices/feeds merged with flags intact.');
 } finally {

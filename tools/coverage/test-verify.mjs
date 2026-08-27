@@ -103,6 +103,11 @@ try {
 /* ---------- instruction builder ---------- */
 const instr = buildInstruction({ filename: 'a.pdf', pageNumber: 3, hints: { type: 'db_schedule', sub_format: 'bam_epo' }, textLines: ['ROW 1'] });
 check('instruction carries filename/page/hint/lines', instr.includes('a.pdf') && instr.includes('page 3') && instr.includes('bam_epo') && instr.includes('ROW 1'));
+const calibratedInstr = buildInstruction({ filename: 'trimble.pdf', pageNumber: 1,
+  hints: { type: 'db_schedule', deterministic_primary_board: '01 MAIN LV SWITCHBOARD', calibration_roles: ['board_ref', 'device_class'] },
+  layoutHint: { calibration: { regions: [{ role: 'board_ref', bbox: [10, 10, 100, 20] }] } } });
+check('instruction preserves source-board ownership and calibration guidance', calibratedInstr.includes('01 MAIN LV SWITCHBOARD')
+  && calibratedInstr.includes('downstream circuit_reference') && calibratedInstr.includes('board_ref, device_class'));
 
 if (fail) { console.log(`\n${fail} failure(s)`); process.exit(1); }
 console.log('PASS: Gemini master runtime, deterministic cross-check, schema translation, provider gating, health probe.');

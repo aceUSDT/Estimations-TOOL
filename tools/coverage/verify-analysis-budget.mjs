@@ -1,6 +1,6 @@
 /* Browser regression for the large-document analysis budget. A 40-page project
- * must save its deterministic result without cloud work, cap an explicit
- * enhanced pass at three pages, and stop without replacing the prior result.
+ * must save its deterministic result without cloud work, process every eligible
+ * enhanced-recovery page in bounded batches, and stop without replacing the prior result.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -119,10 +119,12 @@ try {
     version: state.cur.analysis.version,
   }));
   if (!manual) throw new Error('explicit enhanced analysis returned no result');
-  if (postCount !== 3) throw new Error(`enhanced analysis sent ${postCount} pages instead of 3`);
-  if (budget.recovery?.eligible !== 39 || budget.recovery?.selected !== 3 || budget.recovery?.deferred !== 36) {
+  if (postCount !== 39) throw new Error(`enhanced analysis processed ${postCount} of 39 eligible pages`);
+  if (budget.recovery?.eligible !== 39 || budget.recovery?.selected !== 39 || budget.recovery?.deferred !== 0
+    || budget.recovery?.batchSize !== 3 || budget.recovery?.status !== 'completed') {
     throw new Error(`unexpected recovery budget: ${JSON.stringify(budget.recovery)}`);
   }
+  if (budget.selection?.some((item) => !item.selected)) throw new Error('an eligible recovery page was silently deferred');
   if (manualElapsedMs > 10000) throw new Error(`bounded enhanced analysis took ${manualElapsedMs}ms`);
 
   await page.evaluate(() => {
@@ -157,7 +159,7 @@ try {
   if (cancelled.marker !== 'saved-before-cancel') throw new Error('Stop replaced the last saved analysis');
 
   console.log(JSON.stringify({ automaticElapsedMs, manualElapsedMs, cancelElapsedMs, postCount, budget }, null, 2));
-  console.log('PASS: 40-page deterministic analysis, enhanced-extraction budget, and Stop preservation are bounded.');
+  console.log('PASS: 40-page deterministic analysis, complete batched AI recovery, and Stop preservation are bounded.');
 } finally {
   await browser.close();
 }

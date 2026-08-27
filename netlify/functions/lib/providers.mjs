@@ -42,6 +42,12 @@ export function providerStatus(env = process.env) {
 export function buildInstruction({ filename, pageNumber, hints, textLines, layoutHint }) {
   let instruction = `Extract this page into the schema. Document: ${filename || 'unknown'}, page ${pageNumber || '?'}.`;
   if (hints && hints.type) instruction += ` Classifier hint (may be wrong): ${hints.type}${hints.sub_format ? ' / ' + hints.sub_format : ''}.`;
+  if (hints?.deterministic_primary_board) {
+    instruction += ` The deterministic Board Data/header evidence proves the source board is ${hints.deterministic_primary_board}. Keep Connected To/load references as downstream circuit_reference values; never use them as device board_ref values.`;
+  }
+  if (Array.isArray(hints?.calibration_roles) && hints.calibration_roles.length) {
+    instruction += ` User-calibrated source regions are supplied for these roles: ${hints.calibration_roles.join(', ')}. Use their boxes as layout guidance and verify values against the image.`;
+  }
   if (layoutHint && typeof layoutHint === 'object') {
     const compact = JSON.stringify(layoutHint).slice(0, 50000);
     instruction += `\n\nDeterministic spatial pre-pass (candidate table roles and source regions; verify every value against the image and do not count from this hint):\n${compact}`;

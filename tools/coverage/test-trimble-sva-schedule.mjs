@@ -47,6 +47,48 @@ assert.ok(activeRows.every((row) => row.arcFlashDevice == null && row.afdd !== t
 assert.ok(activeRows.every((row) => row.fieldSources?.device?.bbox && row.fieldSources?.rating?.bbox));
 assert.ok(parseElapsedMs < 5000, `55-page deterministic parse exceeded the 5s release budget (${Math.round(parseElapsedMs)}ms)`);
 
+const fractured = structuredClone(pages[0]);
+const moveWord = (text, y, yDelta) => {
+  const item = fractured.words.find((candidate) => candidate.text === text && candidate.bbox[1] === y);
+  assert.ok(item, `fixture word ${text} at y=${y} must exist`);
+  item.bbox[1] += yDelta;
+  return item;
+};
+moveWord('Data', 144, 4.8);
+moveWord('Details', 236, 4.8);
+moveWord('Protective', 285, 4.8);
+moveWord('Device', 285, -4.8);
+moveWord('Fault', 298, 4.8);
+moveWord('Protective', 298, 4.8);
+moveWord('Device', 298, -4.8);
+moveWord('Flash', 309, 4.8);
+moveWord('Protective', 309, 4.8);
+moveWord('Device', 309, -4.8);
+const identityLabel = fractured.words.find((item) => item.text === 'Id' && item.bbox[0] === 22 && item.bbox[1] === 163);
+const identityNo = fractured.words.find((item) => item.text === 'No:' && item.bbox[1] === 163);
+identityLabel.text = 'Id No:';
+identityLabel.bbox[2] = identityLabel.bbox[2] + identityNo.bbox[2] + 3;
+fractured.words = fractured.words.filter((item) => item !== identityNo);
+const destinations = ['02 DB-LG', '03 DB-K', '04 DB-GF', '05 DB-02', '06 DB-05'];
+fractured.words.filter((item) => /^LOAD \d+$/.test(item.text)).forEach((item, index) => {
+  item.text = destinations[index] || item.text;
+});
+const fracturedResult = Core.parseSpatialSchedulePage({
+  ...fractured,
+  calibrationHint: { regions: [{ role: 'board_ref', bbox: [20, 155, 225, 22] }] },
+});
+assert.equal(fracturedResult.matched, true,
+  'the Trimble dialect must survive split OCR baselines and a combined Id No label');
+assert.equal(fracturedResult.board?.ref, '01 MAIN LV SWITCHBOARD',
+  'automatic and calibrated identity extraction must strip the Id No label');
+assert.ok(fracturedResult.rows.every((row) => row.boardRef === '01 MAIN LV SWITCHBOARD'),
+  'every outgoing device must remain owned by the source Board Data identity');
+assert.equal(fracturedResult.references.filter((reference) => reference.role === 'primary_board').length, 1);
+assert.ok(fracturedResult.references.some((reference) => reference.role === 'circuit_reference' && reference.original === 'DB-02'),
+  'Connected To values remain downstream circuit references');
+assert.ok(!fracturedResult.references.some((reference) => reference.role === 'primary_board' && reference.original === 'DB-02'),
+  'a downstream Connected To value must never become the source board');
+
 const corrupted = structuredClone(pages[0]);
 corrupted.documentPage = 1;
 corrupted.page = 1;

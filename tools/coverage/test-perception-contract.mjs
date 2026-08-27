@@ -18,6 +18,14 @@ assert.equal(contract.validation.status, 'review_required');
 assert.ok(contract.validation.reasonCodes.includes('device_without_board_reference'));
 assert.ok(contract.validation.reasonCodes.includes('device_rating_missing'));
 
+const ownershipConflict = buildPerceptionContract({
+  boards: [{ ref: 'DB-02' }],
+  devices: [{ board_ref: 'DB-02', device_class: 'MCCB', rating_a: 160 }],
+  feeds: [], flags: [],
+}, { filename: 'trimble.pdf', pageNumber: 1, hints: { deterministic_primary_board: '01 MAIN LV SWITCHBOARD' } });
+assert.ok(ownershipConflict.validation.reasonCodes.includes('board_ref_conflicts_with_primary'));
+assert.equal(ownershipConflict.validation.deterministicPrimaryBoard, '01 MAIN LV SWITCHBOARD');
+
 const wrapped = attachPerceptionContract({
   result: { boards: [{ ref: 'DB-B' }], devices: [], feeds: [], flags: [] },
   provider: 'nvidia+gemini', model: 'layout-model', verification: { status: 'done' },

@@ -1200,7 +1200,7 @@ const state = {
   reportMode: 'board',
   reviewFlow: {active:false,currentRowId:null,initialCount:0,moving:false,boardOrder:[],initialByBoard:{},rowOrderByBoard:{}},
 };
-const ANALYSIS_VERSION=24;
+const ANALYSIS_VERSION=25;
 const uid = () => 'x'+(state.nextId++)+'_'+Math.random().toString(36).slice(2,6);
 
 /* ====================== PERSISTENCE (IndexedDB) ====================== */
@@ -2320,7 +2320,7 @@ const schematicRasterKey=(fileId,pageNo)=>`${fileId}:${pageNo}`;
 let aiProbePromise=null;
 window.__aiStatus='unknown';
 window.__aiExecutionMode='background';
-const AI_RECOVERY_MAX_PAGES=3;
+const AI_RECOVERY_BATCH_SIZE=3;
 const AI_RECOVERY_PAGE_TIMEOUT_MS=180000;
 const AI_RECOVERY_TOTAL_BUDGET_MS=360000;
 const AI_PROBE_TIMEOUT_MS=5000;
@@ -2388,7 +2388,8 @@ async function renderSourcePageCanvas(f,pageNo,maxEdge=1500){
   }
   return null;
 }
-async function aiExtractPage(f,pageNo,pg,{signal=null,timeoutMs=AI_RECOVERY_PAGE_TIMEOUT_MS}={}){
+async function aiExtractPage(f,pageNo,pg,{signal=null,timeoutMs=AI_RECOVERY_PAGE_TIMEOUT_MS,
+  calibrationHint=null,deterministicPrimaryBoard=null}={}){
   const deadline=Date.now()+Math.max(1,timeoutMs);
   const remaining=()=>Math.max(1,deadline-Date.now());
   if(signal?.aborted)throw new DOMException('Analysis stopped','AbortError');
@@ -2406,10 +2407,20 @@ async function aiExtractPage(f,pageNo,pg,{signal=null,timeoutMs=AI_RECOVERY_PAGE
   }
   if(signal?.aborted)throw new DOMException('Analysis stopped','AbortError');
   const spatial=!topologyOnly&&core?.parseSpatialSchedulePage?core.parseSpatialSchedulePage({lines:pg.lines||[],tableRows:pg.tableRows||[],
-    pageWidth:pg.w,pageHeight:pg.h,pageType:pg.type}):null;
-  const layoutHint=spatial?.matched&&core?.buildSpatialLayoutHint?core.buildSpatialLayoutHint(spatial):null;
+    pageWidth:pg.w,pageHeight:pg.h,pageType:pg.type,calibrationHint}):null;
+  const spatialHint=core?.buildSpatialLayoutHint?core.buildSpatialLayoutHint(spatial):null;
+  const calibrationContext=calibrationHint?.regions?.length?{
+    roles:[...new Set(calibrationHint.regions.map(region=>region.role))],
+    regions:calibrationHint.regions.map(region=>({role:region.role,bbox:region.bbox,scope:region.scope||null})),
+  }:null;
+  const layoutHint=(spatialHint||calibrationContext||deterministicPrimaryBoard)?{
+    ...(spatialHint||{version:1}),
+    deterministicPrimaryBoard:deterministicPrimaryBoard?{ref:deterministicPrimaryBoard.orig,norm:deterministicPrimaryBoard.norm}:null,
+    calibration:calibrationContext,
+  }:null;
   const payload={filename:f.name,page_number:pageNo,image_base64,media_type:'image/jpeg',
-    text_lines:(pg.lines||[]).map(l=>l.text).slice(0,400),layout_hint:layoutHint,hints:{type:pg.type}};
+    text_lines:(pg.lines||[]).map(l=>l.text).slice(0,400),layout_hint:layoutHint,hints:{type:pg.type,
+      deterministic_primary_board:deterministicPrimaryBoard?.orig||null,calibration_roles:calibrationContext?.roles||[]}};
   if(window.__aiExecutionMode==='sync'){
     const response=await fetchWithTimeout(AI_EXTRACT_ENDPOINT,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(payload)},remaining(),signal);
     const result=await response.json().catch(()=>({}));
@@ -2442,12 +2453,39 @@ async function aiExtractPage(f,pageNo,pg,{signal=null,timeoutMs=AI_RECOVERY_PAGE
   }
   throw new DOMException('Enhanced extraction page deadline reached','TimeoutError');
 }
-function mergeAiResult(A,out,fileId,pageNo,pageType){
+function primaryBoardForPage(A,fileId,pageNo){
+  const boards=Object.values(A?.boards||{}).filter(board=>(board.pages||[])
+    .some(page=>page.fileId===fileId&&Number(page.page)===Number(pageNo)&&page.primary));
+  return boards.length===1?boards[0]:null;
+}
+function mergeAiResult(A,out,fileId,pageNo,pageType,{primaryBoard=null}={}){
   if(!out) return;
   const topologyOnly=pageType==='sld'||pageType==='schematic';
+  const authoritativeBoard=topologyOnly?null:(primaryBoard||primaryBoardForPage(A,fileId,pageNo));
+  const ownershipFinding=(claimedRef,subject,way=null)=>{
+    const claimedNorm=claimedRef?canonicalBoardRef(claimedRef).normalised:null;
+    if(!authoritativeBoard?.norm||!claimedNorm||claimedNorm===authoritativeBoard.norm)return null;
+    const message=`AI ${subject} claimed ${claimedRef}, but the source Board Data header proves ${authoritativeBoard.orig}`;
+    const finding={fileId,page:pageNo,boardNorm:authoritativeBoard.norm,way,kind:'ai_board_ref_conflicts_with_primary',
+      message,claimedBoardRef:claimedRef,authoritativeBoardRef:authoritativeBoard.orig};
+    A.aiAuditFindings=A.aiAuditFindings||[];
+    if(!A.aiAuditFindings.some(item=>item.kind===finding.kind&&item.fileId===fileId&&item.page===pageNo
+      &&item.way===way&&item.claimedBoardRef===claimedRef))A.aiAuditFindings.push(finding);
+    return finding;
+  };
   (out.boards||[]).forEach(b=>{
     if(!b.ref) return;
     const canonical=canonicalBoardRef(b.ref), norm=canonical.normalised; if(!norm) return;
+    if(!topologyOnly&&authoritativeBoard&&norm!==authoritativeBoard.norm){
+      ownershipFinding(b.ref,'board header');
+      (A.aiBoardCandidates=A.aiBoardCandidates||[]).push({fileId,page:pageNo,ref:b.ref,norm,
+        status:'withheld_board_ownership_conflict',authoritativeBoardRef:authoritativeBoard.orig});
+      return;
+    }
+    if(!topologyOnly&&!authoritativeBoard){
+      (A.aiBoardCandidates=A.aiBoardCandidates||[]).push({fileId,page:pageNo,ref:b.ref,norm,status:'awaiting_source_board_confirmation'});
+      return;
+    }
     if(!A.boards[norm]){
       const det=detectBoards(b.ref)[0];
       A.boards[norm]={norm, orig:canonical.display, type:det?det.type:'UNK', pages:[], parent:null, parentConf:0, manual:false};
@@ -2462,7 +2500,10 @@ function mergeAiResult(A,out,fileId,pageNo,pageType){
     }
   });
   if(!topologyOnly)(out.devices||[]).forEach(d=>{
-    const bn=d.board_ref?canonicalBoardRef(d.board_ref).normalised:null;
+    const claimedBoardNorm=d.board_ref?canonicalBoardRef(d.board_ref).normalised:null;
+    const ownershipConflict=ownershipFinding(d.board_ref,'device row',d.way??null);
+    const bn=authoritativeBoard?.norm||null;
+    const ownershipUnresolved=!authoritativeBoard?.norm;
     const space=d.device_class==='space';
     const spare=d.is_spare||d.device_class==='spare';
     const device=(d.afdd&&d.device_class==='RCBO')?'AFDD+RCBO':(AI_DEVICE_MAP[d.device_class]|| (d.is_spd?'SPD':null));
@@ -2490,7 +2531,9 @@ function mergeAiResult(A,out,fileId,pageNo,pageType){
         if(!existing.desc&&d.description)existing.desc=d.description;
         existing.inferredDevice=false;existing.aiEnriched=true;
         existing.conf=Math.max(existing.conf||0,Math.min(0.95,Number(d.confidence)||0.6));
-        existing.requiresReview=!existing.device||existing.rating==null||existing.conf<0.8;
+        existing.requiresReview=Boolean(ownershipConflict||ownershipUnresolved||!existing.device||existing.rating==null||existing.conf<0.8);
+        if(ownershipConflict){existing.boardOwnershipConflict=ownershipConflict;existing.aiClaimedBoardRef=d.board_ref;}
+        else if(ownershipUnresolved){existing.boardOwnershipUnresolved=true;existing.aiClaimedBoardRef=d.board_ref||null;}
         existing.extractionMethod=(existing.extractionMethod||'Deterministic parser')+' + AI field check';
       }
       return;
@@ -2499,6 +2542,8 @@ function mergeAiResult(A,out,fileId,pageNo,pageType){
     const aiPhaseEvidence=window.EstimationExtractorCore?.explicitPhaseEvidence?.(d.phase);
     const aiPhase=aiPhaseEvidence?'3PH':(d.phase&&d.phase!=='L1L2L3'?d.phase:(d.phase==='L1L2L3'?'3PH':null));
     const aiRow={id:uid(), boardNorm:bn, fileId, page:pageNo, line:null, status:'pending', kind:'ai',
+      aiClaimedBoardRef:d.board_ref||null,aiClaimedBoardNorm:claimedBoardNorm,boardOwnershipConflict:ownershipConflict,
+      boardOwnershipUnresolved:ownershipUnresolved,requiresReview:Boolean(ownershipConflict||ownershipUnresolved),
       way:d.way??null, phase:aiPhase,
       desc:d.description||'', device, rating:d.rating_a??null, poles:d.poles??null, poleConfiguration:d.pole_configuration||null,
       curve:d.trip_curve||null, tripUnit:d.trip_unit||null, protectionStandard:d.protection_standard||null,
@@ -2554,7 +2599,21 @@ function mergeAiResult(A,out,fileId,pageNo,pageType){
   });
   (out.flags||[]).forEach(fl=>{ (A.aiFlags=A.aiFlags||[]).push({fileId, page:pageNo, kind:fl.kind, message:fl.message}); });
 }
-function applyAiAudit(A,response,fileId,pageNo){
+function applyAiAudit(A,response,fileId,pageNo,{primaryBoard=null,pageType=null}={}){
+  const topologyOnly=pageType==='sld'||pageType==='schematic';
+  const authoritativeBoard=topologyOnly?null:(primaryBoard||primaryBoardForPage(A,fileId,pageNo));
+  const auditBoardNorm=claimedRef=>{
+    const claimedNorm=claimedRef?canonicalBoardRef(claimedRef).normalised:null;
+    if(authoritativeBoard?.norm&&claimedNorm&&claimedNorm!==authoritativeBoard.norm){
+      const finding={fileId,page:pageNo,boardNorm:authoritativeBoard.norm,way:null,kind:'ai_board_ref_conflicts_with_primary',
+        message:`AI audit claimed ${claimedRef}, but the source Board Data header proves ${authoritativeBoard.orig}`,
+        claimedBoardRef:claimedRef,authoritativeBoardRef:authoritativeBoard.orig};
+      A.aiAuditFindings=A.aiAuditFindings||[];
+      if(!A.aiAuditFindings.some(item=>item.kind===finding.kind&&item.fileId===fileId&&item.page===pageNo
+        &&item.claimedBoardRef===claimedRef))A.aiAuditFindings.push(finding);
+    }
+    return authoritativeBoard?.norm||claimedNorm;
+  };
   const contract=response?.contract||response?.result?.contract;
   if(contract){
     const summary={...contract,document:{...(contract.document||{}),fileId,filename:undefined,pageNumber:pageNo}};
@@ -2567,13 +2626,15 @@ function applyAiAudit(A,response,fileId,pageNo){
       feed_endpoint_missing:'AI perception found a feeder without both endpoints',
       possible_missing_rows:'AI perception indicates that schedule rows may be missing',
       unreadable_region:'AI perception found an unreadable source region',
+      board_ref_conflicts_with_primary:'AI perception assigned a device to a downstream reference instead of the proven source board',
     };
     (contract.validation?.reasonCodes||[]).forEach(reasonCode=>{
       const message=reasonLabels[reasonCode]||`AI perception requires review: ${reasonCode}`;
-      (A.aiAuditFindings=A.aiAuditFindings||[]).push({fileId,page:pageNo,boardNorm:null,way:null,kind:`perception_${reasonCode}`,message});
+      (A.aiAuditFindings=A.aiAuditFindings||[]).push({fileId,page:pageNo,boardNorm:authoritativeBoard?.norm||null,
+        way:null,kind:`perception_${reasonCode}`,message});
       if(!['possible_missing_rows','unreadable_region'].includes(reasonCode))return;
       const sourceKey=`perception-contract|${fileId}|${pageNo}|${reasonCode}`;
-      if(!A.rows.some(row=>row.sourceKey===sourceKey))A.rows.push({id:uid(),sourceKey,boardNorm:null,fileId,page:pageNo,line:null,
+      if(!A.rows.some(row=>row.sourceKey===sourceKey))A.rows.push({id:uid(),sourceKey,boardNorm:authoritativeBoard?.norm||null,fileId,page:pageNo,line:null,
         status:'pending',kind:'ai',way:null,phase:null,desc:message,device:null,rating:null,poles:null,curve:null,sens:null,
         rcdProtected:null,afdd:null,ka:null,cable:null,spare:false,space:false,incomer:false,qty:0,srcText:message,
         conf:0.3,requiresReview:true,contractReview:true,extractionMethod:'AI perception contract'});
@@ -2586,7 +2647,7 @@ function applyAiAudit(A,response,fileId,pageNo){
       A.xcheck.pages++;A.xcheck.provider=verification.provider||response.provider||'AI team';
       (verification.mismatches||[]).forEach(mismatch=>{
         A.xcheck.mismatches++;
-        const boardNorm=mismatch.board?canonicalBoardRef(mismatch.board).normalised:null;
+        const boardNorm=auditBoardNorm(mismatch.board);
         const mismatchPhase=String(mismatch.phase||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
         const row=A.rows.find(item=>item.fileId===fileId&&item.page===pageNo&&item.boardNorm===boardNorm
           &&String(item.way??'')===String(mismatch.way??'')
@@ -2607,7 +2668,7 @@ function applyAiAudit(A,response,fileId,pageNo){
       A.masterAudit.reviewed++;
       (master.missed||[]).forEach(finding=>{
         A.masterAudit.missed++;
-        const boardNorm=finding.board_ref?canonicalBoardRef(finding.board_ref).normalised:null;
+        const boardNorm=auditBoardNorm(finding.board_ref);
         const auditFinding={fileId,page:pageNo,boardNorm,
           way:finding.way||null,kind:'master_missed_evidence',message:finding.evidence||'Master audit found uncaptured evidence'};
         (A.aiAuditFindings=A.aiAuditFindings||[]).push(auditFinding);
@@ -2633,7 +2694,10 @@ async function runAiExtraction(A,f,p,pageSet,{signal=null}={}){
       const rowsHere=A.rows.filter(r=>r.fileId===id&&r.page===pageNo&&r.kind==='schedule');
       const pageBoards=[...new Set((pg.lines||[]).flatMap(line=>detectBoards(line.text).map(board=>board.norm)))];
       const rowBoards=[...new Set(rowsHere.map(row=>row.boardNorm).filter(Boolean))];
-      const expectedWays=Math.max(0,...[...new Set([...pageBoards,...rowBoards])]
+      const primaryBoard=primaryBoardForPage(A,id,pageNo);
+      const calibrationHint=calibrationHintForPage(p,id,pageNo,pg);
+      const ownershipBoards=primaryBoard?.norm?[primaryBoard.norm]:rowBoards;
+      const expectedWays=Math.max(0,...[...new Set(ownershipBoards)]
         .map(norm=>Number(A.boards[norm]?.header?.ways_total)||0));
       const scheduleCandidate=window.EstimationExtractorCore?.scoreScheduleCandidate((pg.lines||[]).map(line=>line.text))||{score:0,signals:[]};
       const schematicFeedCount=A.feeders.filter(feeder=>feeder.fileId===id&&feeder.page===pageNo&&feeder.sourceRole==='schematic_feeder').length;
@@ -2642,33 +2706,33 @@ async function runAiExtraction(A,f,p,pageSet,{signal=null}={}){
       const activeRows=rowsHere.filter(row=>window.EstimationExtractorCore?.isPopulatedProtectionRow
         ? window.EstimationExtractorCore.isPopulatedProtectionRow(row) : !row.space&&!row.spare);
       const unresolved=activeRows.filter(row=>!row.device||row.rating==null).length;
-      if(reason)jobs.push({fl,id,pg,pageNo,reason,candidateScore:scheduleCandidate.score,
+      if(reason)jobs.push({fl,id,pg,pageNo,reason,candidateScore:scheduleCandidate.score,primaryBoard,calibrationHint,
         unresolvedRatio:activeRows.length?unresolved/activeRows.length:1});
     });
   }
   const plan=window.EstimationExtractorCore?.planAiRecoveryJobs
-    ? window.EstimationExtractorCore.planAiRecoveryJobs(jobs,{maxPages:AI_RECOVERY_MAX_PAGES})
-    : {selected:jobs.slice(0,AI_RECOVERY_MAX_PAGES),deferred:jobs.slice(AI_RECOVERY_MAX_PAGES),eligible:jobs.length,maxPages:AI_RECOVERY_MAX_PAGES};
+    ? window.EstimationExtractorCore.planAiRecoveryJobs(jobs,{maxPages:jobs.length})
+    : {selected:[...jobs],deferred:[],eligible:jobs.length,maxPages:jobs.length};
   A.aiSelectionLog=[...plan.selected.map(job=>({fileId:job.id,page:job.pageNo,reason:job.reason,selected:true})),
     ...plan.deferred.map(job=>({fileId:job.id,page:job.pageNo,reason:job.reason,selected:false}))];
   A.aiPages=0;A.aiErrors=0;A.aiTimedOut=0;A.aiDeferred=plan.deferred.length;
   A.aiRecovery={eligible:plan.eligible,selected:plan.selected.length,deferred:plan.deferred.length,
-    maxPages:plan.maxPages,pageTimeoutMs:AI_RECOVERY_PAGE_TIMEOUT_MS,totalBudgetMs:AI_RECOVERY_TOTAL_BUDGET_MS};
+    batchSize:AI_RECOVERY_BATCH_SIZE,pageTimeoutMs:AI_RECOVERY_PAGE_TIMEOUT_MS,totalBudgetMs:AI_RECOVERY_TOTAL_BUDGET_MS};
   if(!plan.selected.length)return;
-  toast(`Enhanced recovery checking ${plan.selected.length} priority page${plan.selected.length===1?'':'s'}`);
+  toast(`Enhanced recovery checking ${plan.selected.length} unresolved page${plan.selected.length===1?'':'s'} in priority order`);
   const deadline=Date.now()+AI_RECOVERY_TOTAL_BUDGET_MS;
   const queue=[...plan.selected];
   let completed=0;
-  const worker=async()=>{
-    while(queue.length&&Date.now()<deadline){
+  const processJob=async job=>{
       if(signal?.aborted)throw new DOMException('Analysis stopped','AbortError');
-      const job=queue.shift(),remaining=Math.max(1,deadline-Date.now());
+      const remaining=Math.max(1,deadline-Date.now());
       renderStages(4,false,`Enhanced recovery ${completed+1} of ${plan.selected.length} | ${job.fl.name} p${job.pageNo}`);
       await paintProcessing();
       try{
-        const resp=await aiExtractPage(job.fl,job.pageNo,job.pg,{signal,timeoutMs:Math.min(AI_RECOVERY_PAGE_TIMEOUT_MS,remaining)});
-        mergeAiResult(A,resp&&resp.result?resp.result:resp,job.id,job.pageNo,job.pg.type);
-        applyAiAudit(A,resp,job.id,job.pageNo);A.aiPages++;
+        const resp=await aiExtractPage(job.fl,job.pageNo,job.pg,{signal,timeoutMs:Math.min(AI_RECOVERY_PAGE_TIMEOUT_MS,remaining),
+          calibrationHint:job.calibrationHint,deterministicPrimaryBoard:job.primaryBoard});
+        mergeAiResult(A,resp&&resp.result?resp.result:resp,job.id,job.pageNo,job.pg.type,{primaryBoard:job.primaryBoard});
+        applyAiAudit(A,resp,job.id,job.pageNo,{primaryBoard:job.primaryBoard,pageType:job.pg.type});A.aiPages++;
       }catch(error){
         if(signal?.aborted)throw error;
         if(error?.name==='TimeoutError'||error?.name==='AbortError')A.aiTimedOut++;
@@ -2678,10 +2742,17 @@ async function runAiExtraction(A,f,p,pageSet,{signal=null}={}){
         if(job.pg.type==='sld'||job.pg.type==='schematic')schematicRasterTraceCache.delete(schematicRasterKey(job.id,job.pageNo));
         completed++;
       }
-    }
   };
-  await Promise.all(Array.from({length:Math.min(2,queue.length)},()=>worker()));
-  if(queue.length){A.aiDeferred+=queue.length;A.aiRecovery.deferred+=queue.length;}
+  while(queue.length&&Date.now()<deadline){
+    const batch=queue.splice(0,AI_RECOVERY_BATCH_SIZE);
+    await Promise.all(batch.map(job=>processJob(job)));
+  }
+  if(queue.length){
+    const deferredKeys=new Set(queue.map(job=>`${job.id}#${job.pageNo}`));
+    A.aiSelectionLog.forEach(selection=>{if(deferredKeys.has(`${selection.fileId}#${selection.page}`))selection.selected=false;});
+    A.aiDeferred+=queue.length;A.aiRecovery.deferred+=queue.length;A.aiRecovery.selected-=queue.length;
+    A.aiRecovery.status='budget_exhausted_with_resume_required';
+  }else A.aiRecovery.status='completed';
   if (A.aiErrors) toast(A.aiErrors+' page(s) could not be extracted — other results were kept');
 }
 
@@ -3462,6 +3533,11 @@ async function runAnalysis(opts){
         if (ctxBoard){ regBoard(ctxBoard,id,pageNo,true); prevBoard=ctxBoard; if(spatial?.schema)prevSpatialSchema=spatial.schema; }
         else if(hasBoardHeader){ prevBoard=null;prevSpatialSchema=null; }
         diagnostic.boardResolved=Boolean(ctxBoard);
+        diagnostic.primaryBoardRef=ctxBoard?.orig||null;
+        diagnostic.primaryBoardNorm=ctxBoard?.norm||null;
+        diagnostic.boardOwnershipMethod=spatial?.board?.ref?'spatial_board_header':(ctxBoard?'labelled_text_header':null);
+        diagnostic.downstreamCircuitReferences=(spatial?.references||[]).filter(reference=>reference.role==='circuit_reference')
+          .map(reference=>reference.original);
         contextualRefs.filter(reference=>reference.role==='index_board').forEach(reference=>{
           const detected=detectBoards(reference.original)[0],canonical=canonicalBoardRef(reference.original);
           if(canonical.normalised)regBoard(detected||{norm:canonical.normalised,orig:reference.original,type:'UNK'},id,pageNo,false);
@@ -3531,12 +3607,28 @@ async function runAnalysis(opts){
         if(core?.applyGoverningNotes)row=core.applyGoverningNotes(row,governingNotes);
         if(row.sens!=null)row.rcdProtected=true;
         if(/AFDD/i.test(String(row.device||''))){row.afdd=true;row.afddIndicated=true;}
-        if (boardFilter && (!ctx.board || !boardFilter.has(ctx.board))) return;
+        const rowBoard=row.boardRef?canonicalBoardRef(row.boardRef):null;
+        const effectiveBoardNorm=rowBoard?.normalised||ctx.board||null;
+        const effectiveBoardSection=rowBoard?.splitSection||ctx.boardSection||null;
+        const ownershipConflict=rowBoard?.normalised&&ctx.board&&rowBoard.normalised!==ctx.board?{
+          claimedContextBoard:ctx.board,sourceBoardRef:row.boardRef,
+          reason:`Row source board ${row.boardRef} differs from page context ${ctx.board}; row evidence takes precedence`,
+        }:null;
+        if(rowBoard?.normalised&&!A.boards[rowBoard.normalised]){
+          regBoard({norm:rowBoard.normalised,orig:rowBoard.display,type:'UNK',section:rowBoard.splitSection},id,pageNo,
+            Boolean(spatial?.board?.ref&&canonicalBoardRef(spatial.board.ref).normalised===rowBoard.normalised));
+        }
+        if(ownershipConflict){
+          diagnostic.boardOwnershipConflicts=diagnostic.boardOwnershipConflicts||[];
+          diagnostic.boardOwnershipConflicts.push(ownershipConflict);
+        }
+        if (boardFilter && (!effectiveBoardNorm || !boardFilter.has(effectiveBoardNorm))) return;
         if (devFilter && row.device && !devFilter.has(row.device.toUpperCase()) && !row.incomer) return;
         const evidenceLine=row.sourceCell||(Number.isInteger(line)?pg.lines[line]:null);
         const trace=sourceTrace(row,evidenceLine,pg,fl.name);
         const confidence=trace.lineConfidence?Math.min(Number(row.conf??1),trace.lineConfidence):row.conf;
-        const record={id:uid(), boardNorm:ctx.board, boardSection:ctx.boardSection, fileId:id, page:pageNo, line, status:'pending', kind:'schedule', ...row,...trace,conf:confidence};
+        const record={id:uid(),fileId:id,page:pageNo,line,status:'pending',kind:'schedule',...row,...trace,
+          boardNorm:effectiveBoardNorm,boardSection:effectiveBoardSection,boardOwnershipConflict:ownershipConflict,conf:confidence};
         record.sourceKey=stableRowSourceKey(record);A.rows.push(record);
       };
       if(codedPage.matched) codedPage.rows.forEach(row=>addScheduleRow(row,row.line));
@@ -3625,11 +3717,11 @@ async function runAnalysis(opts){
   // Workstream 0 §0.0 — genuine AI extraction across all dialects + schematics
   // (regex pass above stays as the fast pre-pass; AI rows go to review, never
   // overriding a slot the schedule parser already filled).
-  if (appSettings.onlineExtraction&&!auto&&!(opts&&opts.noAi)){
+  if (appSettings.onlineExtraction&&(!auto||opts?.forceAiRecovery)&&!(opts&&opts.noAi)){
     try{ await runAiExtraction(A,f,p,pageSet,{signal:runController.signal}); }
     catch(error){if(runController.signal.aborted)throw error;console.warn('AI extraction unavailable:',error.message);}
   }else if(appSettings.onlineExtraction&&auto){
-    A.aiRecovery={status:'deferred-automatic-run',eligible:0,selected:0,deferred:0,maxPages:AI_RECOVERY_MAX_PAGES};
+    A.aiRecovery={status:'deferred-automatic-run',eligible:0,selected:0,deferred:0,batchSize:AI_RECOVERY_BATCH_SIZE};
   }
   (A.aiSelectionLog||[]).forEach(selection=>{
     const diagnostic=pageDiag.find(page=>page.fileId===selection.fileId&&Number(page.page)===Number(selection.page));
@@ -5735,7 +5827,7 @@ async function applyCalibrations(){
   const button=$('#vCalibrationApply');button.disabled=true;
   const fileId=state.viewer.fileId,page=state.viewer.page;
   setProcessingDock(STAGES[0],'Applying calibrated layout rules',2,0);await paintProcessing();
-  const result=await runAnalysisWithRecovery({auto:true});
+  const result=await runAnalysisWithRecovery({auto:true,forceAiRecovery:true});
   if(result){cal.dirty=false;saveProject(p);}
   state.viewer.fileId=fileId;state.viewer.page=page;void renderViewer();
 }

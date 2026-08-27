@@ -625,13 +625,22 @@
     };
   }
 
+  function cleanBoardReferenceField(value) {
+    const source = String(value || '').replace(/\s+/g, ' ').trim();
+    return source.replace(
+      /^(?:(?:BOARD\s+DATA)\s*)?(?:(?:(?:DIST\s*\/\s*BD|DISTRIBUTION\s+BOARD|DB|BOARD)\s*(?:REF(?:ERENCE)?|IDENTITY))|(?:ID|IDENTIFICATION)\s*(?:NO\.?|NUMBER|REF(?:ERENCE)?)?)\s*[:#=\-]?\s*/i,
+      '',
+    ).trim();
+  }
+
   function calibratedHeaderValue(role, text) {
     const source = String(text || '').replace(/\s+/g, ' ').trim();
     if (!source) return null;
     const number = Number(source.match(/\d+(?:\.\d+)?/)?.[0]);
     if (role === 'board_ref') {
-      const cleaned = source.replace(/^(?:DIST\s*\/\s*BD|DISTRIBUTION\s+BOARD|DB|BOARD)\s*(?:REF(?:ERENCE)?|IDENTITY)\s*[:#=-]?\s*/i, '').trim();
-      return Core.canonicalBoardReference(cleaned || source).display;
+      const cleaned = cleanBoardReferenceField(source);
+      if (!cleaned) return null;
+      return Core.canonicalBoardReference(cleaned).display;
     }
     if (role === 'ways_total') return Number.isInteger(number) && number > 0 && number <= 200 ? number : null;
     if (role === 'board_rating' || role === 'incomer_rating' || role === 'fault_rating') {
@@ -1438,6 +1447,11 @@
     };
   }
 
+  function hasProfileTokens(words, patterns) {
+    const labels = (words || []).map((item) => normaliseLabel(item.text));
+    return patterns.every((pattern) => labels.some((label) => pattern.test(label)));
+  }
+
   function trimbleDialectProfile(words) {
     const rows = spatialRows(words, 3.2);
     const text = rows.map((row) => row.words.map((item) => item.text).join(' ')).join('\n');
@@ -1451,13 +1465,25 @@
       /CONNECTED\s+TO/i,
       /CREATED\s+USING|TRIMBLE\s+INC/i,
     ];
-    const signals = signatures.map((pattern, index) => pattern.test(text) ? index : null).filter((value) => value != null);
-    const required = signatures[1].test(text) && signatures[3].test(text) && signatures[4].test(text);
+    const tokenSignals = [
+      hasProfileTokens(words, [/DISTRIBUTION/, /^BOARD(?:\s|$)/, /SCHEDULE/]),
+      hasProfileTokens(words, [/^BOARD(?:\s+DATA)?$/, /DATA/]),
+      hasProfileTokens(words, [/INCOMER/, /DETAILS/]),
+      hasProfileTokens(words, [/OVER\s*CURRENT|OVERCURRENT/, /PROTECTIVE/, /DEVICE/]),
+      hasProfileTokens(words, [/^EARTH(?:\s|$)/, /FAULT/, /PROTECTIVE/, /DEVICE/]),
+      hasProfileTokens(words, [/^ARC(?:\s|$)/, /FLASH/, /PROTECTIVE/, /DEVICE/]),
+      hasProfileTokens(words, [/CONNECTED/, /\bTO\b/]),
+      hasProfileTokens(words, [/CREATED/, /USING/]) || hasProfileTokens(words, [/TRIMBLE/, /INC/]),
+    ];
+    const signals = signatures.map((pattern, index) => (pattern.test(text) || tokenSignals[index]) ? index : null)
+      .filter((value) => value != null);
+    const required = signals.includes(1) && signals.includes(3) && signals.includes(4);
     return {
       matched: required && signals.length >= 5,
       confidence: Math.min(0.99, 0.45 + signals.length * 0.065),
       signals,
       rows,
+      words,
       text,
     };
   }
@@ -1468,6 +1494,21 @@
 
   function firstProfileRow(profile, pattern, minimumY = -Infinity, maximumY = Infinity) {
     return profile.rows.find((row) => row.cy >= minimumY && row.cy <= maximumY && pattern.test(rowText(row))) || null;
+  }
+
+  function flexibleProfileRow(profile, exactPattern, anchorPattern, minimumY = -Infinity, maximumY = Infinity,
+    minimumX = -Infinity, maximumX = Infinity) {
+    const exact = firstProfileRow(profile, exactPattern, minimumY, maximumY);
+    if (exact) return exact;
+    const anchor = (profile.words || []).filter((item) => item.cy >= minimumY && item.cy <= maximumY
+      && item.cx >= minimumX && item.cx < maximumX && anchorPattern.test(normaliseLabel(item.text)))
+      .sort((left, right) => left.cy - right.cy || left.cx - right.cx)[0];
+    if (!anchor) return null;
+    const tolerance = Math.max(5.5, Math.min(9, anchor.height * 1.05));
+    const bandWords = (profile.words || []).filter((item) => Math.abs(item.cy - anchor.cy) <= tolerance)
+      .sort((left, right) => left.x0 - right.x0);
+    if (!bandWords.length) return null;
+    return { cy: anchor.cy, words: bandWords, cells: spatialRows(bandWords, tolerance)[0]?.cells || [] };
   }
 
   function wordsInRegion(words, left, right, top = -Infinity, bottom = Infinity) {
@@ -1486,23 +1527,32 @@
     return { value: numberValue(cell, options), cell };
   }
 
-  function profileHeaderAnchor(row, pattern, minimumX = -Infinity, maximumX = Infinity) {
-    return (row?.words || []).find((item) => item.cx >= minimumX && item.cx < maximumX && pattern.test(normaliseLabel(item.text))) || null;
+  function profileHeaderAnchor(row, pattern, minimumX = -Infinity, maximumX = Infinity, profile = null) {
+    const direct = (row?.words || []).find((item) => item.cx >= minimumX && item.cx < maximumX
+      && pattern.test(normaliseLabel(item.text)));
+    if (direct || !profile || !Number.isFinite(row?.cy)) return direct || null;
+    return (profile.words || []).filter((item) => item.cx >= minimumX && item.cx < maximumX
+      && Math.abs(item.cy - row.cy) <= Math.max(6, item.height * 1.1)
+      && pattern.test(normaliseLabel(item.text)))
+      .sort((left, right) => Math.abs(left.cy - row.cy) - Math.abs(right.cy - row.cy) || left.cx - right.cx)[0] || null;
   }
 
   function trimbleColumnSchema(profile, pageWidth, pageHeight) {
-    const overcurrentRow = firstProfileRow(profile, /OVER\s*CURRENT\s+PROTECTIVE\s+DEVICE/i);
-    const earthRow = firstProfileRow(profile, /EARTH\s+FAULT\s+PROTECTIVE\s+DEVICE/i, overcurrentRow?.cy || 0);
-    const arcRow = firstProfileRow(profile, /ARC\s+FLASH\s+PROTECTIVE\s+DEVICE/i, earthRow?.cy || 0);
+    const overcurrentRow = flexibleProfileRow(profile, /OVER\s*CURRENT\s+PROTECTIVE\s+DEVICE/i,
+      /OVER\s*CURRENT|OVERCURRENT/, 0, pageHeight, pageWidth * 0.5, pageWidth * 0.92);
+    const earthRow = flexibleProfileRow(profile, /EARTH\s+FAULT\s+PROTECTIVE\s+DEVICE/i,
+      /^EARTH(?:\s|$)/, overcurrentRow?.cy || 0, pageHeight, pageWidth * 0.5, pageWidth * 0.92);
+    const arcRow = flexibleProfileRow(profile, /ARC\s+FLASH\s+PROTECTIVE\s+DEVICE/i,
+      /^ARC(?:\s|$)/, earthRow?.cy || 0, pageHeight, pageWidth * 0.5, pageWidth * 0.92);
     if (!overcurrentRow || !earthRow || !arcRow) return null;
 
-    const way = profileHeaderAnchor(overcurrentRow, /^WAY$/, 0, pageWidth * 0.12);
-    const id = profileHeaderAnchor(overcurrentRow, /^ID$/, way?.x1 || 0, pageWidth * 0.24);
-    const cable = profileHeaderAnchor(overcurrentRow, /^CABLE$/, pageWidth * 0.12, pageWidth * 0.42);
-    const connected = profileHeaderAnchor(overcurrentRow, /^CONNECTED$/, pageWidth * 0.42, pageWidth * 0.72);
-    const protection = profileHeaderAnchor(overcurrentRow, /^OVER\s*CURRENT$/, pageWidth * 0.58, pageWidth * 0.9)
-      || profileHeaderAnchor(overcurrentRow, /^OVERCURRENT$/, pageWidth * 0.58, pageWidth * 0.9);
-    const rating = profileHeaderAnchor(overcurrentRow, /^RATING$/, pageWidth * 0.82, pageWidth);
+    const way = profileHeaderAnchor(overcurrentRow, /^WAY(?:\s|$)/, 0, pageWidth * 0.12, profile);
+    const id = profileHeaderAnchor(overcurrentRow, /^ID(?:\s+(?:NO|NUMBER))?(?:\s|$)/, way?.x1 || 0, pageWidth * 0.24, profile);
+    const cable = profileHeaderAnchor(overcurrentRow, /^CABLE(?:\s|$)/, pageWidth * 0.12, pageWidth * 0.42, profile);
+    const connected = profileHeaderAnchor(overcurrentRow, /^CONNECTED(?:\s|$)/, pageWidth * 0.42, pageWidth * 0.72, profile);
+    const protection = profileHeaderAnchor(overcurrentRow, /^OVER\s*CURRENT(?:\s|$)|^OVERCURRENT(?:\s|$)/,
+      pageWidth * 0.58, pageWidth * 0.9, profile);
+    const rating = profileHeaderAnchor(overcurrentRow, /^RATING(?:\s|$)/, pageWidth * 0.82, pageWidth, profile);
     if (!way || !id || !cable || !connected || !protection || !rating) return null;
 
     const bounds = {
@@ -1548,24 +1598,28 @@
   }
 
   function trimbleBoardHeader(profile, words, schema, pageWidth) {
-    const boardDataRow = firstProfileRow(profile, /BOARD\s+DATA/i, 0, schema.dataBand[1]);
-    const incomerHeaderRow = firstProfileRow(profile, /INCOMER\s+DETAILS/i, boardDataRow?.cy || 0, schema.dataBand[1]);
+    const boardDataRow = flexibleProfileRow(profile, /BOARD\s+DATA/i, /DATA/,
+      0, schema.dataBand[1], 0, pageWidth * 0.3);
+    const incomerHeaderRow = flexibleProfileRow(profile, /INCOMER\s+DETAILS/i, /INCOMER/,
+      boardDataRow?.cy || 0, schema.dataBand[1], 0, pageWidth * 0.3);
     const headerBottom = incomerHeaderRow?.cy || schema.dataBand[1];
-    const identityRow = profile.rows.find((row) => row.cy > (boardDataRow?.cy || 0) && row.cy < headerBottom
-      && (row.words || []).some((item) => item.cx < pageWidth * 0.12 && /^ID$/.test(normaliseLabel(item.text)))
-      && (row.words || []).some((item) => item.cx < pageWidth * 0.14 && /^NO$/.test(normaliseLabel(item.text))));
-    const modelAnchor = (identityRow?.words || []).find((item) => /MODEL\s*NO/.test(normaliseLabel(item.text)));
-    const identityWords = (identityRow?.words || []).filter((item) => item.cx >= pageWidth * 0.095
+    const identityRow = flexibleProfileRow(profile, /\bID\s*(?:NO|NUMBER)\b/i,
+      /^ID(?:\s+(?:NO|NUMBER))?(?:\s|$)/, (boardDataRow?.cy || 0) + 1, headerBottom,
+      0, pageWidth * 0.16);
+    const identityAnchor = profileHeaderAnchor(identityRow, /^ID(?:\s+(?:NO|NUMBER))?(?:\s|$)/,
+      0, pageWidth * 0.16, profile);
+    const modelAnchor = profileHeaderAnchor(identityRow, /MODEL\s*NO/, pageWidth * 0.2, pageWidth * 0.55, profile);
+    const identityWords = (identityRow?.words || []).filter((item) => item.x0 >= (identityAnchor?.x0 || pageWidth * 0.02)
       && item.x0 < (modelAnchor?.x0 || pageWidth * 0.43));
     const identityCell = sourceCell(identityWords, 'board_ref');
-    const boardRef = String(identityCell?.text || '').replace(/\s+/g, ' ').trim() || null;
+    const boardRef = calibratedHeaderValue('board_ref', identityCell?.text) || null;
 
-    const waysRow = profile.rows.find((row) => row.cy > (identityRow?.cy || 0) && row.cy < headerBottom
-      && /\bNO\.?\s+OF\s+WAYS\b/i.test(rowText(row)));
-    const ratingRow = profile.rows.find((row) => row.cy > (waysRow?.cy || 0) && row.cy < headerBottom
-      && /BOARD\s+RATING/i.test(rowText(row)));
-    const incomerRow = profile.rows.find((row) => row.cy > (incomerHeaderRow?.cy || 0) && row.cy < schema.dataBand[1]
-      && /DEVICE\s+MANUFACTURER/i.test(rowText(row)) && /DEVICE\s+RATING/i.test(rowText(row)));
+    const waysRow = flexibleProfileRow(profile, /\bNO\.?\s+OF\s+WAYS\b/i, /WAYS/,
+      identityRow?.cy || 0, headerBottom, pageWidth * 0.2, pageWidth * 0.46);
+    const ratingRow = flexibleProfileRow(profile, /BOARD\s+RATING/i, /^RATING(?:\s|$)|BOARD\s+RATING/,
+      waysRow?.cy || identityRow?.cy || 0, headerBottom, 0, pageWidth * 0.23);
+    const incomerRow = flexibleProfileRow(profile, /DEVICE\s+MANUFACTURER.*DEVICE\s+RATING/i, /MANUFACTURER/,
+      incomerHeaderRow?.cy || 0, schema.dataBand[1], 0, pageWidth * 0.3);
 
     const ways = numericCellInRegion(waysRow, pageWidth * 0.35, pageWidth * 0.46, 'ways_total', { min: 1, max: 200 });
     const spare = numericCellInRegion(waysRow, pageWidth * 0.49, pageWidth * 0.61, 'spare_capacity_pct', { min: 0, max: 100 });
@@ -1576,8 +1630,8 @@
     const incomerTypeCell = sourceCell((incomerRow?.words || []).filter((item) => item.cx >= pageWidth * 0.455
       && item.cx < pageWidth * 0.67 && !/^DEVICE$|^TYPE$/i.test(normaliseLabel(item.text))), 'incomer_class');
     const incomerType = String(incomerTypeCell?.text || '').replace(/\s+/g, ' ').trim() || null;
-    const nameAnchor = (waysRow?.words || []).find((item) => item.cx < pageWidth * 0.12 && /^NAME$/.test(normaliseLabel(item.text)));
-    const waysAnchor = (waysRow?.words || []).find((item) => item.cx >= pageWidth * 0.2 && /^(?:NO|WAYS)$/.test(normaliseLabel(item.text)));
+    const nameAnchor = profileHeaderAnchor(waysRow, /^NAME(?:\s|$)/, 0, pageWidth * 0.12, profile);
+    const waysAnchor = profileHeaderAnchor(waysRow, /^(?:NO|WAYS)(?:\s|$)/, pageWidth * 0.2, pageWidth * 0.46, profile);
     const nameCell = sourceCell((waysRow?.words || []).filter((item) => item.x0 > (nameAnchor?.x1 || pageWidth * 0.04)
       && item.x1 < (waysAnchor?.x0 || pageWidth * 0.31)), 'description');
     const boardName = String(nameCell?.text || '').replace(/\s+/g, ' ').trim() || null;
@@ -2336,7 +2390,8 @@
     }
     const trimbleProfile = trimbleDialectProfile(words);
     if (trimbleProfile.matched) {
-      return parseTrimbleStackedSchedulePage(input, words, trimbleProfile, pageWidth, pageHeight);
+      const trimbleResult = parseTrimbleStackedSchedulePage(input, words, trimbleProfile, pageWidth, pageHeight);
+      if (trimbleResult.schema) return trimbleResult;
     }
     const tableRegion = calibrations.find((region) => region.role === 'outgoing_table');
     const tableWords = tableRegion ? wordsInsideCalibration(words, tableRegion, 1) : words;
