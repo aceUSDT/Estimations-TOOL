@@ -25,6 +25,7 @@ const page = (over = {}) => ({
   fileId: 'f1', page: 1, type: 'db-schedule', textLines: 40,
   needsOcr: false, source: 'native_text', textQualityUnreliable: false,
   scheduleScore: 0.8, scheduleSignals: ['way-sequence', 'device-tokens'], rowsParsed: 12,
+  takeoffEvidence: { activeRowsLikely: true, deviceRows: 12, occupancyRows: 0, rowLikeLines: 12 },
   ...over,
 });
 const row = (over = {}) => ({
@@ -50,7 +51,11 @@ test('HUBERT REGRESSION: boards found + zero devices ⇒ failed, never complete'
   const boards = {};
   for (let i = 1; i <= 7; i++) boards[`DB-0${i}`] = linkedBoard();
   const h = core.buildAnalysisHealth({
-    coverage: { perBoard: Object.keys(boards).map((n) => ({ norm: n, inScope: true, rowsCaptured: 0, capturedWays: 0, expectedWays: null, unaccountedWays: null })), summary: { expectedWays: 0, capturedWays: 0 } },
+    coverage: {
+      perBoard: Object.keys(boards).map((n) => ({ norm: n, inScope: true, rowsCaptured: 0, capturedWays: 0, expectedWays: null, unaccountedWays: null })),
+      zeroRowSchedulePages: [{ fileId: 'f1', page: 1 }, { fileId: 'f1', page: 2 }],
+      summary: { expectedWays: 0, capturedWays: 0 },
+    },
     boards,
     rows: [],
     pages: [page({ rowsParsed: 0 }), page({ page: 2, rowsParsed: 0 })],
@@ -62,9 +67,39 @@ test('HUBERT REGRESSION: boards found + zero devices ⇒ failed, never complete'
   assert.ok(h.reasons.some((r) => r.code === 'SCHEDULE_PAGE_UNPARSED' && r.count === 2));
 });
 
-test('schedule-looking pages with zero rows ⇒ incomplete even when other boards parsed', () => {
+test('header-only schedule pages are informational once board coverage reconciles', () => {
   const h = core.buildAnalysisHealth({
-    coverage: { perBoard: [{ norm: 'DB-01', inScope: true, rowsCaptured: 12, capturedWays: 12, expectedWays: 12, unaccountedWays: 0 }], summary: { expectedWays: 12, capturedWays: 12 } },
+    coverage: { perBoard: [{ norm: 'DB-01', inScope: true, rowsCaptured: 12, capturedWays: 12, expectedWays: 12, unaccountedWays: 0 }], zeroRowSchedulePages: [], summary: { expectedWays: 12, capturedWays: 12 } },
+    boards: { 'DB-01': linkedBoard() },
+    rows: Array.from({ length: 12 }, (_, i) => row({ way: i + 1 })),
+    pages: [page(), page({ page: 2, rowsParsed: 0, scheduleScore: 0.6,
+      takeoffEvidence: { activeRowsLikely: false, deviceRows: 0, occupancyRows: 0, rowLikeLines: 0 } })],
+    files: [{ id: 'f1', status: 'ready' }],
+  });
+  assert.equal(h.state, 'complete');
+  assert.ok(!h.reasons.some((r) => r.code === 'SCHEDULE_PAGE_UNPARSED'));
+});
+
+test('a missing standalone schedule feed is advisory rather than a failed extraction', () => {
+  const h = core.buildAnalysisHealth({
+    coverage: { perBoard: [{ norm: 'DB-01', inScope: true, rowsCaptured: 12, capturedWays: 12,
+      expectedWays: 12, unaccountedWays: 0 }], summary: { expectedWays: 12, capturedWays: 12 } },
+    boards: { 'DB-01': {} },
+    rows: Array.from({ length: 12 }, (_, i) => row({ way: i + 1 })),
+    pages: [page()],
+    files: [{ id: 'f1', status: 'ready' }],
+  });
+  assert.equal(h.state, 'incomplete');
+  assert.ok(h.reasons.some((reason) => reason.code === 'BOARD_FEED_MISSING'));
+});
+
+test('active outgoing rows with zero parser output remain a hard extraction gap', () => {
+  const h = core.buildAnalysisHealth({
+    coverage: {
+      perBoard: [{ norm: 'DB-01', inScope: true, rowsCaptured: 12, capturedWays: 12, expectedWays: 18, unaccountedWays: 6 }],
+      zeroRowSchedulePages: [{ fileId: 'f1', page: 2 }],
+      summary: { expectedWays: 18, capturedWays: 12 },
+    },
     boards: { 'DB-01': linkedBoard() },
     rows: Array.from({ length: 12 }, (_, i) => row({ way: i + 1 })),
     pages: [page(), page({ page: 2, rowsParsed: 0, scheduleScore: 0.6 })],
@@ -72,6 +107,7 @@ test('schedule-looking pages with zero rows ⇒ incomplete even when other board
   });
   assert.equal(h.state, 'incomplete');
   assert.ok(h.reasons.some((r) => r.code === 'SCHEDULE_PAGE_UNPARSED'));
+  assert.ok(h.reasons.some((r) => r.code === 'WAYS_UNACCOUNTED'));
 });
 
 test('header promising more ways than captured ⇒ incomplete (WAYS_UNACCOUNTED)', () => {
@@ -240,14 +276,14 @@ test('diagnostic export contains NO document text, board names, or file names', 
   assert.ok(!text.includes('KITCHEN'), 'board name leaked');
   assert.ok(text.includes('doc-1'), 'files must be anonymised, not dropped');
   assert.ok(text.includes('ZERO_DEVICES_WITH_BOARDS') || text.includes('BOARD_ROWS_MISSING'), 'reason codes must survive');
-  assert.equal(diag.diagnosticVersion, 2);
+  assert.equal(diag.diagnosticVersion, 3);
   assert.equal(diag.privacy.shareableWithSupport, true);
   assert.ok(diag.pages[0].verdict.reasonCodes.includes('SCHEDULE_ROWS_ZERO'));
   assert.equal(diag.failureSummary.pagesWithTextButNoRows, 1);
   assert.ok(diag.reasonGuidance.SCHEDULE_ROWS_ZERO);
 });
 
-test('diagnostic v2 records attempts and page micro-metrics without leaking arbitrary fields', () => {
+test('diagnostic v3 records attempts and page micro-metrics without leaking arbitrary fields', () => {
   const diag = core.buildDiagnosticExport({
     health: null,
     coverage: null,
@@ -272,6 +308,54 @@ test('diagnostic v2 records attempts and page micro-metrics without leaking arbi
   assert.ok(exported.verdict.reasonCodes.includes('OUTPUT_ROWS_UNASSIGNED'));
   assert.ok(!JSON.stringify(diag).includes('SECRET CUSTOMER CONTENT'));
   assert.ok(!JSON.stringify(diag).includes('Secret Project'));
+});
+
+test('take-off evidence detector separates table headers from outgoing rows and spare ways', () => {
+  const header = core.detectScheduleTakeoffEvidence([
+    'Board Data Board Rating (A): 125',
+    'Spare: 30',
+    'Overcurrent Protective Device Earth Fault Protective Device',
+    'Rating (A) Trip Rating (A)',
+  ]);
+  assert.equal(header.activeRowsLikely, false);
+  const active = core.detectScheduleTakeoffEvidence([
+    '1 L1 Cbl_FC-5-FCL-5 Schneider Acti9 MCB iC60H Type C 10A',
+    '2 L2 SPARE',
+    '3 L3 60898 C 16 Lighting circuit',
+  ]);
+  assert.equal(active.activeRowsLikely, true);
+  assert.equal(active.deviceRows, 2);
+  assert.equal(active.occupancyRows, 1);
+});
+
+test('audited reconciled reports export past advisory page and topology diagnostics', () => {
+  const readiness = core.buildReportExportReadiness({
+    health: { state: 'failed', reasons: [
+      { code: 'SCHEDULE_PAGE_UNPARSED', message: 'Page looks like a schedule but produced no rows', count: 1 },
+      { code: 'BOARD_FEED_MISSING', message: 'Board feed is unresolved', count: 1 },
+    ] },
+    rows: [row({ status: 'confirmed' })],
+    model: { reviewCount: 2, coverageIssueCount: 1, unassignedQty: 0, reconciliation: { valid: true } },
+  });
+  assert.equal(readiness.allowed, true);
+  assert.equal(readiness.blockers.length, 0);
+  assert.ok(readiness.warnings.some((item) => item.code === 'SCHEDULE_PAGE_UNPARSED'));
+  assert.ok(readiness.warnings.some((item) => item.code === 'REPORT_ACCEPTED_QUALIFICATIONS'));
+});
+
+test('report readiness still blocks pending audit, key coverage gaps and invalid reconciliation', () => {
+  const readiness = core.buildReportExportReadiness({
+    health: { state: 'incomplete', reasons: [
+      { code: 'WAYS_UNACCOUNTED', message: 'Ways are unaccounted', count: 2 },
+    ] },
+    rows: [row({ status: 'pending' })],
+    model: { reviewCount: 1, unassignedQty: 1, reconciliation: { valid: false } },
+    extractionGaps: 1,
+  });
+  assert.equal(readiness.allowed, false);
+  for (const code of ['AUDIT_INCOMPLETE', 'EXTRACTION_GAPS_UNRESOLVED', 'WAYS_UNACCOUNTED', 'REPORT_UNASSIGNED_DEVICES', 'REPORT_RECONCILIATION_FAILED']) {
+    assert.ok(readiness.blockers.some((item) => item.code === code), `missing ${code}`);
+  }
 });
 
 test('every reason emitted by the model has a stable message in HEALTH_REASONS', () => {

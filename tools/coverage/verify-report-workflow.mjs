@@ -21,7 +21,7 @@ page.on('pageerror', (error) => browserErrors.push(String(error)));
 try {
   await page.goto(appUrl, { waitUntil: 'domcontentloaded' });
   await prepareReportFixture(page);
-  await page.locator('.proj-card', { hasText: 'Riverside Office Fit-Out' }).click();
+  await page.locator('.proj-card', { hasText: 'Riverside Office Fit-Out (demo)' }).first().click();
   await page.locator('.ptab[data-pt="reports"]').click();
   await page.locator('#reportMatrixHost table').first().waitFor();
 
@@ -107,6 +107,39 @@ try {
   assert.equal(viewerColourAgreement, true, 'Viewer and final report must use the same colour for each specification');
   if (shotsDir) await page.screenshot({ path: join(shotsDir, 'report-device-desktop.png'), fullPage: true });
 
+  const advisoryReadiness = await page.evaluate(() => {
+    const fallbackBoard = Object.keys(state.cur.analysis.boards)[0];
+    state.cur.analysis.rows.filter(isTakeoffEvidenceRow).forEach((row) => {
+      if (!row.boardNorm) {
+        row.boardNorm = fallbackBoard;
+        row.boardRef = state.cur.analysis.boards[fallbackBoard]?.orig || fallbackBoard;
+      }
+      if (row.status !== 'rejected') row.status = 'confirmed';
+    });
+    state.cur.analysis.health = { state: 'incomplete', reasons: [
+      { code: 'SCHEDULE_PAGE_UNPARSED', message: 'One schedule-classified page has no parsed rows', count: 1, refs: [] },
+      { code: 'BOARD_FEED_MISSING', message: 'One board feed remains unresolved', count: 1, refs: [] },
+    ], counters: {} };
+    renderReport();
+    return currentReportExportReadiness(currentReportModel());
+  });
+  assert.equal(advisoryReadiness.allowed, true,
+    `completed audit must permit issue past unrelated page/topology diagnostics: ${JSON.stringify(advisoryReadiness.blockers)}`);
+  assert.equal(advisoryReadiness.blockers.length, 0);
+  assert.match(await page.locator('#reportStatus').textContent(), /Audit complete.*export permitted/i);
+  const [csvDownload] = await Promise.all([
+    page.waitForEvent('download'),
+    page.locator('#reportCsvBtn').click(),
+  ]);
+  assert.match(csvDownload.suggestedFilename(), /DB Devices Take Off.*\.csv$/i);
+  assert.ok(await csvDownload.path(), 'audited advisory CSV download must be created');
+  const [xlsxDownload] = await Promise.all([
+    page.waitForEvent('download'),
+    page.locator('#reportXlsxBtn').click(),
+  ]);
+  assert.match(xlsxDownload.suggestedFilename(), /DB Devices Take Off.*\.xlsx$/i);
+  assert.ok(await xlsxDownload.path(), 'audited advisory Excel download must be created');
+
   await page.setViewportSize({ width: 390, height: 844 });
   await page.waitForTimeout(300);
   const mobile = await page.evaluate(() => ({
@@ -118,7 +151,7 @@ try {
   if (shotsDir) await page.screenshot({ path: join(shotsDir, 'report-device-mobile.png'), fullPage: true });
 
   assert.deepEqual(browserErrors, [], `browser errors: ${browserErrors.join('; ')}`);
-  console.log('PASS: Board Take-Off, board correction audit, transposed Device Take-Off, source review, correction launch, and responsive report viewport.');
+  console.log('PASS: Board Take-Off, correction audit, source review, advisory CSV/XLSX issue, and responsive report viewport.');
 } finally {
   await browser.close();
 }

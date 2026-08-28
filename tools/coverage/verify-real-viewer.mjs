@@ -113,6 +113,8 @@ try {
       firstId: first?.id || null,
       firstBoard: first?.boardNorm || null,
       firstPage: first?.page || null,
+      firstPageRows: first ? scheduleRows.filter((row) => row.fileId === first.fileId
+        && Number(row.page) === Number(first.page)).length : 0,
       issueCounts,
       pageInput: {
         type: sourcePage?.type || null,
@@ -150,7 +152,7 @@ try {
       health: state.cur.analysis.health,
     };
   });
-  assert.equal(extraction.analysisVersion, 25, 'real project must use the current analysis model');
+  assert.equal(extraction.analysisVersion, 27, 'real project must use the current analysis model');
   assert.ok(extraction.scheduleRows > 0,
     `schedule rows must be extracted before opening Viewer: ${JSON.stringify({ pageInput: extraction.pageInput,
       spatialProbe: extraction.spatialProbe, pageDiagnostics: extraction.pageDiagnostics, health: extraction.health })}`);
@@ -210,8 +212,8 @@ try {
     };
   });
   assert.equal(viewer.board, extraction.firstBoard, 'Go to Board must match the displayed schedule board');
-  assert.equal(viewer.cards, extraction.scheduleRows, 'every schedule row must appear in the Viewer evidence list');
-  assert.equal(viewer.overlays, extraction.scheduleRows, 'every schedule row must have one precise document overlay');
+  assert.equal(viewer.cards, extraction.firstPageRows, 'every row on the current page must appear in the Viewer evidence list');
+  assert.equal(viewer.overlays, extraction.firstPageRows, 'every row on the current page must have one precise document overlay');
   assert.equal(viewer.outsidePage, 0, 'row overlays must remain inside the rendered page');
   assert.equal(viewer.centresCoveredByPrior, 0, 'a row overlay must not cover the centre of the following row');
   assert.equal(viewer.focused, 1, 'only the selected row may use the red attention overlay');
@@ -222,7 +224,13 @@ try {
   }
   await page.screenshot({ path: path.join(shotsDir, 'real-viewer-desktop.png'), fullPage: false });
 
-  await page.locator('#vReviewStart').click();
+  if (await page.locator('#modalBk.show').isVisible()) {
+    assert.match(await page.locator('#mHead').textContent(), /Analysis .*audit/i,
+      'the post-analysis prompt must offer the Audit workflow');
+    await page.locator('#mOk').click();
+  } else {
+    await page.locator('#vReviewStart').click();
+  }
   await page.waitForFunction(() => state.reviewFlow.active && Boolean(state.reviewFlow.currentRowId));
   const guidedStart = await page.evaluate(() => ({
     currentId: state.reviewFlow.currentRowId,

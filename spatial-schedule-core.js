@@ -2608,19 +2608,75 @@
       && !row.validation?.invalidSensitivity && !row.validation?.invalidBreakingCapacity);
   }
 
+  function spatialParseQuality(result) {
+    const rows = result?.matched && Array.isArray(result.rows) ? result.rows : [];
+    const activeRows = rows.filter((row) => Core.isPopulatedProtectionRow
+      ? Core.isPopulatedProtectionRow(row) : !row.space && !row.spare);
+    const completeRows = activeRows.filter((row) => row.device && row.rating != null);
+    return {
+      rows: rows.length,
+      activeRows: activeRows.length,
+      completeRows: completeRows.length,
+      completeness: activeRows.length ? completeRows.length / activeRows.length : (rows.length ? 1 : 0),
+      gridAccepted: result?.grid?.accepted !== false,
+      boardResolved: Boolean(result?.board?.ref),
+    };
+  }
+
+  function automaticGeometryShouldReplaceCalibration(calibrated, automatic) {
+    const baseline = spatialParseQuality(automatic);
+    if (!baseline.rows) return false;
+    const guided = spatialParseQuality(calibrated);
+    if (!guided.rows) return true;
+    if (!guided.gridAccepted && baseline.gridAccepted) return true;
+    if (!guided.boardResolved && baseline.boardResolved && baseline.rows >= guided.rows) return true;
+    const materialLoss = baseline.rows >= guided.rows + Math.max(2, Math.ceil(guided.rows * 0.25));
+    return materialLoss && baseline.completeRows >= guided.completeRows
+      && baseline.completeness + 0.05 >= guided.completeness;
+  }
+
   function parseSpatialScheduleDocument(pageInputs = [], options = {}) {
     const pages = (pageInputs || []).map((input, index) => ({
       ...input,
       documentPage: Number(input.documentPage || input.page || index + 1),
     }));
     const independent = pages.map((input) => {
+      const savedCalibration = calibrationRegions(input);
       const strict = parseSpatialSchedulePage(input);
-      const attempts = [{ strategy: 'geometry-strict', matched: Boolean(strict.matched && strict.rows?.length), rows: strict.rows?.length || 0 }];
+      const attempts = [{ strategy: savedCalibration.length ? 'geometry-calibrated' : 'geometry-strict',
+        matched: Boolean(strict.matched && strict.rows?.length), rows: strict.rows?.length || 0 }];
       let result = strict;
+      if (savedCalibration.length) {
+        const automatic = parseSpatialSchedulePage({
+          ...input,
+          calibrationHint: { applicable: 0, regions: [], roles: [] },
+        });
+        const fallback = automaticGeometryShouldReplaceCalibration(strict, automatic);
+        attempts.push({ strategy: 'geometry-automatic-fallback',
+          matched: Boolean(automatic.matched && automatic.rows?.length), rows: automatic.rows?.length || 0,
+          selected: fallback });
+        if (fallback) {
+          const savedRoles = [...new Set(savedCalibration.map((region) => region.role))];
+          const selectedBoard = strict.board?.ref ? strict.board : automatic.board;
+          const selectedBoardRef = selectedBoard?.ref || automatic.board?.ref || null;
+          result = {
+            ...automatic,
+            board: selectedBoard || null,
+            feeds: selectedBoardRef ? (automatic.feeds || []).map((feed) => ({ ...feed, fromRef: selectedBoardRef })) : automatic.feeds,
+            calibration: {
+              applicable: savedCalibration.length,
+              applied: 0,
+              roles: savedRoles,
+              fallback: 'automatic_baseline_recovered_rows',
+            },
+            warnings: [...new Set([...(automatic.warnings || []), 'user_calibration_fell_back_to_automatic_geometry'])],
+          };
+        }
+      }
       if ((!strict.matched || !strict.rows?.length) && input.allowSingleWay) {
         const permissive = parseSpatialSchedulePage({ ...input, allowSingleWay: true, materializeMissingWays: false });
         attempts.push({ strategy: 'geometry-single-way', matched: Boolean(permissive.matched && permissive.rows?.length), rows: permissive.rows?.length || 0 });
-        if (permissive.matched && permissive.rows?.length) result = permissive;
+        if ((!result.matched || !result.rows?.length) && permissive.matched && permissive.rows?.length) result = permissive;
       }
       return { input, result, attempts };
     });

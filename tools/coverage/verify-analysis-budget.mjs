@@ -127,6 +127,12 @@ try {
   if (budget.selection?.some((item) => !item.selected)) throw new Error('an eligible recovery page was silently deferred');
   if (manualElapsedMs > 10000) throw new Error(`bounded enhanced analysis took ${manualElapsedMs}ms`);
 
+  // The completed run intentionally offers to open Audit. Dismiss that prompt
+  // before starting a second, synthetic run behind the normal user flow.
+  await page.evaluate(() => {
+    if (document.querySelector('#modalBk.show')) closeModal();
+  });
+
   await page.evaluate(() => {
     state.cur.analysis.testMarker = 'saved-before-cancel';
     const nativeFetch = window.fetch.bind(window);
