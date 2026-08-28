@@ -1809,7 +1809,7 @@
     if (voltage) set('voltage_v', Number(voltage[1]), voltage[0]);
 
     for (const line of sourceLines) {
-      const spareCapacity = line.match(/\bSPARE\s+CAPACITY\b\s*[:=\-]?\s*(\d+(?:\.\d+)?)\s*%/i);
+      const spareCapacity = line.match(/\bSPARE(?:\s+CAPACITY)?\b\s*[:=]\s*(\d+(?:\.\d+)?)\s*%?/i);
       if (spareCapacity) set('spare_capacity_pct', Number(spareCapacity[1]), line);
       if (/\b(?:INCOMER|INCOMING\s+(?:DEVICE|SUPPLY)|MAIN\s+SWITCH)\b/i.test(line)) {
         const device = explicitProtectionDevice(line)
@@ -1854,6 +1854,40 @@
       else if (/^\s*(?:\d{1,3}\s+)?L[123]\b/i.test(line)) hits += 1;              // TBA phase slots
     }
     return hits >= 4;
+  }
+
+  /* Distinguish an actual outgoing-circuit body from a schedule heading or
+   * board-data page. This deliberately returns counts only so it can also be
+   * included in privacy-safe diagnostics. */
+  function detectScheduleTakeoffEvidence(input) {
+    const lines = Array.isArray(input)
+      ? input.map((line) => String(line?.text ?? line ?? '').replace(/\s+/g, ' ').trim()).filter(Boolean)
+      : String(input || '').split(/\r?\n/).map((line) => line.replace(/\s+/g, ' ').trim()).filter(Boolean);
+    const devicePattern = /\b(?:AFDD(?:\s*\+\s*RCBO)?|RCBO|RCCB|MCCB|MCB|ACB|RCD|HRC\s+FUSE|SWITCH\s*FUSE|FUSE|CONTACTOR|(?:BS\s*EN\s*)?(?:60898|60947(?:-2)?|61009))\b/i;
+    const occupancyPattern = /\b(?:SPARE|SPARE\s+WAY|SPACE|SPACE\s+WAY|FITTED\s+BLANK|BLANK\s+WAY|UNUSED|FUTURE\s+WAY|NOT\s+USED)\b/i;
+    const rowAnchorPattern = /^(?:WAY|CCT|CKT|CIRCUIT)?\s*[A-Z]{0,3}[-/]?\d{1,3}(?:\s*[\/-]\s*L[123]|\s+L[123]|\s+\S)|^L[123]\b/i;
+    const phasePattern = /\b(?:L1|L2|L3|L1\s*[-/,]\s*L2\s*[-/,]\s*L3|3\s*PH(?:ASE)?|TPN?|SPN?)\b/i;
+    const ratingPattern = /\b(?:[1-9]\d{0,3}(?:\.\d+)?)\s*(?:A|AMP(?:S)?|KA|MA)\b/i;
+    const headerPattern = /\b(?:OVER\s*CURRENT\s+PROTECTIVE\s+DEVICE|EARTH\s+FAULT\s+PROTECTIVE\s+DEVICE|ARC\s+FLASH\s+PROTECTIVE\s+DEVICE|DEVICE\s+TYPE|TRIP\s+RATING|BOARD\s+RATING|INCOMER\s+DETAILS)\b/i;
+    let deviceRows = 0;
+    let occupancyRows = 0;
+    let rowLikeLines = 0;
+    for (const line of lines) {
+      const rowAnchor = rowAnchorPattern.test(line);
+      const device = devicePattern.test(line);
+      const occupancy = occupancyPattern.test(line);
+      const headerOnly = headerPattern.test(line) && !rowAnchor;
+      if (rowAnchor && !headerOnly && (device || (phasePattern.test(line) && ratingPattern.test(line)))) deviceRows += 1;
+      if (occupancy && !headerOnly && (rowAnchor
+        || /^\s*(?:SPARE(?:\s+WAY)?|SPACE(?:\s+WAY)?|FITTED\s+BLANK|BLANK(?:\s+WAY)?|UNUSED(?:\s+WAY)?|FUTURE(?:\s+WAY)?)\s*$/i.test(line))) occupancyRows += 1;
+      if (rowAnchor && !headerOnly && (device || occupancy || ratingPattern.test(line))) rowLikeLines += 1;
+    }
+    return {
+      activeRowsLikely: deviceRows > 0 || occupancyRows > 0 || rowLikeLines >= 2,
+      deviceRows,
+      occupancyRows,
+      rowLikeLines,
+    };
   }
 
   const COVERAGE_SCHEDULE_TYPES = new Set(['db-schedule', 'main-schedule', 'equipment-schedule']);
@@ -1921,18 +1955,45 @@
       const boardRows = scheduleRows.filter((r) => r.boardNorm === board.norm);
       const observedRows = boardRows.filter((row) => !row.inferredWay || row.status === 'confirmed');
       const ways = new Set(observedRows.filter((r) => r.way != null).map((r) => `${r.boardSection || ''}:${r.way}`));
+      const explicitSpareWays = new Set(observedRows.filter((row) => row.spare && row.way != null)
+        .map((row) => `${row.boardSection || ''}:${row.way}`));
       const inferredWays = new Set(boardRows.filter((row) => row.inferredWay && row.status !== 'confirmed' && row.way != null)
         .map((row) => `${row.boardSection || ''}:${row.way}`));
       const protectionRows = boardRows.filter((r) => isPopulatedProtectionRow(r) && r.status !== 'rejected');
       const incompleteProtectionRows = protectionRows.filter((r) => r.status !== 'confirmed' && (!r.device || r.rating == null)).length;
-      const unaccounted = expected != null ? Math.max(0, expected - ways.size) : null;
+      const spareCapacityPct = Number(board.header?.spare_capacity_pct);
+      const spareCapacitySource = board.headerEvidence?.spare_capacity_pct || null;
+      const validSpareCapacity = Number.isFinite(spareCapacityPct) && spareCapacityPct >= 0 && spareCapacityPct <= 100;
+      const trustedSpareCapacity = validSpareCapacity && Boolean(spareCapacitySource)
+        && (Number(spareCapacitySource?.confidence) >= 0.8
+          || /(?:SPATIAL|USER|MANUAL|CALIBRAT)/i.test(String(spareCapacitySource?.extractionMethod || '')));
+      let declaredSpareWays = 0;
+      let declaredUnprintedSpareWays = 0;
+      let accountedWays = ways.size;
+      if (expected != null && trustedSpareCapacity) {
+        const rawSpareWays = expected * spareCapacityPct / 100;
+        const roundedSpareWays = Math.round(rawSpareWays);
+        const percentageMapsToWholeWays = Math.abs(rawSpareWays - roundedSpareWays) <= 0.25;
+        if (percentageMapsToWholeWays) {
+          declaredSpareWays = roundedSpareWays;
+          const unprinted = Math.max(0, declaredSpareWays - explicitSpareWays.size);
+          const reconciled = ways.size + unprinted;
+          if (reconciled <= expected) {
+            declaredUnprintedSpareWays = unprinted;
+            accountedWays = reconciled;
+          }
+        }
+      }
+      const unaccounted = expected != null ? Math.max(0, expected - accountedWays) : null;
       const upstreamType = /^(?:MAIN|MDB|SMDB|MCC|SB|PB)$/.test(String(board.type || '').toUpperCase());
       const upstreamReference = /^(?:MAIN|MSB|SWB|SMDB|MDB|PB|MCC|MCP|GENERATOR)/i.test(String(board.orig || '').replace(/[\s._/\\-]+/g, ''));
       const inScope = board.inScope !== false && boardPages.length > 0 && !upstreamType && !upstreamReference;
       perBoard.push({
         norm: board.norm, orig: board.orig,
         expectedWays: expected, evidence,
-        capturedWays: ways.size, inferredWays: inferredWays.size, rowsCaptured: boardRows.length,
+        capturedWays: accountedWays, observedWays: ways.size,
+        declaredSpareWays, declaredUnprintedSpareWays, spareCapacityPct: validSpareCapacity ? spareCapacityPct : null,
+        inferredWays: inferredWays.size, rowsCaptured: boardRows.length,
         protectionRows: protectionRows.length,
         incompleteProtectionRows,
         unaccountedWays: unaccounted, inScope,
@@ -1940,6 +2001,7 @@
     }
 
     const scopedBoardNorms = new Set(perBoard.filter((board) => board.inScope).map((board) => board.norm));
+    const coverageByBoard = new Map(perBoard.map((board) => [board.norm, board]));
     const zeroRowSchedulePages = [];
     for (const pg of pages || []) {
       if (!String(pg.text || '').trim()) continue;
@@ -1957,10 +2019,19 @@
         r.fileId === pg.fileId && r.page === pg.page
         && (!hasPrimaryMetadata || primaryBoards.has(r.boardNorm)));
       if (!hasRows) {
+        const takeoffEvidence = pg.takeoffEvidence || detectScheduleTakeoffEvidence(pg.text);
+        if (!takeoffEvidence.activeRowsLikely) continue;
+        const associatedBoards = primaryBoards ? Array.from(primaryBoards) : [];
+        const associatedCoverage = associatedBoards.map((norm) => coverageByBoard.get(norm)).filter(Boolean);
+        const alreadyReconciled = associatedCoverage.length > 0 && associatedCoverage.every((board) =>
+          board.rowsCaptured > 0 && board.expectedWays != null
+          && board.unaccountedWays === 0 && board.capturedWays <= board.expectedWays);
+        if (alreadyReconciled) continue;
         zeroRowSchedulePages.push({
           fileId: pg.fileId,
           page: pg.page,
           type: pg.type,
+          takeoffEvidence,
           boardNorm: primaryBoards && primaryBoards.size === 1 ? Array.from(primaryBoards)[0] : null,
           boardNorms: primaryBoards ? Array.from(primaryBoards) : [],
         });
@@ -2233,6 +2304,8 @@
       const type = pageTypeByKey.get(`${ref.fileId}#${ref.page}`);
       return type === 'sld' || type === 'schematic';
     })).map(([norm]) => norm);
+    const zeroRowCoverageKeys = new Set((coverage?.zeroRowSchedulePages || [])
+      .map((pg) => `${pg.fileId}#${pg.page}`));
 
     for (const file of files || []) {
       if (file.status === 'error') addReason('DOCUMENT_UNREADABLE', { fileId: file.id });
@@ -2245,10 +2318,14 @@
       }
     }
     for (const pg of schedulePages) {
-      if ((pg.rowsParsed || 0) === 0 && (pg.textLines || 0) > 0) {
+      const pageKey = `${pg.fileId}#${pg.page}`;
+      const takeoffEvidence = pg.takeoffEvidence || null;
+      const zeroRowsNeedRecovery = (pg.rowsParsed || 0) === 0 && (pg.textLines || 0) > 0
+        && (coverage ? zeroRowCoverageKeys.has(pageKey) : takeoffEvidence?.activeRowsLikely !== false);
+      if (zeroRowsNeedRecovery) {
         addReason('SCHEDULE_PAGE_UNPARSED', { fileId: pg.fileId, page: pg.page, score: pg.scheduleScore || null });
       }
-      if ((pg.spatialBlockingReasons || []).length > 0) {
+      if ((pg.spatialBlockingReasons || []).length > 0 && ((pg.rowsParsed || 0) > 0 || zeroRowsNeedRecovery)) {
         addReason('SCHEDULE_GRID_UNPROVEN', { fileId: pg.fileId, page: pg.page });
       }
     }
@@ -2321,7 +2398,7 @@
     if (reasons.size > 0) state = 'incomplete';
     if (reasons.has('ZERO_DEVICES_WITH_BOARDS') || reasons.has('NO_CONTENT')
       || reasons.has('DEVICE_COUNT_BELOW_BOARD_COUNT') || reasons.has('WAYS_OVER_CAPACITY')
-      || reasons.has('BOARD_FEED_MISSING') || reasons.has('SCHEMATIC_FEEDS_MISSING')
+      || reasons.has('SCHEMATIC_FEEDS_MISSING')
       || reasons.has('SCHEMATIC_VECTOR_GEOMETRY_MISSING') || reasons.has('SCHEMATIC_TOPOLOGY_UNRESOLVED')
       || reasons.has('SCHEMATIC_TOPOLOGY_AMBIGUOUS') || reasons.has('SCHEMATIC_SCHEDULE_FEED_MISMATCH')
       || reasons.has('SCHEMATIC_SCHEDULE_DEVICE_MISMATCH') || reasons.has('SCHEMATIC_SCHEDULE_CABLE_MISMATCH')
@@ -2347,6 +2424,55 @@
     };
   }
 
+  const REPORT_EXPORT_HARD_HEALTH_CODES = new Set([
+    'NO_CONTENT', 'ZERO_DEVICES_WITH_BOARDS',
+    'BOARD_ROWS_MISSING', 'WAYS_UNACCOUNTED', 'WAYS_OVER_CAPACITY',
+    'SCHEDULE_DOC_NO_BOARDS', 'UNASSIGNED_SCHEDULE_ROWS', 'PROTECTION_DETAILS_MISSING',
+    'SCHEDULE_GRID_UNPROVEN', 'PROTECTION_CLASS_CONFLICT', 'PHASE_POLE_CONFLICT',
+    'INVALID_PROTECTION_DOMAIN',
+  ]);
+
+  /* Report issue is a separate decision from parser health. Once every
+   * take-off row has a human decision, non-quantity diagnostics become
+   * advisory; missing ownership, protection data, ways or reconciliation stay
+   * hard blockers. */
+  function buildReportExportReadiness({ health, rows, model, extractionGaps } = {}) {
+    const blockers = [];
+    const warnings = [];
+    const add = (target, code, message, count = 1) => {
+      if (target.some((item) => item.code === code)) return;
+      target.push({ code, message, count: Math.max(1, Number(count) || 1) });
+    };
+    const auditPendingRows = (rows || []).filter((row) => isTakeoffEvidenceRow(row)
+      && !row.outOfScope && row.status !== 'confirmed' && row.status !== 'rejected').length;
+    if (auditPendingRows > 0) {
+      add(blockers, 'AUDIT_INCOMPLETE', `${auditPendingRows} extracted line${auditPendingRows === 1 ? '' : 's'} still need a decision`, auditPendingRows);
+    }
+    const unresolvedExtractionGaps = Array.isArray(extractionGaps)
+      ? extractionGaps.length : Math.max(0, Number(extractionGaps) || 0);
+    if (unresolvedExtractionGaps > 0) {
+      add(blockers, 'EXTRACTION_GAPS_UNRESOLVED', `${unresolvedExtractionGaps} schedule extraction gap${unresolvedExtractionGaps === 1 ? '' : 's'} still need recovery`, unresolvedExtractionGaps);
+    }
+    for (const reason of health?.reasons || []) {
+      const target = REPORT_EXPORT_HARD_HEALTH_CODES.has(reason.code) ? blockers : warnings;
+      add(target, reason.code, reason.message || HEALTH_REASONS[reason.code] || reason.code, reason.count);
+    }
+    if (Number(model?.unassignedQty || 0) > 0) {
+      add(blockers, 'REPORT_UNASSIGNED_DEVICES', `${model.unassignedQty} device${model.unassignedQty === 1 ? ' has' : 's have'} no board reference`, model.unassignedQty);
+    }
+    if (model?.reconciliation && model.reconciliation.valid === false) {
+      add(blockers, 'REPORT_RECONCILIATION_FAILED', 'Report quantities do not reconcile');
+    }
+    if (auditPendingRows === 0 && Number(model?.reviewCount || 0) > 0) {
+      add(warnings, 'REPORT_ACCEPTED_QUALIFICATIONS', `${model.reviewCount} grouped specification${model.reviewCount === 1 ? ' has' : 's have'} accepted qualifications`, model.reviewCount);
+    }
+    if (Number(model?.coverageIssueCount || 0) > 0
+      && !blockers.some((item) => ['BOARD_ROWS_MISSING', 'WAYS_UNACCOUNTED', 'WAYS_OVER_CAPACITY'].includes(item.code))) {
+      add(warnings, 'REPORT_COVERAGE_ADVISORY', `${model.coverageIssueCount} coverage diagnostic${model.coverageIssueCount === 1 ? ' remains' : 's remain'}`, model.coverageIssueCount);
+    }
+    return { allowed: blockers.length === 0, blockers, warnings, auditPendingRows, unresolvedExtractionGaps };
+  }
+
   const DIAGNOSTIC_SCHEDULE_ROLES = Object.freeze(['way', 'rating', 'circuit_reference_or_description']);
 
   const DIAGNOSTIC_GUIDANCE = Object.freeze({
@@ -2356,6 +2482,7 @@
     TEXT_UNRELIABLE: 'Inspect OCR quality and retry with raster OCR before trusting the page.',
     SPATIAL_WORDS_INSUFFICIENT: 'The parser did not receive enough positioned words; inspect text/OCR acquisition.',
     SCHEDULE_ROWS_ZERO: 'Calibrate the outgoing-circuit table or its way column, then re-run extraction.',
+    SCHEDULE_PAGE_NO_ACTIVE_ROWS: 'No outgoing-device or spare-way body was detected on this schedule-classified page; treat it as informational unless board coverage is incomplete.',
     WAY_ROLE_MISSING: 'Calibrate the way or circuit-number column.',
     RATING_ROLE_MISSING: 'Calibrate the outgoing protective-device rating column.',
     CIRCUIT_ROLE_MISSING: 'Calibrate the circuit reference or load-description column.',
@@ -2427,17 +2554,20 @@
     const spatialWords = diagnosticCount(pg.inputStats?.spatialWords ?? pg.spatialWords);
     const hasInputEvidence = diagnosticCount(pg.textLines) > 0 || spatialWords > 0
       || diagnosticCount(pg.inputStats?.tableRows) > 0 || diagnosticCount(pg.inputStats?.vectorSegments) > 0;
+    const takeoffEvidence = pg.takeoffEvidence || null;
+    const activeRowsLikely = takeoffEvidence?.activeRowsLikely !== false;
     if (schedule && !hasInputEvidence) add('NO_READABLE_PAGE_INPUT');
     if (schedule && diagnosticCount(pg.textLines) > 0 && spatialWords === 0) add('POSITIONAL_TEXT_MISSING');
     if (pg.needsOcr && pg.source !== 'ocr') add('OCR_REQUIRED');
     if (pg.textQualityUnreliable) add('TEXT_UNRELIABLE');
     if (schedule && spatialWords > 0 && spatialWords < 8) add('SPATIAL_WORDS_INSUFFICIENT');
-    if (schedule && diagnosticCount(pg.rowsParsed) === 0 && hasInputEvidence) add('SCHEDULE_ROWS_ZERO');
-    if (schedule && !roles.has('way')) add('WAY_ROLE_MISSING');
-    if (schedule && !roles.has('rating')) add('RATING_ROLE_MISSING');
-    if (schedule && !roles.has('circuit_reference') && !roles.has('description')) add('CIRCUIT_ROLE_MISSING');
+    if (schedule && diagnosticCount(pg.rowsParsed) === 0 && hasInputEvidence && activeRowsLikely) add('SCHEDULE_ROWS_ZERO');
+    if (schedule && diagnosticCount(pg.rowsParsed) === 0 && hasInputEvidence && !activeRowsLikely) add('SCHEDULE_PAGE_NO_ACTIVE_ROWS');
+    if (schedule && activeRowsLikely && !roles.has('way')) add('WAY_ROLE_MISSING');
+    if (schedule && activeRowsLikely && !roles.has('rating')) add('RATING_ROLE_MISSING');
+    if (schedule && activeRowsLikely && !roles.has('circuit_reference') && !roles.has('description')) add('CIRCUIT_ROLE_MISSING');
     if (schedule && pg.boardResolved === false) add('BOARD_REFERENCE_UNRESOLVED');
-    if (schedule && (pg.spatialGridAccepted === false || (pg.spatialBlockingReasons || []).length)) add('GRID_REJECTED');
+    if (schedule && activeRowsLikely && (pg.spatialGridAccepted === false || (pg.spatialBlockingReasons || []).length)) add('GRID_REJECTED');
     if (diagnosticCount(pg.rowOutcome?.unassignedRows) > 0) add('OUTPUT_ROWS_UNASSIGNED');
     if (diagnosticCount(pg.rowOutcome?.reviewRows) > 0 || diagnosticCount(pg.rowOutcome?.invalidRows) > 0
       || diagnosticCount(pg.rowOutcome?.classConflictRows) > 0 || diagnosticCount(pg.rowOutcome?.phaseConflictRows) > 0) {
@@ -2447,7 +2577,7 @@
       add('SCHEMATIC_TOPOLOGY_UNRESOLVED');
     }
     if (!reasons.length) add('PAGE_OK');
-    const blocking = reasons.filter((code) => !['PAGE_OK', 'OUTPUT_ROWS_REQUIRE_REVIEW'].includes(code));
+    const blocking = reasons.filter((code) => !['PAGE_OK', 'OUTPUT_ROWS_REQUIRE_REVIEW', 'SCHEDULE_PAGE_NO_ACTIVE_ROWS'].includes(code));
     const status = blocking.length ? 'blocked' : (reasons.includes('OUTPUT_ROWS_REQUIRE_REVIEW') ? 'review' : 'ok');
     return {
       status,
@@ -2459,7 +2589,8 @@
 
   function diagnosticPage(pg, fileTag) {
     const roles = diagnosticCodes(pg.spatialColumns);
-    const requiredRoles = scheduleDiagnosticPage(pg) ? DIAGNOSTIC_SCHEDULE_ROLES.slice() : [];
+    const activeRowsLikely = pg.takeoffEvidence?.activeRowsLikely !== false;
+    const requiredRoles = scheduleDiagnosticPage(pg) && activeRowsLikely ? DIAGNOSTIC_SCHEDULE_ROLES.slice() : [];
     const missingRoles = [];
     if (requiredRoles.includes('way') && !roles.includes('way')) missingRoles.push('way');
     if (requiredRoles.includes('rating') && !roles.includes('rating')) missingRoles.push('rating');
@@ -2540,6 +2671,12 @@
         phaseConflictRows: diagnosticCount(pg.rowOutcome?.phaseConflictRows),
         feederRelationships: diagnosticCount(pg.rowOutcome?.feeders),
       },
+      takeoffEvidence: {
+        activeRowsLikely: Boolean(pg.takeoffEvidence?.activeRowsLikely),
+        deviceRows: diagnosticCount(pg.takeoffEvidence?.deviceRows),
+        occupancyRows: diagnosticCount(pg.takeoffEvidence?.occupancyRows),
+        rowLikeLines: diagnosticCount(pg.takeoffEvidence?.rowLikeLines),
+      },
       schematic: {
         topologyMethod: diagnosticCode(pg.schematicTopologyMethod),
         graphStats: pg.schematicGraphStats || null,
@@ -2557,7 +2694,7 @@
     const increment = (record, key, amount = 1) => { record[key] = (record[key] || 0) + amount; };
     const summary = {
       pageStatusCounts: {}, reasonCounts: {}, missingRoleCounts: {},
-      strategyCounts: {}, pagesWithTextButNoRows: 0, pagesWithNoReadableInput: 0,
+      strategyCounts: {}, pagesWithTextButNoRows: 0, pagesWithNoActiveTakeoffRows: 0, pagesWithNoReadableInput: 0,
     };
     pages.forEach((page) => {
       increment(summary.pageStatusCounts, page.verdict.status);
@@ -2569,7 +2706,8 @@
         if (attempt.matched) summary.strategyCounts[attempt.strategy].matched += 1;
         summary.strategyCounts[attempt.strategy].rows += diagnosticCount(attempt.rows);
       });
-      if (page.input.textLines > 0 && page.output.rowsParsed === 0 && page.verdict.scheduleCandidate) summary.pagesWithTextButNoRows += 1;
+      if (page.verdict.reasonCodes.includes('SCHEDULE_ROWS_ZERO')) summary.pagesWithTextButNoRows += 1;
+      if (page.verdict.reasonCodes.includes('SCHEDULE_PAGE_NO_ACTIVE_ROWS')) summary.pagesWithNoActiveTakeoffRows += 1;
       if (!page.input.textLines && !page.input.spatialWords && !page.input.tableRows && !page.input.vectorSegments) summary.pagesWithNoReadableInput += 1;
     });
     return summary;
@@ -2591,7 +2729,7 @@
     };
     const pageDetails = (pages || []).map((pg) => diagnosticPage(pg, fileTag));
     return {
-      diagnosticVersion: 2,
+      diagnosticVersion: 3,
       appVersion: appVersion || null,
       generatedAt: new Date().toISOString(),
       privacy: {
@@ -2644,6 +2782,9 @@
         inScope: board.inScope !== false,
         expectedWays: board.expectedWays == null ? null : diagnosticCount(board.expectedWays),
         capturedWays: diagnosticCount(board.capturedWays),
+        observedWays: diagnosticCount(board.observedWays),
+        declaredSpareWays: diagnosticCount(board.declaredSpareWays),
+        declaredUnprintedSpareWays: diagnosticCount(board.declaredUnprintedSpareWays),
         unaccountedWays: board.unaccountedWays == null ? null : diagnosticCount(board.unaccountedWays),
         rowsCaptured: diagnosticCount(board.rowsCaptured),
         incompleteProtectionRows: diagnosticCount(board.incompleteProtectionRows),
@@ -2664,6 +2805,7 @@
     expectedWaysFromText,
     extractBoardHeader,
     pageLooksTabular,
+    detectScheduleTakeoffEvidence,
     buildCoverage,
     HEALTH_REASONS,
     scoreScheduleCandidate,
@@ -2671,6 +2813,7 @@
     planAiRecoveryJobs,
     buildDocumentExtractionScope,
     buildAnalysisHealth,
+    buildReportExportReadiness,
     buildPageDiagnosticVerdict,
     buildDiagnosticExport,
     THREE_TYPES,

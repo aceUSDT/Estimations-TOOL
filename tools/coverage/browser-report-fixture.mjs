@@ -24,4 +24,8 @@ export async function prepareReportFixture(page) {
   }
 
   await page.waitForFunction(() => state.projects.some((project) => project.name === 'Riverside Office Fit-Out (demo)'));
+  await page.waitForFunction(() => document.querySelector('#homeView.active')
+    && document.querySelector('#newProjectBtn')
+    && document.querySelectorAll('.proj-card').length > 0
+    && state.cur == null);
 }

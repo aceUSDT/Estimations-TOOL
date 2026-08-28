@@ -1200,7 +1200,7 @@ const state = {
   reportMode: 'board',
   reviewFlow: {active:false,currentRowId:null,initialCount:0,moving:false,boardOrder:[],initialByBoard:{},rowOrderByBoard:{}},
 };
-const ANALYSIS_VERSION=26;
+const ANALYSIS_VERSION=27;
 const uid = () => 'x'+(state.nextId++)+'_'+Math.random().toString(36).slice(2,6);
 
 /* ====================== PERSISTENCE (IndexedDB) ====================== */
@@ -3498,6 +3498,7 @@ async function runAnalysis(opts){
         recoveryAttempted:Boolean(pg.recovery),recoveryOutcome:pg.recovery?.outcome||
           (pg.recovery?.error?'error':pg.recovery?'attempted':null),
         scheduleScore:schedCandidate.score, scheduleSignals:schedCandidate.signals, rowsParsed:0,
+        takeoffEvidence:core?.detectScheduleTakeoffEvidence?.(pg.lines||lines)||null,
         spatialContinuation,
         spatialMatched:Boolean(spatial?.matched&&spatial?.rows?.length),spatialWords:spatial?.words??spatialWordCount,
         spatialSchemaSourcePage:documentSpatial?.schemaSourcePage??null,
@@ -4039,7 +4040,9 @@ function refreshAnalysisHealth(){
   if(core.buildCoverage){
     const pages=(A.pageDiagnostics||[]).map(diagnostic=>{
       const file=p.files.find(item=>item.id===diagnostic.fileId),page=file?.pages?.[Number(diagnostic.page)-1];
-      return {fileId:diagnostic.fileId,page:diagnostic.page,type:diagnostic.type,text:(page?.lines||[]).map(line=>line.text).join('\n')};
+      const text=(page?.lines||[]).map(line=>line.text).join('\n');
+      diagnostic.takeoffEvidence=core.detectScheduleTakeoffEvidence?.(page?.lines||text)||diagnostic.takeoffEvidence||null;
+      return {fileId:diagnostic.fileId,page:diagnostic.page,type:diagnostic.type,text,takeoffEvidence:diagnostic.takeoffEvidence};
     });
     A.coverage=core.buildCoverage({boards:A.boards,rows:A.rows,pages});
   }
@@ -4163,12 +4166,17 @@ function orderedPendingReviewRows(){
 function unresolvedReviewExtractionGaps(){
   const p=state.cur,A=p?.analysis,rows=A?.rows||[];
   if(!p||!A)return [];
+  const coverageByBoard=new Map((A.coverage?.perBoard||[]).map(item=>[item.norm,item]));
   return Object.entries(A.boards||{}).flatMap(([boardNorm,board])=>{
     if(board?.inScope===false)return [];
+    const coverage=coverageByBoard.get(boardNorm);
+    const reconciled=coverage&&coverage.rowsCaptured>0&&coverage.expectedWays!=null
+      &&coverage.unaccountedWays===0&&coverage.capturedWays<=coverage.expectedWays;
     const locations=(board?.pages||[]).filter(ref=>ref?.primary&&ref.fileId&&Number.isFinite(Number(ref.page)));
     const candidates=locations.map(location=>{
       const diagnostic=(A.pageDiagnostics||[]).find(page=>page.fileId===location.fileId&&Number(page.page)===Number(location.page)
         && page.type!=='sld'&&page.type!=='schematic'&&(page.rowsParsed||0)===0
+        && page.takeoffEvidence?.activeRowsLikely!==false&&!reconciled
         && ((page.scheduleScore||0)>=0.45||BOARD_SCHEDULE_TYPES.has(page.type)));
       return diagnostic?{boardNorm,fileId:location.fileId,page:Number(location.page),diagnostic}:null;
     }).filter(Boolean);
@@ -4895,10 +4903,12 @@ function renderHealthBanner(){
   const host=$('#anHealth'); if(!host) return;
   const p=state.cur, A=p&&p.analysis, h=A&&A.health;
   if (!h || h.state==='complete'){ host.innerHTML=''; return; }
-  const tone=h.state==='failed'?'red':'amber';
-  const title=h.state==='failed'
-    ? 'Analysis failed — this is not a usable take-off'
-    : 'Analysis incomplete — some evidence was not captured';
+  const readiness=currentReportExportReadiness();
+  const exportAllowed=Boolean(readiness?.allowed);
+  const tone=exportAllowed?'amber':(h.state==='failed'?'red':'amber');
+  const title=exportAllowed?'Audit complete — advisory diagnostics remain'
+    :(h.state==='failed'?'Analysis failed — this is not a usable take-off'
+      :'Analysis incomplete — some evidence was not captured');
   const items=(h.reasons||[]).map(r=>{
     const where=(r.refs||[]).slice(0,4).map(ref=>{
       if (ref&&ref.board) return esc(boardLabel(ref.board));
@@ -4911,9 +4921,9 @@ function renderHealthBanner(){
   host.innerHTML=`<div class="panel" style="margin-bottom:14px;border-left:4px solid var(--${tone})">
     <div class="p-body">
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-        <span class="chip ${tone}">${h.state==='failed'?'Failed':'Incomplete'}</span>
+        <span class="chip ${tone}">${exportAllowed?'Advisory':(h.state==='failed'?'Failed':'Incomplete')}</span>
         <b>${title}</b>
-        <span class="sub">Exports stay disabled until this is resolved.</span>
+        <span class="sub">${exportAllowed?'Approved report files remain available; these items stay visible for traceability.':'Report exports stay disabled until the hard take-off gaps are resolved.'}</span>
         <button class="btn sm" id="healthOcrBtn" style="margin-left:auto">Run OCR + re-analyse</button>
         <button class="btn sm" id="healthDiagBtn" title="Counts and reason codes only — no document content">Export diagnostics</button>
       </div>
@@ -4936,7 +4946,7 @@ function exportDiagnostics(){
     pages:A.pageDiagnostics||[], appVersion:'analysis-v'+ANALYSIS_VERSION,
     run:{analysisVersion:A.version,calibrationRevision:A.calibrationRevision,aiRecovery:A.aiRecovery,
       aiPages:A.aiPages,aiErrors:A.aiErrors,aiTimedOut:A.aiTimedOut,recoveryLog:A.recoveryLog}});
-  download('estimation-diagnostics-v2.json','application/json',JSON.stringify(diag,null,2));
+  download('estimation-diagnostics-v3.json','application/json',JSON.stringify(diag,null,2));
   toast('Page-by-page diagnostics exported — no document content or customer identifiers');
 }
 function evRowHtml(r){
@@ -5193,6 +5203,18 @@ function currentReportModel(){
     generatedAt:new Date(),
   });
 }
+function currentReportExportReadiness(model=currentReportModel()){
+  const A=state.cur?.analysis,core=window.EstimationExtractorCore;
+  if(core?.buildReportExportReadiness){
+    return core.buildReportExportReadiness({health:A?.health||null,rows:A?.rows||[],model,
+      extractionGaps:unresolvedReviewExtractionGaps()});
+  }
+  const blockers=[];
+  if(A?.health&&A.health.state!=='complete')blockers.push({code:'ANALYSIS_INCOMPLETE',message:'Analysis is incomplete'});
+  if(model?.unassignedQty)blockers.push({code:'REPORT_UNASSIGNED_DEVICES',message:'Devices have no board reference'});
+  if(model?.reconciliation?.valid===false)blockers.push({code:'REPORT_RECONCILIATION_FAILED',message:'Report quantities do not reconcile'});
+  return {allowed:blockers.length===0,blockers,warnings:[],auditPendingRows:0};
+}
 function reportRowsForScope(model,scope){
   const root=scope==='associated'?model?.associated:model;
   return (root?.groups||[]).flatMap(group=>group.rows||[]);
@@ -5328,14 +5350,13 @@ function renderReport(){
   if(model.associated&&model.associated.grandTotal) factItems.push(['Control items',model.associated.grandTotal]);
   facts.innerHTML=factItems
     .map(([k,v])=>`<div class="report-fact"><dt>${esc(k)}</dt><dd>${v}</dd></div>`).join('');
+  const readiness=currentReportExportReadiness(model);
   const issues=[];
-  if (model.reviewCount) issues.push(model.reviewCount+' row'+(model.reviewCount===1?'':'s')+' need review');
-  if (model.coverageIssueCount) issues.push(model.coverageIssueCount+' coverage check'+(model.coverageIssueCount===1?'':'s')+' need attention');
-  if (model.unassignedQty) issues.push(model.unassignedQty+' device'+(model.unassignedQty===1?'':'s')+' have no board reference');
+  if(!readiness.allowed)readiness.blockers.slice(0,3).forEach(item=>issues.push(item.message));
+  else if(readiness.warnings.length)issues.push('Audit complete — export permitted with '+readiness.warnings.length+' advisory diagnostic'+(readiness.warnings.length===1?'':'s'));
   if (model.duplicateCount) issues.push(model.duplicateCount+' duplicate source record'+(model.duplicateCount===1?' was':'s were')+' excluded');
-  if (!model.reconciliation?.valid) issues.push('quantities do not reconcile');
-  status.className='report-status '+(!model.reconciliation?.valid||model.unassignedQty?'bad':(model.reviewCount||model.coverageIssueCount)?'warn':'ok');
-  status.textContent=issues.length?issues.join(' · '):'Ready for issue';
+  status.className='report-status '+(!readiness.allowed?'bad':readiness.warnings.length?'warn':'ok');
+  status.textContent=issues.length?issues.join(' · '):'Audited and ready for issue';
   const rcdLabel=row=>{
     if(row.rcdProtected!==true)return row.rcdProtected===false?'No RCD':'Not specified';
     const arrangement={integral:'Integral',separate:'Separate',shared:'Shared',upstream:'Upstream',separate_or_unspecified:'Separate / unclear'}[row.rcdArrangement];
@@ -5449,23 +5470,16 @@ function reportFileName(ext){
   return window.EstimationReport.safeFileName(state.cur?state.cur.name:'Electrical project')+' - DB Devices Take Off - '+stamp+'.'+ext;
 }
 $('#openReportBtn').addEventListener('click',()=>setTab('reports'));
-/* Exports are a claim of completeness — a take-off with known gaps must not
-   leave the app as a clean-looking spreadsheet (SmartScreen addendum). */
+/* Exports are a claim about the audited take-off, not about every page-level
+   diagnostic. Hard quantity/ownership gaps block; approved advisory evidence
+   remains visible without trapping the user's report. */
 function exportBlockedByHealth(){
-  const h=state.cur&&state.cur.analysis&&state.cur.analysis.health;
-  if (h && h.state!=='complete'){
-    toast('Export disabled — the analysis is '+(h.state==='failed'?'failed':'incomplete')+'. Resolve the gaps flagged in Boards & Devices first.');
-    setTab('analysis');
-    return true;
-  }
   const model=currentReportModel();
-  if(model&&(model.reviewCount||model.unassignedQty||!model.reconciliation?.valid)){
-    const reasons=[];
-    if(model.reviewCount)reasons.push(`${model.reviewCount} specification${model.reviewCount===1?'':'s'} still need review`);
-    if(model.unassignedQty)reasons.push(`${model.unassignedQty} device${model.unassignedQty===1?' has':'s have'} no board reference`);
-    if(!model.reconciliation?.valid)reasons.push('report quantities do not reconcile');
-    toast('Export disabled — '+reasons.join('; ')+'. Open the report source windows to correct and approve them.');
-    setTab('reports');
+  const readiness=currentReportExportReadiness(model);
+  if(!readiness.allowed){
+    const reasons=readiness.blockers.slice(0,3).map(item=>item.message);
+    toast('Export disabled — '+reasons.join('; ')+'.');
+    setTab(readiness.blockers.some(item=>item.code==='AUDIT_INCOMPLETE'||item.code==='EXTRACTION_GAPS_UNRESOLVED')?'viewer':'reports');
     return true;
   }
   return false;
@@ -5474,20 +5488,22 @@ $('#reportCsvBtn').addEventListener('click',()=>{
   if (exportBlockedByHealth()) return;
   const model=currentReportModel();
   if (!model || !model.groups.length){ toast('Nothing to export yet'); return; }
-  try{download(reportFileName('csv'),'text/csv;charset=utf-8',window.EstimationReport.csv(model));toast('Take-off CSV exported');}
+  const advisoryCount=currentReportExportReadiness(model).warnings.length;
+  try{download(reportFileName('csv'),'text/csv;charset=utf-8',window.EstimationReport.csv(model));toast('Take-off CSV exported'+(advisoryCount?` with ${advisoryCount} advisory diagnostic${advisoryCount===1?'':'s'}`:''));}
   catch(error){console.error(error);toast(error.message||'CSV export could not be created');}
 });
 $('#reportXlsxBtn').addEventListener('click',async()=>{
   if (exportBlockedByHealth()) return;
   const model=currentReportModel();
   if (!model || !model.groups.length){ toast('Nothing to export yet'); return; }
+  const advisoryCount=currentReportExportReadiness(model).warnings.length;
   const button=$('#reportXlsxBtn'), label=button.textContent;
   button.disabled=true; button.textContent='Preparing Excel...';
   try{
     const workbook=window.EstimationReport.createExcelWorkbook(model,window.ExcelJS);
     const buffer=await workbook.xlsx.writeBuffer();
     download(reportFileName('xlsx'),'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',buffer);
-    toast('Excel take-off exported');
+    toast('Excel take-off exported'+(advisoryCount?` with ${advisoryCount} advisory diagnostic${advisoryCount===1?'':'s'}`:''));
   }catch(error){
     console.error(error);
     toast(error.message||'Excel export could not be created');
@@ -6324,7 +6340,16 @@ async function renderViewer(){
   const calibratedRoles=calibrationHintForPage(p,f.id,V.page,pg).roles;
   const schedulePage=BOARD_SCHEDULE_TYPES.has(pg.type)||(scheduleCandidate.score>=0.45&&scheduleCandidate.signals.length>=2);
   const pageDiagnostic=(A?.pageDiagnostics||[]).find(item=>item.fileId===f.id&&Number(item.page)===Number(V.page));
-  const extractionGap=schedulePage&&(scheduleRows.length===0||(pageDiagnostic?.spatialBlockingReasons||[]).length>0
+  const pageBoardNorms=Object.entries(A?.boards||{}).filter(([,board])=>(board.pages||[])
+    .some(ref=>ref?.primary&&ref.fileId===f.id&&Number(ref.page)===Number(V.page))).map(([norm])=>norm);
+  const pageReconciled=pageBoardNorms.length>0&&pageBoardNorms.every(norm=>{
+    const coverage=(A?.coverage?.perBoard||[]).find(item=>item.norm===norm);
+    return coverage&&coverage.rowsCaptured>0&&coverage.expectedWays!=null
+      &&coverage.unaccountedWays===0&&coverage.capturedWays<=coverage.expectedWays;
+  });
+  const zeroRowsBlock=scheduleRows.length===0&&pageDiagnostic?.takeoffEvidence?.activeRowsLikely!==false&&!pageReconciled;
+  const extractionGap=schedulePage&&(zeroRowsBlock
+    ||((pageDiagnostic?.spatialBlockingReasons||[]).length>0&&(scheduleRows.length>0||zeroRowsBlock))
     ||scheduleRows.some(row=>Boolean(rowApprovalIssue(row))));
   $('#vMetaRow').innerHTML=`<span class="chip blue">${esc(THREE_TYPE_LABELS[pageThreeType(pg)]||'Unknown')}</span>
     ${pg.sub_format&&PAGE_TYPES[pg.sub_format]&&pg.sub_format!==THREE_TO_FINE[pageThreeType(pg)]?`<span class="chip grey">${esc(PAGE_TYPES[pg.sub_format])}</span>`:''}

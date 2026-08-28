@@ -114,6 +114,24 @@ assert.equal(result.rows[0].rcdProtected, false);
 assert.equal(result.rows[0].afdd, false);
 assert.ok(result.rows[0].highlightBbox[3] >= 18, 'a genuine merged three-phase row may span all phase lanes');
 
+// A saved calibration must never make a document worse than the automatic
+// geometry baseline. This deliberately points the way column at empty space.
+const calibrationFallbackDocument = Core.parseSpatialScheduleDocument([{
+  documentPage: 1,
+  lines,
+  words: threePhaseFixture(),
+  pageWidth: 600,
+  pageHeight: 700,
+  pageType: 'db-schedule',
+  calibrationHint: { applicable: 1, regions: [{ role: 'way', bbox: [540, 180, 25, 430] }], roles: ['way'] },
+}]);
+const calibrationFallback = calibrationFallbackDocument.pages[0];
+assert.equal(calibrationFallback.result.rows.length, 8);
+assert.equal(calibrationFallback.result.board.ref, 'DB/Z1/00/01');
+assert.equal(calibrationFallback.result.calibration.fallback, 'automatic_baseline_recovered_rows');
+assert.ok(calibrationFallback.result.warnings.includes('user_calibration_fell_back_to_automatic_geometry'));
+assert.ok(calibrationFallback.attempts.some((attempt) => attempt.strategy === 'geometry-automatic-fallback' && attempt.selected));
+
 const schematicWithLegend = Core.parseSpatialSchematicPage({
   lines: [{ text: 'LV SCHEMATIC' }, { text: 'Legend' }, { text: 'FAP Fire Alarm Panel' }, { text: 'LVS1 DB-G1-LP 125A MCCB' }],
   words: [

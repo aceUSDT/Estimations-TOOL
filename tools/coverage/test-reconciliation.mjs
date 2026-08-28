@@ -54,6 +54,31 @@ const spatialHeaderCoverage = core.buildCoverage({
 check('trusted spatial way count overrides ambiguous text adjacency', spatialHeaderCoverage.perBoard[0].expectedWays === 12,
   `got ${spatialHeaderCoverage.perBoard[0].expectedWays}`);
 
+const trimbleHeader = core.extractBoardHeader([
+  'No. of Ways: 12 Spare: 50',
+  'Board Rating (A): 125',
+]);
+check('compact Trimble spare percentage is extracted', trimbleHeader.header.spare_capacity_pct === 50,
+  `got ${trimbleHeader.header.spare_capacity_pct}`);
+
+const declaredSpareCoverage = core.buildCoverage({
+  boards: { DB2: { norm: 'DB2', orig: 'DB-2', pages: [{ fileId: 'f-spare', page: 1, primary: true }],
+    header: { ways_total: 12, spare_capacity_pct: 50 },
+    headerEvidence: {
+      ways_total: { text: '12', confidence: 0.98, extractionMethod: 'Spatial board header parser' },
+      spare_capacity_pct: { text: '50', confidence: 0.98, extractionMethod: 'Spatial board header parser' },
+    } } },
+  rows: Array.from({ length: 6 }, (_, index) => ({ boardNorm: 'DB2', way: index + 1, page: 1,
+    fileId: 'f-spare', kind: 'schedule', device: 'MCB', rating: 20 })),
+  pages: [{ fileId: 'f-spare', page: 1,
+    text: 'No. of Ways: 12 Spare: 50\nWay Phase Overcurrent Protective Device\n1 L1 MCB 20A', type: 'db-schedule' }],
+});
+check('trusted declared spare capacity accounts for unprinted ways', declaredSpareCoverage.perBoard[0].capturedWays === 12,
+  JSON.stringify(declaredSpareCoverage.perBoard[0]));
+check('declared spare reconciliation preserves observed-way count', declaredSpareCoverage.perBoard[0].observedWays === 6);
+check('declared spare reconciliation records six unprinted spare ways', declaredSpareCoverage.perBoard[0].declaredUnprintedSpareWays === 6);
+check('declared spare reconciliation closes the coverage gap', declaredSpareCoverage.perBoard[0].unaccountedWays === 0);
+
 /* board with no header — no phantom expectation */
 const cov2 = core.buildCoverage({
   boards: { DBX: { norm: 'DBX', orig: 'DB-X', pages: [{ fileId: 'f1', page: 1 }] } },
