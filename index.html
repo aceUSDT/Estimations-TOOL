@@ -4075,7 +4075,7 @@ function rowApprovalIssue(row){
 }
 function approvalButtonAttrs(row){
   const issue=rowApprovalIssue(row);
-  return issue?` disabled title="${esc(issue)}" aria-label="Approval blocked: ${esc(issue)}"`:'';
+  return issue?` title="Review before approval: ${esc(issue)}" aria-label="Review and correct before approval: ${esc(issue)}"`:'';
 }
 function setRowDecision(row,status,surface,note=''){
   if(!row)return false;
@@ -4087,6 +4087,15 @@ function setRowDecision(row,status,surface,note=''){
   recordRowDecision(row,status==='confirmed'?'Approved':'Rejected',surface,note);
   if(status==='rejected')refreshAnalysisHealth();
   return true;
+}
+function beginRowApproval(row,surface,note=''){
+  const issue=rowApprovalIssue(row);
+  if(issue){
+    toast('Review required before approval — '+issue+'.');
+    openRowEditor(row,false,surface);
+    return false;
+  }
+  return setRowDecision(row,'confirmed',surface,note);
 }
 function undoRowDecision(row,surface){
   if(!row)return;
@@ -5740,7 +5749,9 @@ function renderReview(){
         const a=b.dataset.a;
         if (a==='jump') return jumpToEvidence(r);
         if (a==='edit') return openRowEditor(r);
-        if(!setRowDecision(r,a==='ok'?'confirmed':'rejected','Review'))return;
+        if(a==='ok'){
+          if(!beginRowApproval(r,'Review'))return;
+        }else if(!setRowDecision(r,'rejected','Review'))return;
         renderReview(); renderTakeoff(); renderProjHeader(); saveProject(p);
         scheduleGuidedAdvance(r,a==='ok'?'Approval saved':'Rejection saved');
       }));
@@ -6507,7 +6518,7 @@ async function renderViewer(){
       el.querySelectorAll('[data-action]').forEach(button=>button.addEventListener('click',async event=>{
         event.stopPropagation();
         if(button.dataset.action==='approve'){
-          if(!setRowDecision(d.r,'confirmed','Viewer'))return;
+          if(!beginRowApproval(d.r,'Viewer'))return;
           saveProject(p);renderProjHeader();toast(d.label+' approved');
           if(state.reviewFlow.active&&state.reviewFlow.currentRowId===d.r.id)await scheduleGuidedAdvance(d.r,'Approval saved');
           else await renderViewer();

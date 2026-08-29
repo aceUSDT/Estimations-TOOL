@@ -38,7 +38,7 @@ try {
   assert.match(await firstCard.getAttribute('title'), /counted device|on DB-/i, 'row hover title must include board-wide counts');
   assert.equal(await page.locator('#vDetList .det .chip').filter({ hasText: /^row$/i }).count(), 0, 'ROW badges must not return');
 
-  const calibratedApprovalRowId = await page.evaluate(async () => {
+  const calibratedApprovalRows = await page.evaluate(async () => {
     const A = state.cur.analysis;
     const source = pageDetections(viewerFile(), state.viewer.page)
       .find((item) => item.kind === 'row' && item.r.boardNorm && item.r.device && item.r.rating != null)?.r;
@@ -67,28 +67,37 @@ try {
     if (rowApprovalIssue(row) !== null) throw new Error('a calibrated, source-linked row must remain approvable despite a page-level geometry warning');
     const unsafe = { ...row, id: 'viewer-calibrated-unassigned', boardNorm: null };
     if (!/No board identity/.test(rowApprovalIssue(unsafe) || '')) throw new Error('calibration must not bypass a missing board identity');
+    A.rows.push(unsafe);
     await renderViewer();
-    return row.id;
+    return { calibrated: row.id, unsafe: unsafe.id };
   });
-  const calibratedApprovalCard = page.locator(`#vDetList .det[data-row-id="${calibratedApprovalRowId}"]`);
+  const unsafeApprovalCard = page.locator(`#vDetList .det[data-row-id="${calibratedApprovalRows.unsafe}"]`);
+  await unsafeApprovalCard.waitFor();
+  const unsafeApprove = unsafeApprovalCard.locator('[data-action="approve"]');
+  assert.equal(await unsafeApprove.isEnabled(), true, 'a blocked approval must lead to correction instead of becoming a dead button');
+  await unsafeApprove.click();
+  await page.locator('#modalBk.show #eBoard').waitFor();
+  assert.match(await page.locator('#modalBk.show #mHead').textContent(), /Correct this row/);
+  await page.locator('#mCancel').click();
+  const calibratedApprovalCard = page.locator(`#vDetList .det[data-row-id="${calibratedApprovalRows.calibrated}"]`);
   await calibratedApprovalCard.waitFor();
   const calibratedApprove = calibratedApprovalCard.locator('[data-action="approve"]');
   assert.equal(await calibratedApprove.isEnabled(), true, 'Approve must be enabled after calibration when the row has complete reviewable evidence');
   await calibratedApprove.click();
-  assert.equal(await page.evaluate((rowId) => state.cur.analysis.rows.find((row) => row.id === rowId)?.status, calibratedApprovalRowId), 'confirmed');
-  await page.evaluate(async (rowId) => {
+  assert.equal(await page.evaluate((rowId) => state.cur.analysis.rows.find((row) => row.id === rowId)?.status, calibratedApprovalRows.calibrated), 'confirmed');
+  await page.evaluate(async (rowIds) => {
     const A = state.cur.analysis;
-    const row = A.rows.find((item) => item.id === rowId);
+    const row = A.rows.find((item) => item.id === rowIds.calibrated);
     const diagnostic = A.pageDiagnostics.find((item) => item.fileId === row.fileId && Number(item.page) === Number(row.page));
     const restore = window.__calibratedApprovalRestore;
     diagnostic.spatialBlockingReasons = restore.spatialBlockingReasons;
     diagnostic.spatialGridAccepted = restore.spatialGridAccepted;
     if (restore.calibration) diagnostic.calibration = restore.calibration;
     else delete diagnostic.calibration;
-    A.rows = A.rows.filter((item) => item.id !== rowId);
+    A.rows = A.rows.filter((item) => item.id !== rowIds.calibrated && item.id !== rowIds.unsafe);
     delete window.__calibratedApprovalRestore;
     await renderViewer();
-  }, calibratedApprovalRowId);
+  }, calibratedApprovalRows);
 
   const largeDeviceRows = await page.evaluate(async () => {
     const A = state.cur.analysis;
@@ -435,9 +444,12 @@ try {
   let nextBoard = firstBoard;
   for (let decision = 0; decision < 80 && nextBoard === firstBoard; decision += 1) {
     const priorRow = await page.evaluate(() => state.reviewFlow.currentRowId);
-    const approve = page.locator('#vDetList .det.current [data-action="approve"]');
-    if (await approve.isDisabled()) await page.locator('#vDetList .det.current [data-action="reject"]').click();
-    else await approve.click();
+    const issue = await page.evaluate(() => {
+      const row = state.cur.analysis.rows.find((item) => item.id === state.reviewFlow.currentRowId);
+      return rowApprovalIssue(row);
+    });
+    if (issue) await page.locator('#vDetList .det.current [data-action="reject"]').click();
+    else await page.locator('#vDetList .det.current [data-action="approve"]').click();
     await page.waitForFunction((rowId) => !state.reviewFlow.active || state.reviewFlow.currentRowId !== rowId, priorRow);
     if (!await page.evaluate(() => state.reviewFlow.active)) break;
     await page.waitForFunction(() => {
