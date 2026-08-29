@@ -27,13 +27,17 @@ try {
     overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
     font: getComputedStyle(document.body).fontFamily,
     wordmark: document.querySelector('.appbar .brand')?.textContent.trim(),
+    brandLogo: getComputedStyle(document.querySelector('.appbar .brand-logo')).display,
+    bodySize: parseFloat(getComputedStyle(document.body).fontSize),
     primary: getComputedStyle(document.querySelector('#newProjectBtn')).backgroundColor,
     cardRadius: parseFloat(getComputedStyle(document.querySelector('.proj-card')).borderRadius),
   }));
   assert.ok(home.overflow <= 1, `desktop project page has ${home.overflow}px overflow`);
   assert.match(home.font, /IBM Plex Sans/);
   assert.equal(home.wordmark, 'EstimationTools');
-  assert.equal(home.primary, 'rgb(22, 87, 201)');
+  assert.equal(home.brandLogo, 'block');
+  assert.ok(home.bodySize >= 14, `body text is only ${home.bodySize}px`);
+  assert.equal(home.primary, 'rgb(0, 121, 168)');
   assert.ok(home.cardRadius <= 8, `project card radius is ${home.cardRadius}px`);
   if (shotsDir) await page.screenshot({ path: join(shotsDir, 'design-projects-desktop.png'), fullPage: true });
 
@@ -41,6 +45,15 @@ try {
   const tabOrder = await page.locator('.ptab').evaluateAll((tabs) => tabs.map((tab) => tab.dataset.pt));
   assert.deepEqual(tabOrder, ['docs', 'viewer', 'analysis', 'review', 'reports', 'compare']);
   assert.equal(await page.locator('#docBody tr').count(), 5, 'fixture document queue did not render');
+
+  for (const tab of ['docs', 'analysis', 'review', 'reports', 'viewer']) {
+    await page.locator(`.ptab[data-pt="${tab}"]`).click();
+    await page.waitForTimeout(150);
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    assert.ok(overflow <= 1, `desktop ${tab} page has ${overflow}px document overflow`);
+    if (shotsDir) await page.screenshot({ path: join(shotsDir, `design-${tab}-desktop.png`), fullPage: tab !== 'viewer' });
+  }
+  await page.locator('.ptab[data-pt="docs"]').click();
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.waitForTimeout(250);

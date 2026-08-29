@@ -52,6 +52,20 @@ assert.equal(model.reconciliation.valid, true);
 assert.equal(model.associated.grandTotal, 1);
 assert.equal(model.associated.groups[0].rows[0].label, "Contactor");
 
+const boardPresentation = Report.buildBoardTakeOffPresentation(model);
+assert.deepEqual(Array.from(boardPresentation.columns), [
+  'Specification and circuit', 'Qty', 'Protection', 'Circuits / ways', 'Source pages', 'Status',
+]);
+assert.equal(boardPresentation.sections[0].scope, 'main');
+assert.equal(boardPresentation.sections[0].boards[0].label, 'DB-2');
+assert.equal(boardPresentation.sections[0].boards[0].families[0].name, 'RCBO');
+const firstPresentedRow = boardPresentation.sections[0].boards[0].families[0].rows[0];
+assert.equal(firstPresentedRow.quantity, 2);
+assert.deepEqual(Array.from(firstPresentedRow.technicalLabels), ['10A', 'SPN', 'BS EN 60898']);
+assert.deepEqual(Array.from(firstPresentedRow.protectionLabels), ['Separate RCD 30mA', 'No AFDD']);
+assert.equal(firstPresentedRow.description, 'Lighting');
+assert.equal(firstPresentedRow.key, model.groups[1].rows[0].key);
+
 const workbook = Report.createExcelWorkbook(model, ExcelJS);
 const sheet = workbook.getWorksheet("Device Take-Off");
 const boardSheet = workbook.getWorksheet("Board Take-Off");
@@ -73,10 +87,14 @@ assert.equal(new Set(extendedColours.values()).size, extendedColours.size,
 assert.equal(workbook.worksheets[0].name, "Board Take-Off");
 assert.deepEqual(workbook.worksheets.map((worksheet) => worksheet.name), ["Board Take-Off", "Device Take-Off"]);
 assert.match(boardSheet.getCell("A4").value, /DB-2/);
-assert.equal(boardSheet.getCell("A5").value, "RCBO | 3");
+assert.equal(boardSheet.columnCount, 6);
+assert.deepEqual(boardSheet.getRow(3).values.slice(1), Array.from(boardPresentation.columns));
+assert.equal(boardSheet.getCell("A5").value, "RCBO     3 total");
 assert.equal(boardSheet.getCell("B6").value, 2);
-assert.equal(boardSheet.getCell("I6").value, "Separate RCD 30mA");
-assert.equal(boardSheet.getCell("L6").value, "BS EN 60898");
+assert.equal(boardSheet.getCell("C6").value, "Separate RCD 30mA\nNo AFDD");
+assert.match(boardSheet.getCell("A6").text, /10A\s+\|\s+SPN\s+\|\s+BS EN 60898/);
+assert.match(boardSheet.getCell("A6").text, /Lighting/);
+assert.equal(boardSheet.getCell("F6").value, "Review required");
 assert.equal(sheet.getCell("A1").value, "Llangatwg Test");
 assert.equal(sheet.getCell("A4").value, "Board Reference");
 assert.match(sheet.getCell("B4").value, /MCB\n20A\nTP/);
@@ -91,7 +109,7 @@ assert.equal(sheet.getCell("B4").border.top.color.argb, `FF${firstDeviceColour.s
 assert.notEqual(sheet.getCell("B4").fill.fgColor.argb, sheet.getCell("C4").fill.fgColor.argb, "different specifications need distinct Excel header colours");
 const firstBoardSpecificationColour = modelColours.get(model.groups[1].rows[0].key);
 assert.equal(boardSheet.getCell("A6").border.left.color.argb, `FF${firstBoardSpecificationColour.slice(1).toUpperCase()}`);
-assert.equal(sheet.getCell("A3").fill.fgColor.argb, "FF171717");
+assert.equal(sheet.getCell("A3").fill.fgColor.argb, "FF151A1F");
 assert.equal(sheet.getCell("A3").font.color.argb, "FFFFFFFF");
 assert.equal(sheet.views[0].ySplit, 4);
 for (const worksheet of workbook.worksheets) {
@@ -107,7 +125,7 @@ assert.equal(buffer[1], 0x4b);
 const roundTrip = new ExcelJS.Workbook();
 await roundTrip.xlsx.load(buffer);
 assert.equal(roundTrip.getWorksheet("Device Take-Off").getCell("F5").value.formula, "SUM(B5:E5)");
-assert.equal(roundTrip.getWorksheet("Board Take-Off").getCell("I6").value, "Separate RCD 30mA");
+assert.equal(roundTrip.getWorksheet("Board Take-Off").getCell("C6").value, "Separate RCD 30mA\nNo AFDD");
 
 const wideBoards = Object.fromEntries(Array.from({ length: 57 }, (_, index) => {
   const number = index + 1;

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import ExcelJS from 'exceljs';
 import { prepareReportFixture } from './browser-report-fixture.mjs';
 
 const appUrl = process.env.APP_URL || 'http://127.0.0.1:8773/?test=1&fixture=report';
@@ -32,6 +33,41 @@ try {
   }
   assert.ok(await boardReport.locator('.report-source-open').count() > 0, 'Board Take-Off rows need source-review windows');
   assert.doesNotMatch(await boardReport.textContent(), /Not specified|Unclear/i, 'deliverable report must keep unresolved prose out of cells');
+  const firstBoardParity = await page.evaluate(() => {
+    const presentation = window.EstimationReport.buildBoardTakeOffPresentation(currentReportModel());
+    const expected = presentation.sections[0].boards[0].families[0].rows[0];
+    const cells = [...document.querySelector('.report-spec-row').cells];
+    const normalise = (value) => String(value || '').replace(/\s+/g, ' ').trim();
+    return {
+      expected: {
+        technicalLabels: expected.technicalLabels,
+        description: expected.description,
+        quantity: String(expected.quantity),
+        protection: expected.protectionLabels,
+        circuits: expected.circuits,
+        sources: expected.sources,
+        status: expected.reviewStatus,
+      },
+      actual: {
+        specification: normalise(cells[0].innerText),
+        quantity: normalise(cells[1].innerText),
+        protection: normalise(cells[2].innerText),
+        circuits: normalise(cells[3].innerText),
+        sources: normalise(cells[4].childNodes[0]?.textContent),
+        status: normalise(cells[5].innerText),
+      },
+    };
+  });
+  for (const label of firstBoardParity.expected.technicalLabels) {
+    assert.match(firstBoardParity.actual.specification, new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')),
+      `browser Board Take-Off omitted technical label: ${label}`);
+  }
+  assert.match(firstBoardParity.actual.specification, new RegExp(firstBoardParity.expected.description.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.equal(firstBoardParity.actual.quantity, firstBoardParity.expected.quantity);
+  for (const label of firstBoardParity.expected.protection) assert.match(firstBoardParity.actual.protection, new RegExp(label));
+  assert.equal(firstBoardParity.actual.circuits, firstBoardParity.expected.circuits);
+  assert.equal(firstBoardParity.actual.sources, firstBoardParity.expected.sources);
+  assert.equal(firstBoardParity.actual.status, firstBoardParity.expected.status);
   const boardSpecificationColours = await boardReport.locator('.report-spec-row').evaluateAll((elements) => elements.map((element) => ({
     key: decodeURIComponent(element.dataset.specKey || ''),
     colour: element.style.getPropertyValue('--spec-color'),
@@ -138,7 +174,29 @@ try {
     page.locator('#reportXlsxBtn').click(),
   ]);
   assert.match(xlsxDownload.suggestedFilename(), /DB Devices Take Off.*\.xlsx$/i);
-  assert.ok(await xlsxDownload.path(), 'audited advisory Excel download must be created');
+  const xlsxPath = await xlsxDownload.path();
+  assert.ok(xlsxPath, 'audited advisory Excel download must be created');
+  const downloadedWorkbook = new ExcelJS.Workbook();
+  await downloadedWorkbook.xlsx.readFile(xlsxPath);
+  const downloadedBoardSheet = downloadedWorkbook.getWorksheet('Board Take-Off');
+  assert.deepEqual(downloadedBoardSheet.getRow(3).values.slice(1), [
+    'Specification and circuit', 'Qty', 'Protection', 'Circuits / ways', 'Source pages', 'Status',
+  ], 'downloaded Board Take-Off headings must match the browser report');
+  let firstDownloadedRow = null;
+  downloadedBoardSheet.eachRow((row, rowNumber) => {
+    if (!firstDownloadedRow && rowNumber > 3 && Number.isFinite(Number(row.getCell(2).value)) && row.getCell(6).value) {
+      firstDownloadedRow = row;
+    }
+  });
+  assert.ok(firstDownloadedRow, 'downloaded Board Take-Off has no specification row');
+  const downloadedSpecification = firstDownloadedRow.getCell(1).text.replace(/\s+/g, ' ').trim();
+  for (const label of firstBoardParity.expected.technicalLabels) assert.match(downloadedSpecification, new RegExp(label));
+  assert.match(downloadedSpecification, new RegExp(firstBoardParity.expected.description.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.equal(String(firstDownloadedRow.getCell(2).value), firstBoardParity.expected.quantity);
+  assert.equal(firstDownloadedRow.getCell(3).text.replace(/\s+/g, ' ').trim(), firstBoardParity.expected.protection.join(' '));
+  assert.equal(firstDownloadedRow.getCell(4).text, firstBoardParity.expected.circuits);
+  assert.equal(firstDownloadedRow.getCell(5).text, firstBoardParity.expected.sources);
+  assert.equal(firstDownloadedRow.getCell(6).text, firstBoardParity.expected.status);
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.waitForTimeout(300);
@@ -149,6 +207,24 @@ try {
   assert.ok(mobile.documentOverflow <= 1, `mobile report page has ${mobile.documentOverflow}px document overflow`);
   assert.equal(mobile.reportScrollable, true, 'wide Device Take-Off must scroll inside its report viewport');
   if (shotsDir) await page.screenshot({ path: join(shotsDir, 'report-device-mobile.png'), fullPage: true });
+
+  await page.locator('[data-report-mode="board"]').click();
+  await page.locator('#reportMatrixHost .report-board-section').first().waitFor();
+  const mobileBoard = await page.evaluate(() => {
+    const host = document.querySelector('#reportMatrixHost');
+    const row = host.querySelector('.report-spec-row');
+    return {
+      documentOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      hostOverflow: host.scrollWidth - host.clientWidth,
+      rowLayout: getComputedStyle(row).display,
+      rowColumns: getComputedStyle(row).gridTemplateColumns,
+    };
+  });
+  assert.ok(mobileBoard.documentOverflow <= 1, `mobile Board Take-Off page has ${mobileBoard.documentOverflow}px document overflow`);
+  assert.ok(mobileBoard.hostOverflow <= 1, `mobile Board Take-Off has ${mobileBoard.hostOverflow}px internal horizontal overflow`);
+  assert.equal(mobileBoard.rowLayout, 'grid', 'mobile Board Take-Off specifications must use the stacked grid');
+  assert.match(mobileBoard.rowColumns, /px.*px/, 'mobile Board Take-Off needs two stable detail columns');
+  if (shotsDir) await page.screenshot({ path: join(shotsDir, 'report-board-mobile.png'), fullPage: true });
 
   assert.deepEqual(browserErrors, [], `browser errors: ${browserErrors.join('; ')}`);
   console.log('PASS: Board Take-Off, correction audit, source review, advisory CSV/XLSX issue, and responsive report viewport.');

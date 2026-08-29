@@ -2279,6 +2279,7 @@
    */
   function buildAnalysisHealth({ coverage, boards, rows, pages, files, feeders, discrepancies }) {
     const reasons = new Map();
+    let unresolvedFeedEvidence = false;
     const addReason = (code, ref) => {
       if (!reasons.has(code)) reasons.set(code, { code, message: HEALTH_REASONS[code] || code, count: 0, refs: [] });
       const entry = reasons.get(code);
@@ -2372,7 +2373,15 @@
     for (const [norm, board] of Object.entries(boards || {})) {
       if (inScopeBoardNorms && !inScopeBoardNorms.has(norm)) continue;
       const hasFeed = Boolean(board && board.parent);
-      if (!hasFeed && !(board && board.orphaned === true)) addReason('BOARD_FEED_MISSING', { board: norm });
+      if (!hasFeed && !(board && board.orphaned === true)) {
+        addReason('BOARD_FEED_MISSING', { board: norm });
+        unresolvedFeedEvidence = unresolvedFeedEvidence || [
+          board?.fed_from_ref,
+          board?.supplied_from_text,
+          board?.header?.fed_from_ref,
+          board?.header?.supplied_from_text,
+        ].some((value) => String(value || '').trim());
+      }
     }
     if (boardCount === 0 && schedulePages.length > 0) addReason('SCHEDULE_DOC_NO_BOARDS', null);
     if (schematicPages.length > 0 && schematicBoardNorms.length > 1 && !(feeders || []).some((feeder) => feeder?.to)) {
@@ -2398,6 +2407,7 @@
     if (reasons.size > 0) state = 'incomplete';
     if (reasons.has('ZERO_DEVICES_WITH_BOARDS') || reasons.has('NO_CONTENT')
       || reasons.has('DEVICE_COUNT_BELOW_BOARD_COUNT') || reasons.has('WAYS_OVER_CAPACITY')
+      || unresolvedFeedEvidence
       || reasons.has('SCHEMATIC_FEEDS_MISSING')
       || reasons.has('SCHEMATIC_VECTOR_GEOMETRY_MISSING') || reasons.has('SCHEMATIC_TOPOLOGY_UNRESOLVED')
       || reasons.has('SCHEMATIC_TOPOLOGY_AMBIGUOUS') || reasons.has('SCHEMATIC_SCHEDULE_FEED_MISMATCH')

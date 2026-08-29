@@ -1196,15 +1196,27 @@
   }
 
   const XLSX_COLORS = {
-    black: "FF171717",
+    black: "FF151A1F",
     white: "FFFFFFFF",
-    peach: "FFF7E0D1",
-    grey: "FFE5E7EB",
-    line: "FFA3A3A3",
-    amber: "FFFFF2CC",
-    red: "FFFCE8E6",
-    green: "FFE2F0D9",
+    cyan: "FF009EE2",
+    cyanSoft: "FFE6F5FB",
+    header: "FFF1F5F7",
+    grey: "FFE7ECEF",
+    line: "FFC9D3D9",
+    textMuted: "FF56636D",
+    amber: "FFFFF4DE",
+    red: "FFFCEBED",
+    green: "FFE5F4EC",
   };
+
+  const BOARD_TAKE_OFF_COLUMNS = Object.freeze([
+    "Specification and circuit",
+    "Qty",
+    "Protection",
+    "Circuits / ways",
+    "Source pages",
+    "Status",
+  ]);
 
   function borderStyle() {
     return {
@@ -1215,7 +1227,7 @@
     };
   }
 
-  function styleHeaderRow(sheet, rowNumber, lastColumn, fill = XLSX_COLORS.peach) {
+  function styleHeaderRow(sheet, rowNumber, lastColumn, fill = XLSX_COLORS.header) {
     const row = sheet.getRow(rowNumber);
     row.height = 34;
     const fontColor = fill === XLSX_COLORS.black ? XLSX_COLORS.white : 'FF000000';
@@ -1243,13 +1255,18 @@
     sheet.mergeCells(1, 1, 1, lastColumn);
     sheet.mergeCells(2, 1, 2, lastColumn);
     sheet.getCell(1, 1).value = model.projectName;
-    sheet.getCell(2, 1).value = title;
+    const reconciliation = model.reconciliation?.valid ? "Reconciled" : "Reconciliation required";
+    const associatedTotal = Number(model.associated?.grandTotal) || 0;
+    const countLabel = associatedTotal
+      ? `${model.grandTotal} protective devices + ${associatedTotal} control item${associatedTotal === 1 ? "" : "s"}`
+      : `${model.grandTotal} devices`;
+    sheet.getCell(2, 1).value = `${title}  |  ${model.boards.length} boards  |  ${countLabel}  |  ${reconciliation}`;
     [1, 2].forEach((rowNumber) => {
       const row = sheet.getRow(rowNumber);
       row.height = rowNumber === 1 ? 34 : 28;
       const cell = sheet.getCell(rowNumber, 1);
       cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: XLSX_COLORS.black } };
-      cell.font = { name: "Montserrat", size: rowNumber === 1 ? 14 : 11, bold: true, color: { argb: XLSX_COLORS.white } };
+      cell.font = { name: "Montserrat", size: rowNumber === 1 ? 15 : 10, bold: true, color: { argb: XLSX_COLORS.white } };
       cell.alignment = { vertical: "middle", horizontal: "left" };
     });
   }
@@ -1257,6 +1274,101 @@
   function deliverableValue(value) {
     const normalised = text(value);
     return !normalised || normalised === NOT_SPECIFIED || normalised === UNCLEAR || /^not applicable$/i.test(normalised) ? null : value;
+  }
+
+  function uniqueDeliverableValues(values) {
+    return Array.from(new Set((values || [])
+      .map((value) => deliverableValue(value))
+      .filter((value) => value != null)
+      .map((value) => String(value).trim())
+      .filter((value) => value && !/\bnot specified\b|\bunclear\b|\bnot applicable\b/i.test(value))));
+  }
+
+  function summariseValues(values, limit) {
+    const all = uniqueDeliverableValues(values);
+    const visible = all.slice(0, limit);
+    const omitted = Math.max(0, all.length - visible.length);
+    return {
+      all,
+      omitted,
+      text: `${visible.join("; ")}${omitted ? `; +${omitted} more` : ""}`,
+    };
+  }
+
+  function technicalLabels(row) {
+    return uniqueDeliverableValues([
+      row.rating == null ? null : `${formatRating(row.rating)}A`,
+      row.pole,
+      row.curveRelevant && deliverableValue(row.curve) ? `${row.curve} curve` : null,
+      row.tripUnitRelevant && deliverableValue(row.tripUnit) ? `${row.tripUnit} trip` : null,
+      row.tripUnitRelevant ? row.productRange : null,
+      row.breakingCapacity,
+      row.protectionStandard,
+    ]);
+  }
+
+  function protectionLabels(row) {
+    return uniqueDeliverableValues([
+      row.rcdProtected === true
+        ? rcdProtectionLabel(true, row.rcdSensitivity, row.rcdArrangement)
+        : row.rcdProtected === false ? "No RCD" : null,
+      row.afdd === true ? "AFDD" : row.afdd === false ? "No AFDD" : null,
+    ]);
+  }
+
+  function presentBoardSections(sections, scope, title) {
+    return {
+      scope,
+      title,
+      boards: (sections || []).filter((board) => board.families?.length).map((board) => ({
+        norm: board.norm,
+        label: board.label,
+        total: board.total,
+        reviewCount: board.reviewCount,
+        families: board.families.map((family) => ({
+          name: family.name,
+          category: family.category,
+          total: family.total,
+          rows: family.rows.map((row) => {
+            const descriptions = summariseValues(row.descriptions, 3);
+            const circuits = summariseValues(row.circuitLocators, 5);
+            const sources = summariseValues(row.sourcePages, 4);
+            return {
+              key: row.key,
+              deviceFamily: row.deviceFamily,
+              quantity: row.quantity,
+              technicalLabels: technicalLabels(row),
+              protectionLabels: protectionLabels(row),
+              description: descriptions.text,
+              descriptions: descriptions.all,
+              circuits: circuits.text,
+              circuitLocators: circuits.all,
+              sources: sources.text,
+              sourcePages: sources.all,
+              reviewStatus: row.reviewStatus,
+              reviewReasons: Array.from(new Set([...(row.reviewReasons || []), ...(row.notes || [])])),
+              specification: row,
+            };
+          }),
+        })),
+      })),
+    };
+  }
+
+  function buildBoardTakeOffPresentation(model) {
+    if (!model) return { columns: Array.from(BOARD_TAKE_OFF_COLUMNS), sections: [] };
+    const sections = [presentBoardSections(model.boardSections, "main", "")];
+    if (model.associated?.grandTotal) {
+      sections.push(presentBoardSections(
+        model.associated.boardSections,
+        "associated",
+        "Control & associated equipment",
+      ));
+    }
+    return {
+      columns: Array.from(BOARD_TAKE_OFF_COLUMNS),
+      sections: sections.filter((section) => section.boards.length),
+    };
   }
 
   function combinedBoardSections(model) {
@@ -1299,9 +1411,10 @@
   }
 
   function createBoardTakeOffWorksheet(workbook, model) {
-    const lastColumn = 14;
+    const presentation = buildBoardTakeOffPresentation(model);
+    const lastColumn = presentation.columns.length;
     const sheet = workbook.addWorksheet('Board Take-Off', {
-      views: [{ state: 'frozen', ySplit: 3, activeCell: 'A4' }],
+      views: [{ state: 'frozen', ySplit: 3, activeCell: 'A4', showGridLines: false }],
       pageSetup: {
         paperSize: 9,
         orientation: 'landscape',
@@ -1312,76 +1425,101 @@
       },
     });
     addTitleRows(sheet, model, 'Board-by-board device take-off', lastColumn);
-    const headers = [
-      'Circuit Description', 'Quantity', 'Current Rating (A)', 'Pole Configuration', 'Tripping Curve', 'Trip Unit',
-      'Product Range / Frame', 'Breaking Capacity', 'RCD Protection', 'AFDD Protection', 'Circuit / Way', 'Protection Standard', 'Source Pages', 'Review Status',
-    ];
-    headers.forEach((value, index) => { sheet.getCell(3, index + 1).value = value; });
-    styleHeaderRow(sheet, 3, lastColumn);
+    presentation.columns.forEach((value, index) => { sheet.getCell(3, index + 1).value = value; });
+    styleHeaderRow(sheet, 3, lastColumn, XLSX_COLORS.header);
+    sheet.getRow(3).height = 32;
     const mainSpecifications = (model.groups || []).flatMap((group) => group.rows || []);
     const associatedSpecifications = (model.associated?.groups || []).flatMap((group) => group.rows || []);
     const mainSpecificationColours = buildSpecificationColorMap(mainSpecifications);
     const specificationColours = buildSpecificationColorMap(associatedSpecifications, mainSpecificationColours);
 
     let rowNumber = 4;
-    combinedBoardSections(model).filter((board) => board.families.length).forEach((board) => {
-      sheet.mergeCells(rowNumber, 1, rowNumber, lastColumn);
-      const boardCell = sheet.getCell(rowNumber, 1);
-      boardCell.value = `${board.label} | ${board.total} device${board.total === 1 ? '' : 's'} | ${board.reviewCount} specification${board.reviewCount === 1 ? '' : 's'} to review`;
-      boardCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: XLSX_COLORS.black } };
-      boardCell.font = { name: 'Montserrat', size: 11, bold: true, color: { argb: XLSX_COLORS.white } };
-      boardCell.alignment = { vertical: 'middle', horizontal: 'left' };
-      sheet.getRow(rowNumber).height = 28;
-      rowNumber += 1;
-      board.families.forEach((family) => {
+    presentation.sections.forEach((section) => {
+      if (section.title) {
         sheet.mergeCells(rowNumber, 1, rowNumber, lastColumn);
-        const familyCell = sheet.getCell(rowNumber, 1);
-        familyCell.value = `${family.name} | ${family.total}`;
-        familyCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: XLSX_COLORS.grey } };
-        familyCell.font = { name: 'Montserrat', size: 9, bold: true, color: { argb: 'FF000000' } };
-        familyCell.alignment = { vertical: 'middle', horizontal: 'left' };
-        familyCell.border = borderStyle();
-        sheet.getRow(rowNumber).height = 22;
+        const sectionCell = sheet.getCell(rowNumber, 1);
+        sectionCell.value = section.title;
+        sectionCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: XLSX_COLORS.cyanSoft } };
+        sectionCell.font = { name: 'Montserrat', size: 10, bold: true, color: { argb: 'FF075A78' } };
+        sectionCell.alignment = { vertical: 'middle', horizontal: 'left' };
+        sectionCell.border = borderStyle();
+        sheet.getRow(rowNumber).height = 25;
         rowNumber += 1;
-        family.rows.forEach((item) => {
-          const values = [
-            deliverableValue(item.descriptions.filter((value) => deliverableValue(value)).join('; ')),
-            item.quantity,
-            item.rating == null ? null : item.rating,
-            deliverableValue(item.pole),
-            deliverableValue(item.curve),
-            deliverableValue(item.tripUnit),
-            deliverableValue(item.productRange),
-            deliverableValue(item.breakingCapacity),
-            deliverableValue(item.rcdLabel),
-            deliverableValue(item.afddLabel),
-            deliverableValue(item.circuitLocators.filter((value) => deliverableValue(value)).join('; ')),
-            deliverableValue(item.protectionStandard),
-            item.sourcePages.filter((value) => deliverableValue(value) && !/\bNot specified\b|\bUnclear\b/i.test(String(value))).join('; ') || null,
-            item.reviewStatus,
-          ];
-          values.forEach((value, columnIndex) => { sheet.getCell(rowNumber, columnIndex + 1).value = value; });
-          styleDataRange(sheet, rowNumber, rowNumber, lastColumn);
-          const specificationColour = specificationColours.get(specificationKey(item));
-          if (specificationColour) {
-            const identityCell = sheet.getCell(rowNumber, 1);
-            identityCell.fill = {
-              type: 'pattern', pattern: 'solid', fgColor: { argb: `FF${tintColour(specificationColour, 0.91).slice(1).toUpperCase()}` },
-            };
-            identityCell.border = {
-              ...borderStyle(),
-              left: { style: 'medium', color: { argb: `FF${specificationColour.slice(1).toUpperCase()}` } },
-            };
-          }
-          sheet.getCell(rowNumber, 13).fill = {
-            type: 'pattern', pattern: 'solid', fgColor: { argb: item.reviewStatus === 'Ready' ? XLSX_COLORS.green : XLSX_COLORS.red },
-          };
+      }
+      section.boards.forEach((board) => {
+        sheet.mergeCells(rowNumber, 1, rowNumber, lastColumn);
+        const boardCell = sheet.getCell(rowNumber, 1);
+        boardCell.value = `${board.label}     ${board.total} device${board.total === 1 ? '' : 's'}     ${board.reviewCount} to review`;
+        boardCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: XLSX_COLORS.black } };
+        boardCell.font = { name: 'Montserrat', size: 11, bold: true, color: { argb: XLSX_COLORS.white } };
+        boardCell.alignment = { vertical: 'middle', horizontal: 'left' };
+        boardCell.border = {
+          ...borderStyle(),
+          left: { style: 'medium', color: { argb: XLSX_COLORS.cyan } },
+        };
+        sheet.getRow(rowNumber).height = 29;
+        rowNumber += 1;
+        board.families.forEach((family) => {
+          sheet.mergeCells(rowNumber, 1, rowNumber, lastColumn);
+          const familyCell = sheet.getCell(rowNumber, 1);
+          familyCell.value = `${family.name}     ${family.total} total`;
+          familyCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: XLSX_COLORS.grey } };
+          familyCell.font = { name: 'Montserrat', size: 9, bold: true, color: { argb: XLSX_COLORS.black } };
+          familyCell.alignment = { vertical: 'middle', horizontal: 'left' };
+          familyCell.border = borderStyle();
+          sheet.getRow(rowNumber).height = 22;
           rowNumber += 1;
+          family.rows.forEach((item) => {
+            const technical = item.technicalLabels.join('  |  ') || item.deviceFamily;
+            const identityCell = sheet.getCell(rowNumber, 1);
+            identityCell.value = {
+              richText: [
+                { text: technical, font: { name: 'Montserrat', size: 9, bold: true, color: { argb: XLSX_COLORS.black } } },
+                ...(item.description ? [{ text: `\n${item.description}`, font: { name: 'Montserrat', size: 9, color: { argb: XLSX_COLORS.textMuted } } }] : []),
+              ],
+            };
+            sheet.getCell(rowNumber, 2).value = item.quantity;
+            sheet.getCell(rowNumber, 3).value = item.protectionLabels.join('\n') || null;
+            sheet.getCell(rowNumber, 4).value = item.circuits || null;
+            sheet.getCell(rowNumber, 5).value = item.sources || null;
+            sheet.getCell(rowNumber, 6).value = item.reviewStatus;
+            styleDataRange(sheet, rowNumber, rowNumber, lastColumn);
+            sheet.getCell(rowNumber, 2).font = { name: 'Montserrat', size: 11, bold: true, color: { argb: XLSX_COLORS.black } };
+            sheet.getCell(rowNumber, 2).alignment = { vertical: 'middle', horizontal: 'center' };
+            const specificationColour = specificationColours.get(specificationKey(item.specification));
+            if (specificationColour) {
+              identityCell.fill = {
+                type: 'pattern', pattern: 'solid', fgColor: { argb: `FF${tintColour(specificationColour, 0.94).slice(1).toUpperCase()}` },
+              };
+              identityCell.border = {
+                ...borderStyle(),
+                left: { style: 'medium', color: { argb: `FF${specificationColour.slice(1).toUpperCase()}` } },
+              };
+            }
+            if (item.descriptions.length > 3) {
+              identityCell.note = `All circuit descriptions:\n${item.descriptions.join('\n')}`;
+            }
+            if (item.circuitLocators.length > 5) {
+              sheet.getCell(rowNumber, 4).note = `All circuits / ways:\n${item.circuitLocators.join('\n')}`;
+            }
+            const statusCell = sheet.getCell(rowNumber, 6);
+            statusCell.fill = {
+              type: 'pattern', pattern: 'solid', fgColor: { argb: item.reviewStatus === 'Ready' ? XLSX_COLORS.green : XLSX_COLORS.amber },
+            };
+            statusCell.font = {
+              name: 'Montserrat', size: 9, bold: true,
+              color: { argb: item.reviewStatus === 'Ready' ? 'FF14603F' : 'FF8A5605' },
+            };
+            statusCell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+            sheet.getRow(rowNumber).height = item.description ? 42 : 30;
+            rowNumber += 1;
+          });
         });
       });
     });
-    const widths = [36, 10, 14, 15, 14, 14, 21, 16, 18, 17, 28, 20, 32, 17];
+    const widths = [58, 9, 24, 32, 34, 18];
     widths.forEach((width, index) => { sheet.getColumn(index + 1).width = width; });
+    sheet.headerFooter.oddFooter = `&LEstimation Tools&CPage &P of &N&R${model.projectName}`;
     sheet.pageSetup.printArea = `A1:${columnName(lastColumn)}${Math.max(3, rowNumber - 1)}`;
     sheet.pageSetup.printTitlesRow = '1:3';
     return sheet;
@@ -1389,7 +1527,7 @@
 
   function createTakeOffWorksheet(workbook, model) {
     const sheet = workbook.addWorksheet("Device Take-Off", {
-      views: [{ state: "frozen", xSplit: 1, ySplit: 4, activeCell: "B5" }],
+      views: [{ state: "frozen", xSplit: 1, ySplit: 4, activeCell: "B5", showGridLines: false }],
       pageSetup: {
         paperSize: 8,
         orientation: "landscape",
@@ -1425,7 +1563,7 @@
     styleHeaderRow(sheet, 3, lastColumn, XLSX_COLORS.black);
     styleHeaderRow(sheet, 4, lastColumn);
     sheet.getRow(3).height = 24;
-    sheet.getRow(4).height = 108;
+    sheet.getRow(4).height = 88;
     for (let column = 1; column <= lastColumn; column += 1) {
       sheet.getCell(4, column).alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
     }
@@ -1456,6 +1594,12 @@
       sheet.getCell(rowNumber, totalColumn).value = devices.length
         ? { formula: `SUM(B${rowNumber}:${columnName(totalColumn - 1)}${rowNumber})`, result: boardTotal }
         : boardTotal;
+      sheet.getCell(rowNumber, 1).font = { name: 'Montserrat', size: 9, bold: true, color: { argb: XLSX_COLORS.black } };
+      if (boardIndex % 2 === 1) {
+        for (let column = 1; column <= lastColumn; column += 1) {
+          sheet.getCell(rowNumber, column).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFAFCFD' } };
+        }
+      }
     });
 
     const totalRow = 5 + model.boards.length;
@@ -1474,13 +1618,14 @@
     styleDataRange(sheet, 5, totalRow, lastColumn);
     for (let column = 1; column <= lastColumn; column += 1) {
       const cell = sheet.getCell(totalRow, column);
-      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: XLSX_COLORS.grey } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: XLSX_COLORS.cyanSoft } };
       cell.font = { name: 'Montserrat', size: 9, bold: true, color: { argb: 'FF000000' } };
     }
     sheet.autoFilter = { from: { row: 4, column: 1 }, to: { row: Math.max(5, totalRow - 1), column: lastColumn } };
     sheet.getColumn(1).width = 24;
-    for (let column = firstDeviceColumn; column < totalColumn; column += 1) sheet.getColumn(column).width = 21;
+    for (let column = firstDeviceColumn; column < totalColumn; column += 1) sheet.getColumn(column).width = 23;
     sheet.getColumn(totalColumn).width = 13;
+    sheet.headerFooter.oddFooter = `&LEstimation Tools&CPage &P of &N&R${model.projectName}`;
     sheet.pageSetup.printArea = `A1:${columnName(lastColumn)}${totalRow}`;
     sheet.pageSetup.printTitlesRow = "1:4";
     return sheet;
@@ -1684,10 +1829,12 @@
   }
 
   return {
+    BOARD_TAKE_OFF_COLUMNS,
     DEVICE_PALETTE,
     GROUP_ORDER,
     SPECIFICATION_PALETTE,
     TRIP_UNIT_OPTIONS,
+    buildBoardTakeOffPresentation,
     buildModel,
     buildSpecificationColorMap,
     canonicalDevice,

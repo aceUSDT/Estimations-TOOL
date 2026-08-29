@@ -987,13 +987,13 @@
       <section class="report-shell" aria-labelledby="reportTitle">
         <div class="report-top">
           <div class="report-heading">
-            <h2 id="reportTitle">Electrical device take-off</h2>
+            <h2 id="reportTitle">Electrical take-off report</h2>
             <p id="reportProject">No project selected</p>
           </div>
           <dl class="report-facts" id="reportFacts"></dl>
           <div class="report-actions">
-            <button class="btn" id="reportCsvBtn">Export CSV</button>
-            <button class="btn primary" id="reportXlsxBtn">Export Excel</button>
+            <button class="btn" id="reportCsvBtn" title="Download the procurement matrix as CSV data">Data CSV</button>
+            <button class="btn primary" id="reportXlsxBtn" title="Download the formatted Board and Device Take-Off workbook">Export report</button>
           </div>
         </div>
         <div class="report-status" id="reportStatus"></div>
@@ -1944,7 +1944,7 @@ function renderProjects(){
     const statusCl = p.status==='Analysed'?'green'
       : p.status==='Needs review'||p.status==='Incomplete'?'amber'
       : p.status==='Analysis failed'?'red':'grey';
-    const card=document.createElement('div'); card.className='proj-card';
+    const card=document.createElement('div'); card.className='proj-card status-'+statusCl;
     card.innerHTML = `
       <div class="pc-menu">
         <button data-act="rename" title="Rename">✎</button>
@@ -5363,48 +5363,30 @@ function renderReport(){
     return `${arrangement?arrangement+' ':''}RCD${row.rcdSensitivity!=null?' '+row.rcdSensitivity+'mA':' protected'}`;
   };
   const afddLabel=row=>row.afdd===true?'AFDD':row.afdd===false?'No AFDD':'Not specified';
-  const techChips=row=>{
-    const values=[];
-    if(row.rating!=null)values.push(row.rating+'A');
-    if(row.pole&&row.pole!=='Unclear'&&row.pole!=='Not specified')values.push(row.pole);
-    if(row.curve&&row.curve!=='Not specified')values.push(row.curve+' curve');
-    if(row.breakingCapacity&&row.breakingCapacity!=='Not specified')values.push(row.breakingCapacity);
-    if(row.protectionStandard&&row.protectionStandard!=='Not specified')values.push(row.protectionStandard);
-    if(row.tripUnit&&row.tripUnit!=='Not specified')values.push('Trip '+row.tripUnit);
-    if(row.productRange&&row.productRange!=='Not specified')values.push(row.productRange);
-    return values.map(value=>`<span class="chip grey">${esc(value)}</span>`).join('');
-  };
-  const protectionHtml=row=>{
-    const values=[];
-    const rcd=row.rcdLabel||rcdLabel(row),afdd=row.afddLabel||afddLabel(row);
-    if(rcd!=='Not specified')values.push(`<span class="chip ${row.rcdProtected===true?'cyan':'grey'}">${esc(rcd)}</span>`);
-    if(afdd!=='Not specified')values.push(`<span class="chip ${row.afdd===true?'purple':'grey'}">${esc(afdd)}</span>`);
-    return `<div class="report-protection">${values.join('')}</div>`;
-  };
-  const boardView=(sections,title='',scope='main')=>{
-    const available=(sections||[]).filter(board=>board.families?.length);
+  const boardPresentation=window.EstimationReport.buildBoardTakeOffPresentation(model);
+  const boardView=section=>{
+    const available=section.boards||[],scope=section.scope||'main';
     if(!available.length)return '';
-    let html=title?`<div class="report-subhead"><h3>${esc(title)}</h3></div>`:'';
+    let html=section.title?`<div class="report-subhead"><h3>${esc(section.title)}</h3></div>`:'';
     html+='<div class="report-board-list">';
     available.forEach(board=>{
       html+=`<section class="report-board-section"><header class="report-board-head">
         <button class="report-board-open" data-report-board="${esc(board.norm)}" title="Open ${esc(board.label)} in Boards & Devices"><strong>${esc(board.label)}</strong><span>Open board</span></button>
         <button class="report-board-evidence" data-report-board-source="${esc(board.norm)}">Review board source</button>
         <div class="report-board-metrics"><div class="metric"><b>${board.total}</b><span>Devices</span></div><div class="metric"><b>${board.reviewCount}</b><span>To review</span></div></div>
-      </header><table class="report-board-table"><thead><tr><th>Specification and circuit</th><th>Qty</th><th>Protection</th><th>Circuits / ways</th><th>Source pages</th><th>Status</th></tr></thead><tbody>`;
+      </header><table class="report-board-table"><thead><tr>${boardPresentation.columns.map(column=>`<th>${esc(column)}</th>`).join('')}</tr></thead><tbody>`;
       board.families.forEach(family=>{
         html+=`<tr class="report-family-row"><td colspan="6"><span class="devdot" style="background:${deviceColor(family.name)}"></span>${esc(family.name)}<span class="report-family-total">${family.total} total</span></td></tr>`;
         family.rows.forEach(row=>{
-          const appearance=reportColour(row);
-          const descriptions=(row.descriptions||[]).slice(0,3),more=(row.descriptions||[]).length-descriptions.length;
-          const description=descriptions.join('; ')+(more>0?` · +${more} more`:'');
-          const usableLocations=(row.circuitLocators||[]).filter(value=>value&&!/^(?:Not specified|Unclear|Not applicable)$/i.test(String(value)));
-          const locations=usableLocations.slice(0,5),moreLocations=usableLocations.length-locations.length;
-          const locationText=locations.join('; ')+(moreLocations>0?` · +${moreLocations} more`:'');
-          const reviewDetail=[...(row.reviewReasons||[]),...(row.notes||[])].join(' ');
-          html+=`<tr class="report-spec-row" data-spec-key="${encodeURIComponent(appearance.key)}" style="${appearance.style}"><td class="report-spec-identity"><div class="report-techline"><span class="report-spec-swatch" aria-hidden="true"></span>${techChips(row)}</div>${description?`<div class="report-description">${esc(description)}</div>`:''}</td>
-            <td>${row.quantity}</td><td>${protectionHtml(row)}</td><td class="report-locations">${esc(locationText)}</td>
-            <td class="report-sources">${esc((row.sourcePages||[]).join('; '))}${reportSourceButton(row,scope,board.norm)}</td><td><span class="chip ${row.reviewStatus==='Ready'?'green':'amber'}" title="${esc(reviewDetail)}">${esc(row.reviewStatus)}</span></td></tr>`;
+          const appearance=reportColour(row.specification);
+          const reviewDetail=(row.reviewReasons||[]).join(' ');
+          const protection=row.protectionLabels.map(value=>{
+            const kind=/^No\s+(?:RCD|AFDD)$/i.test(value)?'grey':/AFDD/i.test(value)?'purple':'cyan';
+            return `<span class="chip ${kind}">${esc(value)}</span>`;
+          }).join(' ');
+          html+=`<tr class="report-spec-row" data-spec-key="${encodeURIComponent(appearance.key)}" style="${appearance.style}"><td class="report-spec-identity" data-label="Specification and circuit"><div class="report-techline"><span class="report-spec-swatch" aria-hidden="true"></span>${row.technicalLabels.map(value=>`<span class="chip grey">${esc(value)}</span>`).join(' ')}</div>${row.description?`<div class="report-description">${esc(row.description)}</div>`:''}</td>
+            <td data-label="Quantity">${row.quantity}</td><td data-label="Protection"><div class="report-protection">${protection}</div></td><td class="report-locations" data-label="Circuits / ways">${esc(row.circuits)}</td>
+            <td class="report-sources" data-label="Source pages">${esc(row.sources)}${reportSourceButton(row.specification,scope,board.norm)}</td><td data-label="Status"><span class="chip ${row.reviewStatus==='Ready'?'green':'amber'}" title="${esc(reviewDetail)}">${esc(row.reviewStatus)}</span></td></tr>`;
         });
       });
       html+='</tbody></table></section>';
@@ -5438,8 +5420,7 @@ function renderReport(){
   };
   let html='';
   if(mode==='board'){
-    html=boardView(model.boardSections);
-    if(model.associated&&model.associated.grandTotal)html+=boardView(model.associated.boardSections,'Control & associated equipment','associated');
+    html=boardPresentation.sections.map(boardView).join('');
   }else{
     html=matrix(model.groups,'Consolidated Device Take-Off','Grand Total',model.boardTotals,model.grandTotal,'main');
     if(model.associated&&model.associated.grandTotal){
