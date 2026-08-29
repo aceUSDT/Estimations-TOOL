@@ -18,12 +18,12 @@ assert.deepEqual(actualTabs.slice(0, expectedTabs.length), expectedTabs, 'projec
 for (const contract of [
   '--font-ui: "IBM Plex Sans"',
   '--mono: "IBM Plex Mono"',
-  '--t1: 11px', '--t2: 12px', '--t3: 14px', '--t4: 17px', '--t5: 21px', '--t6: 26px', '--t7: 32px',
+  '--t1: 12px', '--t2: 13px', '--t3: 14px', '--t4: 18px', '--t5: 24px', '--t6: 28px', '--t7: 34px',
   '--s1: 4px', '--s2: 8px', '--s3: 12px', '--s4: 16px', '--s5: 24px', '--s6: 32px', '--s7: 48px',
   '--radius-1: 2px', '--radius-2: 4px', '--radius-3: 8px',
-  '--blue: #1657c9', '--brand: #009ee2', '--bg: #f4f6f8', '--nav: #14181d',
+  '--blue: #0079a8', '--brand: #009ee2', '--bg: #eef2f4', '--nav: #12181c',
   ':focus-visible', '@media (max-width: 540px)', '@media (prefers-reduced-motion: reduce)',
-  'body[data-project-tab="viewer"]', '.doc-queue-scroll',
+  'body[data-project-tab="viewer"]', '.doc-queue-scroll', '.appbar .brand-logo', '.report-board-table .report-spec-row td::before',
 ]) assert.ok(css.includes(contract), `missing design contract: ${contract}`);
 
 assert.doesNotMatch(css, /letter-spacing:\s*-/, 'negative letter spacing is not allowed');
