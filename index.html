@@ -4062,7 +4062,15 @@ function rowApprovalIssue(row){
   if(!row.edited&&(row.validation?.invalidSensitivity||row.validation?.invalidBreakingCapacity))return 'A protection value is outside the supported electrical unit range';
   if(populated&&(!row.device||row.rating==null))return 'The protective device class or current rating is missing';
   const diagnostic=(A.pageDiagnostics||[]).find(page=>page.fileId===row.fileId&&Number(page.page)===Number(row.page));
-  if((diagnostic?.spatialBlockingReasons||[]).length)return 'The schedule table geometry has not been proven on this page';
+  const calibratedRoles=diagnostic?.calibration?.roles||[];
+  const calibratedPage=Number(diagnostic?.calibration?.applied||0)>0||calibratedRoles.length>0;
+  const sourceBox=row.highlightBbox||row.bbox||row.sourceCell?.bbox||null;
+  const reviewableSource=Array.isArray(sourceBox)&&sourceBox.length>=4
+    &&sourceBox.every(value=>Number.isFinite(Number(value)));
+  const humanResolved=Boolean(row.edited||row.manual||row.resolutionSource==='user_guided_recovery');
+  if((diagnostic?.spatialBlockingReasons||[]).length&&!((calibratedPage||humanResolved)&&reviewableSource)){
+    return 'The schedule table geometry has not been proven on this page';
+  }
   return null;
 }
 function approvalButtonAttrs(row){
