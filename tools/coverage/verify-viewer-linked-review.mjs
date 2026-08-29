@@ -38,6 +38,58 @@ try {
   assert.match(await firstCard.getAttribute('title'), /counted device|on DB-/i, 'row hover title must include board-wide counts');
   assert.equal(await page.locator('#vDetList .det .chip').filter({ hasText: /^row$/i }).count(), 0, 'ROW badges must not return');
 
+  const calibratedApprovalRowId = await page.evaluate(async () => {
+    const A = state.cur.analysis;
+    const source = pageDetections(viewerFile(), state.viewer.page)
+      .find((item) => item.kind === 'row' && item.r.boardNorm && item.r.device && item.r.rating != null)?.r;
+    const diagnostic = A.pageDiagnostics.find((item) => item.fileId === source.fileId && Number(item.page) === Number(source.page));
+    window.__calibratedApprovalRestore = {
+      spatialBlockingReasons: [...(diagnostic.spatialBlockingReasons || [])],
+      spatialGridAccepted: diagnostic.spatialGridAccepted,
+      calibration: diagnostic.calibration ? structuredClone(diagnostic.calibration) : null,
+    };
+    diagnostic.spatialBlockingReasons = ['column_schema_low_confidence'];
+    diagnostic.spatialGridAccepted = false;
+    diagnostic.calibration = { applicable: 1, applied: 1, roles: ['outgoing_table'] };
+    const row = {
+      ...source,
+      id: 'viewer-calibrated-approval',
+      status: 'pending',
+      edited: false,
+      manual: false,
+      classConflict: false,
+      poleConflict: false,
+      validation: { invalidSensitivity: false, invalidBreakingCapacity: false },
+      highlightBbox: source.highlightBbox || source.bbox || [40, 120, 600, 24],
+      bbox: source.bbox || source.highlightBbox || [40, 120, 600, 24],
+    };
+    A.rows.push(row);
+    if (rowApprovalIssue(row) !== null) throw new Error('a calibrated, source-linked row must remain approvable despite a page-level geometry warning');
+    const unsafe = { ...row, id: 'viewer-calibrated-unassigned', boardNorm: null };
+    if (!/No board identity/.test(rowApprovalIssue(unsafe) || '')) throw new Error('calibration must not bypass a missing board identity');
+    await renderViewer();
+    return row.id;
+  });
+  const calibratedApprovalCard = page.locator(`#vDetList .det[data-row-id="${calibratedApprovalRowId}"]`);
+  await calibratedApprovalCard.waitFor();
+  const calibratedApprove = calibratedApprovalCard.locator('[data-action="approve"]');
+  assert.equal(await calibratedApprove.isEnabled(), true, 'Approve must be enabled after calibration when the row has complete reviewable evidence');
+  await calibratedApprove.click();
+  assert.equal(await page.evaluate((rowId) => state.cur.analysis.rows.find((row) => row.id === rowId)?.status, calibratedApprovalRowId), 'confirmed');
+  await page.evaluate(async (rowId) => {
+    const A = state.cur.analysis;
+    const row = A.rows.find((item) => item.id === rowId);
+    const diagnostic = A.pageDiagnostics.find((item) => item.fileId === row.fileId && Number(item.page) === Number(row.page));
+    const restore = window.__calibratedApprovalRestore;
+    diagnostic.spatialBlockingReasons = restore.spatialBlockingReasons;
+    diagnostic.spatialGridAccepted = restore.spatialGridAccepted;
+    if (restore.calibration) diagnostic.calibration = restore.calibration;
+    else delete diagnostic.calibration;
+    A.rows = A.rows.filter((item) => item.id !== rowId);
+    delete window.__calibratedApprovalRestore;
+    await renderViewer();
+  }, calibratedApprovalRowId);
+
   const largeDeviceRows = await page.evaluate(async () => {
     const A = state.cur.analysis;
     const source = pageDetections(viewerFile(), state.viewer.page).find((item) => item.kind === 'row' && item.r.boardNorm)?.r;
