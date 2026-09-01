@@ -18,12 +18,17 @@
     { role: 'device_standard', patterns: [/DEVICE.*BS/, /BS.*(?:EN|STANDARD)/, /PROTECTION.*STANDARD/] },
     { role: 'device_class', patterns: [/DEVICE.*(?:CLASS|FAMILY)/, /PROTECTIVE.*DEVICE.*TYPE/, /^MCB\s*\/\s*RCBO$/] },
     { role: 'trip_unit', patterns: [/^TYPE$/, /TRIP.*UNIT/, /RELEASE.*TYPE/] },
+    { role: 'product_range', patterns: [/PRODUCT.*RANGE/, /FRAME.*(?:SIZE|RANGE)/, /DEVICE.*RANGE/] },
     { role: 'rating', patterns: [/\bRATING\b.*(?:A|AMP)/, /CURRENT.*RATING/, /^IN\s*\(?A\)?$/] },
     { role: 'trip_curve', patterns: [/TRIP.*CURVE/, /CHARACTERISTIC/, /^CURVE$/] },
+    { role: 'pole_configuration', patterns: [/POLE.*(?:CONFIG|NUMBER|NO)/, /NO.*OF.*POLES/, /^POLES?$/] },
     { role: 'breaking_capacity', patterns: [/SHORT.*CIRCUIT.*CAPACITY/, /(?=.*\bSHORT\b)(?=.*\bCIRCUIT\b)(?=.*\bCAPACITY\b)/, /BREAKING.*CAPACITY/, /FAULT.*RATING/, /^KA$/] },
     { role: 'afdd', patterns: [/\bAFDD\b/, /\bAFFD\b/, /ARC.*FAULT/] },
     { role: 'rcd', patterns: [/^RCD$/, /RCD.*(?:YES|NO|PROTECT)/] },
     { role: 'rcd_ma', patterns: [/RCD.*OPERATING.*CURRENT/, /RCD.*\bMA\b/, /EARTH.*FAULT.*(?:DEVICE|CURRENT|\bMA\b)/, /^\(?MA\)?$/] },
+    { role: 'rcd_type', patterns: [/RCD.*TYPE/, /RESIDUAL.*CURRENT.*TYPE/] },
+    { role: 'rcd_arrangement', patterns: [/RCD.*ARRANGEMENT/, /RCD.*(?:INTEGRAL|SEPARATE|SHARED|UPSTREAM)/] },
+    { role: 'occupancy', patterns: [/SPARE.*SPACE/, /WAY.*STATUS/, /OCCUPANCY/] },
     { role: 'circuit_reference', patterns: [/CIRCUIT.*REFERENCE/, /LOAD.*REFERENCE/] },
     { role: 'description', patterns: [/CIRCUIT.*DESCRIPTION/, /^DUTY$/, /^DESCRIPTION$/, /^SERVING$/, /LOAD.*DESCRIPTION/] },
     { role: 'circuit_type', patterns: [/CIRCUIT.*TYPE/, /CIRCUIT.*CONFIG/, /^CONFIG(?:URATION)?$/] },
@@ -41,50 +46,58 @@
   ];
 
   const CALIBRATION_ROLE_DEFINITIONS = Object.freeze([
-    { role: 'board_header', kind: 'region', group: 'Board and table regions', label: 'Board details section' },
-    { role: 'incomer_section', kind: 'region', group: 'Board and table regions', label: 'Incoming device section' },
-    { role: 'outgoing_table', kind: 'region', group: 'Board and table regions', label: 'Outgoing circuit table' },
-    { role: 'outgoing_row_group', kind: 'region', group: 'Board and table regions', label: 'One complete outgoing way / row group' },
-    { role: 'single_phase_rows', kind: 'layout', group: 'Phase and row layout', label: 'Single-phase rows (one circuit per row)' },
-    { role: 'three_phase_rows', kind: 'layout', group: 'Phase and row layout', label: 'Three-phase way split into L1 / L2 / L3 rows' },
-    { role: 'three_phase_merged', kind: 'layout', group: 'Phase and row layout', label: 'One three-phase device spanning L1 / L2 / L3' },
-    { role: 'way', kind: 'column', label: 'Way / circuit number column' },
-    { role: 'phase', kind: 'column', label: 'Phase column' },
-    { role: 'device_standard', kind: 'column', label: 'Device BS / EN standard column' },
-    { role: 'device_class', kind: 'column', label: 'Device type column' },
-    { role: 'trip_unit', kind: 'column', label: 'Trip unit / release column' },
-    { role: 'rating', kind: 'column', label: 'Device rating column' },
-    { role: 'trip_curve', kind: 'column', label: 'Trip curve column' },
-    { role: 'breaking_capacity', kind: 'column', label: 'Breaking capacity column' },
-    { role: 'afdd', kind: 'column', label: 'AFDD protection column' },
-    { role: 'rcd', kind: 'column', label: 'RCD protection column' },
-    { role: 'rcd_ma', kind: 'column', label: 'RCD sensitivity column' },
-    { role: 'circuit_reference', kind: 'column', label: 'Circuit reference column' },
-    { role: 'description', kind: 'column', label: 'Load description column' },
-    { role: 'circuit_type', kind: 'column', label: 'Circuit type column' },
-    { role: 'line_csa', kind: 'column', label: 'Live conductor size column' },
-    { role: 'cpc_csa', kind: 'column', label: 'CPC size column' },
-    { role: 'cable_type', kind: 'column', label: 'Cable type column' },
-    { role: 'install_method', kind: 'column', label: 'Installation method column' },
-    { role: 'earth_fault_device', kind: 'column', label: 'Earth-fault protective device column' },
-    { role: 'arc_flash_device', kind: 'column', label: 'Arc-flash protective device column' },
-    { role: 'contactor', kind: 'column', label: 'Contactor column' },
-    { role: 'epo', kind: 'column', label: 'EPO / emergency stop column' },
-    { role: 'spd', kind: 'column', label: 'Surge protection column' },
-    { role: 'board_ref', kind: 'header', label: 'Board reference field' },
-    { role: 'board_type', kind: 'header', label: 'Board type / size field' },
-    { role: 'ways_total', kind: 'header', label: 'Number of ways field' },
-    { role: 'board_rating', kind: 'header', label: 'Board rating field' },
-    { role: 'phase_config', kind: 'header', label: 'Board phase configuration field' },
-    { role: 'incomer_class', kind: 'header', label: 'Incomer device field' },
-    { role: 'incomer_rating', kind: 'header', label: 'Incomer rating field' },
-    { role: 'supply_source', kind: 'header', label: 'Supplied from field' },
-    { role: 'supply_cable', kind: 'header', label: 'Supply cable field' },
-    { role: 'fault_rating', kind: 'header', label: 'Fault rating field' },
-    { role: 'location', kind: 'header', label: 'Board location field' },
-    { role: 'purpose', kind: 'header', label: 'Board purpose field' },
-    { role: 'metering', kind: 'header', label: 'Metering field' },
-    { role: 'board_model', kind: 'header', label: 'Board model field' },
+    { role: 'board_ref', kind: 'header', group: 'Board details', label: 'Board reference' },
+    { role: 'board_type', kind: 'header', group: 'Board details', label: 'Board type' },
+    { role: 'ways_total', kind: 'header', group: 'Board details', label: 'Number of ways' },
+    { role: 'board_rating', kind: 'header', group: 'Board details', label: 'Board rating' },
+    { role: 'phase_config', kind: 'header', group: 'Board details', label: 'Board phase configuration' },
+    { role: 'supply_source', kind: 'header', group: 'Board details', label: 'Supplied from board' },
+    { role: 'fault_rating', kind: 'header', group: 'Board details', label: 'Board fault rating' },
+    { role: 'incomer_class', kind: 'header', group: 'Incoming device', label: 'Incoming device type' },
+    { role: 'incomer_rating', kind: 'header', group: 'Incoming device', label: 'Incoming device rating' },
+    { role: 'way', kind: 'column', group: 'Outgoing circuit', label: 'Way / circuit number' },
+    { role: 'circuit_reference', kind: 'column', group: 'Outgoing circuit', label: 'Circuit reference' },
+    { role: 'description', kind: 'column', group: 'Outgoing circuit', label: 'Load description' },
+    { role: 'occupancy', kind: 'column', group: 'Outgoing circuit', label: 'Spare / blank way status' },
+    { role: 'phase', kind: 'column', group: 'Outgoing device', label: 'Circuit phase' },
+    { role: 'device_class', kind: 'column', group: 'Outgoing device', label: 'Device type' },
+    { role: 'rating', kind: 'column', group: 'Outgoing device', label: 'Device rating' },
+    { role: 'pole_configuration', kind: 'column', group: 'Outgoing device', label: 'Number of poles' },
+    { role: 'device_standard', kind: 'column', group: 'Outgoing device', label: 'BS / EN protection standard' },
+    { role: 'trip_curve', kind: 'column', group: 'Outgoing device', label: 'Trip curve' },
+    { role: 'trip_unit', kind: 'column', group: 'Outgoing device', label: 'Trip unit / release' },
+    { role: 'product_range', kind: 'column', group: 'Outgoing device', label: 'Product range / frame' },
+    { role: 'breaking_capacity', kind: 'column', group: 'Outgoing device', label: 'Breaking capacity' },
+    { role: 'rcd', kind: 'column', group: 'Additional protection', label: 'RCD protection' },
+    { role: 'rcd_ma', kind: 'column', group: 'Additional protection', label: 'RCD sensitivity' },
+    { role: 'rcd_type', kind: 'column', group: 'Additional protection', label: 'RCD type' },
+    { role: 'rcd_arrangement', kind: 'column', group: 'Additional protection', label: 'RCD arrangement' },
+    { role: 'afdd', kind: 'column', group: 'Additional protection', label: 'AFDD protection' },
+    { role: 'contactor', kind: 'column', group: 'Associated equipment', label: 'Contactor' },
+    { role: 'epo', kind: 'column', group: 'Associated equipment', label: 'EPO / emergency stop' },
+    { role: 'spd', kind: 'column', group: 'Associated equipment', label: 'Surge protection device' },
+
+    // Legacy geometry and non-report fields remain valid parser inputs for saved projects,
+    // but they are intentionally hidden from new calibration menus.
+    { role: 'board_header', kind: 'region', label: 'Board details section', userVisible: false },
+    { role: 'incomer_section', kind: 'region', label: 'Incoming device section', userVisible: false },
+    { role: 'outgoing_table', kind: 'region', label: 'Outgoing circuit table', userVisible: false },
+    { role: 'outgoing_row_group', kind: 'region', label: 'One complete outgoing way / row group', userVisible: false },
+    { role: 'single_phase_rows', kind: 'layout', label: 'Single-phase rows', userVisible: false },
+    { role: 'three_phase_rows', kind: 'layout', label: 'Three-phase split rows', userVisible: false },
+    { role: 'three_phase_merged', kind: 'layout', label: 'Three-phase merged row', userVisible: false },
+    { role: 'circuit_type', kind: 'column', label: 'Circuit type', userVisible: false },
+    { role: 'line_csa', kind: 'column', label: 'Live conductor size', userVisible: false },
+    { role: 'cpc_csa', kind: 'column', label: 'CPC size', userVisible: false },
+    { role: 'cable_type', kind: 'column', label: 'Cable type', userVisible: false },
+    { role: 'install_method', kind: 'column', label: 'Installation method', userVisible: false },
+    { role: 'earth_fault_device', kind: 'column', label: 'Earth-fault protective device', userVisible: false },
+    { role: 'arc_flash_device', kind: 'column', label: 'Arc-flash protective device', userVisible: false },
+    { role: 'supply_cable', kind: 'header', label: 'Supply cable', userVisible: false },
+    { role: 'location', kind: 'header', label: 'Board location', userVisible: false },
+    { role: 'purpose', kind: 'header', label: 'Board purpose', userVisible: false },
+    { role: 'metering', kind: 'header', label: 'Metering', userVisible: false },
+    { role: 'board_model', kind: 'header', label: 'Board model', userVisible: false },
   ]);
 
   const CALIBRATION_COLUMN_ROLES = new Set(CALIBRATION_ROLE_DEFINITIONS
@@ -547,13 +560,183 @@
     };
   }
 
+  const CALIBRATION_HEADER_PATTERNS = Object.freeze({
+    board_ref: [/BOARD.*(?:REF|ID)/, /ID.*(?:NO|NUMBER)/],
+    board_type: [/BOARD.*TYPE/, /BOARD.*DESCRIPTION/, /BOARD.*NAME/],
+    ways_total: [/NO.*OF.*WAYS/, /NUMBER.*OF.*WAYS/, /^WAYS$/],
+    board_rating: [/BOARD.*RATING/],
+    phase_config: [/BOARD.*PHASE/, /PHASE.*CONFIG/],
+    supply_source: [/SUPPLIED.*FROM/, /FED.*FROM/, /SOURCE.*BOARD/],
+    fault_rating: [/FAULT.*RATING/, /SHORT.*CIRCUIT.*RATING/],
+    incomer_class: [/INCOMER.*(?:DEVICE|TYPE)/, /INCOMING.*(?:DEVICE|TYPE)/],
+    incomer_rating: [/INCOMER.*RATING/, /INCOMING.*RATING/, /DEVICE.*RATING/],
+  });
+
+  function clampUnit(value) {
+    return Math.max(0, Math.min(1, Number(value) || 0));
+  }
+
+  function normalisedCalibrationBox(value) {
+    if (!Array.isArray(value) || value.length < 4) return null;
+    const x = clampUnit(value[0]); const y = clampUnit(value[1]);
+    const width = Math.min(clampUnit(value[2]), 1 - x);
+    const height = Math.min(clampUnit(value[3]), 1 - y);
+    if (width <= 0 || height <= 0) return null;
+    return [x, y, width, height];
+  }
+
+  function transformNormalisedBox(box, transform) {
+    const [x, y, width, height] = box;
+    if (transform === 'clockwise') return [1 - y - height, x, height, width];
+    if (transform === 'counterclockwise') return [y, 1 - x - width, height, width];
+    return [x, y, width, height];
+  }
+
+  function transformNormalisedPoint(point, transform) {
+    const [x, y] = point;
+    if (transform === 'clockwise') return [1 - y, x];
+    if (transform === 'counterclockwise') return [y, 1 - x];
+    return [x, y];
+  }
+
+  function calibrationRolePatterns(role) {
+    return COLUMN_DEFINITIONS.find((definition) => definition.role === role)?.patterns
+      || CALIBRATION_HEADER_PATTERNS[role] || [];
+  }
+
+  function calibrationTokenList(value) {
+    const stop = new Set(['A', 'AN', 'AND', 'COLUMN', 'FIELD', 'NO', 'NUMBER', 'OF', 'THE', 'TYPE', 'VALUE']);
+    return [...new Set(normaliseLabel(value).split(' ')
+      .filter((token) => token.length >= 2 && !/^\d+(?:\.\d+)?$/.test(token) && !stop.has(token)))].slice(0, 12);
+  }
+
+  function calibrationCellScore(role, cell, signature = null) {
+    const text = String(cell?.text || '');
+    const normal = normaliseLabel(text);
+    if (!normal) return 0;
+    const patterns = calibrationRolePatterns(role);
+    let score = patterns.some((pattern) => pattern.test(normal)) ? 6 : 0;
+    const tokens = signature?.tokens || [];
+    if (tokens.length) {
+      const present = new Set(normal.split(' '));
+      score += (tokens.filter((token) => present.has(token)).length / tokens.length) * 8;
+    }
+    if (role === 'way' && extractWayIdentifier(text) != null) score += 3;
+    if (role === 'phase' && phaseValues(text).length) score += 3;
+    if (role === 'device_class' && /\b(?:AFDD|RCBO|MCCB|MCB|ACB|RCCB|RCD|FUSE|ISOLATOR)\b/i.test(text)) score += 4;
+    if (role === 'rating' && /\b\d+(?:\.\d+)?\s*A(?:MPS?)?\b/i.test(text)) score += 4;
+    if (role === 'pole_configuration' && /\b(?:1P\s*\+\s*N|[1-4]P|SPN?|TPN?|3PH)\b/i.test(text)) score += 4;
+    if (role === 'trip_curve' && /\b(?:TYPE|CURVE|CHARACTERISTIC)?\s*[BCD]\b/i.test(text)) score += 4;
+    if (role === 'trip_unit' && canonicalTripUnit(text)) score += 5;
+    if (role === 'product_range' && protectionProductRange(text)) score += 5;
+    if (role === 'breaking_capacity' && /\b\d+(?:\.\d+)?\s*KA\b/i.test(text)) score += 4;
+    if (role === 'rcd_ma' && /\b\d+(?:\.\d+)?\s*MA\b/i.test(text)) score += 4;
+    if (role === 'rcd_type' && /\bTYPE\s+(?:AC|A|B|F)\b/i.test(text)) score += 4;
+    if (role === 'rcd_arrangement' && /\b(?:INTEGRAL|SEPARATE|SHARED|UPSTREAM)\b/i.test(text)) score += 4;
+    if (role === 'afdd' && /\bAFDD\b/i.test(text)) score += 4;
+    if (role === 'occupancy' && /\b(?:SPARE|SPACE|BLANK|UNUSED)\b/i.test(text)) score += 4;
+    return score;
+  }
+
+  function buildCalibrationSignature(input = {}, region = {}) {
+    const width = Math.max(1, Number(input.pageWidth || input.width) || 1);
+    const height = Math.max(1, Number(input.pageHeight || input.height) || 1);
+    const box = bboxObject({ bbox: region.bbox });
+    const words = collectSpatialWords(input);
+    if (!box || !words.length) return null;
+    const selected = wordsInsideCalibration(words, { box }, 1);
+    if (!selected.length) return null;
+    const cells = spatialRows(selected).flatMap((row) => row.cells || []);
+    const role = String(region.role || '');
+    const anchor = cells.slice().sort((left, right) => calibrationCellScore(role, right) - calibrationCellScore(role, left))[0]
+      || sourceCell(selected, role);
+    const anchorBox = bboxObject({ bbox: anchor?.bbox }) || box;
+    const text = anchor?.text || selected.map((word) => word.text).join(' ');
+    const aspect = (box.x1 - box.x0) / Math.max(1, box.y1 - box.y0);
+    return {
+      text: String(text).replace(/\s+/g, ' ').trim().slice(0, 240),
+      tokens: calibrationTokenList(text),
+      anchorNorm: [((anchorBox.x0 + anchorBox.x1) / 2) / width, ((anchorBox.y0 + anchorBox.y1) / 2) / height],
+      axis: aspect >= 1.6 ? 'row' : (aspect <= 0.65 ? 'column' : 'auto'),
+    };
+  }
+
+  function resolveCalibrationRegion(record = {}, input = {}) {
+    const width = Math.max(1, Number(input.pageWidth || input.width) || 1);
+    const height = Math.max(1, Number(input.pageHeight || input.height) || 1);
+    const base = normalisedCalibrationBox(record.bboxNorm);
+    if (!base) return null;
+    const sourceOrientation = record.orientation
+      || (Number(record.sourceWidth) >= Number(record.sourceHeight) ? 'landscape' : 'portrait');
+    const targetOrientation = width >= height ? 'landscape' : 'portrait';
+    const transforms = sourceOrientation && sourceOrientation !== targetOrientation
+      ? ['clockwise', 'counterclockwise', 'identity'] : ['identity'];
+    const candidates = transforms.map((transform, index) => ({
+      norm: normalisedCalibrationBox(transformNormalisedBox(base, transform)),
+      transform,
+      preference: transforms.length - index,
+      relocated: false,
+    })).filter((candidate) => candidate.norm);
+    const words = collectSpatialWords(input);
+    if (words.length && Number(record.sourcePage) !== Number(input.documentPage || input.page)) {
+      const cells = spatialRows(words).flatMap((row) => row.cells || []);
+      const rankedCells = cells.map((cell) => ({ cell, box: bboxObject({ bbox: cell.bbox }),
+        score: calibrationCellScore(record.role, cell, record.signature) }))
+        .filter((candidate) => candidate.box && candidate.score >= 3)
+        .sort((left, right) => right.score - left.score);
+      const anchor = rankedCells[0];
+      if (anchor) {
+        const targetBox = anchor.box;
+        const targetPoint = [((targetBox.x0 + targetBox.x1) / 2) / width, ((targetBox.y0 + targetBox.y1) / 2) / height];
+        transforms.forEach((transform, index) => {
+          const transformed = normalisedCalibrationBox(transformNormalisedBox(base, transform));
+          const sourceAnchor = transformNormalisedPoint(record.signature?.anchorNorm || [base[0] + base[2] / 2, base[1] + base[3] / 2], transform);
+          let relocated = normalisedCalibrationBox([
+            targetPoint[0] - (sourceAnchor[0] - transformed[0]),
+            targetPoint[1] - (sourceAnchor[1] - transformed[1]),
+            transformed[2], transformed[3],
+          ]);
+          const definition = CALIBRATION_ROLE_DEFINITIONS.find((item) => item.role === record.role);
+          if (relocated && definition?.kind === 'column') {
+            const xTolerance = Math.max(relocated[2], 0.08);
+            const columnEvidence = rankedCells.filter((candidate) => {
+              const cx = ((candidate.box.x0 + candidate.box.x1) / 2) / width;
+              return Math.abs(cx - targetPoint[0]) <= xTolerance;
+            });
+            if (columnEvidence.length) {
+              const top = Math.min(relocated[1], ...columnEvidence.map((candidate) => candidate.box.y0 / height));
+              const bottom = Math.max(relocated[1] + relocated[3], ...columnEvidence.map((candidate) => candidate.box.y1 / height));
+              relocated = normalisedCalibrationBox([relocated[0], Math.max(0, top - 0.005), relocated[2], Math.min(1, bottom + 0.005) - Math.max(0, top - 0.005)]);
+            }
+          }
+          if (relocated) candidates.push({ norm: relocated, transform, preference: transforms.length - index, relocated: true, anchorScore: anchor.score });
+        });
+      }
+    }
+    const scored = candidates.map((candidate) => {
+      const bbox = [candidate.norm[0] * width, candidate.norm[1] * height, candidate.norm[2] * width, candidate.norm[3] * height];
+      const box = bboxObject({ bbox });
+      const inside = wordsInsideCalibration(words, { box }, 1);
+      const cells = spatialRows(inside).flatMap((row) => row.cells || []);
+      const semantic = Math.max(0, ...cells.map((cell) => calibrationCellScore(record.role, cell, record.signature)));
+      const density = Math.min(3, inside.length / 4);
+      return { ...candidate, bbox, score: semantic + density + (candidate.anchorScore || 0) + candidate.preference * 0.01 };
+    }).sort((left, right) => right.score - left.score);
+    const selected = scored[0];
+    return selected ? {
+      bbox: selected.bbox,
+      projection: selected.relocated ? `semantic-${selected.transform}` : selected.transform,
+      score: selected.score,
+    } : null;
+  }
+
   function calibrationRegions(input = {}) {
     return (input.calibrationHint?.regions || []).map((region) => {
       const box = bboxObject({ bbox: region?.bbox });
       const role = String(region?.role || '');
       const definition = CALIBRATION_ROLE_DEFINITIONS.find((item) => item.role === role);
       if (!box || !definition) return null;
-      return { ...region, role, kind: definition.kind, box };
+      return { ...region, role, kind: definition.kind, axis: region.axis || 'auto', box };
     }).filter(Boolean);
   }
 
@@ -571,7 +754,7 @@
 
   function calibratedSchema(schema, input, words, wayAnchors, pageWidth, pageHeight) {
     const regions = calibrationRegions(input);
-    const columnRegions = regions.filter((region) => CALIBRATION_COLUMN_ROLES.has(region.role));
+    const columnRegions = regions.filter((region) => CALIBRATION_COLUMN_ROLES.has(region.role) && region.axis !== 'row');
     const tableRegion = regions.find((region) => region.role === 'outgoing_table');
     const rowGroupRegion = regions.find((region) => region.role === 'outgoing_row_group');
     const layoutRegions = regions.filter((region) => CALIBRATION_LAYOUT_ROLES.has(region.role));
@@ -709,7 +892,12 @@
   function columnCells(words, schema) {
     const assigned = Object.fromEntries(schema.columns.map((column) => [column.role, []]));
     for (const word of words) {
-      const column = schema.columns.find((item) => word.cx >= item.left && word.cx < item.right)
+      const calibrated = schema.columns.filter((item) => item.calibrated && word.cx >= item.left && word.cx < item.right);
+      if (calibrated.length) {
+        calibrated.forEach((column) => assigned[column.role].push(word));
+        continue;
+      }
+      const column = schema.columns.find((item) => !item.calibrated && word.cx >= item.left && word.cx < item.right)
         || schema.columns.slice().sort((a, b) => Math.abs(a.x - word.cx) - Math.abs(b.x - word.cx))[0];
       if (column) assigned[column.role].push(word);
     }
@@ -988,7 +1176,7 @@
     const typeCurve = typeDevice ? null : typeText.match(/^\s*([BCD])\s*$/i)?.[1]?.toUpperCase() || null;
     const tripUnit = typeCurve || typeDevice ? null
       : (parseProtectionDescriptor(typeText).tripUnit || (/^\d+(?:\.\d+)?$/.test(typeText) ? typeText : null));
-    const productRange = protectionProductRange([standardText, deviceClassText, typeText, allText].join(' '));
+    const productRange = protectionProductRange([standardText, deviceClassText, typeText, cellText(cells, 'product_range'), allText].join(' '));
     let curve = (cellText(cells, 'trip_curve').match(/\b[BCD]\b/i)?.[0] || typeCurve || '').toUpperCase() || null;
     const rating = numberValue(cells.rating, { max: 6300 });
     const ka = numberValue(cells.breaking_capacity, { max: 150 });
@@ -1003,7 +1191,7 @@
     const descriptionCellText = cellText(cells, 'description');
     const description = descriptionCellText || circuitText || '';
     const occupancyLabels = new Set([
-      descriptionCellText, circuitText, deviceClassText, standardText, typeText,
+      descriptionCellText, circuitText, deviceClassText, standardText, typeText, cellText(cells, 'occupancy'),
     ].map((value) => Core.occupancyLabel?.(value)).filter(Boolean));
     const spareText = occupancyLabels.has('spare');
     const explicitSpace = occupancyLabels.has('space');
@@ -1011,7 +1199,11 @@
     const rcdMa = rcdRaw != null && rcdRaw < 1 ? Math.round(rcdRaw * 1000) : rcdRaw;
     const rcdIndicator = indicatorValue(cells.rcd);
     const textualRcdProtection = /\b(?:C\s*\/\s*W|WITH)\s+RCD\b/i.test(allText);
-    const rcdProtected = rcdIndicator === true || rcdMa != null || textualRcdProtection ? true : rcdIndicator;
+    const dedicatedRcdTypeText = [cellText(cells, 'rcd_type'), cellText(cells, 'rcd')].filter(Boolean).join(' ');
+    const rcdType = dedicatedRcdTypeText.match(/\b(?:RCD\s*)?(?:TYPE\s*)?(AC|A|B|F)\b/i)?.[1]?.toUpperCase() || null;
+    const rcdArrangementText = cellText(cells, 'rcd_arrangement').toLowerCase();
+    const rcdArrangement = rcdArrangementText.match(/\b(integral|separate|shared|upstream)\b/)?.[1] || null;
+    const rcdProtected = rcdIndicator === true || rcdMa != null || textualRcdProtection || Boolean(rcdType || rcdArrangement) ? true : rcdIndicator;
     const afddIndicator = indicatorValue(cells.afdd);
     const earthFaultText = cellText(cells, 'earth_fault_device');
     const arcFlashText = cellText(cells, 'arc_flash_device');
@@ -1031,8 +1223,10 @@
     const occupancyConflict = occupancyLabels.size > 1;
     const spare = spareText;
     const space = explicitSpace || (!spare && !hasDeviceEvidence && !description);
-    const poles = uniquePhases.length >= 3 && hasDeviceEvidence ? 3
-      : (uniquePhases.length === 1 && hasDeviceEvidence ? 1 : null);
+    const calibratedPole = parseProtectionDescriptor(cellText(cells, 'pole_configuration'));
+    const poles = calibratedPole.poles != null ? calibratedPole.poles
+      : (uniquePhases.length >= 3 && hasDeviceEvidence ? 3
+        : (uniquePhases.length === 1 && hasDeviceEvidence ? 1 : null));
     const phase = poles === 3 ? '3PH' : (uniquePhases.length === 1 ? uniquePhases[0] : null);
     const circuitTypeRaw = cellText(cells, 'circuit_type').toUpperCase();
     const circuitConfig = /^(?:RD|RAD|RADIAL)$/.test(circuitTypeRaw) ? 'RADIAL' : (/^(?:RG|RING)$/.test(circuitTypeRaw) ? 'RING' : null);
@@ -1060,9 +1254,10 @@
     const row = {
       way, phase, rating, device: resolution.device, class_basis: resolution.classBasis, curve, tripUnit, productRange,
       curveInferred: Boolean(inferredCurve),
-      poleConfiguration: poles === 3 ? 'TP' : poles === 1 ? 'SP' : null,
+      poleConfiguration: poles === 3 ? 'TP' : (poles === 2 ? 'DP' : (poles === 1 ? 'SP' : null)),
       protectionStandard: resolution.protectionStandard, protectionStandardCode: resolution.standardCode,
-      sens: rcdMa, rcdProtected, afdd: afddIndicator === true, afddIndicated: afddIndicator, poles, ka,
+      sens: rcdMa, rcdProtected, rcdType, rcdArrangement,
+      afdd: afddIndicator === true, afddIndicated: afddIndicator, poles, ka,
       earthFaultDevice: earthFaultText && !/^(?:NO|NONE|N\/A|NA|-|--)$/i.test(earthFaultText)
         ? { descriptor: earthFaultText } : null,
       arcFlashDevice: arcFlashText && !/^(?:NO|NONE|N\/A|NA|-|--)$/i.test(arcFlashText) ? arcFlashText : null,
@@ -1086,7 +1281,7 @@
         install_method: installMethod, reference_method: referenceMethod,
       } : null,
       spare, space, incomer: false, qty: space ? 0 : (hasDeviceEvidence ? 1 : 0),
-      occupies_ways: poles === 3 ? 3 : 1,
+      occupies_ways: poles === 3 ? 3 : (poles === 2 ? 2 : 1),
       sharedPhaseSpan: poles === 3 && !context.phaseLane,
       phaseSlotIndependent: poles === 1 && Boolean(context.phaseLane),
       poleEvidenceBasis: poles === 3 && !context.phaseLane
@@ -1105,12 +1300,15 @@
         device: cells.device_class || cells.device_standard || source,
         protectionStandard: cells.device_standard || source,
         tripUnit: cells.trip_unit || source,
+        productRange: cells.product_range || cells.device_class || cells.trip_unit || source,
         rating: cells.rating || source,
         curve: cells.trip_curve || cells.trip_unit || source,
         breakingCapacity: cells.breaking_capacity || source,
-        poles: cells.phase || cells.way || source,
+        poles: cells.pole_configuration || cells.phase || cells.way || source,
         rcdProtection: cells.rcd || cells.rcd_ma || source,
         rcdSensitivity: cells.rcd_ma || cells.rcd || source,
+        rcdType: cells.rcd_type || cells.rcd || source,
+        rcdArrangement: cells.rcd_arrangement || cells.rcd || source,
         afdd: cells.afdd || source,
         earthFaultDevice: cells.earth_fault_device || source,
         arcFlashDevice: cells.arc_flash_device || source,
@@ -2005,7 +2203,7 @@
     };
     const calibrations = calibrationRegions(input);
     const applyColumn = (roles, leftKey, rightKey) => {
-      const region = calibrations.filter((item) => roles.includes(item.role)).at(-1);
+      const region = calibrations.filter((item) => roles.includes(item.role) && item.axis !== 'row').at(-1);
       if (!region) return;
       bounds[leftKey] = region.box.x0;
       bounds[rightKey] = region.box.x1;
@@ -3069,6 +3267,8 @@
   Object.assign(Core, {
     DEFAULT_BOARD_CLASSIFICATION_POLICY,
     CALIBRATION_ROLE_DEFINITIONS,
+    buildCalibrationSignature,
+    resolveCalibrationRegion,
     collectSpatialWords,
     extractContextualBoardReferences,
     inferScheduleColumns,

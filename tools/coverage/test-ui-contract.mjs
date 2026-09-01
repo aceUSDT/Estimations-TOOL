@@ -19,7 +19,7 @@ const required = [
   'host.requestFullscreen',
   "document.addEventListener('fullscreenchange'",
   'function syncViewerLayout()',
-  'const ANALYSIS_VERSION=27;',
+  'const ANALYSIS_VERSION=28;',
   'id="processingCancelBtn"',
   'const AI_RECOVERY_BATCH_SIZE=3;',
   'const AI_RECOVERY_PAGE_TIMEOUT_MS=180000;',

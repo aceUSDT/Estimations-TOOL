@@ -152,7 +152,7 @@ try {
       health: state.cur.analysis.health,
     };
   });
-  assert.equal(extraction.analysisVersion, 27, 'real project must use the current analysis model');
+  assert.equal(extraction.analysisVersion, 28, 'real project must use the current analysis model');
   assert.ok(extraction.scheduleRows > 0,
     `schedule rows must be extracted before opening Viewer: ${JSON.stringify({ pageInput: extraction.pageInput,
       spatialProbe: extraction.spatialProbe, pageDiagnostics: extraction.pageDiagnostics, health: extraction.health })}`);
@@ -325,9 +325,59 @@ try {
     await page.screenshot({ path: path.join(shotsDir, 'real-schematic-paths.png'), fullPage: false });
   }
 
+  await page.setViewportSize({ width: 1600, height: 900 });
+  const calibrationReanalysis = await page.evaluate(async () => {
+    const project = state.cur;
+    const beforeCount = project.analysis.rows.filter(isCountedDeviceRow).reduce((sum, row) => sum + countedRowQuantity(row), 0);
+    const beforeConfirmed = project.analysis.rows.filter((row) => row.status === 'confirmed').length;
+    const source = project.analysis.rows.find((row) => row.kind === 'schedule' && row.fieldSources?.rating?.bbox);
+    if (!source) throw new Error('real fixture has no source-linked rating field for calibration');
+    const file = project.files.find((item) => item.id === source.fileId);
+    const pageRecord = file.pages[source.page - 1];
+    const [x, y, width, height] = source.fieldSources.rating.bbox;
+    const pageWidth = Number(pageRecord.w); const pageHeight = Number(pageRecord.h);
+    const definition = allCalibrationDefinitions().find((item) => item.role === 'rating');
+    const bbox = [Math.max(0, x - 3), Math.max(0, y - 3), width + 6, height + 6];
+    project.calibrations = [{
+      id: 'real-rating-calibration', fileId: file.id, sourcePage: source.page, scope: 'following',
+      role: 'rating', kind: definition.kind,
+      bboxNorm: [bbox[0] / pageWidth, bbox[1] / pageHeight, bbox[2] / pageWidth, bbox[3] / pageHeight],
+      signature: window.EstimationExtractorCore.buildCalibrationSignature(
+        { ...pageRecord, pageWidth, pageHeight }, { role: 'rating', bbox }),
+      axis: 'column', sourcePageType: pageRecord.type,
+      sourceWidth: pageWidth, sourceHeight: pageHeight,
+      orientation: pageWidth >= pageHeight ? 'landscape' : 'portrait',
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+    }];
+    project.calibrationRevision = Number(project.calibrationRevision || 0) + 1;
+    state.viewer.calibration.dirty = true;
+    state.viewer.fileId = file.id; state.viewer.page = source.page;
+    saveProject(project);
+    await applyCalibrations();
+    const afterCount = project.analysis.rows.filter(isCountedDeviceRow).reduce((sum, row) => sum + countedRowQuantity(row), 0);
+    const afterConfirmed = project.analysis.rows.filter((row) => row.status === 'confirmed').length;
+    const diagnostics = project.analysis.pageDiagnostics.filter((item) => item.fileId === file.id
+      && Number(item.calibration?.applicable) > 0);
+    return {
+      beforeCount, afterCount, beforeConfirmed, afterConfirmed,
+      dirty: state.viewer.calibration.dirty,
+      revision: project.calibrationRevision,
+      analysisRevision: project.analysis.calibrationRevision,
+      applicablePages: diagnostics.length,
+      appliedPages: diagnostics.filter((item) => Number(item.calibration?.applied) > 0).length,
+      projections: diagnostics.flatMap((item) => item.calibration?.projections || []).map((item) => item.projection),
+    };
+  });
+  assert.equal(calibrationReanalysis.dirty, false, 'successful calibration re-analysis must clear the pending state');
+  assert.equal(calibrationReanalysis.analysisRevision, calibrationReanalysis.revision, 'analysis must commit the active calibration revision');
+  assert.equal(calibrationReanalysis.afterCount, calibrationReanalysis.beforeCount, 'calibration re-analysis must preserve reconciled device counts');
+  assert.ok(calibrationReanalysis.afterConfirmed >= calibrationReanalysis.beforeConfirmed, 'calibration re-analysis must preserve prior approvals');
+  assert.ok(calibrationReanalysis.applicablePages > 0, 'saved calibration must reach at least one document page');
+  assert.ok(calibrationReanalysis.appliedPages > 0, 'saved calibration must be consumed by the spatial parser');
+
   assert.deepEqual(browserErrors, [], `browser errors: ${browserErrors.join('; ')}`);
-  console.log(JSON.stringify({ extraction, viewer, guidedStart, guidedNext, mobile, schematicViewer, shotsDir }, null, 2));
-  console.log('PASS: real Viewer extraction, overlays, board sync, guided progression, and responsive layout.');
+  console.log(JSON.stringify({ extraction, viewer, guidedStart, guidedNext, mobile, schematicViewer, calibrationReanalysis, shotsDir }, null, 2));
+  console.log('PASS: real Viewer extraction, overlays, board sync, guided progression, calibration re-analysis, and responsive layout.');
 } finally {
   await browser.close();
 }

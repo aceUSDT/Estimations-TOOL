@@ -612,4 +612,71 @@ assert.ok(calibrated.calibration.roles.includes('outgoing_table'));
 assert.ok(calibrated.calibration.roles.includes('single_phase_rows'));
 assert.equal(calibrated.board.header.phase_config, 'SPN');
 
+const curveOnly = Core.parseSpatialSchedulePage({
+  words: [
+    word('DB-CURVE', 200, 18, 70),
+    word('1', 15, 85), word('L1', 48, 85), word('MCB', 95, 85), word('20', 155, 85), word('B', 195, 85), word('Office sockets', 230, 85, 90),
+    word('2', 15, 120), word('L2', 48, 120), word('MCB', 95, 120), word('16', 155, 120), word('C', 195, 120), word('Kitchen lighting', 230, 120, 95),
+  ],
+  pageWidth: 420, pageHeight: 180, pageType: 'db-schedule',
+  calibrationHint: { regions: [
+    { role: 'board_ref', bbox: [195, 10, 82, 24] },
+    { role: 'way', bbox: [5, 60, 30, 90] },
+    { role: 'phase', bbox: [36, 60, 34, 90] },
+    { role: 'device_class', bbox: [78, 60, 52, 90] },
+    { role: 'rating', bbox: [140, 60, 40, 90] },
+    { role: 'trip_curve', bbox: [184, 60, 28, 90] },
+    { role: 'description', bbox: [215, 60, 125, 90] },
+  ] },
+});
+assert.equal(curveOnly.matched, true);
+assert.deepEqual(curveOnly.rows.map((row) => row.curve), ['B', 'C']);
+assert.ok(curveOnly.rows.every((row) => row.rcdProtected !== true && row.rcdType == null),
+  'Type B/C trip curves must never imply residual-current protection');
+
+// New calibrations expose only report-contract fields. Legacy geometry hints
+// still parse existing projects but no longer crowd the user-facing menu.
+const visibleCalibrationRoles = Core.CALIBRATION_ROLE_DEFINITIONS
+  .filter((definition) => definition.userVisible !== false).map((definition) => definition.role);
+for (const role of ['board_ref', 'board_rating', 'ways_total', 'incomer_class', 'incomer_rating',
+  'way', 'description', 'device_class', 'rating', 'pole_configuration', 'trip_curve', 'trip_unit',
+  'product_range', 'breaking_capacity', 'rcd', 'rcd_ma', 'rcd_type', 'rcd_arrangement', 'afdd',
+  'contactor', 'epo', 'spd', 'occupancy']) {
+  assert.ok(visibleCalibrationRoles.includes(role), `${role} must be calibratable from the final-report contract`);
+}
+for (const role of ['outgoing_table', 'outgoing_row_group', 'single_phase_rows', 'line_csa', 'cable_type']) {
+  assert.ok(!visibleCalibrationRoles.includes(role), `${role} must remain a hidden compatibility hint`);
+  assert.ok(Core.CALIBRATION_ROLE_DEFINITIONS.some((definition) => definition.role === role), `${role} must remain parseable`);
+}
+
+// A saved field follows semantic evidence when a later page changes both its
+// orientation and its location. This is the critical cross-layout guarantee.
+const sourceCalibrationWords = [
+  word('Device', 282, 182, 34), word('Rating', 320, 182, 38), word('(A)', 362, 182, 20),
+  word('20A', 330, 230, 24), word('32A', 330, 275, 24), word('40A', 330, 320, 24),
+];
+const sourceCalibrationBox = [270, 170, 115, 220];
+const ratingSignature = Core.buildCalibrationSignature({
+  words: sourceCalibrationWords, pageWidth: 400, pageHeight: 700,
+}, { role: 'rating', bbox: sourceCalibrationBox });
+assert.ok(ratingSignature?.tokens.includes('RATING'));
+assert.equal(ratingSignature.axis, 'column');
+assert.equal(Core.buildCalibrationSignature({
+  words: [word('Trip', 40, 80, 28), word('unit', 72, 80, 24), word('LSI', 200, 80, 20)],
+  pageWidth: 400, pageHeight: 700,
+}, { role: 'trip_unit', bbox: [30, 70, 250, 28] }).axis, 'row');
+const relocatedRating = Core.resolveCalibrationRegion({
+  role: 'rating', bboxNorm: [270 / 400, 170 / 700, 115 / 400, 220 / 700],
+  sourcePage: 1, sourceWidth: 400, sourceHeight: 700, orientation: 'portrait', signature: ratingSignature,
+}, {
+  documentPage: 2, pageWidth: 700, pageHeight: 400,
+  words: [
+    word('Device', 488, 44, 34), word('Rating', 526, 44, 38), word('(A)', 568, 44, 20),
+    word('20A', 536, 90, 24), word('32A', 536, 130, 24), word('40A', 536, 170, 24),
+  ],
+});
+assert.ok(relocatedRating.projection.startsWith('semantic-'));
+assert.ok(relocatedRating.bbox[0] < 540 && relocatedRating.bbox[0] + relocatedRating.bbox[2] > 540);
+assert.ok(relocatedRating.bbox[1] < 90 && relocatedRating.bbox[1] + relocatedRating.bbox[3] > 170);
+
 console.log('PASS: adaptive spatial schedules, damaged phase repair, precise rows, schematic feeder lanes, policy classification, and provenance.');

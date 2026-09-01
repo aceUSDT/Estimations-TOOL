@@ -31,6 +31,30 @@ try {
   });
   await page.locator('#vDetList .det[data-row-id]').first().waitFor();
 
+  await page.locator('#vCalibrateMode').click();
+  const calibrationMenu = await page.locator('#vCalibrationRole').evaluate((select) => ({
+    values: [...select.options].map((option) => option.value),
+    labels: [...select.options].map((option) => option.textContent.trim()),
+  }));
+  for (const role of ['board_ref', 'ways_total', 'board_rating', 'incomer_class', 'way', 'description',
+    'device_class', 'rating', 'pole_configuration', 'trip_curve', 'trip_unit', 'product_range',
+    'breaking_capacity', 'rcd', 'rcd_ma', 'rcd_type', 'rcd_arrangement', 'afdd', 'occupancy']) {
+    assert.ok(calibrationMenu.values.includes(role), `${role} must be available from the report-field calibration menu`);
+  }
+  for (const role of ['outgoing_table', 'outgoing_row_group', 'single_phase_rows', 'line_csa', 'cable_type']) {
+    assert.ok(!calibrationMenu.values.includes(role), `${role} must not appear in the report-field calibration menu`);
+  }
+  assert.equal(calibrationMenu.labels.some((label) => /\b(?:column|row layout|table region)\b/i.test(label)), false,
+    'calibration choices must describe report information instead of page orientation mechanics');
+  assert.equal(await page.evaluate(() => calibrationApplies({
+    fileId: viewerFile().id, sourcePage: 1, scope: 'document', orientation: 'portrait', sourcePageType: 'db-schedule',
+  }, viewerFile().id, 2, { w: 1000, h: 700, type: 'db-schedule' })), true, 'orientation changes must not discard a saved calibration');
+  assert.equal(await page.evaluate(() => calibrationApplies({
+    fileId: viewerFile().id, sourcePage: 1, scope: 'document', sourcePageType: 'db-schedule',
+  }, viewerFile().id, 2, { w: 1000, h: 700, type: 'schematic' })), false,
+  'schedule calibration must not spill onto schematic or reference pages');
+  await page.locator('#vCalibrateMode').click();
+
   const cards = page.locator('#vDetList .det[data-row-id]');
   assert.ok(await cards.count() > 2, 'fixture page must expose multiple linked device rows');
   const firstCard = cards.first();

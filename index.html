@@ -1195,12 +1195,12 @@ const state = {
   projects: [],
   cur: null,           // current project
   nextId: 1,
-  viewer: {fileId:null, page:1, zoom:1, rot:0, dark:false, fullscreen:false, boardHl:null, evidenceId:null, pdfDocs:{}, panels:{leftOpen:true,rightOpen:true,leftWidth:132,rightWidth:360}, assist:{enabled:false,boardNorm:null,seed:null,results:[]}, calibration:{enabled:false,role:'outgoing_table',scope:'following',dirty:false,lastId:null}},
+  viewer: {fileId:null, page:1, zoom:1, rot:0, dark:false, fullscreen:false, boardHl:null, evidenceId:null, pdfDocs:{}, panels:{leftOpen:true,rightOpen:true,leftWidth:132,rightWidth:360}, assist:{enabled:false,boardNorm:null,seed:null,results:[]}, calibration:{enabled:false,role:'board_ref',scope:'following',dirty:false,lastId:null}},
   selectedBoard: null,  // §5.4 — board selected in the merged Boards & Devices page ('__none__' = unassigned rows), null = roll-up
   reportMode: 'board',
   reviewFlow: {active:false,currentRowId:null,initialCount:0,moving:false,boardOrder:[],initialByBoard:{},rowOrderByBoard:{}},
 };
-const ANALYSIS_VERSION=27;
+const ANALYSIS_VERSION=28;
 const uid = () => 'x'+(state.nextId++)+'_'+Math.random().toString(36).slice(2,6);
 
 /* ====================== PERSISTENCE (IndexedDB) ====================== */
@@ -1831,7 +1831,14 @@ function ensureAssistedState(p){
 function ensureCalibrationState(p){
   if(p&&!Array.isArray(p.calibrations))p.calibrations=[];
   if(p&&!Number.isFinite(Number(p.calibrationRevision)))p.calibrationRevision=0;
-  if(!state.viewer.calibration)state.viewer.calibration={enabled:false,role:'outgoing_table',scope:'following',dirty:false,lastId:null};
+  if(p)p.calibrations.forEach(record=>{
+    if(!record.sourcePageType){
+      const file=p.files?.find(item=>item.id===record.fileId);
+      record.sourcePageType=file?.pages?.[Number(record.sourcePage)-1]?.type||null;
+    }
+    if(!record.axis)record.axis=record.signature?.axis||(record.kind==='column'?'column':'auto');
+  });
+  if(!state.viewer.calibration)state.viewer.calibration={enabled:false,role:'board_ref',scope:'following',dirty:false,lastId:null};
   if(p)state.viewer.calibration.dirty=Number(p.calibrationRevision||0)!==Number(p.analysis?.calibrationRevision||0);
   return p?p.calibrations:[];
 }
@@ -1840,19 +1847,20 @@ function markCalibrationChanged(p){
   p.calibrationRevision=Number(p.calibrationRevision||0)+1;
   state.viewer.calibration.dirty=true;p.status='Calibration pending';
 }
-function calibrationDefinitions(){
+function allCalibrationDefinitions(){
   return window.EstimationExtractorCore?.CALIBRATION_ROLE_DEFINITIONS||[
-    {role:'outgoing_table',kind:'region',label:'Outgoing circuit table'},
-    {role:'way',kind:'column',label:'Way / circuit number column'},
-    {role:'rating',kind:'column',label:'Device rating column'},
-    {role:'description',kind:'column',label:'Load description column'},
-    {role:'board_ref',kind:'header',label:'Board reference field'},
+    {role:'board_ref',kind:'header',group:'Board details',label:'Board reference'},
+    {role:'way',kind:'column',group:'Outgoing circuit',label:'Way / circuit number'},
+    {role:'device_class',kind:'column',group:'Outgoing device',label:'Device type'},
+    {role:'rating',kind:'column',group:'Outgoing device',label:'Device rating'},
+    {role:'description',kind:'column',group:'Outgoing circuit',label:'Load description'},
   ];
 }
-function calibrationRoleLabel(role){return calibrationDefinitions().find(item=>item.role===role)?.label||role.replaceAll('_',' ');}
+function calibrationDefinitions(){return allCalibrationDefinitions().filter(item=>item.userVisible!==false);}
+function calibrationRoleLabel(role){return allCalibrationDefinitions().find(item=>item.role===role)?.label||role.replaceAll('_',' ');}
 function calibrationRoleGroups(){
-  const fallback={region:'Board and table regions',layout:'Phase and row layout',column:'Outgoing circuit columns',header:'Board header fields'};
-  const order=['Board and table regions','Phase and row layout','Outgoing circuit columns','Board header fields'];
+  const fallback={column:'Outgoing device',header:'Board details'};
+  const order=['Board details','Incoming device','Outgoing circuit','Outgoing device','Additional protection','Associated equipment'];
   const groups=new Map();
   calibrationDefinitions().forEach(item=>{
     const label=item.group||fallback[item.kind]||'Other information';
@@ -1865,17 +1873,24 @@ function calibrationRoleGroups(){
   });
 }
 function calibrationRoleOptions(selected=''){
-  return calibrationRoleGroups().map(([label,items])=>`<optgroup label="${esc(label)}">${items
+  const visible=calibrationDefinitions().some(item=>item.role===selected);
+  const compatibility=selected&&!visible
+    ? `<optgroup label="Saved compatibility hint"><option value="${esc(selected)}" selected>${esc(calibrationRoleLabel(selected))} (preserved)</option></optgroup>`:'';
+  return compatibility+calibrationRoleGroups().map(([label,items])=>`<optgroup label="${esc(label)}">${items
     .map(item=>`<option value="${esc(item.role)}" ${item.role===selected?'selected':''}>${esc(item.label)}</option>`).join('')}</optgroup>`).join('');
+}
+function calibrationPageFamily(type){
+  const value=String(type||'').toLowerCase();
+  if(value==='db-schedule'||value==='db-schedule-continuation'||value==='cable-schedule')return 'schedule';
+  if(value==='sld'||value==='schematic')return 'schematic';
+  if(value==='specification'||value==='legend'||value==='drawing-register')return 'reference';
+  return value||'unknown';
 }
 function calibrationApplies(record,fileId,pageNo,pageRecord){
   if(!record||record.fileId!==fileId)return false;
   if(record.scope==='page'&&Number(record.sourcePage)!==Number(pageNo))return false;
   if(record.scope==='following'&&Number(pageNo)<Number(record.sourcePage))return false;
-  if(record.scope!=='page'&&record.orientation&&pageRecord){
-    const orientation=Number(pageRecord.w)>=Number(pageRecord.h)?'landscape':'portrait';
-    if(orientation!==record.orientation)return false;
-  }
+  if(record.sourcePageType&&pageRecord?.type&&calibrationPageFamily(record.sourcePageType)!==calibrationPageFamily(pageRecord.type))return false;
   return true;
 }
 function pageCalibrations(project,fileId,pageNo,pageRecord){
@@ -1884,9 +1899,15 @@ function pageCalibrations(project,fileId,pageNo,pageRecord){
 function calibrationHintForPage(project,fileId,pageNo,pageRecord){
   const width=Math.max(1,Number(pageRecord?.w)||1),height=Math.max(1,Number(pageRecord?.h)||1);
   const records=pageCalibrations(project,fileId,pageNo,pageRecord);
+  const core=window.EstimationExtractorCore;
   return {
-    regions:records.map(record=>({id:record.id,role:record.role,kind:record.kind,scope:record.scope,
-      bbox:[record.bboxNorm[0]*width,record.bboxNorm[1]*height,record.bboxNorm[2]*width,record.bboxNorm[3]*height]})),
+    regions:records.map(record=>{
+      const resolved=core?.resolveCalibrationRegion?.(record,{...pageRecord,pageWidth:width,pageHeight:height,documentPage:pageNo});
+      return {id:record.id,role:record.role,kind:record.kind,axis:record.axis||record.signature?.axis||'auto',scope:record.scope,
+        projection:resolved?.projection||'identity',
+        projectionScore:resolved?.score||0,bbox:resolved?.bbox||[record.bboxNorm[0]*width,record.bboxNorm[1]*height,
+          record.bboxNorm[2]*width,record.bboxNorm[3]*height]};
+    }),
     applicable:records.length,
     roles:[...new Set(records.map(record=>record.role))],
   };
@@ -2012,7 +2033,7 @@ function openProject(id){
   restoreGuidedReviewSession(state.cur);
   show('proj');
   $('#projTitle').textContent=state.cur.name;
-  state.viewer={fileId:null,page:1,zoom:1,rot:0,dark:state.viewer.dark,fullscreen:false,boardHl:null,evidenceId:null,pdfDocs:state.viewer.pdfDocs,panels:state.viewer.panels,assist:{enabled:false,boardNorm:null,seed:null,results:[]},calibration:{enabled:false,role:'outgoing_table',scope:'following',dirty:false,lastId:null}};
+  state.viewer={fileId:null,page:1,zoom:1,rot:0,dark:state.viewer.dark,fullscreen:false,boardHl:null,evidenceId:null,pdfDocs:state.viewer.pdfDocs,panels:state.viewer.panels,assist:{enabled:false,boardNorm:null,seed:null,results:[]},calibration:{enabled:false,role:'board_ref',scope:'following',dirty:false,lastId:null}};
   setViewerFullscreen(false);
   state.selectedBoard=null;
   renderProjHeader(); renderDocs(); renderPgclass(); renderAnalysisControls(); renderResults();
@@ -2411,7 +2432,8 @@ async function aiExtractPage(f,pageNo,pg,{signal=null,timeoutMs=AI_RECOVERY_PAGE
   const spatialHint=core?.buildSpatialLayoutHint?core.buildSpatialLayoutHint(spatial):null;
   const calibrationContext=calibrationHint?.regions?.length?{
     roles:[...new Set(calibrationHint.regions.map(region=>region.role))],
-    regions:calibrationHint.regions.map(region=>({role:region.role,bbox:region.bbox,scope:region.scope||null})),
+    regions:calibrationHint.regions.map(region=>({role:region.role,bbox:region.bbox,axis:region.axis||'auto',
+      projection:region.projection||'identity',scope:region.scope||null})),
   }:null;
   const layoutHint=(spatialHint||calibrationContext||deterministicPrimaryBoard)?{
     ...(spatialHint||{version:1}),
@@ -3513,7 +3535,9 @@ async function runAnalysis(opts){
         spatialReviewReasons:spatial?.grid?.reviewReasons||[],
         spatialWarnings:spatial?.warnings||[],extractionAttempts:spatialAttempts,
         calibration:{applicable:calibrationHint.applicable,applied:spatial?.calibration?.applied||0,
-          roles:spatial?.calibration?.roles||calibrationHint.roles},calibrationForcedSchedule:calibrationHint.regions.length>0,
+          roles:spatial?.calibration?.roles||calibrationHint.roles,fallback:spatial?.calibration?.fallback||null,
+          projections:calibrationHint.regions.map(region=>({id:region.id,role:region.role,projection:region.projection,score:region.projectionScore}))},
+        calibrationForcedSchedule:calibrationHint.regions.length>0,
         boardDetection:{referencesDetected:contextualRefs.length,primaryReferences:contextualRefs.filter(ref=>ref.role==='primary_board').length,
           indexReferences:contextualRefs.filter(ref=>ref.role==='index_board').length,
           circuitReferences:contextualRefs.filter(ref=>ref.role==='circuit_reference').length},
@@ -5812,10 +5836,13 @@ function renderCalibrationControls(f){
   if(!roleSelect.options.length){
     roleSelect.innerHTML=calibrationRoleOptions();
   }
-  if(!calibrationDefinitions().some(item=>item.role===cal.role))cal.role='outgoing_table';
+  if(!calibrationDefinitions().some(item=>item.role===cal.role))cal.role='board_ref';
   roleSelect.value=cal.role;scopeSelect.value=cal.scope;
   const fileRecords=f?ensureCalibrationState(p).filter(record=>record.fileId===f.id):[];
-  $('#vCalibrationCount').textContent=`${fileRecords.length} saved`;
+  const diagnostics=(p.analysis?.pageDiagnostics||[]).filter(item=>item.fileId===f?.id&&Number(item.calibration?.applicable)>0);
+  const appliedPages=diagnostics.filter(item=>Number(item.calibration?.applied)>0).length;
+  $('#vCalibrationCount').textContent=cal.dirty?`${fileRecords.length} saved - re-analysis required`
+    :`${fileRecords.length} saved${diagnostics.length?` - checked on ${diagnostics.length} page${diagnostics.length===1?'':'s'}${appliedPages?`, applied on ${appliedPages}`:''}`:''}`;
   $('#vCalibrationUndo').disabled=!fileRecords.length;
   $('#vCalibrationManage').disabled=!fileRecords.length;
   $('#vCalibrationApply').disabled=!cal.dirty;
@@ -5835,8 +5862,12 @@ function saveCalibrationSelection(f,pg,bbox){
   const existing=records.find(record=>record.fileId===f.id&&Number(record.sourcePage)===Number(V.page)
     &&record.role===definition.role&&record.scope===cal.scope);
   const now=new Date().toISOString();
+  const signature=window.EstimationExtractorCore?.buildCalibrationSignature?.(
+    {...pg,pageWidth:width,pageHeight:height},{role:definition.role,bbox:[x,y,w,h]})||existing?.signature||null;
   const record={id:existing?.id||uid(),fileId:f.id,sourcePage:V.page,scope:cal.scope,role:definition.role,kind:definition.kind,
-    bboxNorm,sourceWidth:width,sourceHeight:height,orientation:width>=height?'landscape':'portrait',createdAt:existing?.createdAt||now,updatedAt:now};
+    bboxNorm,signature,axis:signature?.axis||'auto',sourcePageType:pg.type||null,
+    sourceWidth:width,sourceHeight:height,orientation:width>=height?'landscape':'portrait',
+    createdAt:existing?.createdAt||now,updatedAt:now};
   if(existing)Object.assign(existing,record);else records.push(record);
   cal.lastId=record.id;markCalibrationChanged(p);saveProject(p);renderProjHeader();void renderViewer();
   toast(`${definition.label} saved for ${cal.scope==='page'?'this page':cal.scope==='document'?'matching pages':'this and following pages'}`);
@@ -5855,10 +5886,9 @@ function openCalibrationManager(f){
   const records=ensureCalibrationState(p).filter(record=>record.fileId===f.id)
     .sort((left,right)=>Number(left.sourcePage)-Number(right.sourcePage)||left.role.localeCompare(right.role));
   if(!records.length){toast('No calibrations have been saved for this document');return;}
-  const roleOptions=calibrationRoleOptions();
   openModal('Manage layout calibrations',`<div class="calibration-manager">${records.map(record=>`
     <div class="row-editor-grid" data-calibration-id="${esc(record.id)}" style="padding:10px 0;border-bottom:1px solid var(--line)">
-      <div><label class="lbl">Information</label><select class="sel" data-field="role">${roleOptions}</select></div>
+      <div><label class="lbl">Report information</label><select class="sel" data-field="role">${calibrationRoleOptions(record.role)}</select></div>
       <div><label class="lbl">Applies to</label><select class="sel" data-field="scope"><option value="following">Page ${record.sourcePage} onward</option><option value="document">All matching pages</option><option value="page">Page ${record.sourcePage} only</option></select></div>
       <label class="check-row span-2"><input type="checkbox" data-field="remove"> Remove this calibration</label>
     </div>`).join('')}</div>`,()=>{
@@ -5866,7 +5896,9 @@ function openCalibrationManager(f){
       $$('#modalBody [data-calibration-id]').forEach(row=>{
         const record=p.calibrations.find(item=>item.id===row.dataset.calibrationId);if(!record)return;
         if(row.querySelector('[data-field=remove]').checked){p.calibrations=p.calibrations.filter(item=>item.id!==record.id);return;}
-        record.role=row.querySelector('[data-field=role]').value;
+        const nextRole=row.querySelector('[data-field=role]').value;
+        if(nextRole!==record.role){record.signature=null;record.axis='auto';}
+        record.role=nextRole;
         record.kind=definitions.find(item=>item.role===record.role)?.kind||record.kind;
         record.scope=row.querySelector('[data-field=scope]').value;record.updatedAt=new Date().toISOString();
       });
@@ -5879,12 +5911,33 @@ function openCalibrationManager(f){
 }
 async function applyCalibrations(){
   const p=state.cur,cal=state.viewer.calibration;if(!p||!cal.dirty)return;
-  const button=$('#vCalibrationApply');button.disabled=true;
+  const button=$('#vCalibrationApply');if(button)button.disabled=true;
   const fileId=state.viewer.fileId,page=state.viewer.page;
-  setProcessingDock(STAGES[0],'Applying calibrated layout rules',2,0);await paintProcessing();
-  const result=await runAnalysisWithRecovery({auto:true,forceAiRecovery:true});
-  if(result){cal.dirty=false;saveProject(p);}
-  state.viewer.fileId=fileId;state.viewer.page=page;void renderViewer();
+  const expectedRevision=Number(p.calibrationRevision||0);
+  try{
+    setProcessingDock(STAGES[0],'Applying calibrated report fields',2,0);await paintProcessing();
+    const result=await runAnalysisWithRecovery({auto:true,forceAiRecovery:true,suppressAuditPrompt:true});
+    const revisionApplied=Boolean(result)&&Number(result.calibrationRevision||0)===expectedRevision
+      &&Number(p.analysis?.calibrationRevision||0)===expectedRevision;
+    if(!revisionApplied)throw new Error('The re-analysis did not commit the current calibration revision');
+    const diagnostics=(result.pageDiagnostics||[]).filter(item=>item.fileId===fileId&&Number(item.calibration?.applicable)>0);
+    if(ensureCalibrationState(p).some(record=>record.fileId===fileId)&&!diagnostics.length){
+      throw new Error('The saved calibration did not reach any page in this document');
+    }
+    const applied=diagnostics.filter(item=>Number(item.calibration?.applied)>0).length;
+    const recovered=diagnostics.filter(item=>item.calibration?.fallback).length;
+    cal.dirty=false;saveProject(p);
+    toast(applied?`Calibration checked on ${diagnostics.length} page${diagnostics.length===1?'':'s'} and applied on ${applied}`
+      :recovered?`Calibration checked; automatic extraction was stronger on ${recovered} page${recovered===1?'':'s'}`
+        :`Calibration checked on ${diagnostics.length} page${diagnostics.length===1?'':'s'}`);
+  }catch(error){
+    cal.dirty=true;p.status='Calibration pending';saveProject(p);
+    toast(`Calibration was not applied: ${error?.message||error}`);
+  }finally{
+    state.viewer.fileId=fileId;state.viewer.page=page;
+    if(button)button.disabled=false;
+    void renderViewer();
+  }
 }
 function appendCalibrationOverlays(wrap,f,pg,scale){
   const hint=calibrationHintForPage(state.cur,f.id,state.viewer.page,pg);
@@ -6546,7 +6599,7 @@ async function renderViewer(){
       event.stopPropagation();
       V.assist.enabled=false;
       V.calibration.enabled=true;
-      V.calibration.role='outgoing_table';
+      V.calibration.role=extractionGap?.boardNorm?'way':'board_ref';
       V.rot=0;
       $('#vOvl').checked=true;
       requestAnimationFrame(()=>renderViewer());
@@ -6757,7 +6810,7 @@ $('#vCalibrateMode').addEventListener('click',()=>{
     else if(!(diagnostic?.spatialColumns||[]).includes('way'))V.calibration.role='way';
     else if(!(diagnostic?.spatialColumns||[]).includes('rating'))V.calibration.role='rating';
     else if(!(diagnostic?.spatialColumns||[]).some(role=>role==='description'||role==='circuit_reference'))V.calibration.role='description';
-    else if((diagnostic?.rowsParsed||0)===0)V.calibration.role='outgoing_table';
+    else if((diagnostic?.rowsParsed||0)===0)V.calibration.role='way';
     V.assist.enabled=false;V.rot=0;$('#vOvl').checked=true;
   }
   renderViewer();
