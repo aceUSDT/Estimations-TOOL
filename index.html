@@ -18,6 +18,12 @@
     --purple:#7b5cd6; --purple-soft:#f0ebfb;
     --mono:"SF Mono",ui-monospace,Menlo,Consolas,monospace;
     --shadow:0 1px 2px rgba(22,32,46,.05);
+    /* ONE horizontal gutter for every full-width surface. The app bar used 18px
+       and the page 22px, so the logo and the content beneath it sat on different
+       left edges — a 4px disagreement that reads as unconsidered even when
+       nobody can name it. Scales with the viewport so wide screens breathe and
+       small ones stay tight, without adding fixed one-off padding values. */
+    --gutter:clamp(16px,1.6vw,32px);
   }
   *{box-sizing:border-box;margin:0;padding:0;}
   html,body{height:100%;}
@@ -78,7 +84,19 @@
   .lock-logo{height:44px;display:block;margin:0 auto 14px;}
   .lock-name{font-size:19px;font-weight:700;letter-spacing:0;margin-bottom:26px;color:var(--txt);}
   .lock-prompt{font-size:12.5px;color:var(--txt2);line-height:1.5;margin:-14px 0 16px;}
-  .brand{display:flex;align-items:center;gap:11px;}
+  /* The logo is the way home, so it has to BE a button — keyboard reachable and
+     announced as a control. alt="" on the image because the button already
+     carries the label; without that a screen reader says "Hager" twice. */
+  .brand{display:flex;align-items:center;gap:11px;background:none;border:0;padding:6px 8px;
+    margin-left:-8px;font:inherit;color:inherit;cursor:pointer;border-radius:6px;
+    transition:background-color .12s cubic-bezier(.2,0,0,1);}
+  .brand:hover{background:rgba(255,255,255,.08);}
+  .brand:active{background:rgba(255,255,255,.14);}
+  /* The first focus ring in the application (DESIGN_PLAN Phase 2). Offset so it
+     reads as a ring around the control rather than a border on it, and light
+     because this sits on the dark bar. */
+  .brand:focus-visible{outline:2px solid #7fd4f5;outline-offset:2px;}
+  @media(prefers-reduced-motion:reduce){.brand{transition:none;}}
   .brand-logo{height:22px;display:block;}
   .brand .bt{font-size:15px;font-weight:700;letter-spacing:0;}
   .lock-card input{width:100%;padding:12px 14px;border:1px solid var(--line2);border-radius:8px;font-size:14px;
@@ -92,7 +110,7 @@
 
   /* ---------- app chrome ---------- */
   .appbar{height:54px;background:var(--nav);color:#dce6f5;display:flex;align-items:center;gap:16px;
-    padding:0 18px;position:sticky;top:0;z-index:50;}
+    padding:0 var(--gutter);position:sticky;top:0;z-index:50;}
   .appbar .brand .bt{color:#fff;font-size:15px;}
   .appbar .brand .bt small{color:#7c90ad;}
   .crumb{font-size:12px;color:#93a5c0;display:flex;align-items:center;gap:7px;}
@@ -108,7 +126,7 @@
   .processing-dock{position:sticky;top:54px;z-index:45;background:#fff;border-bottom:1px solid var(--line2);
     box-shadow:0 5px 14px rgba(15,31,51,.08);}
   .processing-dock[hidden]{display:none;}
-  .processing-dock-inner{max-width:1600px;margin:0 auto;padding:9px 22px;display:grid;
+  .processing-dock-inner{width:100%;margin:0;padding:9px var(--gutter);display:grid;
     grid-template-columns:minmax(280px,auto) minmax(180px,1fr) auto;align-items:center;gap:14px;}
   .processing-summary{display:flex;align-items:center;gap:10px;min-width:0;}
   .processing-spinner{width:16px;height:16px;border:2px solid #b9c7d6;border-top-color:var(--brand);
@@ -126,7 +144,11 @@
   .processing-dock.complete .processing-spinner{animation:none;border-color:var(--green);background:var(--green);}
   .processing-dock.failed .processing-spinner{animation:none;border-color:var(--red);background:var(--red);}
   @keyframes processing-spin{to{transform:rotate(360deg);}}
-  .page{max-width:1340px;margin:0 auto;padding:24px 22px 70px;}
+  /* Full width. This is a data tool — boards, device rows and schedules all read
+     better with the room, and the previous 1600px cap left a wide monitor with
+     ~300px of empty gutter on each side, which is what made the app look like a
+     page floating in the middle of the screen rather than an application. */
+  .page{width:100%;margin:0;padding:24px var(--gutter) 70px;}
   h1.pg{font-size:20px;font-weight:800;letter-spacing:0;}
   .pg-sub{color:var(--txt2);font-size:12.5px;margin-top:3px;}
 
@@ -452,7 +474,7 @@
   .panel,.proj-card,.dropzone,.cmp-pane,.modal,.lock-card{border-radius:6px;}
   .panel,.proj-card,.cmp-pane{box-shadow:var(--shadow);}
   .btn,.in,.sel,.back-btn{border-radius:5px;}
-  .page{max-width:1600px;}
+
   .appbar{border-bottom:3px solid var(--brand);}
   .ptabs{padding:0 10px;background:#fff;border:1px solid var(--line);border-radius:6px;}
   .ptab{padding:11px 14px;}
@@ -465,7 +487,7 @@
     .report-matrix .report-row-project .report-device,.report-matrix .report-row-title .report-device{left:0;width:auto;min-width:0;}
   }
   @media(max-width:540px){
-    .appbar{padding:0 12px;gap:8px;}
+    .appbar{gap:8px;}
     .appbar .brand .bt{white-space:nowrap;}
     .appbar .crumb{display:none;}
     .processing-dock-inner{padding:9px 22px;grid-template-columns:minmax(0,1fr);gap:7px;}
@@ -504,8 +526,9 @@
 <!-- ================= APP ================= -->
 <div class="view" id="appView">
   <div class="appbar">
-    <div class="brand"><img class="brand-logo" src="./assets/hager-logo.png" alt="Hager">
-      <div class="bt">Estimation Tools</div></div>
+    <button class="brand" id="homeBtn" type="button" aria-label="Estimation Tools — go to all projects" title="All projects">
+      <img class="brand-logo" src="./assets/hager-logo.png" alt="">
+      <span class="bt">Estimation Tools</span></button>
     <div class="crumb" id="crumb"><b>Projects</b></div>
     <div class="right">
       <span class="storage-state" id="storageState" title="Projects and original files are stored in this device profile">Stored locally</span>
@@ -1920,7 +1943,12 @@ function setTab(name){
   if (name==='compare') renderCompareSel();
 }
 $$('.ptab').forEach(t=>t.addEventListener('click',()=>setTab(t.dataset.pt)));
-$('#backBtn').addEventListener('click', ()=>{ state.cur=null;if(!analysisBusy)hideProcessing();renderProjects(); show('home'); });
+/* One definition of "go home", used by the back arrow AND the logo. Two copies
+   of this drift: one of them ends up not clearing state.cur, and the projects
+   list renders with a stale project still selected. */
+function goHome(){ state.cur=null; if(!analysisBusy) hideProcessing(); renderProjects(); show('home'); }
+$('#backBtn').addEventListener('click', goHome);
+$('#homeBtn').addEventListener('click', goHome);
 $('#backupProjectBtn').addEventListener('click',()=>backupProject(state.cur));
 $('#restoreProjectBtn').addEventListener('click',()=>$('#restoreProjectInput').click());
 $('#restoreProjectInput').addEventListener('change',async event=>{
