@@ -48,6 +48,16 @@ const BOARD_REF_STOPWORDS = new Set(['SCHEDULE','SCHEDULES','REFERENCE','REF','B
   'TO','SERVING','SERVED','TYPE','RATING','SIZE','WAY','WAYS','NO','NUMBER','DATA','INCOMER','LOCATION',
   'NOTES','NOTE','LEGEND','CHART','CHARTS','IDENTITY','AND','OR','THE','FOR','WITH','IS','ARE','MODEL']);
 
+const DB_NAME_STOPWORDS = new Set([
+  'DB','MDB','SMDB','LDB','PDB','SB','PB','CU','MCC','MCP','MSB',
+  'MCB','MCCB','RCBO','RCD','RCCB','AFDD','SPD','ACB','FUSE','ISOLATOR','CONTACTOR',
+  'RING','RADIAL','SPARE','SPACE','SUB','MAIN','NEW','OLD','EXISTING','TBC','TBA','NA','NIL',
+  'TYPE','TYPES','PHASE','PHASES','BUSBAR','DEVICE','DEVICES','SERVICE','SERVICES',
+  'CABLE','CABLES','CORES','CPC','TOTAL','LEGEND','PANEL','PANELS','SUPPLY','SUPPLIES',
+  'LIGHTING','POWER','SOCKET','SOCKETS','LOAD','LOADS','SEE','FULL','DETAIL','DETAILS',
+  'TPN','SPN','DPN','TP','SP','DP','KA','AMP','AMPS','TO','ON','AT','IN','OF','BY',
+]);
+
 const BOARD_PATTERNS = [
   {re:/\b([A-Z0-9]{1,6}(?:-[A-Z0-9]{1,6})*-DB(?:-[A-Z0-9]{1,6})+)\b/gi, type:'DB'},
   {re:/\b(S\s?M\s?D\s?B[\s.\-_\/]?\d*[A-Z]?)\b/gi, type:'SMDB'},
@@ -55,6 +65,7 @@ const BOARD_PATTERNS = [
   {re:/\b(L\s?D\s?B[\s.\-_\/]?\d*[A-Z]?)\b/gi, type:'LDB'},
   {re:/\b(P\s?D\s?B[\s.\-_\/]?\d*[A-Z]?)\b/gi, type:'PDB'},
   {re:/\b(DB\s?[.\-_\/]\s?[A-Z0-9]{1,8}(?:[.\-_\/][A-Z0-9]{1,8})*)\b/gi, type:'DB', guard:true},
+  {re:/\b(DB\s+[A-Z]{1,6}\d{0,3}[A-Z]?)\b/g, type:'DB', dbName:true},
   {re:/\b(D\.?\s?B\.?(?:[\s.\-_\/]?\d+[A-Z]?)+(?:\s+[A-Z])?)\b/gi, type:'DB'},
   {re:/\b(MCC(?!B)[\s.\-_\/]?\d*)\b/gi, type:'MCC'},
   {re:/\b(MCP[\s.\-_\/]?\d*[A-Z]?)\b/gi, type:'MECH'},
@@ -69,6 +80,7 @@ const BOARD_PATTERNS = [
 ];
 const normBoard = s => String(s).toUpperCase().replace(/[\s.\-_\/]+/g,'');
 const canonicalBoardRef = EstimationExtractorCore.canonicalBoardReference;
+const RATING_LIKE = (n) => EstimationExtractorCore.isRatingLikeRef(n);
 
 const CABLE_PATTERNS = [
   {re:/(\d+)\s*[Cc]\s*(?:\+\s*E)?\s*[x×]?\s*(\d+(?:\.\d+)?)\s*mm[²2]?/g, cores:1, size:2},
@@ -105,6 +117,11 @@ const phaseOf  = s => { const m=s.match(/\b(L[123])\b/); return m?m[1]:(/\bTP&?N
 const kaOf     = s => EstimationExtractorCore.extractBreakingCapacity(s)?.value??null;
 
 /* ==================== BOARD DETECTION (index.html:806) ==================== */
+const EQUIPMENT_PREFIX=/(?:^|\s\s)\s*(?:Cbl|Cable|Load|FC|SM)[-_]/i;
+function INSIDE_EQUIPMENT_ID(line,index){
+  const cellStart=String(line).lastIndexOf('  ',index);
+  return EQUIPMENT_PREFIX.test(String(line).slice(cellStart<0?0:cellStart,index));
+}
 function detectBoards(line){
   const found=[];
   for (const bp of BOARD_PATTERNS){
@@ -116,13 +133,20 @@ function detectBoards(line){
         const tokens = orig.split(/[\s.\-_\/]+/).slice(1);
         if (!tokens.length || BOARD_REF_STOPWORDS.has(tokens[0].toUpperCase())) continue;
       }
+      if (bp.dbName){
+        const tokens = orig.split(/\s+/).slice(1);
+        const t = tokens.length ? tokens[0].toUpperCase() : '';
+        if (!t || BOARD_REF_STOPWORDS.has(t) || DB_NAME_STOPWORDS.has(t)) continue;
+      }
       if (bp.header){
         orig = orig.replace(/[.,:]+$/,'');
         if (!/[\d\/-]/.test(orig) || BOARD_REF_STOPWORDS.has(orig.toUpperCase())) continue;
       }
+      if (INSIDE_EQUIPMENT_ID(line, m.index)) continue;
       const canonical = canonicalBoardRef(orig);
       orig = canonical.display;
       const norm = canonical.normalised;
+      if (RATING_LIKE(norm)) continue;   // "630A" is a rating, never a board
       if (!norm || /^(DB|MDB|SMDB|LDB|PDB|MCC|MCP)$/.test(norm) && !bp.fixed && !/\d/.test(norm) && norm!=='MDB' && norm!=='SMDB') continue;
       if (found.some(f=>f.norm===norm)) continue;
       if (bp.type==='DB' && !bp.guard){
@@ -137,7 +161,135 @@ function detectBoards(line){
     .map(({orig,norm,type,section})=>({orig,norm,type,section}));
 }
 
+function scheduleBoardSegments(lines){
+  const arr=(lines||[]).map(l=>String(l||'').trim());
+  const REFERENCE=/(?<!(?:cable|drawing|document|project|job|schedule)\s)\bREFERENCE\b\s*[:=\-]?\s+(.{2,40}?)\s*$/i;
+  const starts=[];
+  arr.forEach((t,i)=>{ if(REFERENCE.test(t)) starts.push(i); });
+  if(starts.length<2) return null;
+  const segs=[];
+  starts.forEach((from,k)=>{
+    const to=k+1<starts.length?starts[k+1]:arr.length;
+    const board=scheduleBoardFromLines(arr.slice(from,to));
+    if(board) segs.push({from,to,board});
+  });
+  if(segs.length<2||new Set(segs.map(x=>x.board.norm)).size<2) return null;
+  return segs;
+}
+
 function scheduleBoardFromLines(lines){
+  /* pdf.js emits one line per table CELL, so a header label and its value
+     routinely land on SEPARATE lines: "REFERENCE" then "DB-1-GF". Scanning
+     line by line finds the label with an empty tail, resolves no board, and
+     the page is treated as a continuation of the previous one — which is how a
+     single board absorbed every later page's devices. Resolve against the
+     joined page text first, then fall back to the per-line scan. */
+  const joined=(lines||[]).map(l=>String(l||'').trim()).filter(Boolean).join(' ');
+  // Only trust a bare "REFERENCE" when the page also carries board-schedule
+  // header labels, so a cable or drawing reference cannot name a board.
+  /* Trimble/Amtech "Board Data" blocks declare the board as "Id No:  DB-7-GCS"
+     with no REFERENCE label anywhere on the page. Unread, these pages resolved
+     no board at all — so their way count, which parses perfectly well, had
+     nothing to attach to and the board appeared to have none. The fallback scan
+     then picked a ref out of a ROW ("DB-7-GCS-5"), inventing a board per
+     circuit. Checked first because it is an explicit declaration.
+     The colon matters: the row table's column header also reads "Id No", but
+     only the declaration carries a value after it. */
+  const idNo=joined.match(/\bId\s*No\.?\s*:\s*([A-Z0-9][A-Z0-9._\/ -]{1,38}?)(?=\s{2,}|\s*ModelNo|\s*Model\s*No|$)/i);
+  if(idNo){
+    const declared=idNo[1].trim();
+    const det=detectBoards(declared)[0];
+    if(det) return det;
+    /* Taken as DECLARED: no way-prefix stripping, because "110-AC-MCB" names a
+       110V board and the 110 is not a way number. */
+    const canonical=canonicalBoardRef(declared,{declared:true});
+    if(canonical.normalised&&/[A-Z]/i.test(declared)) return {orig:canonical.display,norm:canonical.normalised,type:'UNK',section:canonical.splitSection};
+  }
+  if(/(number of ways|circuit ref|served by|incomer|\b\d{1,3}\s*-?\s*way\b|\bway\s+phase\b)/i.test(joined)){
+    /* Take the first BOARD-SHAPED reference in the window after the label, not
+       the token that happens to sit next to it. pdf.js orders cells by
+       position, so a header block frequently arrives as all labels then all
+       values — "REFERENCE SERVED BY LOCATION ... DB-1-GF MEP MAIN DB" — and
+       reading the adjacent token then yields either nothing or, on a page
+       headed "110V AC DISTRIBUTION BOARD", a board called "110V" that proceeds
+       to collect every following page's devices.
+       Requiring detectBoards to recognise it is what rejects "110V". */
+    const label=joined.match(/(?<!(?:cable|drawing|document|project|job|schedule)\s)\b(?:DB\s+|BOARD\s+)?REFERENCE\b\s*[:=\-]?\s*/i);
+    if(label){
+      let window=joined.slice(label.index, label.index+240);
+      /* A value sits before the NEXT label. Reading on past one takes a board
+         reference out of the first circuit row instead: a page headed
+         "REFERENCE  MEP MAIN DB" resolved to DB-1-GF, the board its way 1
+         feeds, because "MEP MAIN DB" matches no code-shaped pattern and the
+         scan simply carried on to the next thing that did. Stopping here lets
+         the descriptive-name fallback further down do its job. */
+      const nextLabel=window.slice(10).search(/\b(?:NUMBER\s+OF\s+WAYS|SERVED\s+BY|FED\s+FROM|SUPPLIED\s+(?:FROM|BY)|LOCATION|DESCRIPTION|INCOMER|CIRCUIT\s+REF|BOARD\s+DEVICE|PHASE|TYPE)\b/i);
+      if(nextLabel>0) window=window.slice(0, nextLabel+10);
+      const det=detectBoards(window)[0];
+      if(det) return det;
+    }
+    /* ROTATED SCHEDULE PAGES. These arrive as a line of LABELS and a separate
+       line of VALUES, in the same order, tens of lines apart:
+
+         "... NUMBER OF WAYS  LOCATION  DESCRIPTION  SERVED BY  REFERENCE"
+         "... 18 WAYS  LVAC ROOM  GROUND FLOOR LIGHTING & POWER  DB-1-GF"
+
+       REFERENCE is the last label and DB-1-GF the last value, so nothing that
+       reads forward from the label can ever reach it — which is why every page
+       of such a document resolved no board, became a continuation, and handed
+       its devices to whichever board came before it.
+
+       So find the VALUES line instead: it carries a board-shaped reference
+       alongside other header values (an incomer, a rating, a location), and it
+       is not a circuit row. Verified against all eight pages of a real rotated
+       schedule — the six that declare a board resolve correctly, and the page
+       headed "110V AC DISTRIBUTION BOARD" still resolves nothing rather than
+       inventing a board called 110V. */
+    if(/\bREFERENCE\b/i.test(joined)){
+      const CIRCUIT_ROW=/\b\d{1,2}-L[123]\b/;
+      const HEADER_VALUE=/(ISOLATOR|SWITCH(?:GEAR)?|SCHNEIDER|MERLIN|ACTI9|HAGER|\b\d{2,4}\s?A\b|FLOOR|ROOM|CORRIDOR|RISER)/i;
+      /* A board's own reference is in its HEADER BLOCK, which precedes the
+         table. Scanning the whole page instead took the reference out of the
+         first circuit row: a page headed "REFERENCE  MEP MAIN DB" resolved to
+         DB-1-GF — the board its way 1 FEEDS — because the header value matches
+         no code-shaped pattern and the scan carried on into the rows. */
+      const arrAll=(lines||[]).map(l=>String(l||'').trim());
+      let firstRow=arrAll.findIndex(t=>t&&CIRCUIT_ROW.test(t));
+      if(firstRow<0) firstRow=arrAll.length;
+      const candidates=[];
+      for(let li=0; li<firstRow; li++){
+        const t=arrAll[li];
+        if(!t||CIRCUIT_ROW.test(t)) continue;
+        const det=detectBoards(t)[0];
+        if(det) candidates.push({t,det});
+      }
+      const best=candidates.find(c=>HEADER_VALUE.test(c.t))||candidates[0];
+      if(best) return best.det;
+
+      /* A board named by DESCRIPTION rather than by code. Real example: a page
+         whose header reads "REFERENCE  110V AC DISTRIBUTION BOARD" — a genuine
+         board with fourteen circuits, which no code-shaped pattern will ever
+         match. Left unresolved its devices stay unattributed, so the estimator
+         sees a bucket of homeless rows instead of a board.
+         Only taken from the REFERENCE cell of a real header block, so this
+         cannot invent boards out of body text, and only once the line grouping
+         has actually paired the label with its value. */
+      const LABEL=/^(number\s+of\s+ways|served\s+by|location|description|incomer|circuit\s+ref|board\s+device)/i;
+      const arr=(lines||[]).map(l=>String(l||'').trim());
+      for(let i=0;i<arr.length;i++){
+        const t=arr[i];
+        if(!/(?<!(?:cable|drawing|document|project|job|schedule)\s)\bREFERENCE\b/i.test(t)) continue;
+        /* The value may sit on the same line once grouping has paired label with
+           value, or on the next line when the label stands alone in its cell. */
+        const inline=t.match(/\bREFERENCE\b\s*[:=\-]?\s+(.{2,40}?)\s*$/i);
+        const name=(inline?inline[1]:(arr[i+1]||'')).replace(/\s{2,}.*$/,'').trim();
+        if(!name||name.length<2||name.length>40) continue;
+        if(!/[A-Z0-9]/i.test(name)||LABEL.test(name)) continue;
+        const canonical=canonicalBoardRef(name);
+        if(canonical.normalised) return {orig:canonical.display,norm:canonical.normalised,type:'UNK',section:canonical.splitSection};
+      }
+    }
+  }
   let sawLabel=false;
   for(const line of lines){
     const source=String(line||'');
@@ -147,6 +299,22 @@ function scheduleBoardFromLines(lines){
     const tail=source.slice(label.index+label[0].length).trim();
     const detected=detectBoards(tail)[0];
     if(detected) return detected;
+    /* A board named by DESCRIPTION after an explicit label — "Board Ref: Main
+       Landlord MCCB Panel board". The token guard below deliberately refuses
+       bare words so body text cannot invent boards, but a LABELLED header cell
+       naming something that calls itself a panel or a board is not body text.
+       Measured on MCCB-Schedule_BowGreen.pdf: the panel owning every outgoing
+       device on the sheet resolved to NOTHING, so all of its rows were orphaned
+       and a nineteen-page schedule of 400A and 100A MCCBs produced a take-off of
+       four devices. Cut at the next labelled field, or the board's name swallows
+       "Project: Bow Green, Phase 2" with it. */
+    const cut=tail.search(/\b(?:project|location|date|rev(?:ision)?|job|drawing|sheet|page|scale|client)\b\s*(?:no\.?)?\s*[:=]/i);
+    const described=(cut>0?tail.slice(0,cut):tail).replace(/\s{2,}.*$/,'').trim();
+    if(described.length>=4&&described.length<=48
+       &&/\b(?:panel\s?board|panelboard|panel|switch\s?board|switchboard|board|mccb|consumer\s+unit|distribution)\b/i.test(described)){
+      const desc=canonicalBoardRef(described);
+      if(desc.normalised) return {orig:desc.display,norm:desc.normalised,type:'UNK',section:desc.splitSection};
+    }
     const token=tail.match(/^([A-Z0-9][A-Z0-9._\/-]{1,30})/i)?.[1];
     if(!token||!/[\d._\/-]/.test(token)) continue;
     const canonical=canonicalBoardRef(token);
@@ -162,7 +330,24 @@ function scheduleBoardFromLines(lines){
 }
 
 function hasScheduleBoardHeader(lines){
-  return (lines||[]).some(line=>/\bDB\s+REFERENCE\b|\b(?:DISTRIBUTION\s+)?BOARD\s*(?:REFERENCE|REF|IDENTITY)?\s*[:=\-]|\bDISTRIBUTION\s+BOARD\s+SCHEDULE\b\s*[—–:\-]\s*(?=[A-Z0-9])/i.test(String(line||'')));
+  /* Answers "does this page declare its own board?". Getting it wrong is
+     expensive: a false NO makes the page a continuation and dumps its devices
+     onto the PREVIOUS board, which is how one board ended up holding 86
+     devices — more than its 18 ways can physically carry — while every board
+     after it held none.
+     The old test demanded the literal "DB REFERENCE" or "BOARD REFERENCE:".
+     Real schedules label the field plain "REFERENCE" and put the board beside
+     it, so every page of such a document answered NO. Accept that form too:
+     a REFERENCE label followed by something board-shaped, or the header block
+     the page classifier keys on. */
+  /* Evaluated on the JOINED page text: with one line per table cell the label
+     and its value are on different lines, and a per-line test answers NO on
+     every page of such a document — making each page a continuation and
+     dumping its devices onto the previous board. */
+  const joined=(lines||[]).map(l=>String(l||'').trim()).filter(Boolean).join(' ');
+  if (/\bDB\s+REFERENCE\b|\b(?:DISTRIBUTION\s+)?BOARD\s*(?:REFERENCE|REF|IDENTITY)?\s*[:=\-]|\bDISTRIBUTION\s+BOARD\s+SCHEDULE\b\s*[—–:\-]\s*(?=[A-Z0-9])/i.test(joined)) return true;
+  return /\bREFERENCE\b\s*[:=\-]?\s*[A-Z0-9][A-Z0-9/._-]{1,20}/i.test(joined)
+    && /(number of ways|circuit ref|served by|incomer)/i.test(joined);
 }
 
 /* ==================== CABLE DETECTION (index.html:828) ==================== */
@@ -209,8 +394,41 @@ function classifyPage(text, pageIdx, totalPages){
   if (hasWays>=3) add('db-schedule',4);
   if (/board ref|board reference/.test(low)) add('db-schedule',2);
   const phaseRows=(text.match(/\bL[123]\b/g)||[]).length;
+  /* Rows whose way and phase are ONE token — "17L2", "18L1". The count above
+     cannot see them: there is no word boundary between the digits and the L.
+     A Hevacomp chart is nothing but these, so it scored no schedule signal at
+     all, typed 'unknown', and the entire schedule walk was skipped — the same
+     shape of failure as BUSBAR typing a circuit chart as a single-line diagram.
+     Three or more is a table; one is a coincidence. */
+  const compactWayRows=(text.match(/(?:^|\n)\s*\d{1,3}L[123]\b/gi)||[]).length;
+  if (compactWayRows>=3) add('db-schedule',8);
   const codedRows=(text.match(/(?:^|\n)\s*(?:\d{1,3}\s+)?(?:L[123]\s+)?\d+(?:\.\d+)?\s+[JKLMN]\s+[BCD]\b[^\n]*\b(?:Ri|Ra)\s+[LP]\b/gim)||[]).length;
   if(codedRows>=2&&phaseRows>=3) add('db-schedule',9);
+  if (EstimationExtractorCore.looksLikeMirroredChart && EstimationExtractorCore.looksLikeMirroredChart(text.split('\n'))) add('db-schedule',10);
+  /* Row FORMAT varies wildly between vendors — P-codes, coded columns, plain
+     manufacturer strings ("Acti9 iC60H, MCB, Type C") — so keying only on row
+     shape misses whole dialects and a page that is plainly a board schedule
+     scores 'unknown'. That silently disables the header board, every device on
+     the page loses its board, and the way refs register as boards instead.
+     The HEADER BLOCK is the stable signal: a board schedule names its board
+     and states its way count. Found on a real LV SLD schedule reading
+     "REFERENCE DB-1-GF ... NUMBER OF WAYS 18 WAYS ... Circuit Ref". */
+  /* A consumer-unit chart names its board and its way count in the dialect's OWN
+     words — "Board Identity: Consumer Unit (General Apartment)", "No of Ways: 3",
+     "DB Incomer Device Rating/Type: 63A Switched Disconnector" — and never writes
+     "reference" or "board schedule", so the headerBlock signal above cannot see
+     it. On a SCANNED chart that header is the only text that survives: the rows
+     come back as pipes and fragments, so every row-shape signal scores nothing
+     too. Measured on Dundee_CU-Circuit-Chart.pdf — five pages, three carrying
+     this header, all typed 'unknown', schedule walk never ran, 0 boards and
+     0 rows out of a document that states its own way count. The header alone has
+     to be enough, and it is deliberately tolerant: OCR read "No of Ways" as
+     "lo of Ways" on one page, so the incomer phrase carries it. */
+  const cuHeaderBlock = /board identity/.test(low) && /(no\.? of ways|number of ways|db incomer device)/.test(low);
+  if (cuHeaderBlock) add('db-schedule',9);
+  const headerBlock = /\breference\b/.test(low) && /(number of ways|circuit ref|\bways\b)/.test(low);
+  if (headerBlock && phaseRows>=3) add('db-schedule',8);
+  if (headerBlock && /\b(mcb|rcbo|mccb|rcd|afdd)\b/.test(low)) add('db-schedule',6);
   if (pageIdx===0 && totalPages>1 && /project|issued|revision/.test(low) && hasWays===0) add('cover',3);
   if (/contents/.test(low) && pageIdx===0) add('register',2);
   let best='unknown', bestS=0;
@@ -252,31 +470,201 @@ function parseScheduleLine(line, ctx){
   if (structured) return structured;
   const dialect = EstimationExtractorCore && EstimationExtractorCore.parseKnownScheduleLine(line, ctx);
   if (dialect) return dialect;
-  const wayM = line.match(/^\s*(?:way|cct|ckt|circuit)?\s*[:#]?\s*(\d{1,3})\b/i);
+  /* An explicit way/phase marker is the way, wherever it sits in the row.
+     A leading bare number is not: rows on a large-format schedule routinely
+     begin with the CABLE spec ("1 x 1.5", "2 x 1/core x 2.5"), and reading its
+     first number as the way put circuit 8's RCBO on way 1 and circuit 24's SPD
+     on way 1 — devices landing on the wrong circuit, not merely counted twice.
+     The leading form still applies to rows that carry no marker, and a number
+     immediately followed by "x" is a core count, never a way. */
+  /* A phase cell is ONE phase ("L1") or several on a three-phase way
+     ("L1L2L3"), and a scan routinely loses the repeated L's. Broomfield House's
+     Amtech chart prints L1L2L3 and OCR returns "L213", "L1L213" and "L123".
+     Accepting only a single phase did not merely mis-read the phase — it lost
+     the WHOLE ROW: with no marker match the positional-rating scan never runs,
+     so the guard below saw no way, no device and no rating and returned null.
+     Measured on page 15 (DB-K, 12 ways): ways 2, 3, 4, 5 and 8 dropped, four of
+     them carrying real devices at 16A, 32A, 16A and 25A. */
+  /* Up to four trailing groups, not two: "L1L2L3" needs only two, but the
+     damaged "L1L213" is L1 + L2 + 1 + 3 and matches nothing shorter.
+     The character class also carries the digits' LOOK-ALIKE LETTERS. Page 17 of
+     the same document prints L1L2L3 and OCR returns "LiLzLs" — i for 1, z for 2,
+     s for 3 — which lost ways 7 and 9, carrying a 32A and a 10A device. Scoped
+     deliberately: this only ever applies to the token sitting where a phase cell
+     belongs, immediately after a way number, so an ordinary word beginning with
+     L cannot be caught by it ("Lighting" needs a word boundary after "Li" and
+     does not have one). */
+  const PHASE_DIGIT = '123iIlzZsS';
+  const PHASE_CELL = 'L[' + PHASE_DIGIT + '](?:L?[' + PHASE_DIGIT + ']){0,4}';
+  /* "L213" and "L1L213" both mean L1L2L3. Reduce to the distinct phase digits
+     rather than trusting the spelling, and keep a two-phase cell as the two
+     phases it names — inflating it to three would invent a pole. */
+  const normalisePhaseCell = (token) => {
+    if (!token) return null;
+    /* Fold the look-alikes back to digits BEFORE reducing, or "LiLzLs" reduces to
+       nothing and the row is lost for a second reason.
+       The lowercase pass must run BEFORE toUpperCase(): a lowercase "l" standing
+       in for a 1 becomes an "L" the moment the case is folded, indistinguishable
+       from the cell's own separator, and the cell then yields no phase at all. */
+    const folded = String(token)
+      .replace(/[il]/g, '1')
+      .replace(/z/g, '2')
+      .replace(/s/g, '3')
+      .toUpperCase()
+      .replace(/I/g, '1')
+      .replace(/Z/g, '2')
+      .replace(/S/g, '3');
+    const digits = Array.from(new Set(folded.replace(/[^123]/g, ''))).sort();
+    if (!digits.length) return null;
+    return digits.map((d) => 'L' + d).join('');
+  };
+  const markerM = line.match(new RegExp('\\b(\\d{1,3})\\s*-\\s*(' + PHASE_CELL + ')\\b', 'i'));
+  /* Some circuit charts write the way and phase as ONE token with no separator
+     — "17L2", "18L1" — which no way pattern matched and which also defeats
+     phaseOf(), because there is no word boundary between the digits and the L.
+     A whole Hevacomp document returned zero rows for this alone. Anchored to
+     the start of the row so a cable code mid-line cannot look like one. */
+  const compactM = line.match(new RegExp('^\\s*(\\d{1,3})(' + PHASE_CELL + ')\\b', 'i'));
+  /* The same row shape with the phase SPACED off the way — "1 L1 Load-31 16".
+     Amtech charts write it this way; leadM finds the way but nothing else on
+     the row is recognisable, so the guard below used to drop it. */
+  const spacedM = compactM ? null : line.match(new RegExp('^\\s*(\\d{1,3})\\s+(' + PHASE_CELL + ')\\b', 'i'));
+  /* And the same shape again with a SLASH — "7/L1", "12/L3". This project's own
+     domain pack documents it twice and nothing parsed it:
+       domain-pack.mjs  syntegral: ways as "CCT n" or "n/Lx"
+       domain-pack.mjs  hevacomp:  "7/L1 20 6.0 2.5 LSF Singles Fixed power ..."
+     It had never surfaced because the Hevacomp example document writes the
+     compact form and the Syntegral one is an unreadable scan — so the dialect the
+     agents are TOLD about was one the deterministic parser could not read. The
+     leading "L" is what keeps this safe: "7/12" and other date-like or fraction
+     tokens cannot match. */
+  const slashM = (compactM || spacedM) ? null
+    : line.match(new RegExp('^\\s*(\\d{1,3})\\s*/\\s*(' + PHASE_CELL + ')\\b', 'i'));
+  /* All three marker forms open a row the same way: way, phase, then the
+     rating column. markerM can sit mid-line, so the scan starts from where it
+     actually matched. */
+  const markerHead = markerM || compactM || spacedM || slashM;
+  const markerEnd = markerM ? markerM.index + markerM[0].length
+    : markerHead ? markerHead[0].length : 0;
+  const leadM = line.match(/^\s*(?:way|cct|ckt|circuit)?\s*[:#]?\s*(\d{1,3})\b(?!\s*[x\u00d7])/i);
+  const wayM = markerM || markerHead || leadM;
+  const rawPhaseCell = (markerM && markerM[2]) || (markerHead && markerHead[2]) || null;
+  const markerPhase = normalisePhaseCell(rawPhaseCell);
+  /* The cell was reconstructed from damaged characters, so it is a reading
+     rather than a fact. Recorded so the confidence below can reflect it. */
+  const phaseCellRepaired = Boolean(rawPhaseCell) && markerPhase !== String(rawPhaseCell).toUpperCase();
   const spare = /\bspare\b/i.test(line);
   const space = /\bspace\b/i.test(line);
   const device = detectDeviceIn(line);
   const rating = ratingOf(line);
   const isIncomer = /\bincomer\b|\bincoming\b|\bmain switch\b/i.test(line);
-  if (!( (wayM && (device||spare||space)) || (isIncomer && device) )) return null;
+  /* An MCCB / switchboard schedule identifies each outgoing way by the BOARD IT
+     FEEDS, not by a way number:
+
+       DB/LL/D       a5   400A ML2.2
+       DB/LL/COMMS - Comms Room LTG & PWR  G  35  186  100A ML2.2
+
+     Measured on MCCB-Schedule_BowGreen.pdf, where the way numbers are largely
+     lost to the scan: the take-off came back with FOUR devices for a 19-page
+     schedule carrying 400A and 100A MCCBs on almost every row, and no board on
+     the document declares a way count, so completeness reported nothing missing.
+     A confident, near-empty take-off is the worst failure this product has.
+
+     Deliberately tight, because these rows have no way number to anchor them:
+     a board section must be open, the line must name EXACTLY ONE board other
+     than the section's own, it must carry a rating, and it must not be the
+     incomer. Two board references means prose or a mis-split row, not a way. */
+  const outgoingBoards = (!wayM && rating != null && !isIncomer && ctx.board)
+    ? detectBoards(line).filter(b => b.norm && b.norm !== ctx.board) : [];
+  const feedsBoardNorm = outgoingBoards.length === 1 ? outgoingBoards[0].norm : null;
+  /* A row stating a way and a RATING is a circuit even when it never names the
+     device class. Hevacomp's chart prints way, rating, cable and description
+     with no "MCB" anywhere, so requiring a device word dropped every live way
+     and kept only the spares. The class is left null rather than assumed, and
+     the confidence below sends it to Review — an unnamed device is uncertain,
+     not absent. */
+  /* Where a row opens with way and phase, the protective device's rating is the
+     first bare NUMBER after them — Hevacomp puts it immediately ("17L2 16*"),
+     Amtech puts a load id in between ("1 L1 Load-31 16"). Tokens carrying
+     letters are identifiers, not ratings, so they are skipped.
+     It has to be positional: neither dialect writes an "A" beside it, and the
+     only "A" on a Hevacomp row is in its description — "Radial 13A sockets"
+     made a 20A circuit read as 13A. */
+  const positionalScan = (() => {
+    if (!markerHead) return { value: null, damaged: false };
+    const rest = line.slice(markerEnd).trim();
+    for (const tok of rest.split(/\s+/).slice(0, 4)) {
+      /* A token STARTING with a letter is an identifier and the rating is further
+         along the row — Amtech puts "Load-255" between the phase and the rating. */
+      if (/^[A-Za-z]/.test(tok)) continue;
+      /* Trailing annotation marks belong to the sheet, not the value. "%" earns
+         its place here: OCR returns "10%" for "10*", and without it that token
+         failed to parse and a 10A circuit was read as 1A off the cable column. */
+      const m = tok.match(/^(\d{1,4}(?:\.\d+)?)[*\u00b0%'\u2019"]?$/);
+      if (m) return { value: m[1], damaged: false };
+      /* A token that starts with a DIGIT and still will not parse is a DAMAGED
+         rating, not something to scan past. "3z2*" is OCR of "32*"; skipping it
+         picks up the next number on the row — the cable size — and reported that
+         32A circuit as 15A. A wrong rating in a quotation is worse than an absent
+         one, so the scan stops here and the rating stays unknown for review. */
+      if (/\d/.test(tok)) return { value: null, damaged: true };
+    }
+    return { value: null, damaged: false };
+  })();
+  const positionalRating = positionalScan.value;
+  const ratingDamaged = positionalScan.damaged;
+  const compactRating = positionalRating;
+  if (!( (wayM && (device||spare||space||rating!=null||compactRating!=null||ratingDamaged)) || (isIncomer && device) || feedsBoardNorm )) return null;
   const cables = detectCables(line);
+  /* In a compact-marker chart the rating is the column immediately after the
+     way, written as a bare number with no "A" — "17L2  16*  1.5  1x2core...".
+     Read by pattern instead, the only "A" on the row is in its DESCRIPTION, so
+     "Radial 13A sockets" made a 20A circuit read as 13A. Position is the only
+     honest source here, and it applies solely to rows of this shape. */
+  /* Where the row opens with a way/phase marker and its rating column is damaged,
+     the rating is UNKNOWN. It must not fall back to ratingOf(), which scans the
+     whole line for a number beside an "A" — on a Hevacomp row the only "A" is in
+     the description, so "Radial 13A sockets" would report this circuit as 13A.
+     That is the trap the positional scan exists to avoid, and falling back would
+     walk straight back into it. */
+  const finalRating = positionalRating != null ? Number(positionalRating)
+    : ratingDamaged ? null
+    : rating;
   const row = {
     way: wayM? +wayM[1] : null,
-    desc: line.replace(/^\s*(?:way|cct|ckt|circuit)?\s*[:#]?\s*\d{1,3}\s*/i,'').trim(),
-    device, rating,
+    // strip only a LEADING way label; a marker mid-row is part of the text
+    desc: (leadM ? line.replace(/^\s*(?:way|cct|ckt|circuit)?\s*[:#]?\s*\d{1,3}\s*/i,'') : line).trim(),
+    device, rating: finalRating,
     poles: polesOf(line), poleConfiguration:poleConfigOf(line), curve: curveOf(line), sens: sensOf(line),
-    phase: phaseOf(line), ka: kaOf(line),
+    phase: markerPhase || phaseOf(line), ka: kaOf(line),
     cable: cables.length? cables[0] : null,
     spare, space, incomer: isIncomer,
+    /* Which board this outgoing device feeds, when the row is identified that
+       way rather than by a way number. Kept so the feed tree still links up. */
+    feedsBoardNorm,
     qty: device? qtyIn(line, device) : 1,
     srcText: line.trim(),
   };
   let conf = 0.6;
   if (row.way!==null) conf+=0.15;
   if (row.device) conf+=0.1;
-  if (row.rating!==null) conf+=0.1;
+  if (row.rating!==null && row.rating!==undefined) conf+=0.1;
   if (ctx.sawHeader) conf+=0.05;
   if (ctx.board) conf+=0.05; else conf-=0.2;
+  /* A circuit whose device class the row never names is a real circuit, but it
+     is not a confident reading: it must sit below the review threshold rather
+     than being presented as settled. */
+  if (!row.device && !row.spare && !row.space) conf-=0.25;
+  /* A device located by the board it feeds, with no way number of its own, is a
+     weaker reading than one anchored to a way — it must reach the estimator as
+     something to confirm, not as settled. */
+  if (row.way === null && feedsBoardNorm) conf = Math.min(conf, 0.7);
+  /* A phase cell rebuilt from damaged characters decides the POLE COUNT, and a
+     three-pole device priced as single-pole is a real costing error, so the row
+     must be reviewable even when everything else about it reads cleanly. Capped
+     below the app's 0.8 review threshold rather than nudged: a 0.05 penalty left
+     a row that named its device sitting at 0.92, which presents as settled. */
+  if (phaseCellRepaired) conf = Math.min(conf, 0.75);
   row.conf = Math.max(0.2, Math.min(0.97, conf));
   return row;
 }
@@ -327,16 +715,31 @@ function analyseDocument(pages){
     const lines=pg.lines;
     const pageBoards=[];
     lines.forEach(t=>detectBoards(t).forEach(b=>{ if(!pageBoards.some(x=>x.norm===b.norm)) pageBoards.push(b); }));
-    pageBoards.forEach(b=>regBoard(b,pageNo));
+    /* Header resolved BEFORE registration, and row-derived candidates
+       reconciled against it — mirroring index.html. Registering first is what
+       let a schedule's "Connected To" column mint a board per row. */
     const isSched=SCHEDULE_TYPES.has(pg.type) && pg.type!=='cable-schedule';
     let ctxBoard=null;
     if (isSched){
       ctxBoard=scheduleBoardFromLines(lines);
       const hasBoardHeader=hasScheduleBoardHeader(lines);
       if (!ctxBoard && !hasBoardHeader && prevBoard) ctxBoard=prevBoard;
-      if (ctxBoard){ regBoard(ctxBoard,pageNo); prevBoard=ctxBoard; }
+      const kept = ctxBoard
+        ? EstimationExtractorCore.reconcilePageBoards(ctxBoard.norm, pageBoards)
+        : pageBoards;
+      kept.forEach(b=>regBoard(b,pageNo));
+      if (ctxBoard){
+        regBoard(ctxBoard,pageNo); prevBoard=ctxBoard;
+        const e=A.boards[ctxBoard.norm];
+        if (e){
+          e.isHeader=true;
+          const facts=EstimationExtractorCore.parseBoardHeaderFacts(lines);
+          if (facts.waysTotal) e.waysTotal=facts.waysTotal;
+          if (facts.servedBy) e.servedBy=facts.servedBy;
+        }
+      }
       else if(hasBoardHeader) prevBoard=null;
-    } else prevBoard=null;
+    } else { pageBoards.forEach(b=>regBoard(b,pageNo)); prevBoard=null; }
     const parsedLegend=EstimationExtractorCore.parseProtectionLegend(lines.join('\n'));
     const ctx={board:ctxBoard?ctxBoard.norm:null, boardOrig:ctxBoard?ctxBoard.orig:null, boardSection:ctxBoard?ctxBoard.section||null:null, sawHeader:false, inNotes:false,
       lastWay:null, lastPhase:null, pendingRows:[], protectionLegend:parsedLegend.legend};
@@ -358,6 +761,21 @@ function analyseDocument(pages){
           A.rows.push({boardNorm:ctx.board, boardSection:ctx.boardSection, page:pageNo, line:li, status:'pending', kind:'schedule', ...row});
         }
         parseFeeders(t, pageBoards, ctx.board).forEach(fd=>A.feeders.push({page:pageNo,line:li,...fd}));
+        /* A board named in a row of THIS board's schedule is fed BY this board.
+           Trimble's "Connected To:" column simply holds the downstream board's
+           reference, with none of the words parseFeeders looks for. */
+        if (ctx.board && !/\b(?:SERVED\s+BY|FED\s+FROM|SUPPLIED\s+(?:FROM|BY))\b/i.test(t)){
+          const named=detectBoards(t);
+          const kept=EstimationExtractorCore.reconcilePageBoards
+            ? EstimationExtractorCore.reconcilePageBoards(ctx.board,named) : named;
+          kept.forEach(b=>{
+            if (b.norm===ctx.board) return;
+            if (A.feeders.some(fd=>fd.from===ctx.board&&fd.to===b.norm)) return;
+            A.feeders.push({page:pageNo, line:li, from:ctx.board, to:b.norm,
+              cable:detectCables(t)[0]||null, device:detectDeviceIn(t), rating:ratingOf(t),
+              poles:polesOf(t), srcText:t.trim(), conf:0.75});
+          });
+        }
       } else if (pg.type==='sld'||pg.type==='schematic'||pg.type==='notes'){
         const mainCtx = pageBoards.find(b=>b.type==='MAIN') || pageBoards.find(b=>b.type==='SMDB'||b.type==='MDB');
         parseFeeders(t, pageBoards, mainCtx?mainCtx.norm:null).forEach(fd=>A.feeders.push({page:pageNo,line:li,...fd}));
@@ -374,6 +792,18 @@ function analyseDocument(pages){
         }
       }
     });
+    if (isSched && ctx.board){
+      const claimed=new Set(A.rows.filter(r=>r.boardNorm===ctx.board&&r.way!=null).map(r=>String(r.way)));
+      EstimationExtractorCore.spareWayRanges(lines).forEach(({from,to})=>{
+        for(let w=from;w<=to;w++){
+          if(claimed.has(String(w))) continue;
+          claimed.add(String(w));
+          A.rows.push({boardNorm:ctx.board, page:pageNo, line:null, status:'pending', kind:'schedule',
+            way:w, phase:null, desc:'Spare (declared as a block)', device:null, rating:null,
+            spare:true, space:false, incomer:false, qty:1, srcText:`Ways ${from}-${to} declared SPARE`, conf:0.85});
+        }
+      });
+    }
     if (isSched&&!codedPage.matched){
       const flushed = EstimationExtractorCore.finalizeScheduleContext(ctx);
       flushed.forEach(row=>{ /* rows already pushed by parseBamScheduleLine path; nothing extra */ });
@@ -386,6 +816,29 @@ function analyseDocument(pages){
       }
     });
   }
+  /* Mirrors the app's post-analysis pass. Without it this harness reported
+     board counts the shipped app would never produce, and a fix could look
+     verified here while doing nothing in the product — which happened. */
+  const applyBoardMerge=({drop,keep})=>{
+    const from=A.boards[drop], to=A.boards[keep];
+    if(!from||!to||drop===keep) return;
+    A.rows.forEach(r=>{ if(r.boardNorm===drop) r.boardNorm=keep; });
+    A.cables.forEach(c=>{ if(c.boardNorm===drop) c.boardNorm=keep; });
+    A.feeders.forEach(fd=>{ if(fd.from===drop) fd.from=keep; if(fd.to===drop) fd.to=keep; });
+    Object.values(A.boards).forEach(b=>{ if(b.parent===drop) b.parent=keep; });
+    (from.pages||[]).forEach(pn=>{ if(!to.pages.includes(pn)) to.pages.push(pn); });
+    delete A.boards[drop];
+  };
+  EstimationExtractorCore.planWayBoardMerges(
+    Object.values(A.boards).map(b=>({norm:b.norm, isHeader:Boolean(b.isHeader)}))
+  ).forEach(applyBoardMerge);
+  EstimationExtractorCore.planPrefixMerges(
+    Object.values(A.boards).map(b=>({norm:b.norm,
+      rowCount:A.rows.filter(r=>r.boardNorm===b.norm&&r.status!=='rejected').length}))
+  ).forEach(applyBoardMerge);
+  A.capacityWarnings=EstimationExtractorCore.boardCapacityWarnings(
+    Object.values(A.boards).map(b=>({norm:b.norm, waysTotal:b.waysTotal||null, phases:3,
+      deviceCount:A.rows.filter(r=>r.boardNorm===b.norm&&r.device&&!r.space&&!r.spare).length})));
   return A;
 }
 
@@ -393,7 +846,7 @@ module.exports = {
   EstimationExtractorCore,
   BOARD_TYPES, normBoard,
   detectBoards, detectCables, classifyPage,
-  scheduleBoardFromLines,
+  scheduleBoardFromLines, scheduleBoardSegments,
   isHeaderLine, isSeparator, isNoteLine, detectDeviceIn, qtyIn,
   parseScheduleLine, parseFeeders, analyseDocument,
   SCHEDULE_TYPES, MENTION_TYPES,

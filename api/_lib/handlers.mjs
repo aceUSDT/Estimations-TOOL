@@ -48,7 +48,9 @@ export function handleHealth(deps) {
     status: 'ok',
     configured: s.configured,
     mode: s.mode || (s.configured ? 'gemini' : 'unconfigured'),
-    providers: { gemini: s.gemini, nvidia: Boolean(s.nvidia) },
+    providers: { gemini: s.gemini, nvidia: Boolean(s.nvidia), document_parser: Boolean(s.document_parser_configured) },
+    document_parser: s.document_parser || null,
+    document_parser_cloud: Boolean(s.document_parser_cloud),
     primary: s.primary,
     verify: s.verify,
     model: deps.GEMINI_MODEL,
@@ -86,10 +88,13 @@ export function handlePublicConfig(deps) {
  * This is the tested replacement for the Netlify function trio (no Blobs, no
  * polling). Documents stay local; only the page the user opted to send leaves.
  *
- * Note: like the Netlify predecessor, this endpoint is unauthenticated. It is
- * safe because it stores nothing and returns only what the caller sent us to
- * read. Multi-tenant/audited extraction uses the durable job routes instead.
- * Public multi-tenant deployments should still deploy-protect or quota it. */
+ * Auth: gated by AUTH_REQUIRED like every other route that spends money, and
+ * on by default. The route stores nothing, but each call spends real NVIDIA /
+ * Gemini budget, so "it returns only what you sent it" was never the whole
+ * risk — an anonymous caller who finds the URL drains the account. A
+ * deployment that genuinely wants the anonymous local-first path (a private
+ * instance, or desktop pointed at its own service) sets AUTH_REQUIRED=false
+ * and gets the previous behaviour back, spend guard still in front of it. */
 export async function handleInlineExtract(input, deps) {
   const correlationId = input.correlationId || newCorrelationId();
   if (input.method !== 'POST') return err(405, 'method_not_allowed', 'POST only.', correlationId);
@@ -101,10 +106,15 @@ export async function handleInlineExtract(input, deps) {
   if (!hasImage && !hasText) return err(400, 'invalid_request', 'Provide image_base64 and/or text_lines.', correlationId);
   if (hasImage && b.image_base64.length > MAX_IMAGE_B64) return err(413, 'payload_too_large', 'Page image exceeds the size limit.', correlationId);
 
-  /* Spend guard. This route has no sign-in (the local-first browser app calls
-   * it anonymously by design) yet every call spends real Gemini/NVIDIA budget,
-   * so anyone who finds the URL can drain it. A coarse per-IP window is the
-   * proportionate control until per-plan metering exists.
+  /* Identity first: never spend provider budget for a caller we could not
+   * name. Skipped only where the operator has opted out via AUTH_REQUIRED. */
+  const auth = await requireUser({ ...input, correlationId }, deps);
+  if (auth.error) return auth.error;
+
+  /* Spend guard, kept in front of the provider even for signed-in callers:
+   * one authenticated account can still loop the endpoint, and per-plan
+   * metering does not exist yet. A coarse per-IP window is the proportionate
+   * control in the meantime.
    *
    * Honest about what this is NOT: it is not authentication, not metering, and
    * an attacker with many source addresses is not stopped by it. It fails OPEN
@@ -134,7 +144,9 @@ export async function handleInlineExtract(input, deps) {
 }
 
 async function requireUser(input, deps) {
-  const userId = await deps.resolveUser(input);
+  /* No resolver wired is treated as "nobody is signed in", not as "auth is
+   * off": a deployment that forgets the plumbing must fail closed. */
+  const userId = deps.resolveUser ? await deps.resolveUser(input) : null;
   if (!userId && deps.authRequired !== false) return { error: err(401, 'unauthenticated', 'Sign in to continue.', input.correlationId) };
   return { userId: userId || null };
 }

@@ -46,6 +46,9 @@ report core, fixture suite, and Electron package.
 - `vendor/`: pinned local browser runtimes required for offline PDF and OCR handling.
 - `desktop/`: secure Electron protocol, local asset packaging, and installer configuration.
 - `netlify/functions/`: optional hosted extraction; secrets remain server-side.
+- Optional self-hosted document parser (Baidu Unlimited-OCR): `docs/UNLIMITED_OCR.md`.
+  Leads the reading chain when configured; never a dependency, because the desktop
+  build must keep working from packaged assets with no network.
 - `tools/coverage/`: deterministic tests and document fixtures.
 
 ## Workflow
@@ -53,6 +56,12 @@ report core, fixture suite, and Electron package.
 Read the relevant code and fixture before editing. Keep changes scoped, run the nearest
 tests, and validate count-changing work against a real reference document. Use short-lived
 branches only; merge accepted work into `main` and remove stale integration branches.
+
+**Before touching extraction, reporting, or the agent orders, read
+`docs/PROJECT_HISTORY.md`.** It records what has already been measured on real
+documents, the bugs that were introduced while fixing them, and the approaches that
+were tried and measured as worse — including two that look obviously right. Add to it
+when you learn something a future session would otherwise re-derive.
 
 ## Commands
 
@@ -63,3 +72,13 @@ branches only; merge accepted work into `main` and remove stale integration bran
 - macOS package: `cd desktop && npm run dist:mac`
 
 The full original requirements and domain model remain in `docs/BUILD_BRIEF.md`.
+
+## graphify
+
+This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
+
+Rules:
+- For codebase questions, first run `graphify query "<question>"` when graphify-out/graph.json exists. Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts. These return a scoped subgraph, usually much smaller than GRAPH_REPORT.md or raw grep output.
+- If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
+- Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
+- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).

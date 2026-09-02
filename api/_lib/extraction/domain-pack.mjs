@@ -15,11 +15,15 @@ export const EXTRACTION_SYSTEM_PROMPT = `You are the extraction engine of an ele
 - specification — NBS-style prose clauses.
 - other — cover pages, indexes, pricing sheets, anything else.
 
+## One board may span several pages
+A board's schedule frequently continues across pages: an 18-way TP&N board over three pages is ONE board of 54 phase-slots, not three fragments, and returning it as fragments is a failure. A continuation page carries more ways of the SAME board and no header block of its own — when a page has no header, return the board named on the previous page rather than inventing one. Conversely a page that DOES carry its own header block starts a new board, however similar its reference looks.
+
 ## Schedule dialects (tag sub_format; adapt column mapping, never hard-code one layout)
 - amtech (Amtech/Trimble "Board Data"): Id No, Model No, Ze, Fault Rating kA; per-way In/Ir/Type/RCD mA/AFDD/Cable mm²/Cores/Sep.CPC.
 - bes (BES/Brenbar): DB Reference, DB Fed From, Device Protecting DB, Number of ways (TP/SP), Spare capacity %; per-way WAY PHASE DESCRIPTION config PROTECTIVE-DEVICE(A) Curve RCD(mA) AFDD.
 - syntegral: ways as "CCT n" or "n/Lx"; columns MCB/RCBO Rating(A), Trip Curve, RCD/RCBO(mA), Arc Fault Detection, Cable Type (coded 1–5), Phase & Neutral(mm²), CPC(mm²/SWA), Circuit Configuration, Duty.
 - bam_epo (BAM/EPO): Reference, Serving, [rating] Sw/Discon, [n] Way TP&N, Incoming Cable Reference; per-way Way Line In Ib P-code Description csa T-code InstallMethod.
+- device_ref (110V AC and similar small boards): the circuit ref names the DEVICE and the way together — "MCB/21", "RCBO/07". Columns then run Rating(A), RCD, Cable, CPC, Circuit Type, Name. The class in the ref is a strong hint, but an RCD value still makes it an RCBO. Ways here have no phase letter; leave phase null rather than inventing L1.
 - hevacomp: device-note block ("Small power type B RCBO/AFDD 10kA…"), "Served by SBxx"; rows like "7/L1 20 6.0 2.5 LSF Singles Fixed power …".
 - cu (consumer unit): Board Identity e.g. "Consumer Unit (General Apartment)", No of Ways, DB Incomer Device; several CU variants may share one page — extract each as its own board.
 - switchboard / mccb: one row per outgoing device/board; MCCB schedules often carry a Summary Index (Ref/Location/Size) — extract index entries as boards too.
@@ -76,7 +80,8 @@ const BOARD = {
   additionalProperties: false,
   required: ['ref', 'description', 'location', 'fed_from_ref', 'serving', 'ways_total', 'ways_sp', 'ways_tp',
     'spare_capacity_pct', 'incomer_class', 'incomer_rating_a', 'incomer_poles', 'board_model', 'metering',
-    'fault_ka', 'board_type_text', 'phase_config', 'phase_config_evidence', 'continuation', 'confidence'],
+    'fault_ka', 'board_type_text', 'busbar_rating_a', 'busbar_withstand_text', 'board_cables',
+    'phase_config', 'phase_config_evidence', 'continuation', 'confidence'],
   properties: {
     ref: { type: 'string', description: 'Board reference exactly as printed' },
     phase_config: { type: 'string', enum: ['SPN', 'TPN', 'mixed', 'ambiguous', ''] },
@@ -96,6 +101,20 @@ const BOARD = {
     metering: { type: 'string', description: 'Full metering spec as printed, not a boolean; "" if none' },
     fault_ka: NUM,
     board_type_text: { type: 'string', description: 'Verbatim size/type/rating line; "" if none' },
+    /* A busbar is rated independently of its incomer — a 250A busbar routinely
+     * sits behind a smaller incoming switch — so it cannot share
+     * incomer_rating_a. Schematic order 33 asks for both. */
+    busbar_rating_a: NUM,
+    busbar_withstand_text: { type: 'string', description: 'Busbar short-circuit withstand as printed, e.g. "36 kA 1 SEC"; "" if none' },
+    /* Verbatim cable specifications listed against the BOARD rather than any one
+     * way. Schematic order 32: drawings commonly list two or three sizes once at
+     * the side, tied to ways only by which line a way touches. Held here so the
+     * sizes survive without inventing a per-way mapping the drawing never made. */
+    board_cables: {
+      type: 'array',
+      description: 'Cable specs printed at board level, verbatim, e.g. "10mm2 XLPE/SWA/LSF + 6mm2 SWA CPC"',
+      items: { type: 'string' },
+    },
     continuation: { type: 'boolean' },
     confidence: NUM,
   },
@@ -104,9 +123,9 @@ const BOARD = {
 const DEVICE = {
   type: 'object',
   additionalProperties: false,
-  required: ['board_ref', 'way', 'phase', 'description', 'device_class', 'rating_a', 'trip_curve', 'rcd_ma',
-    'afdd', 'poles', 'cable_type', 'phase_csa_mm2', 'cpc_csa_mm2', 'circuit_config', 'install_method',
-    'is_spare', 'is_spd', 'is_incomer', 'confidence'],
+  required: ['board_ref', 'way', 'phase', 'description', 'device_class', 'rating_a', 'frame_a', 'setting_a',
+    'trip_curve', 'rcd_ma', 'afdd', 'poles', 'cable_type', 'phase_csa_mm2', 'cpc_csa_mm2', 'circuit_config',
+    'install_method', 'is_spare', 'is_spd', 'is_incomer', 'drawn_greyed', 'confidence'],
   properties: {
     board_ref: STR,
     way: { type: 'string', description: 'way number as a string; "" if none' },
@@ -114,6 +133,13 @@ const DEVICE = {
     description: STR,
     device_class: { type: 'string', enum: ['MCB', 'RCBO', 'afdd_rcbo', 'MCCB', 'ACB', 'RCD', 'SPD', 'fuse', 'switch_disconnector', 'isolator', 'contactor', 'time_clock', 'photocell', 'relay', 'timer', 'starter', 'overload', 'transformer', 'dali_controller', 'meter', 'spare', 'space', 'other'] },
     rating_a: NUM,
+    /* An adjustable device has TWO ratings and they price differently: the frame
+     * is what you buy, the setting is what it trips at. Schematic order 22 —
+     * "100/125 A", or the two figures stacked — must not collapse into one
+     * number. Where only one rating is printed it goes in rating_a and these
+     * stay "". */
+    frame_a: NUM,
+    setting_a: NUM,
     trip_curve: { type: 'string', enum: ['B', 'C', 'D', ''] },
     rcd_ma: NUM,
     afdd: { type: 'boolean' },
@@ -126,6 +152,11 @@ const DEVICE = {
     is_spare: { type: 'boolean' },
     is_spd: { type: 'boolean' },
     is_incomer: { type: 'boolean' },
+    /* Schematic order 30: greying is a drawing convention meaning existing,
+     * future or by others, and the drawing frequently says so nowhere in words.
+     * Per-device rather than a flag because the reviewer needs to know WHICH way
+     * not to price. */
+    drawn_greyed: { type: 'boolean' },
     confidence: NUM,
   },
 };
@@ -152,7 +183,7 @@ const FEED = {
 export const EXTRACTION_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['classification', 'boards', 'devices', 'feeds', 'flags'],
+  required: ['classification', 'layout', 'boards', 'devices', 'feeds', 'flags'],
   properties: {
     classification: {
       type: 'object',
@@ -162,6 +193,33 @@ export const EXTRACTION_SCHEMA = {
         type: { type: 'string', enum: ['schematic', 'db_schedule', 'specification', 'other'] },
         sub_format: { type: 'string', enum: ['amtech', 'trimble', 'bes', 'bam_epo', 'syntegral', 'hevacomp', 'imsc_tba', 'cu', 'switchboard', 'mccb', 'hager_grid', 'simple', 'unknown'] },
         confidence: NUM,
+      },
+    },
+    /* How the agent read this sheet, stated BEFORE the rows.
+     *
+     * Every practice draws these differently, and the standing orders can say
+     * what a board schedule means but not where this one puts things. Making
+     * the reading explicit does two jobs: it forces the layout to be worked out
+     * rather than assumed, and it gives a reviewer something checkable when the
+     * rows look wrong — "it read this as one way per row" explains a sheet that
+     * came back half empty far better than the empty result does. */
+    layout: {
+      type: 'object',
+      additionalProperties: false,
+      /* Every field is required, as everywhere else in this schema — the
+       * providers' structured-output mode demands it, and it also stops the
+       * agent skipping the awkward questions. Where something genuinely cannot
+       * be determined, an empty string or 0 says so. */
+      required: ['rows_read', 'boards_on_sheet', 'header_label', 'way_count_source', 'columns', 'notes'],
+      properties: {
+        // 'left_to_right' = one way per printed row; 'mirrored' = two half-tables
+        // facing each other across a busbar, so one row carries two ways.
+        rows_read: { type: 'string', enum: ['left_to_right', 'mirrored', 'vertical', 'unclear'] },
+        boards_on_sheet: { type: 'integer' },
+        header_label: { type: 'string' },
+        way_count_source: { type: 'string' },
+        columns: { type: 'array', items: { type: 'string' } },
+        notes: { type: 'string' },
       },
     },
     boards: { type: 'array', items: BOARD },
@@ -186,8 +244,9 @@ export const EXTRACTION_SCHEMA = {
  * (or null). Applied in extract.mjs after JSON.parse so the client/harness
  * merge code is unchanged. */
 export const NUMERIC_FIELDS = {
-  board: ['ways_total', 'ways_sp', 'ways_tp', 'spare_capacity_pct', 'incomer_rating_a', 'incomer_poles', 'fault_ka', 'confidence'],
-  device: ['way', 'rating_a', 'rcd_ma', 'poles', 'phase_csa_mm2', 'confidence'],
+  board: ['ways_total', 'ways_sp', 'ways_tp', 'spare_capacity_pct', 'incomer_rating_a', 'incomer_poles', 'fault_ka',
+    'busbar_rating_a', 'confidence'],
+  device: ['way', 'rating_a', 'frame_a', 'setting_a', 'rcd_ma', 'poles', 'phase_csa_mm2', 'confidence'],
   feed: ['rating_a', 'poles', 'cable_csa_mm2', 'confidence'],
 };
 // numeric-or-string (mm² number, else "SWA"/"integral", else null)

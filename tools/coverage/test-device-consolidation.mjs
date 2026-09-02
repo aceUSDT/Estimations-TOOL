@@ -149,8 +149,13 @@ assert.equal(reconciliation.sourceTotal, 21);
 assert.equal(reconciliation.boardTotal, 21);
 assert.equal(reconciliation.groupTotal, 21);
 
-const workbook = Report.createExcelWorkbook(riverside, ExcelJS);
+/* The provenance sheets are opt-in: they are not what anyone quotes from, and
+ * on a real project they came to 1,550 rows around eighteen rows of take-off.
+ * Traceability is unchanged - fullAudit still produces every one of them, and
+ * every row still carries its document, page, source text and confidence. */
+const workbook = Report.createExcelWorkbook(riverside, ExcelJS, { fullAudit: true });
 for (const sheetName of [
+  "Quotation Take-Off",
   "Device Take-Off",
   "Device Detail",
   "Review Required",
@@ -158,6 +163,25 @@ for (const sheetName of [
   "Extraction Audit",
 ]) {
   assert.ok(workbook.getWorksheet(sheetName), `missing ${sheetName} sheet`);
+}
+const quoteOnly = Report.createExcelWorkbook(riverside, ExcelJS);
+assert.equal(quoteOnly.worksheets[0].name, "Quotation Take-Off");
+for (const sheetName of ["Device Detail", "Extraction Audit"]) {
+  assert.equal(quoteOnly.getWorksheet(sheetName), undefined, `${sheetName} must be opt-in`);
+}
+/* Whatever the sheet list, the quotation's own total must equal the take-off's
+ * - a simplified document that disagrees with the audited one is worse than a
+ * cluttered one. */
+{
+  const q = quoteOnly.getWorksheet("Quotation Take-Off");
+  const rows = [];
+  q.eachRow((r) => rows.push(r));
+  const total = rows.find((r) => /PROJECT TOTAL/.test(String(r.getCell(3).value || "")));
+  assert.ok(total, "quotation must state a project total");
+  assert.equal(total.getCell(4).value, riverside.grandTotal);
+  // every board that owns devices appears exactly once as a numbered line
+  const boardLines = rows.filter((r) => /^\d{3}$/.test(String(r.getCell(1).value || "")));
+  assert.equal(boardLines.length, riverside.boards.filter((_, i) => riverside.boardTotals[i] > 0).length);
 }
 
 const takeoff = workbook.getWorksheet("Device Take-Off");
@@ -191,7 +215,7 @@ const corrected = Report.buildModel({
   })],
 });
 assert.ok(corrected.groups[0].rows[0].reviewReasons.includes("An automatic OCR correction needs confirmation"));
-const correctionWorkbook = Report.createExcelWorkbook(corrected, ExcelJS);
+const correctionWorkbook = Report.createExcelWorkbook(corrected, ExcelJS, { fullAudit: true });
 const auditValues = [];
 correctionWorkbook.getWorksheet("Extraction Audit").eachRow((excelRow) => auditValues.push(excelRow.values));
 const curveAudit = auditValues.find((values) => values.includes("Tripping Curve"));

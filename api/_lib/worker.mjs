@@ -18,8 +18,30 @@
 import { deriveState } from './handlers.mjs';
 
 const TRANSIENT = new Set([429, 500, 502, 503, 504]);
+/* The NVIDIA pool reports failures that never reached an HTTP response as a
+ * stable `code` with no status: an aborted request or a socket error is the
+ * textbook retryable failure, so testing `status` alone silently skipped the
+ * exact class this retry exists for. */
+const TRANSIENT_CODES = new Set(['rate_limited', 'timeout', 'network']);
+const TRANSIENT_ATTEMPT = /^(rate_limited|timeout|network|http_(429|5\d\d))$/;
 const DEFAULT_HEARTBEAT_MS = 10000;
 const DEFAULT_MAX_ATTEMPTS = 2;
+
+/* One definition of "worth trying again", shared by the retry loop and the
+ * failure classifier so the two can never disagree about the same error. */
+function isTransient(e) {
+  if (!e) return false;
+  if (TRANSIENT.has(e.status)) return true;
+  if (TRANSIENT_CODES.has(e.code)) return true;
+  /* `role_exhausted` means the pool already walked the whole model chain. That
+   * is worth another attempt only when the underlying attempts were themselves
+   * transient — a chain that failed on bad_json/empty_reply will fail
+   * identically on a retry, so retrying only burns budget and wall-clock. */
+  if (e.code === 'role_exhausted' && Array.isArray(e.attempts)) {
+    return e.attempts.some((a) => a && TRANSIENT_ATTEMPT.test(String(a.error || '')));
+  }
+  return false;
+}
 
 function countPage(result) {
   const boards = Array.isArray(result && result.boards) ? result.boards : [];
@@ -49,8 +71,7 @@ export function makeProcessJob(deps) {
         return await deps.extract(args);
       } catch (e) {
         lastErr = e;
-        const transient = e && TRANSIENT.has(e.status);
-        if (!transient || attempt === maxAttempts) throw e;
+        if (!isTransient(e) || attempt === maxAttempts) throw e;
         await timers.sleep(Math.min(2000, 250 * 2 ** attempt));
       }
     }
@@ -107,7 +128,7 @@ export function makeProcessJob(deps) {
       return { state };
     } catch (e) {
       const code = e && e.stop_reason === 'max_tokens' ? 'output_truncated'
-        : (e && TRANSIENT.has(e.status)) ? 'provider_unavailable'
+        : isTransient(e) ? 'provider_unavailable'
         : 'extraction_error';
       await deps.db.updateJob(deps.sb, job.id, {
         state: 'failed', error_code: code,

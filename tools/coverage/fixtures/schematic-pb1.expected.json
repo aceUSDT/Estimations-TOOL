@@ -1,0 +1,80 @@
+{
+  "_source": "Estimator's annotated LV schematic: 12-way TP&N panelboard PB1.",
+  "_why": [
+    "The schematic orders in api/_lib/extraction/agent-team.mjs were written from",
+    "this drawing. Orders are prose until something states what a correct reading",
+    "RETURNS, so this is that statement: the take-off an agent must produce from",
+    "this panel, itemised.",
+    "",
+    "It is a target, not a recording. No model has been run against this drawing in",
+    "this environment (no extraction key configured), so nothing here is a captured",
+    "result. tools/coverage/test-schematic-fixture.mjs checks that the standing",
+    "orders instruct the agent to look for every field used below; the content",
+    "check runs when a key is present.",
+    "",
+    "Read from a screenshot, so items marked \"legible\": false are where the image",
+    "is too coarse to be certain. They are listed rather than dropped — an unread",
+    "way is exactly what the completeness check exists to surface."
+  ],
+
+  "board": {
+    "ref": "PB1",
+    "description": "12WAY TP&N PANELBOARD",
+    "location": "GROUND FLOOR PLANT ROOM",
+    "ways_total": 12,
+    "phase_config": "TPN",
+    "rated_voltage_v": 415,
+    "rated_current_a": 250,
+    "classification": "FORM 4 TYPE 2",
+    "access": "FRONT",
+    "cable_entry": "BOTTOM",
+    "cable_exit": "TOP"
+  },
+
+  "incomer": [
+    { "class": "Meter",       "label": "NEUVOLT METER", "role": "incomer_metering" },
+    { "class": "MCCB",        "label": "TMD", "frame_a": 200, "setting_a": 160,
+      "poles": "TP+N", "role": "incoming_device",
+      "_note": "Frame and setting are both stated and both belong in the take-off." },
+    { "class": "SPD",         "label": "SPD T1+T2", "spd_type": "T1+T2", "role": "incomer_protection" },
+    { "class": "CT",          "label": "CT", "role": "incomer_metering" },
+    { "class": "Cable",       "label": "XLPE / LSF / CU", "cpc_a": 150, "design_rating_a": 200,
+      "role": "incoming_cable",
+      "_note": "A cable specification, never a device rating." }
+  ],
+
+  "ways": [
+    { "way": 1,  "phase": "TPN", "rating_a": 125,               "device_label": "ML2.3", "metered": true  },
+    { "way": 2,  "phase": "TPN", "spare": true,                  "device_label": "SPARE WAY" },
+    { "way": 3,  "phase": "TPN", "rating_a": 20,                "device_label": "ML2.3", "metered": true  },
+    { "way": 4,  "phase": "L1",  "phase_config": "SPN", "rating_a": 20, "device_label": "TMD" },
+    { "way": 4,  "phase": "L2",  "phase_config": "SPN", "rating_a": 20, "device_label": "TMD" },
+    { "way": 4,  "phase": "L3",  "phase_config": "SPN", "rating_a": 20, "device_label": "TMD" },
+    { "way": 5,  "phase": "TPN", "rating_a": 40,                "device_label": "ML2.3", "metered": true  },
+    { "way": 6,  "phase": "TPN", "frame_a": 100, "setting_a": 125, "device_label": "ML2.3", "metered": true,
+      "_note": "Printed \"100/125 A\" — a frame/trip pair, not a choice." },
+    { "way": 7,  "phase": "TPN", "rating_a": 125,               "device_label": "ML2.3", "metered": true  },
+    { "way": 8,  "phase": "TPN", "rating_a": 32,                "device_label": "ML2.3", "metered": true  },
+    { "way": 9,  "phase": "TPN", "rating_a": 32,                "device_label": "ML2.3", "metered": true  },
+    { "way": 10, "phase": "TPN", "spare": true,                  "device_label": "SPARE WAY" },
+    { "way": 11, "phase": "L1",  "phase_config": "SPN", "rating_a": 20, "device_label": "TMD", "metered": true },
+    { "way": 11, "phase": "L2",  "phase_config": "SPN", "rating_a": 20, "device_label": "TMD" },
+    { "way": 11, "phase": "L3",  "phase_config": "SPN", "spare": true,  "device_label": "SPARE WAY" },
+    { "way": 12, "phase": "TPN", "spare": true,                  "device_label": "SPARE WAY", "legible": false,
+      "_note": "At the right edge of the crop; way number legible, its label clipped." }
+  ],
+
+  "flags": [
+    { "kind": "other", "message": "GREY BY OTHERS — equipment outside this package. Return it, flagged; do not price it and do not drop it." }
+  ],
+
+  "totals_for_review": {
+    "_note": "Counts are what deterministic code should compute from the rows above — stated here only so a wrong reading is obvious at a glance. No agent returns these.",
+    "outgoing_protective_devices": 12,
+    "of_which_three_phase_ways": 7,
+    "of_which_single_phase_devices": 5,
+    "spare_ways": 4,
+    "way_meters": 8,
+    "incomer_items": 5
+  }
+}

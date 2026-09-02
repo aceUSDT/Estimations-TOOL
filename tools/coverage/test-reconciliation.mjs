@@ -92,5 +92,176 @@ const upstreamCoverage = core.buildCoverage({
 check('upstream switchboard excluded from DB take-off coverage', upstreamCoverage.summary.boards === 0);
 check('upstream switchboard does not create a zero-row warning', upstreamCoverage.zeroRowSchedulePages.length === 0);
 
+/* A page OCR could not read has no header, does not look tabular and declares
+ * no way count, so every test in the zero-row walk skips it. Before this it
+ * appeared in no count anywhere: the take-off was short a whole schematic and
+ * said nothing. It has to be reported. */
+const unreadableCoverage = core.buildCoverage({
+  boards: {},
+  rows: [],
+  pages: [{ fileId: 'f5', page: 1, text: 'fli HHI hilt jl\nHH ILL iE il ili oi J', type: 'unknown', unreadable: true }],
+});
+check('unreadable page is reported', unreadableCoverage.unreadablePages.length === 1);
+check('unreadable page is counted in the summary', unreadableCoverage.summary.unreadablePages === 1);
+check('unreadable page is not miscounted as a zero-row schedule',
+  unreadableCoverage.zeroRowSchedulePages.length === 0);
+
+/* Once the vision agent has read it, the page is no longer an omission and
+ * must drop out of the warning — otherwise the warning is permanent noise. */
+const rescued = core.buildCoverage({
+  boards: { SWB1: { norm: 'SWB1', orig: 'SWB1', type: 'UNK', pages: [{ fileId: 'f5', page: 1, primary: true }] } },
+  rows: [{ fileId: 'f5', page: 1, boardNorm: 'SWB1', kind: 'schedule', way: 1, device: 'MCCB' }],
+  pages: [{ fileId: 'f5', page: 1, text: 'fli HHI hilt jl', type: 'unknown', unreadable: true }],
+});
+check('an unreadable page that the vision agent read is no longer reported',
+  rescued.unreadablePages.length === 0);
+
+/* Ways the drawing declares SPARE without printing a row for them.
+ *
+ * Trimble's board-data block states the proportion ("Spare: 53.8") and prints
+ * nothing for a spare way, so every such board looked short by exactly its
+ * spare capacity. Measured across the ten boards of a real 386-page tender, the
+ * declared percentage equalled the reported shortfall EXACTLY on all eight
+ * boards that state one — 53.8% of 26 ways is 14, and 14 was the shortfall;
+ * 100% of 12 is 12, and that board reported all twelve missing. Every alarm on
+ * that document was false, and a check that cries wolf on every board stops
+ * being read. */
+{
+  const mk = (sparePercent, liveWays) => {
+    const rows = [];
+    for (let w = 1; w <= liveWays; w += 1) rows.push({ boardNorm: 'DB1', way: String(w), device: 'MCB', kind: 'schedule', fileId: 'f', page: 1 });
+    return core.buildCoverage({
+      boards: { DB1: { norm: 'DB1', orig: 'DB-1', type: 'DB', header: { spare_percent: sparePercent }, pages: [{ fileId: 'f', page: 1, primary: true }] } },
+      rows,
+      pages: [{ fileId: 'f', page: 1, type: 'db-schedule', text: 'DB REFERENCE DB-1\n26 Way\nCircuit Ref' }],
+    });
+  };
+  // 110-AC-MCB: 26 ways, 53.8% spare = 14 spare, 12 live, 12 captured
+  const partial = mk(53.8, 12).perBoard.find((b) => b.norm === 'DB1');
+  check('spare capacity: declared spare ways are not a shortfall', partial.unaccountedWays === 0,
+    `unaccounted=${partial.unaccountedWays} spareWays=${partial.spareWays}`);
+  check('spare capacity: the spare count is reported', partial.spareWays === 14, String(partial.spareWays));
+  check('spare capacity: the declared total is unchanged', partial.expectedWays === 26, String(partial.expectedWays));
+
+  // DB-6-SEC: 12 ways, 100% spare, no rows at all — complete, not empty
+  const allSpare = mk(100, 0).perBoard.find((b) => b.norm === 'DB1');
+  check('spare capacity: a fully spare board is complete', allSpare.unaccountedWays === 0,
+    String(allSpare.unaccountedWays));
+
+  // and a board with a REAL gap must still report it
+  const short = mk(0, 12).perBoard.find((b) => b.norm === 'DB1');
+  check('spare capacity: a real shortfall is still reported', short.unaccountedWays === 14, String(short.unaccountedWays));
+  const noDeclaration = mk(null, 12).perBoard.find((b) => b.norm === 'DB1');
+  check('spare capacity: a board declaring no spare is unchanged', noDeclaration.unaccountedWays === 14,
+    String(noDeclaration.unaccountedWays));
+
+  /* A fully spare board's schedule page correctly produces no rows, so it is
+   * not a page to investigate. */
+  check('spare capacity: a fully spare board is not a zero-row failure',
+    mk(100, 0).zeroRowSchedulePages.length === 0,
+    JSON.stringify(mk(100, 0).zeroRowSchedulePages));
+  check('spare capacity: a genuinely empty schedule page still is',
+    mk(0, 0).zeroRowSchedulePages.length === 1,
+    JSON.stringify(mk(0, 0).zeroRowSchedulePages));
+}
+
+/* The header block states it; the coverage model must be able to read it. */
+{
+  const facts = core.parseBoardHeaderFacts([
+    'Id No:  DB-6-SEC  ModelNo:  L1  L2  L3',
+    'Name:  SECURITY  No. of Ways:  12  Spare:  100  Total Connected Load (A):  0.00  0.00  0.00',
+  ]);
+  check('spare capacity: percentage read from the board-data block', facts.sparePercent === 100, String(facts.sparePercent));
+  check('spare capacity: way count still read alongside it', facts.waysTotal === 12, String(facts.waysTotal));
+  const decimal = core.parseBoardHeaderFacts(['Name:  110V AC DB  No. of Ways:  26  Spare:  53.8  Total Connected Load (A):  65.95']);
+  check('spare capacity: a decimal percentage is read', decimal.sparePercent === 53.8, String(decimal.sparePercent));
+  const none = core.parseBoardHeaderFacts(['REFERENCE DB-1-GF NUMBER OF WAYS 18 WAYS']);
+  check('spare capacity: a board that states none reports null', none.sparePercent === null, String(none.sparePercent));
+}
+
+/* One way, two different readings.
+ *
+ * A way holds one device, so two rows claiming the same way of the same board
+ * with a different device or rating means the circuit was read twice and the
+ * readings disagree — a take-off keeping both counts a device that does not
+ * exist. It happens for real reasons: a drawing sheet often shows a board
+ * twice, once as it is and once as proposed, under the same reference. On one
+ * such sheet way 1 L2 is an MCB in the first table and an RCBO in the second.
+ * Choosing between them is not this tool's decision. */
+{
+  const { conflictingWayRows } = core;
+  const rows = [
+    { kind: 'schedule', boardNorm: 'DBKIT', way: 1, phase: 'L2', device: 'MCB', rating: 10, page: 1, line: 27, srcText: 'KITCHEN AREA 10 MCB 1 L2' },
+    { kind: 'schedule', boardNorm: 'DBKIT', way: 1, phase: 'L2', device: 'RCBO', rating: 10, page: 1, line: 79, srcText: 'LIGHTING RADIAL 10 RCBO 1 L2' },
+    // the same reading twice is a duplicate, not a disagreement
+    { kind: 'schedule', boardNorm: 'DBKIT', way: 3, phase: 'L1', device: 'MCB', rating: 16, page: 1, line: 40 },
+    { kind: 'schedule', boardNorm: 'DBKIT', way: 3, phase: 'L1', device: 'MCB', rating: 16, page: 1, line: 41 },
+    // one reading is not a conflict
+    { kind: 'schedule', boardNorm: 'DBKIT', way: 5, phase: 'L1', device: 'AFDD', rating: 32, page: 1, line: 50 },
+    // different phases of one way are different circuits
+    { kind: 'schedule', boardNorm: 'DBKIT', way: 7, phase: 'L1', device: 'MCB', rating: 6, page: 1, line: 60 },
+    { kind: 'schedule', boardNorm: 'DBKIT', way: 7, phase: 'L2', device: 'RCBO', rating: 20, page: 1, line: 61 },
+    // and different boards never collide with each other
+    { kind: 'schedule', boardNorm: 'DBLP3', way: 1, phase: 'L2', device: 'AFDD', rating: 32, page: 1, line: 70 },
+  ];
+  const conflicts = conflictingWayRows(rows);
+  check('way conflict: a disagreeing slot is reported', conflicts.length === 1, JSON.stringify(conflicts.map((c) => `${c.boardNorm}|${c.way}|${c.phase}`)));
+  check('way conflict: it is the one that disagrees',
+    conflicts[0] && conflicts[0].way === 1 && conflicts[0].phase === 'L2', JSON.stringify(conflicts[0]));
+  check('way conflict: both readings are carried, with their source',
+    conflicts[0] && conflicts[0].readings.length === 2
+      && conflicts[0].readings.some((r) => r.device === 'MCB') && conflicts[0].readings.some((r) => r.device === 'RCBO')
+      && conflicts[0].readings.every((r) => r.page === 1), JSON.stringify(conflicts[0] && conflicts[0].readings));
+  check('way conflict: an identical pair is not a conflict', !conflicts.some((c) => c.way === 3));
+  check('way conflict: phases of one way are separate circuits', !conflicts.some((c) => c.way === 7));
+
+  /* A row with no way, no board, or from another pass cannot collide. */
+  check('way conflict: rows without a way are ignored',
+    conflictingWayRows([
+      { kind: 'schedule', boardNorm: 'DB1', way: null, device: 'MCB', rating: 10 },
+      { kind: 'schedule', boardNorm: 'DB1', way: null, device: 'RCBO', rating: 10 },
+    ]).length === 0);
+  check('way conflict: non-schedule rows are ignored',
+    conflictingWayRows([
+      { kind: 'ai', boardNorm: 'DB1', way: 1, device: 'MCB', rating: 10 },
+      { kind: 'ai', boardNorm: 'DB1', way: 1, device: 'RCBO', rating: 10 },
+    ]).length === 0);
+}
+
+/* Pages the OCR read well enough to TYPE but not well enough to PARSE.
+ *
+ * Between the readability floor and a confident reading lies a band where the
+ * prose survives and the numbers do not. On a real sheet the circuit
+ * descriptions came through cleanly while every way number, rating and curve
+ * became "we wif me [a |v". The page scored 0.705, was correctly called a
+ * schedule, and produced one spurious row — so it escaped the zero-row check,
+ * because one row is not none, and NOTHING was reported. A failure that looks
+ * like a result is the worst outcome available. */
+{
+  const page = (ocrScore, rows) => core.buildCoverage({
+    boards: {},
+    rows,
+    pages: [{ fileId: 'f', page: 1, type: 'db-schedule', ocrScore, text: 'WAY PHASE CIRCUIT DESCRIPTION Rating Curve' }],
+  });
+  const marginal = page(0.705, [{ fileId: 'f', page: 1, boardNorm: 'DB1', way: 1, device: 'Meter', kind: 'schedule' }]);
+  check('poorly read: a marginal page yielding one row is reported',
+    marginal.poorlyReadPages.length === 1, JSON.stringify(marginal.poorlyReadPages));
+  check('poorly read: it is counted in the summary', marginal.summary.poorlyReadPages === 1);
+  check('poorly read: the score is carried so the reason is checkable',
+    marginal.poorlyReadPages[0] && marginal.poorlyReadPages[0].ocrScore === 0.705);
+
+  /* A page that read WELL and yielded little is a different problem — it is
+     the schedule parser's, not the scan's — so it must not be blamed on OCR. */
+  check('poorly read: a well-read page is not blamed on the scan',
+    page(0.93, []).poorlyReadPages.length === 0);
+  /* And a marginal page that nonetheless produced a table is fine. */
+  const productive = page(0.70, [1, 2, 3, 4].map((w) => ({ fileId: 'f', page: 1, boardNorm: 'DB1', way: w, device: 'MCB', kind: 'schedule' })));
+  check('poorly read: a marginal page that produced rows is not reported',
+    productive.poorlyReadPages.length === 0, JSON.stringify(productive.poorlyReadPages));
+  /* Documents with an embedded text layer never went through OCR at all. */
+  check('poorly read: a page with no OCR score is not reported',
+    page(null, []).poorlyReadPages.length === 0);
+}
+
 if (fail) { console.log(`\n${fail} failure(s)`); process.exit(1); }
-console.log('PASS: expectedWaysFromText, pageLooksTabular, buildCoverage (header-vs-rows, zero-row pages, no-header case)');
+console.log('PASS: expectedWaysFromText, pageLooksTabular, buildCoverage (header-vs-rows, zero-row pages, unreadable pages, no-header case)');

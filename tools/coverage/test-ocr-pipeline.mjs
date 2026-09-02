@@ -50,6 +50,36 @@ const poor = { confidence: 42, text: "���� 1 | |", lines: [] };
 const good = { confidence: 88, text: digitalLines.map((line) => line.text).join("\n"), lines: digitalLines };
 assert.ok(Core.scoreOcrCandidate(good).score > Core.scoreOcrCandidate(poor).score);
 assert.equal(Core.selectBestOcrCandidate([poor, good]).candidate, good);
+assert.equal(Core.selectBestOcrCandidate([poor, good]).readable, true);
+
+/* A large-format schematic is line-work, and Tesseract returns well-formed
+ * ASCII nonsense for it — "fli HHI hilt jl" at 0.34 confidence. Nothing
+ * downstream can tell that from a real reading, so the page reads as done,
+ * shows no electrical signal, is never sent to an agent, and contributes
+ * nothing. The selection has to say the page was not read.
+ *
+ * Text and confidence below are taken from C056-BBK_LV-Schematic.pdf, which
+ * scored 0.592 against readable scans at 0.770-0.882. */
+const lineWork = {
+  id: 'fallback-270', confidence: 34,
+  text: ['Hi i Zia gol', 'fli HHI hilt jl', 'HH ILL iE il ili oi J', 'uk 1h Fy din di',
+    'Bb Hil fin HEH hip i a HEA biter 0', 'i Lam i | i 1 : I |', 'ii] il a i] i fd cn ll 01'].join('\n'),
+  lines: [],
+};
+const lineWorkPick = Core.selectBestOcrCandidate([lineWork]);
+assert.equal(lineWorkPick.candidate, lineWork, 'the best candidate is still returned, so Review can show what was read');
+assert.equal(lineWorkPick.readable, false, 'OCR noise must not be accepted as the page text');
+assert.ok(lineWorkPick.score < Core.OCR_READABLE_FLOOR);
+
+/* And the floor must not reject a real scan: doc08967 page 4 is a genuine
+ * reading at 0.770, the lowest of the readable fixtures. */
+assert.equal(Core.selectBestOcrCandidate([good]).readable, true, 'a real scan must stay readable');
+
+/* An embedded text layer is not OCR output and is not judged by this floor —
+ * assessPageText already decides whether it decoded. */
+assert.equal(
+  Core.selectBestOcrCandidate([{ id: 'embedded-text', confidence: 0, text: 'DB-1-GF', lines: [] }]).readable,
+  true, 'embedded text is not scored against the OCR floor');
 
 // 11-13: electrical OCR corrections and tripping-curve extraction.
 const corrected = Core.correctElectricalOcrText("Way l: l6A MC8 C curve 1OkA");

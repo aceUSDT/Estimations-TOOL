@@ -22,7 +22,10 @@ const check = (name, cond, detail) => {
 };
 
 const healthDeps = () => ({ providerStatus, GEMINI_MODEL, GEMINI_VERIFY_MODEL });
-const runDeps = (extract) => ({ providerStatus, buildInstruction, extract: extract || (async () => ({ result: {} })) });
+/* authRequired:false keeps these cases about what they are actually asserting
+ * (validation, size limits, the spend guard). The auth gate itself is proved
+ * in its own block below, with the default — auth ON — left in place. */
+const runDeps = (extract) => ({ providerStatus, buildInstruction, extract: extract || (async () => ({ result: {} })), authRequired: false });
 
 /* health probe (pure handler) */
 let body = handleHealth(healthDeps()).body;
@@ -112,6 +115,39 @@ walk(EXTRACTION_SCHEMA, '$');
   delete process.env.GEMINI_API_KEY;
 }
 
+/* Auth gate on the inline-extract route. Every call spends real provider
+ * budget, so an anonymous caller who finds the URL drains the account. The
+ * gate is ON by default and opt-out via AUTH_REQUIRED, matching the durable
+ * job routes rather than inventing a second auth rule. */
+{
+  process.env.GEMINI_API_KEY = 'test-not-a-real-key';
+  const body = { image_base64: 'aGk=', filename: 'x.pdf', page_number: 1 };
+  let extracted = 0;
+  const base = (over = {}) => ({
+    providerStatus, buildInstruction,
+    extract: async () => { extracted++; return { result: {} }; },
+    ...over,
+  });
+  const call = (deps) => handleInlineExtract({ method: 'POST', body }, deps);
+
+  extracted = 0;
+  const anon = await call(base({ resolveUser: async () => null }));
+  check('auth: anonymous call is refused by default', anon.status === 401 && anon.body.error.code === 'unauthenticated');
+  check('auth: refusal spends no provider budget', extracted === 0);
+
+  const signedIn = await call(base({ resolveUser: async () => 'user-123' }));
+  check('auth: signed-in call proceeds', signedIn.status === 200);
+
+  // Fail CLOSED: a deployment that forgets to wire the resolver must not be
+  // silently open — absent plumbing means "nobody is signed in", not "auth off".
+  const unwired = await call(base());
+  check('auth: no resolver wired ⇒ still refused', unwired.status === 401);
+
+  const optedOut = await call(base({ authRequired: false, resolveUser: async () => null }));
+  check('auth: AUTH_REQUIRED=false restores the anonymous path', optedOut.status === 200);
+  delete process.env.GEMINI_API_KEY;
+}
+
 /* Provider error CONTRACT. The worker retries transient failures by testing
  * `e.status` against {429,500,502,503,504}. That check is worthless unless the
  * provider actually attaches a numeric status — a bare Error means a
@@ -140,3 +176,25 @@ check('prompt forbids counting', /NEVER count/.test(EXTRACTION_SYSTEM_PROMPT));
 
 if (fail) { console.log(`\n${fail} failure(s)`); process.exit(1); }
 console.log('PASS: inline-extract validation, health probe, and schema invariants.');
+
+/* Dialect and structural knowledge the fixtures proved the prompt needs.
+ *
+ * The failures behind each: a 110V board numbering ways by device yielded
+ * nothing because no dialect described it, and a board stitched across three
+ * pages was returned as three fragments. Both are knowledge the model cannot
+ * infer from one page in isolation. */
+{
+  const required = [
+    ['device-prefixed circuit refs', /MCB\/21/],
+    ['RCD still decides class there', /RCD value still makes it an RCBO/i],
+    ['no phase letter invented', /leave phase null rather than inventing/i],
+    ['a board may span pages', /ONE board of 54 phase-slots/],
+    ['continuation has no header', /no header block of its own/i],
+    ['own header starts a new board', /carry its own header block starts a new board|DOES carry its own header block/i],
+  ];
+  for (const [name, re] of required) {
+    check(`system prompt: ${name}`, re.test(EXTRACTION_SYSTEM_PROMPT));
+  }
+  // the invariant that must never be edited out of it
+  check('system prompt still forbids counting', /NEVER count/.test(EXTRACTION_SYSTEM_PROMPT));
+}

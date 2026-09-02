@@ -18,6 +18,12 @@
     --purple:#7b5cd6; --purple-soft:#f0ebfb;
     --mono:"SF Mono",ui-monospace,Menlo,Consolas,monospace;
     --shadow:0 1px 2px rgba(22,32,46,.05);
+    /* ONE horizontal gutter for every full-width surface. The app bar used 18px
+       and the page 22px, so the logo and the content beneath it sat on different
+       left edges — a 4px disagreement that reads as unconsidered even when
+       nobody can name it. Scales with the viewport so wide screens breathe and
+       small ones stay tight, without adding fixed one-off padding values. */
+    --gutter:clamp(16px,1.6vw,32px);
   }
   *{box-sizing:border-box;margin:0;padding:0;}
   html,body{height:100%;}
@@ -78,7 +84,19 @@
   .lock-logo{height:44px;display:block;margin:0 auto 14px;}
   .lock-name{font-size:19px;font-weight:700;letter-spacing:0;margin-bottom:26px;color:var(--txt);}
   .lock-prompt{font-size:12.5px;color:var(--txt2);line-height:1.5;margin:-14px 0 16px;}
-  .brand{display:flex;align-items:center;gap:11px;}
+  /* The logo is the way home, so it has to BE a button — keyboard reachable and
+     announced as a control. alt="" on the image because the button already
+     carries the label; without that a screen reader says "Hager" twice. */
+  .brand{display:flex;align-items:center;gap:11px;background:none;border:0;padding:6px 8px;
+    margin-left:-8px;font:inherit;color:inherit;cursor:pointer;border-radius:6px;
+    transition:background-color .12s cubic-bezier(.2,0,0,1);}
+  .brand:hover{background:rgba(255,255,255,.08);}
+  .brand:active{background:rgba(255,255,255,.14);}
+  /* The first focus ring in the application (DESIGN_PLAN Phase 2). Offset so it
+     reads as a ring around the control rather than a border on it, and light
+     because this sits on the dark bar. */
+  .brand:focus-visible{outline:2px solid #7fd4f5;outline-offset:2px;}
+  @media(prefers-reduced-motion:reduce){.brand{transition:none;}}
   .brand-logo{height:22px;display:block;}
   .brand .bt{font-size:15px;font-weight:700;letter-spacing:0;}
   .lock-card input{width:100%;padding:12px 14px;border:1px solid var(--line2);border-radius:8px;font-size:14px;
@@ -92,7 +110,7 @@
 
   /* ---------- app chrome ---------- */
   .appbar{height:54px;background:var(--nav);color:#dce6f5;display:flex;align-items:center;gap:16px;
-    padding:0 18px;position:sticky;top:0;z-index:50;}
+    padding:0 var(--gutter);position:sticky;top:0;z-index:50;}
   .appbar .brand .bt{color:#fff;font-size:15px;}
   .appbar .brand .bt small{color:#7c90ad;}
   .crumb{font-size:12px;color:#93a5c0;display:flex;align-items:center;gap:7px;}
@@ -108,7 +126,7 @@
   .processing-dock{position:sticky;top:54px;z-index:45;background:#fff;border-bottom:1px solid var(--line2);
     box-shadow:0 5px 14px rgba(15,31,51,.08);}
   .processing-dock[hidden]{display:none;}
-  .processing-dock-inner{max-width:1600px;margin:0 auto;padding:9px 22px;display:grid;
+  .processing-dock-inner{width:100%;margin:0;padding:9px var(--gutter);display:grid;
     grid-template-columns:minmax(280px,auto) minmax(180px,1fr) auto;align-items:center;gap:14px;}
   .processing-summary{display:flex;align-items:center;gap:10px;min-width:0;}
   .processing-spinner{width:16px;height:16px;border:2px solid #b9c7d6;border-top-color:var(--brand);
@@ -126,7 +144,11 @@
   .processing-dock.complete .processing-spinner{animation:none;border-color:var(--green);background:var(--green);}
   .processing-dock.failed .processing-spinner{animation:none;border-color:var(--red);background:var(--red);}
   @keyframes processing-spin{to{transform:rotate(360deg);}}
-  .page{max-width:1340px;margin:0 auto;padding:24px 22px 70px;}
+  /* Full width. This is a data tool — boards, device rows and schedules all read
+     better with the room, and the previous 1600px cap left a wide monitor with
+     ~300px of empty gutter on each side, which is what made the app look like a
+     page floating in the middle of the screen rather than an application. */
+  .page{width:100%;margin:0;padding:24px var(--gutter) 70px;}
   h1.pg{font-size:20px;font-weight:800;letter-spacing:0;}
   .pg-sub{color:var(--txt2);font-size:12.5px;margin-top:3px;}
 
@@ -195,6 +217,35 @@
   .bd-hdr{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;padding:14px 18px;border-bottom:1px solid var(--line);}
   .bd-hdr .k{font-size:10.5px;letter-spacing:0;text-transform:uppercase;color:var(--txt3);font-weight:700;}
   .bd-hdr .v{font-size:13px;font-weight:600;margin-top:2px;}
+  /* Board drill-down: device-type counts, then the way-by-way circuit map. */
+  .cov-ok{padding:9px 18px;background:#eaf7ee;border-bottom:1px solid #cfe8d6;color:#1d6b34;font-size:12.5px;}
+  .cov-gap{padding:11px 18px;background:#fdecec;border-bottom:1px solid #f2c4c4;color:#8a2020;font-size:12.5px;line-height:1.45;}
+  .cov-bar{padding:0 18px 10px;font-size:12.5px;line-height:1.5;}
+  .cov-bar .cov-bad{color:#8a2020;} .cov-bar .cov-good{color:#1d6b34;} .cov-bar .cov-dim{color:var(--txt3);margin-left:8px;}
+  @media(prefers-color-scheme:dark){.cov-bar .cov-bad{color:#f3b4b4;} .cov-bar .cov-good{color:#9fdcb0;}}
+  .cov-note{padding:9px 18px;border-bottom:1px solid var(--line);color:var(--txt3);font-size:12px;}
+  @media(prefers-color-scheme:dark){
+    .cov-ok{background:#14301c;border-bottom-color:#1f4a2b;color:#9fdcb0;}
+    .cov-gap{background:#3a1717;border-bottom-color:#5c2424;color:#f3b4b4;}
+  }
+  .cap-warn{margin:0;padding:11px 18px;background:#fff6e5;border-bottom:1px solid #f0d9a8;
+    color:#7a4b00;font-size:12.5px;line-height:1.45;}
+  @media(prefers-color-scheme:dark){.cap-warn{background:#3a2c10;border-bottom-color:#5c4517;color:#f0d9a8;}}
+  .wm-chips{display:flex;flex-wrap:wrap;gap:6px;padding:11px 18px 0;}
+  .wm-head{padding:14px 18px 8px;font-weight:800;font-size:13px;border-top:1px solid var(--line);margin-top:10px;}
+  .wm-wrap{overflow-x:auto;padding:0 18px 16px;}
+  table.wm{border-collapse:collapse;width:100%;font-size:12.5px;}
+  table.wm th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:0;color:var(--txt3);
+    font-weight:700;padding:6px 8px;border-bottom:1px solid var(--line2);white-space:nowrap;}
+  table.wm td{padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top;}
+  table.wm tr:hover td{background:var(--bg);}
+  .wm-way{font-weight:700;white-space:nowrap;width:1%;}
+  .wm-empty{color:var(--txt3);}
+  .wm-dev{margin-bottom:3px;}
+  .wm-dev:last-child{margin-bottom:0;}
+  .wm-name{display:block;color:var(--txt3);font-size:11.5px;}
+  .wm-spare{color:var(--txt3);font-style:italic;}
+  .wm-flag{color:#c77700;font-weight:800;}
   .tree .trow.sel{outline:2px solid var(--blue);}
   #boardBody tr.sel td{background:var(--blue-soft,#eaf2ff);}
   .fgroup{margin-bottom:16px;}
@@ -423,7 +474,7 @@
   .panel,.proj-card,.dropzone,.cmp-pane,.modal,.lock-card{border-radius:6px;}
   .panel,.proj-card,.cmp-pane{box-shadow:var(--shadow);}
   .btn,.in,.sel,.back-btn{border-radius:5px;}
-  .page{max-width:1600px;}
+
   .appbar{border-bottom:3px solid var(--brand);}
   .ptabs{padding:0 10px;background:#fff;border:1px solid var(--line);border-radius:6px;}
   .ptab{padding:11px 14px;}
@@ -436,7 +487,7 @@
     .report-matrix .report-row-project .report-device,.report-matrix .report-row-title .report-device{left:0;width:auto;min-width:0;}
   }
   @media(max-width:540px){
-    .appbar{padding:0 12px;gap:8px;}
+    .appbar{gap:8px;}
     .appbar .brand .bt{white-space:nowrap;}
     .appbar .crumb{display:none;}
     .processing-dock-inner{padding:9px 22px;grid-template-columns:minmax(0,1fr);gap:7px;}
@@ -475,8 +526,9 @@
 <!-- ================= APP ================= -->
 <div class="view" id="appView">
   <div class="appbar">
-    <div class="brand"><img class="brand-logo" src="./assets/hager-logo.png" alt="Hager">
-      <div class="bt">Estimation Tools</div></div>
+    <button class="brand" id="homeBtn" type="button" aria-label="Estimation Tools — go to all projects" title="All projects">
+      <img class="brand-logo" src="./assets/hager-logo.png" alt="">
+      <span class="bt">Estimation Tools</span></button>
     <div class="crumb" id="crumb"><b>Projects</b></div>
     <div class="right">
       <span class="storage-state" id="storageState" title="Projects and original files are stored in this device profile">Stored locally</span>
@@ -693,6 +745,7 @@
         <div>
           <div class="panel" style="margin-bottom:14px">
             <div class="sumchips" id="anSummary"></div>
+            <div id="anCoverage" class="cov-bar" style="display:none"></div>
             <div style="display:flex;gap:8px;align-items:center;padding:11px 18px;flex-wrap:wrap">
               <span style="font-weight:800;font-size:13px">Take-off</span>
               <span class="sub" style="margin-left:2px">roll-up across all boards — select a board to drill in</span>
@@ -744,6 +797,14 @@
             <button class="btn" id="reportCsvBtn">Export CSV</button>
             <button class="btn primary" id="reportXlsxBtn">Export Excel</button>
           </div>
+          <!-- The audit trail is kept, but it is not what anyone quotes from:
+               on a real project it came to 1,550 rows around eighteen rows of
+               take-off. Off by default, one click away when a value has to be
+               traced back to its page. -->
+          <label class="chk" style="margin-top:6px;display:flex;gap:6px;align-items:center;font-size:12px;color:var(--txt2)">
+            <input type="checkbox" id="reportFullAudit">
+            Include full extraction audit (source text, page and confidence for every value)
+          </label>
         </div>
         <div class="report-status" id="reportStatus"></div>
         <div class="report-matrix-scroll" id="reportMatrixHost">
@@ -1140,6 +1201,20 @@ const BOARD_REF_STOPWORDS = new Set(['SCHEDULE','SCHEDULES','REFERENCE','REF','B
 
 /* board reference patterns — DB-01, DB-MECH, DB/GF, G1-GF-DB-LL, PB01, MSB1, SB12, CU variants…
    Ordered most-specific first; detectBoards drops matches contained inside a longer match. */
+/* Words that can follow "DB " on a drawing without naming a board. A dash binds
+   ("DB-RING" would still be odd, but it is at least written as one token); a
+   space does not, so "…Sockets Ring" and a repeated "DB DB" column label both
+   read as board names until this list says otherwise. */
+const DB_NAME_STOPWORDS = new Set([
+  'DB','MDB','SMDB','LDB','PDB','SB','PB','CU','MCC','MCP','MSB',
+  'MCB','MCCB','RCBO','RCD','RCCB','AFDD','SPD','ACB','FUSE','ISOLATOR','CONTACTOR',
+  'RING','RADIAL','SPARE','SPACE','SUB','MAIN','NEW','OLD','EXISTING','TBC','TBA','NA','NIL',
+  'TYPE','TYPES','PHASE','PHASES','BUSBAR','DEVICE','DEVICES','SERVICE','SERVICES',
+  'CABLE','CABLES','CORES','CPC','TOTAL','LEGEND','PANEL','PANELS','SUPPLY','SUPPLIES',
+  'LIGHTING','POWER','SOCKET','SOCKETS','LOAD','LOADS','SEE','FULL','DETAIL','DETAILS',
+  'TPN','SPN','DPN','TP','SP','DP','KA','AMP','AMPS','TO','ON','AT','IN','OF','BY',
+]);
+
 const BOARD_PATTERNS = [
   {re:/\b([A-Z0-9]{1,6}(?:-[A-Z0-9]{1,6})*-DB(?:-[A-Z0-9]{1,6})+)\b/gi, type:'DB'},
   {re:/\b(S\s?M\s?D\s?B[\s.\-_\/]?\d*[A-Z]?)\b/gi, type:'SMDB'},
@@ -1147,6 +1222,14 @@ const BOARD_PATTERNS = [
   {re:/\b(L\s?D\s?B[\s.\-_\/]?\d*[A-Z]?)\b/gi, type:'LDB'},
   {re:/\b(P\s?D\s?B[\s.\-_\/]?\d*[A-Z]?)\b/gi, type:'PDB'},
   {re:/\b(DB\s?[.\-_\/]\s?[A-Z0-9]{1,8}(?:[.\-_\/][A-Z0-9]{1,8})*)\b/gi, type:'DB', guard:true},
+  /* "DB LP3", "DB KIT" — separated by a SPACE, which every pattern above
+     requires to be a dash, dot, slash or underscore. A whole consultant's
+     drawing set resolved no board at all because of it.
+     A space is a much weaker signal than a dash, so the word after DB is
+     checked against electrical vocabulary as well as the shared stopwords:
+     a schedule row reading "…Sockets Ring" gave a board called "DB RING", and
+     a repeated column label gave one called "DB DB". */
+  {re:/\b(DB\s+[A-Z]{1,6}\d{0,3}[A-Z]?)\b/g, type:'DB', dbName:true},
   {re:/\b(D\.?\s?B\.?(?:[\s.\-_\/]?\d+[A-Z]?)+(?:\s+[A-Z])?)\b/gi, type:'DB'},
   {re:/\b(MCC(?!B)[\s.\-_\/]?\d*)\b/gi, type:'MCC'},
   {re:/\b(MCP[\s.\-_\/]?\d*[A-Z]?)\b/gi, type:'MECH'},
@@ -1162,6 +1245,7 @@ const BOARD_PATTERNS = [
 const normBoard = s => String(s).toUpperCase().replace(/[\s.\-_\/]+/g,'');
 const canonicalBoardRef = (window.EstimationExtractorCore && window.EstimationExtractorCore.canonicalBoardReference)
   || (value => ({display:String(value||'').trim(),normalised:normBoard(value),splitSection:null}));
+const RATING_LIKE = (n) => Boolean(window.EstimationExtractorCore && window.EstimationExtractorCore.isRatingLikeRef && window.EstimationExtractorCore.isRatingLikeRef(n));
 
 /* cable patterns */
 const CABLE_PATTERNS = [
@@ -1206,6 +1290,13 @@ const phaseOf  = s => { const m=s.match(/\b(L[123])\b/); return m?m[1]:(/\bTP&?N
 const kaOf     = s => window.EstimationExtractorCore?.extractBreakingCapacity(s)?.value??null;
 
 /* ==================== BOARD DETECTION ==================== */
+/* Scans back to the column separator (two spaces, which is what the line
+   grouper emits between cells) so a prefix never reaches across a column. */
+const EQUIPMENT_PREFIX=/(?:^|\s\s)\s*(?:Cbl|Cable|Load|FC|SM)[-_]/i;
+function INSIDE_EQUIPMENT_ID(line,index){
+  const cellStart=String(line).lastIndexOf('  ',index);
+  return EQUIPMENT_PREFIX.test(String(line).slice(cellStart<0?0:cellStart,index));
+}
 function detectBoards(line){
   const found=[];
   for (const bp of BOARD_PATTERNS){
@@ -1218,14 +1309,27 @@ function detectBoards(line){
         const tokens = orig.split(/[\s.\-_\/]+/).slice(1);
         if (!tokens.length || BOARD_REF_STOPWORDS.has(tokens[0].toUpperCase())) continue;
       }
+      if (bp.dbName){
+        const tokens = orig.split(/\s+/).slice(1);
+        const t = tokens.length ? tokens[0].toUpperCase() : '';
+        if (!t || BOARD_REF_STOPWORDS.has(t) || DB_NAME_STOPWORDS.has(t)) continue;
+      }
       if (bp.header){
         // labelled refs ("Board Reference: 2A4") need a digit or separator to avoid prose
         orig = orig.replace(/[.,:]+$/,'');
         if (!/[\d\/-]/.test(orig) || BOARD_REF_STOPWORDS.has(orig.toUpperCase())) continue;
       }
+      /* A cable or load is named after the board and way it serves, so a board
+         reference appears INSIDE it: "Cbl_FC-143-MEP MAIN DB-7-" is one cable
+         on way 7 of MEP MAIN DB, not a board called DB-7. Reading them as
+         boards invented two per page on the Didcot tender, each with no ways
+         and no rows. The board's own identity comes from the page header,
+         which is authoritative, so nothing real is lost here. */
+      if (INSIDE_EQUIPMENT_ID(line, m.index)) continue;
       const canonical = canonicalBoardRef(orig);
       orig = canonical.display;
       const norm = canonical.normalised;
+      if (RATING_LIKE(norm)) continue;   // "630A" is a rating, never a board
       if (!norm || /^(DB|MDB|SMDB|LDB|PDB|MCC|MCP)$/.test(norm) && !bp.fixed && !/\d/.test(norm) && norm!=='MDB' && norm!=='SMDB') continue;
       if (found.some(f=>f.norm===norm)) continue;
       // avoid matching DB inside SMDB/LDB/PDB/MDB occurrences
@@ -1243,7 +1347,157 @@ function detectBoards(line){
     .map(({orig,norm,type,section})=>({orig,norm,type,section}));
 }
 
+/* One drawing sheet often carries TWO board schedules — the existing board and
+   its replacement, printed side by side. Resolving one board per page gave the
+   whole sheet to whichever header resolved first, and the other board's ways
+   were attributed to it or lost outright.
+
+   Returns null unless the page really does declare more than one board, so the
+   single-board path stays exactly as it was. */
+function scheduleBoardSegments(lines){
+  const arr=(lines||[]).map(l=>String(l||'').trim());
+  const REFERENCE=/(?<!(?:cable|drawing|document|project|job|schedule)\s)\bREFERENCE\b\s*[:=\-]?\s+(.{2,40}?)\s*$/i;
+  /* Deliberately NOT excluding lines that also carry circuit rows. On a sheet
+     whose tables sit side by side, one text line crosses several of them, so a
+     board's REFERENCE genuinely shares a line with another board's rows —
+     skipping those lines loses a board and doubles the mis-attribution
+     (measured: 4 boards with rows down to 3, duplicate slots 14 up to 24).
+     Separating side-by-side tables properly needs clustering by x position,
+     not by line index; that is the real fix and it is not this one. */
+  const starts=[];
+  arr.forEach((t,i)=>{ if(REFERENCE.test(t)) starts.push(i); });
+  if(starts.length<2) return null;
+  const segs=[];
+  starts.forEach((from,k)=>{
+    const to=k+1<starts.length?starts[k+1]:arr.length;
+    const board=scheduleBoardFromLines(arr.slice(from,to));
+    if(board) segs.push({from,to,board});
+  });
+  /* Two headers that resolve to the same board are one board printed twice —
+     no segmentation needed, and pretending otherwise would split its ways. */
+  if(segs.length<2||new Set(segs.map(s=>s.board.norm)).size<2) return null;
+  return segs;
+}
+
 function scheduleBoardFromLines(lines){
+  /* pdf.js emits one line per table CELL, so a header label and its value
+     routinely land on SEPARATE lines: "REFERENCE" then "DB-1-GF". Scanning
+     line by line finds the label with an empty tail, resolves no board, and
+     the page is treated as a continuation of the previous one — which is how a
+     single board absorbed every later page's devices. Resolve against the
+     joined page text first, then fall back to the per-line scan. */
+  const joined=(lines||[]).map(l=>String(l||'').trim()).filter(Boolean).join(' ');
+  // Only trust a bare "REFERENCE" when the page also carries board-schedule
+  // header labels, so a cable or drawing reference cannot name a board.
+  /* Trimble/Amtech "Board Data" blocks declare the board as "Id No:  DB-7-GCS"
+     with no REFERENCE label anywhere on the page. Unread, these pages resolved
+     no board at all — so their way count, which parses perfectly well, had
+     nothing to attach to and the board appeared to have none. The fallback scan
+     then picked a ref out of a ROW ("DB-7-GCS-5"), inventing a board per
+     circuit. Checked first because it is an explicit declaration.
+     The colon matters: the row table's column header also reads "Id No", but
+     only the declaration carries a value after it. */
+  const idNo=joined.match(/\bId\s*No\.?\s*:\s*([A-Z0-9][A-Z0-9._\/ -]{1,38}?)(?=\s{2,}|\s*ModelNo|\s*Model\s*No|$)/i);
+  if(idNo){
+    const declared=idNo[1].trim();
+    const det=detectBoards(declared)[0];
+    if(det) return det;
+    /* Taken as DECLARED: no way-prefix stripping, because "110-AC-MCB" names a
+       110V board and the 110 is not a way number. */
+    const canonical=canonicalBoardRef(declared,{declared:true});
+    if(canonical.normalised&&/[A-Z]/i.test(declared)) return {orig:canonical.display,norm:canonical.normalised,type:'UNK',section:canonical.splitSection};
+  }
+  /* The gate names the header labels that prove a page is a board schedule, so
+     a cable or drawing reference cannot name a board. It knew four, and a whole
+     consultant dialect uses none of them: its header reads
+     "REFERENCE / LOCATION / TYPE  12-WAY TP&N / MCBs / RCDs / RCBOs" over a
+     table headed "WAY PHASE". Both additions are board-schedule specific — a
+     way count in the TYPE cell, and the way/phase column pair. */
+  if(/(number of ways|circuit ref|served by|incomer|\b\d{1,3}\s*-?\s*way\b|\bway\s+phase\b)/i.test(joined)){
+    /* Take the first BOARD-SHAPED reference in the window after the label, not
+       the token that happens to sit next to it. pdf.js orders cells by
+       position, so a header block frequently arrives as all labels then all
+       values — "REFERENCE SERVED BY LOCATION ... DB-1-GF MEP MAIN DB" — and
+       reading the adjacent token then yields either nothing or, on a page
+       headed "110V AC DISTRIBUTION BOARD", a board called "110V" that proceeds
+       to collect every following page's devices.
+       Requiring detectBoards to recognise it is what rejects "110V". */
+    const label=joined.match(/(?<!(?:cable|drawing|document|project|job|schedule)\s)\b(?:DB\s+|BOARD\s+)?REFERENCE\b\s*[:=\-]?\s*/i);
+    if(label){
+      let window=joined.slice(label.index, label.index+240);
+      /* A value sits before the NEXT label. Reading on past one takes a board
+         reference out of the first circuit row instead: a page headed
+         "REFERENCE  MEP MAIN DB" resolved to DB-1-GF, the board its way 1
+         feeds, because "MEP MAIN DB" matches no code-shaped pattern and the
+         scan simply carried on to the next thing that did. Stopping here lets
+         the descriptive-name fallback further down do its job. */
+      const nextLabel=window.slice(10).search(/\b(?:NUMBER\s+OF\s+WAYS|SERVED\s+BY|FED\s+FROM|SUPPLIED\s+(?:FROM|BY)|LOCATION|DESCRIPTION|INCOMER|CIRCUIT\s+REF|BOARD\s+DEVICE|PHASE|TYPE)\b/i);
+      if(nextLabel>0) window=window.slice(0, nextLabel+10);
+      const det=detectBoards(window)[0];
+      if(det) return det;
+    }
+    /* ROTATED SCHEDULE PAGES. These arrive as a line of LABELS and a separate
+       line of VALUES, in the same order, tens of lines apart:
+
+         "... NUMBER OF WAYS  LOCATION  DESCRIPTION  SERVED BY  REFERENCE"
+         "... 18 WAYS  LVAC ROOM  GROUND FLOOR LIGHTING & POWER  DB-1-GF"
+
+       REFERENCE is the last label and DB-1-GF the last value, so nothing that
+       reads forward from the label can ever reach it — which is why every page
+       of such a document resolved no board, became a continuation, and handed
+       its devices to whichever board came before it.
+
+       So find the VALUES line instead: it carries a board-shaped reference
+       alongside other header values (an incomer, a rating, a location), and it
+       is not a circuit row. Verified against all eight pages of a real rotated
+       schedule — the six that declare a board resolve correctly, and the page
+       headed "110V AC DISTRIBUTION BOARD" still resolves nothing rather than
+       inventing a board called 110V. */
+    if(/\bREFERENCE\b/i.test(joined)){
+      const CIRCUIT_ROW=/\b\d{1,2}-L[123]\b/;
+      const HEADER_VALUE=/(ISOLATOR|SWITCH(?:GEAR)?|SCHNEIDER|MERLIN|ACTI9|HAGER|\b\d{2,4}\s?A\b|FLOOR|ROOM|CORRIDOR|RISER)/i;
+      /* A board's own reference is in its HEADER BLOCK, which precedes the
+         table. Scanning the whole page instead took the reference out of the
+         first circuit row: a page headed "REFERENCE  MEP MAIN DB" resolved to
+         DB-1-GF — the board its way 1 FEEDS — because the header value matches
+         no code-shaped pattern and the scan carried on into the rows. */
+      const arrAll=(lines||[]).map(l=>String(l||'').trim());
+      let firstRow=arrAll.findIndex(t=>t&&CIRCUIT_ROW.test(t));
+      if(firstRow<0) firstRow=arrAll.length;
+      const candidates=[];
+      for(let li=0; li<firstRow; li++){
+        const t=arrAll[li];
+        if(!t||CIRCUIT_ROW.test(t)) continue;
+        const det=detectBoards(t)[0];
+        if(det) candidates.push({t,det});
+      }
+      const best=candidates.find(c=>HEADER_VALUE.test(c.t))||candidates[0];
+      if(best) return best.det;
+
+      /* A board named by DESCRIPTION rather than by code. Real example: a page
+         whose header reads "REFERENCE  110V AC DISTRIBUTION BOARD" — a genuine
+         board with fourteen circuits, which no code-shaped pattern will ever
+         match. Left unresolved its devices stay unattributed, so the estimator
+         sees a bucket of homeless rows instead of a board.
+         Only taken from the REFERENCE cell of a real header block, so this
+         cannot invent boards out of body text, and only once the line grouping
+         has actually paired the label with its value. */
+      const LABEL=/^(number\s+of\s+ways|served\s+by|location|description|incomer|circuit\s+ref|board\s+device)/i;
+      const arr=(lines||[]).map(l=>String(l||'').trim());
+      for(let i=0;i<arr.length;i++){
+        const t=arr[i];
+        if(!/(?<!(?:cable|drawing|document|project|job|schedule)\s)\bREFERENCE\b/i.test(t)) continue;
+        /* The value may sit on the same line once grouping has paired label with
+           value, or on the next line when the label stands alone in its cell. */
+        const inline=t.match(/\bREFERENCE\b\s*[:=\-]?\s+(.{2,40}?)\s*$/i);
+        const name=(inline?inline[1]:(arr[i+1]||'')).replace(/\s{2,}.*$/,'').trim();
+        if(!name||name.length<2||name.length>40) continue;
+        if(!/[A-Z0-9]/i.test(name)||LABEL.test(name)) continue;
+        const canonical=canonicalBoardRef(name);
+        if(canonical.normalised) return {orig:canonical.display,norm:canonical.normalised,type:'UNK',section:canonical.splitSection};
+      }
+    }
+  }
   let sawLabel=false;
   for(const line of lines){
     const source=String(line||'');
@@ -1253,6 +1507,22 @@ function scheduleBoardFromLines(lines){
     const tail=source.slice(label.index+label[0].length).trim();
     const detected=detectBoards(tail)[0];
     if(detected) return detected;
+    /* A board named by DESCRIPTION after an explicit label — "Board Ref: Main
+       Landlord MCCB Panel board". The token guard below deliberately refuses
+       bare words so body text cannot invent boards, but a LABELLED header cell
+       naming something that calls itself a panel or a board is not body text.
+       Measured on MCCB-Schedule_BowGreen.pdf: the panel owning every outgoing
+       device on the sheet resolved to NOTHING, so all of its rows were orphaned
+       and a nineteen-page schedule of 400A and 100A MCCBs produced a take-off of
+       four devices. Cut at the next labelled field, or the board's name swallows
+       "Project: Bow Green, Phase 2" with it. */
+    const cut=tail.search(/\b(?:project|location|date|rev(?:ision)?|job|drawing|sheet|page|scale|client)\b\s*(?:no\.?)?\s*[:=]/i);
+    const described=(cut>0?tail.slice(0,cut):tail).replace(/\s{2,}.*$/,'').trim();
+    if(described.length>=4&&described.length<=48
+       &&/\b(?:panel\s?board|panelboard|panel|switch\s?board|switchboard|board|mccb|consumer\s+unit|distribution)\b/i.test(described)){
+      const desc=canonicalBoardRef(described);
+      if(desc.normalised) return {orig:desc.display,norm:desc.normalised,type:'UNK',section:desc.splitSection};
+    }
     const token=tail.match(/^([A-Z0-9][A-Z0-9._\/-]{1,30})/i)?.[1];
     if(!token||!/[\d._\/-]/.test(token)) continue;
     const canonical=canonicalBoardRef(token);
@@ -1268,7 +1538,24 @@ function scheduleBoardFromLines(lines){
 }
 
 function hasScheduleBoardHeader(lines){
-  return (lines||[]).some(line=>/\bDB\s+REFERENCE\b|\b(?:DISTRIBUTION\s+)?BOARD\s*(?:REFERENCE|REF|IDENTITY)?\s*[:=\-]|\bDISTRIBUTION\s+BOARD\s+SCHEDULE\b\s*[—–:\-]\s*(?=[A-Z0-9])/i.test(String(line||'')));
+  /* Answers "does this page declare its own board?". Getting it wrong is
+     expensive: a false NO makes the page a continuation and dumps its devices
+     onto the PREVIOUS board, which is how one board ended up holding 86
+     devices — more than its 18 ways can physically carry — while every board
+     after it held none.
+     The old test demanded the literal "DB REFERENCE" or "BOARD REFERENCE:".
+     Real schedules label the field plain "REFERENCE" and put the board beside
+     it, so every page of such a document answered NO. Accept that form too:
+     a REFERENCE label followed by something board-shaped, or the header block
+     the page classifier keys on. */
+  /* Evaluated on the JOINED page text: with one line per table cell the label
+     and its value are on different lines, and a per-line test answers NO on
+     every page of such a document — making each page a continuation and
+     dumping its devices onto the previous board. */
+  const joined=(lines||[]).map(l=>String(l||'').trim()).filter(Boolean).join(' ');
+  if (/\bDB\s+REFERENCE\b|\b(?:DISTRIBUTION\s+)?BOARD\s*(?:REFERENCE|REF|IDENTITY)?\s*[:=\-]|\bDISTRIBUTION\s+BOARD\s+SCHEDULE\b\s*[—–:\-]\s*(?=[A-Z0-9])/i.test(joined)) return true;
+  return /\bREFERENCE\b\s*[:=\-]?\s*[A-Z0-9][A-Z0-9/._-]{1,20}/i.test(joined)
+    && /(number of ways|circuit ref|served by|incomer)/i.test(joined);
 }
 
 /* ==================== CABLE DETECTION ==================== */
@@ -1317,8 +1604,47 @@ function classifyPage(text, pageIdx, totalPages){
   if (hasWays>=3) add('db-schedule',4);
   if (/board ref|board reference/.test(low)) add('db-schedule',2);
   const phaseRows=(text.match(/\bL[123]\b/g)||[]).length;
+  /* Rows whose way and phase are ONE token — "17L2", "18L1". The count above
+     cannot see them: there is no word boundary between the digits and the L.
+     A Hevacomp chart is nothing but these, so it scored no schedule signal at
+     all, typed 'unknown', and the entire schedule walk was skipped — the same
+     shape of failure as BUSBAR typing a circuit chart as a single-line diagram.
+     Three or more is a table; one is a coincidence. */
+  const compactWayRows=(text.match(/(?:^|\n)\s*\d{1,3}L[123]\b/gi)||[]).length;
+  if (compactWayRows>=3) add('db-schedule',8);
   const codedRows=(text.match(/(?:^|\n)\s*(?:\d{1,3}\s+)?(?:L[123]\s+)?\d+(?:\.\d+)?\s+[JKLMN]\s+[BCD]\b[^\n]*\b(?:Ri|Ra)\s+[LP]\b/gim)||[]).length;
   if(codedRows>=2&&phaseRows>=3) add('db-schedule',9);
+  /* A mirrored circuit chart is a board schedule beyond argument — a busbar
+     spine with a way and phase on each side, repeated down the sheet. It has to
+     outweigh 'sld', because BUSBAR is one of that chart's COLUMN HEADINGS: the
+     word alone scored the page as a single-line diagram, which switched off the
+     entire schedule walk and returned a board with no devices. */
+  if (window.EstimationExtractorCore?.looksLikeMirroredChart
+      && window.EstimationExtractorCore.looksLikeMirroredChart(text.split('\n'))) add('db-schedule',10);
+  /* Row FORMAT varies wildly between vendors — P-codes, coded columns, plain
+     manufacturer strings ("Acti9 iC60H, MCB, Type C") — so keying only on row
+     shape misses whole dialects and a page that is plainly a board schedule
+     scores 'unknown'. That silently disables the header board, every device on
+     the page loses its board, and the way refs register as boards instead.
+     The HEADER BLOCK is the stable signal: a board schedule names its board
+     and states its way count. Found on a real LV SLD schedule reading
+     "REFERENCE DB-1-GF ... NUMBER OF WAYS 18 WAYS ... Circuit Ref". */
+  /* A consumer-unit chart names its board and its way count in the dialect's OWN
+     words — "Board Identity: Consumer Unit (General Apartment)", "No of Ways: 3",
+     "DB Incomer Device Rating/Type: 63A Switched Disconnector" — and never writes
+     "reference" or "board schedule", so the headerBlock signal above cannot see
+     it. On a SCANNED chart that header is the only text that survives: the rows
+     come back as pipes and fragments, so every row-shape signal scores nothing
+     too. Measured on Dundee_CU-Circuit-Chart.pdf — five pages, three carrying
+     this header, all typed 'unknown', schedule walk never ran, 0 boards and
+     0 rows out of a document that states its own way count. The header alone has
+     to be enough, and it is deliberately tolerant: OCR read "No of Ways" as
+     "lo of Ways" on one page, so the incomer phrase carries it. */
+  const cuHeaderBlock = /board identity/.test(low) && /(no\.? of ways|number of ways|db incomer device)/.test(low);
+  if (cuHeaderBlock) add('db-schedule',9);
+  const headerBlock = /\breference\b/.test(low) && /(number of ways|circuit ref|\bways\b)/.test(low);
+  if (headerBlock && phaseRows>=3) add('db-schedule',8);
+  if (headerBlock && /\b(mcb|rcbo|mccb|rcd|afdd)\b/.test(low)) add('db-schedule',6);
   if (pageIdx===0 && totalPages>1 && /project|issued|revision/.test(low) && hasWays===0) add('cover',3);
   if (/contents/.test(low) && pageIdx===0) add('register',2);
   let best='unknown', bestS=0;
@@ -1361,23 +1687,179 @@ function parseScheduleLine(line, ctx){
   if (structured) return structured;
   const dialect = window.EstimationExtractorCore && window.EstimationExtractorCore.parseKnownScheduleLine(line, ctx);
   if (dialect) return dialect;
-  const wayM = line.match(/^\s*(?:way|cct|ckt|circuit)?\s*[:#]?\s*(\d{1,3})\b/i);
+  /* An explicit way/phase marker is the way, wherever it sits in the row.
+     A leading bare number is not: rows on a large-format schedule routinely
+     begin with the CABLE spec ("1 x 1.5", "2 x 1/core x 2.5"), and reading its
+     first number as the way put circuit 8's RCBO on way 1 and circuit 24's SPD
+     on way 1 — devices landing on the wrong circuit, not merely counted twice.
+     The leading form still applies to rows that carry no marker, and a number
+     immediately followed by "x" is a core count, never a way. */
+  /* A phase cell is ONE phase ("L1") or several on a three-phase way
+     ("L1L2L3"), and a scan routinely loses the repeated L's. Broomfield House's
+     Amtech chart prints L1L2L3 and OCR returns "L213", "L1L213" and "L123".
+     Accepting only a single phase did not merely mis-read the phase — it lost
+     the WHOLE ROW: with no marker match the positional-rating scan never runs,
+     so the guard below saw no way, no device and no rating and returned null.
+     Measured on page 15 (DB-K, 12 ways): ways 2, 3, 4, 5 and 8 dropped, four of
+     them carrying real devices at 16A, 32A, 16A and 25A. */
+  /* Up to four trailing groups, not two: "L1L2L3" needs only two, but the
+     damaged "L1L213" is L1 + L2 + 1 + 3 and matches nothing shorter.
+     The character class also carries the digits' LOOK-ALIKE LETTERS. Page 17 of
+     the same document prints L1L2L3 and OCR returns "LiLzLs" — i for 1, z for 2,
+     s for 3 — which lost ways 7 and 9, carrying a 32A and a 10A device. Scoped
+     deliberately: this only ever applies to the token sitting where a phase cell
+     belongs, immediately after a way number, so an ordinary word beginning with
+     L cannot be caught by it ("Lighting" needs a word boundary after "Li" and
+     does not have one). */
+  const PHASE_DIGIT = '123iIlzZsS';
+  const PHASE_CELL = 'L[' + PHASE_DIGIT + '](?:L?[' + PHASE_DIGIT + ']){0,4}';
+  /* "L213" and "L1L213" both mean L1L2L3. Reduce to the distinct phase digits
+     rather than trusting the spelling, and keep a two-phase cell as the two
+     phases it names — inflating it to three would invent a pole. */
+  const normalisePhaseCell = (token) => {
+    if (!token) return null;
+    /* Fold the look-alikes back to digits BEFORE reducing, or "LiLzLs" reduces to
+       nothing and the row is lost for a second reason.
+       The lowercase pass must run BEFORE toUpperCase(): a lowercase "l" standing
+       in for a 1 becomes an "L" the moment the case is folded, indistinguishable
+       from the cell's own separator, and the cell then yields no phase at all. */
+    const folded = String(token)
+      .replace(/[il]/g, '1')
+      .replace(/z/g, '2')
+      .replace(/s/g, '3')
+      .toUpperCase()
+      .replace(/I/g, '1')
+      .replace(/Z/g, '2')
+      .replace(/S/g, '3');
+    const digits = Array.from(new Set(folded.replace(/[^123]/g, ''))).sort();
+    if (!digits.length) return null;
+    return digits.map((d) => 'L' + d).join('');
+  };
+  const markerM = line.match(new RegExp('\\b(\\d{1,3})\\s*-\\s*(' + PHASE_CELL + ')\\b', 'i'));
+  /* Some circuit charts write the way and phase as ONE token with no separator
+     — "17L2", "18L1" — which no way pattern matched and which also defeats
+     phaseOf(), because there is no word boundary between the digits and the L.
+     A whole Hevacomp document returned zero rows for this alone. Anchored to
+     the start of the row so a cable code mid-line cannot look like one. */
+  const compactM = line.match(new RegExp('^\\s*(\\d{1,3})(' + PHASE_CELL + ')\\b', 'i'));
+  /* The same row shape with the phase SPACED off the way — "1 L1 Load-31 16".
+     Amtech charts write it this way; leadM finds the way but nothing else on
+     the row is recognisable, so the guard below used to drop it. */
+  const spacedM = compactM ? null : line.match(new RegExp('^\\s*(\\d{1,3})\\s+(' + PHASE_CELL + ')\\b', 'i'));
+  /* And the same shape again with a SLASH — "7/L1", "12/L3". This project's own
+     domain pack documents it twice and nothing parsed it:
+       domain-pack.mjs  syntegral: ways as "CCT n" or "n/Lx"
+       domain-pack.mjs  hevacomp:  "7/L1 20 6.0 2.5 LSF Singles Fixed power ..."
+     It had never surfaced because the Hevacomp example document writes the
+     compact form and the Syntegral one is an unreadable scan — so the dialect the
+     agents are TOLD about was one the deterministic parser could not read. The
+     leading "L" is what keeps this safe: "7/12" and other date-like or fraction
+     tokens cannot match. */
+  const slashM = (compactM || spacedM) ? null
+    : line.match(new RegExp('^\\s*(\\d{1,3})\\s*/\\s*(' + PHASE_CELL + ')\\b', 'i'));
+  /* All three marker forms open a row the same way: way, phase, then the
+     rating column. markerM can sit mid-line, so the scan starts from where it
+     actually matched. */
+  const markerHead = markerM || compactM || spacedM || slashM;
+  const markerEnd = markerM ? markerM.index + markerM[0].length
+    : markerHead ? markerHead[0].length : 0;
+  const leadM = line.match(/^\s*(?:way|cct|ckt|circuit)?\s*[:#]?\s*(\d{1,3})\b(?!\s*[x\u00d7])/i);
+  const wayM = markerM || markerHead || leadM;
+  const rawPhaseCell = (markerM && markerM[2]) || (markerHead && markerHead[2]) || null;
+  const markerPhase = normalisePhaseCell(rawPhaseCell);
+  /* The cell was reconstructed from damaged characters, so it is a reading
+     rather than a fact. Recorded so the confidence below can reflect it. */
+  const phaseCellRepaired = Boolean(rawPhaseCell) && markerPhase !== String(rawPhaseCell).toUpperCase();
   const spare = /\bspare\b/i.test(line);
   const space = /\bspace\b/i.test(line);
   const device = detectDeviceIn(line);
   const rating = ratingOf(line);
   const isIncomer = /\bincomer\b|\bincoming\b|\bmain switch\b/i.test(line);
+  /* An MCCB / switchboard schedule identifies each outgoing way by the BOARD IT
+     FEEDS, not by a way number:
+
+       DB/LL/D       a5   400A ML2.2
+       DB/LL/COMMS - Comms Room LTG & PWR  G  35  186  100A ML2.2
+
+     Measured on MCCB-Schedule_BowGreen.pdf, where the way numbers are largely
+     lost to the scan: the take-off came back with FOUR devices for a 19-page
+     schedule carrying 400A and 100A MCCBs on almost every row, and no board on
+     the document declares a way count, so completeness reported nothing missing.
+     A confident, near-empty take-off is the worst failure this product has.
+
+     Deliberately tight, because these rows have no way number to anchor them:
+     a board section must be open, the line must name EXACTLY ONE board other
+     than the section's own, it must carry a rating, and it must not be the
+     incomer. Two board references means prose or a mis-split row, not a way. */
+  const outgoingBoards = (!wayM && rating != null && !isIncomer && ctx.board)
+    ? detectBoards(line).filter(b => b.norm && b.norm !== ctx.board) : [];
+  const feedsBoardNorm = outgoingBoards.length === 1 ? outgoingBoards[0].norm : null;
   // A row must look like a scheduled circuit: way number + (device|spare|space), or incomer with device
-  if (!( (wayM && (device||spare||space)) || (isIncomer && device) )) return null;
+  /* A row stating a way and a RATING is a circuit even when it never names the
+     device class. Hevacomp's chart prints way, rating, cable and description
+     with no "MCB" anywhere, so requiring a device word dropped every live way
+     and kept only the spares. The class is left null rather than assumed, and
+     the confidence below sends it to Review — an unnamed device is uncertain,
+     not absent. */
+  /* Where a row opens with way and phase, the protective device's rating is the
+     first bare NUMBER after them — Hevacomp puts it immediately ("17L2 16*"),
+     Amtech puts a load id in between ("1 L1 Load-31 16"). Tokens carrying
+     letters are identifiers, not ratings, so they are skipped.
+     It has to be positional: neither dialect writes an "A" beside it, and the
+     only "A" on a Hevacomp row is in its description — "Radial 13A sockets"
+     made a 20A circuit read as 13A. */
+  const positionalScan = (() => {
+    if (!markerHead) return { value: null, damaged: false };
+    const rest = line.slice(markerEnd).trim();
+    for (const tok of rest.split(/\s+/).slice(0, 4)) {
+      /* A token STARTING with a letter is an identifier and the rating is further
+         along the row — Amtech puts "Load-255" between the phase and the rating. */
+      if (/^[A-Za-z]/.test(tok)) continue;
+      /* Trailing annotation marks belong to the sheet, not the value. "%" earns
+         its place here: OCR returns "10%" for "10*", and without it that token
+         failed to parse and a 10A circuit was read as 1A off the cable column. */
+      const m = tok.match(/^(\d{1,4}(?:\.\d+)?)[*\u00b0%'\u2019"]?$/);
+      if (m) return { value: m[1], damaged: false };
+      /* A token that starts with a DIGIT and still will not parse is a DAMAGED
+         rating, not something to scan past. "3z2*" is OCR of "32*"; skipping it
+         picks up the next number on the row — the cable size — and reported that
+         32A circuit as 15A. A wrong rating in a quotation is worse than an absent
+         one, so the scan stops here and the rating stays unknown for review. */
+      if (/\d/.test(tok)) return { value: null, damaged: true };
+    }
+    return { value: null, damaged: false };
+  })();
+  const positionalRating = positionalScan.value;
+  const ratingDamaged = positionalScan.damaged;
+  const compactRating = positionalRating;
+  if (!( (wayM && (device||spare||space||rating!=null||compactRating!=null||ratingDamaged)) || (isIncomer && device) || feedsBoardNorm )) return null;
   const cables = detectCables(line);
+  /* In a compact-marker chart the rating is the column immediately after the
+     way, written as a bare number with no "A" — "17L2  16*  1.5  1x2core...".
+     Read by pattern instead, the only "A" on the row is in its DESCRIPTION, so
+     "Radial 13A sockets" made a 20A circuit read as 13A. Position is the only
+     honest source here, and it applies solely to rows of this shape. */
+  /* Where the row opens with a way/phase marker and its rating column is damaged,
+     the rating is UNKNOWN. It must not fall back to ratingOf(), which scans the
+     whole line for a number beside an "A" — on a Hevacomp row the only "A" is in
+     the description, so "Radial 13A sockets" would report this circuit as 13A.
+     That is the trap the positional scan exists to avoid, and falling back would
+     walk straight back into it. */
+  const finalRating = positionalRating != null ? Number(positionalRating)
+    : ratingDamaged ? null
+    : rating;
   const row = {
     way: wayM? +wayM[1] : null,
-    desc: line.replace(/^\s*(?:way|cct|ckt|circuit)?\s*[:#]?\s*\d{1,3}\s*/i,'').trim(),
-    device, rating,
+    // strip only a LEADING way label; a marker mid-row is part of the text
+    desc: (leadM ? line.replace(/^\s*(?:way|cct|ckt|circuit)?\s*[:#]?\s*\d{1,3}\s*/i,'') : line).trim(),
+    device, rating: finalRating,
     poles: polesOf(line), poleConfiguration:poleConfigOf(line), curve: curveOf(line), sens: sensOf(line),
-    phase: phaseOf(line), ka: kaOf(line),
+    phase: markerPhase || phaseOf(line), ka: kaOf(line),
     cable: cables.length? cables[0] : null,
     spare, space, incomer: isIncomer,
+    /* Which board this outgoing device feeds, when the row is identified that
+       way rather than by a way number. Kept so the feed tree still links up. */
+    feedsBoardNorm,
     qty: device? qtyIn(line, device) : 1,
     srcText: line.trim(),
   };
@@ -1385,9 +1867,23 @@ function parseScheduleLine(line, ctx){
   let conf = 0.6;
   if (row.way!==null) conf+=0.15;
   if (row.device) conf+=0.1;
-  if (row.rating!==null) conf+=0.1;
+  if (row.rating!==null && row.rating!==undefined) conf+=0.1;
   if (ctx.sawHeader) conf+=0.05;
   if (ctx.board) conf+=0.05; else conf-=0.2;
+  /* A circuit whose device class the row never names is a real circuit, but it
+     is not a confident reading: it must sit below the review threshold rather
+     than being presented as settled. */
+  if (!row.device && !row.spare && !row.space) conf-=0.25;
+  /* A device located by the board it feeds, with no way number of its own, is a
+     weaker reading than one anchored to a way — it must reach the estimator as
+     something to confirm, not as settled. */
+  if (row.way === null && feedsBoardNorm) conf = Math.min(conf, 0.7);
+  /* A phase cell rebuilt from damaged characters decides the POLE COUNT, and a
+     three-pole device priced as single-pole is a real costing error, so the row
+     must be reviewable even when everything else about it reads cleanly. Capped
+     below the app's 0.8 review threshold rather than nudged: a 0.05 penalty left
+     a row that named its device sitting at 0.92, which presents as settled. */
+  if (phaseCellRepaired) conf = Math.min(conf, 0.75);
   row.conf = Math.max(0.2, Math.min(0.97, conf));
   return row;
 }
@@ -1447,7 +1943,12 @@ function setTab(name){
   if (name==='compare') renderCompareSel();
 }
 $$('.ptab').forEach(t=>t.addEventListener('click',()=>setTab(t.dataset.pt)));
-$('#backBtn').addEventListener('click', ()=>{ state.cur=null;if(!analysisBusy)hideProcessing();renderProjects(); show('home'); });
+/* One definition of "go home", used by the back arrow AND the logo. Two copies
+   of this drift: one of them ends up not clearing state.cur, and the projects
+   list renders with a stale project still selected. */
+function goHome(){ state.cur=null; if(!analysisBusy) hideProcessing(); renderProjects(); show('home'); }
+$('#backBtn').addEventListener('click', goHome);
+$('#homeBtn').addEventListener('click', goHome);
 $('#backupProjectBtn').addEventListener('click',()=>backupProject(state.cur));
 $('#restoreProjectBtn').addEventListener('click',()=>$('#restoreProjectInput').click());
 $('#restoreProjectInput').addEventListener('change',async event=>{
@@ -1519,7 +2020,12 @@ function projStats(p){
   const pages=p.files.reduce((a,f)=>a+(f.pages?f.pages.length:0),0);
   const a=p.analysis;
   const boards=a?Object.keys(a.boards).length:0;
-  const devices=a?a.rows.filter(r=>r.status!=='rejected'&&!r.space&&r.device&&(r.kind!=='mention'||r.status==='confirmed')).reduce((s,r)=>s+(r.qty||1),0):0;
+  /* Mirrors includeRow() in report-core.js, including rated-but-unclassified
+     ways — dialects that never print the class (Amtech, Hevacomp) otherwise
+     showed "16 boards, 0 devices" on a document with 180 extracted rows. If one
+     of these two rules changes, change both or the badge stops matching the
+     report it is supposed to summarise. */
+  const devices=a?a.rows.filter(r=>r.status!=='rejected'&&!r.space&&(r.device||Number(r.rating)>0)&&(r.kind!=='mention'||r.status==='confirmed')).reduce((s,r)=>s+(r.qty||1),0):0;
   const review=a?a.rows.filter(r=>r.status==='pending'&&r.conf<0.8).length:0;
   return {docs,pages,boards,devices,review};
 }
@@ -1822,30 +2328,52 @@ async function ocrPdfPage(f,pageNo,{reanalyze=true,quiet=false}={}){
       selected=core.selectBestOcrCandidate(attempts);
     }
     const chosen=selected.candidate,keptEmbedded=chosen?.id==='embedded-text';
+    /* Every orientation has now been tried. If the best of them is still below
+       the readable floor, this page is line-work and symbols, not text — and
+       what OCR returned is noise that happens to be well-formed ASCII. Accepting
+       it is the worst outcome available: the page then looks read, so it is
+       never sent to an agent, and it silently contributes nothing. Mark it
+       instead, and let runAiExtraction route it to the vision agent. */
+    const ocrUnreadableByScore=!keptEmbedded&&selected.readable===false;
     const lines=(chosen?.lines||[]).map(line=>{
       if(keptEmbedded)return {...line,originalText:line.originalText||line.text,corrections:line.corrections||[],
         extractionMethod:line.extractionMethod||'Embedded text / deterministic parser'};
       const corrected=core.correctElectricalOcrText(line.text);
       return {...line,text:corrected.text,originalText:corrected.originalText,corrections:corrected.corrections,extractionMethod:`OCR (${chosen.id})`};
     });
-    if(!lines.length) throw new Error('OCR completed but found no readable words on this page');
+    /* A page with NO readable words is an expected outcome — line-work, a photo,
+       a blank sheet — and this tool already has a category for exactly that.
+       Throwing here was wrong twice over: it skipped the recording immediately
+       below, so the page kept needsOcr, never got pg.ocr, and was therefore
+       invisible to every completeness check; and it aborted the caller's loop.
+       Measured on MCCB-Schedule_BowGreen.pdf: page 4 threw this, and sixteen of
+       nineteen pages were never attempted and reported nowhere. An unreadable
+       page is a finding, not an exception. */
+    const ocrUnreadable=ocrUnreadableByScore||!lines.length;
     const pg=f.pages[pageNo-1];
     pg.lines=lines;pg.w=base.width;pg.h=base.height;
     const pageWords=(chosen.mappedWords||[]).map(word=>{const box=word.bbox;return {...word,bbox:{x0:box.x0*base.width/cv.width,y0:box.y0*base.height/cv.height,x1:box.x1*base.width/cv.width,y1:box.y1*base.height/cv.height}};});
     pg.tableRows=core.reconstructSpatialRows(pageWords);
-    pg.textQuality=chosen.scoring.textQuality;pg.needsOcr=false;
-    pg.ocr={status:'done',confidence:chosen.confidence??null,qualityScore:chosen.score,selectedCandidate:chosen.id,
+    pg.textQuality=chosen?.scoring?.textQuality||null;pg.needsOcr=false;pg.ocrUnreadable=ocrUnreadable;
+    pg.ocr={status:'done',unreadable:ocrUnreadable,readableFloor:selected.floor,confidence:chosen.confidence??null,qualityScore:chosen.score,selectedCandidate:chosen.id,
       candidates:attempts.map(item=>({id:item.id,preprocessing:item.preprocessing,confidence:item.confidence,qualityScore:item.score,lineCount:item.lines.length,textQuality:item.scoring.textQuality})),
       corrections:lines.flatMap((line,lineIndex)=>line.corrections.map(correction=>({...correction,line:lineIndex}))),at:new Date().toISOString()};
-    const c=classifyPage(lines.map(l=>l.text).join('\n'),pageNo-1,f.pages.length);
-    if(!pg.typeManual){ pg.type=c.type;pg.conf=c.conf;pg.sub_format=c.type;pg.threeType=toThreeType(c.type); }
+    /* Classifying off noise is how an LV schematic ends up typed "spec": the
+       type would be read from text the page does not contain. Leave it unknown
+       and let the vision agent say what the page is. */
+    if(!pg.typeManual&&!ocrUnreadable){
+      const c=classifyPage(lines.map(l=>l.text).join('\n'),pageNo-1,f.pages.length);
+      pg.type=c.type;pg.conf=c.conf;pg.sub_format=c.type;pg.threeType=toThreeType(c.type);
+    }
     pg.source=keptEmbedded?'native_text':'ocr';
     f.ocrReady=true;
     const remaining=f.pages.filter(x=>x.needsOcr).length;
     f.warn=remaining?`${remaining} page${remaining===1?'':'s'} still need OCR.`:null;
     saveProject(state.cur);renderDocs();renderPgclass();
     if(reanalyze) await runAnalysis({auto:true});
-    if(!quiet) toast(keptEmbedded?`Embedded text retained on page ${pageNo} after OCR comparison`:`OCR read ${lines.length} lines from page ${pageNo} using ${chosen.id.replace(/-/g,' ')}`);
+    if(!quiet) toast(keptEmbedded?`Embedded text retained on page ${pageNo} after OCR comparison`
+      :ocrUnreadable?`Page ${pageNo} is a drawing OCR cannot read — it will be read from the image instead`
+      :`OCR read ${lines.length} lines from page ${pageNo} using ${chosen.id.replace(/-/g,' ')}`);
     return lines;
   }finally{
     ocrBusy=false;
@@ -1854,20 +2382,41 @@ async function ocrPdfPage(f,pageNo,{reanalyze=true,quiet=false}={}){
   }
 }
 async function ocrScannedPages(f,limit=20,{reanalyze=true,quiet=false}={}){
-  const queue=f.pages.map((pg,i)=>({pg,page:i+1})).filter(x=>x.pg.needsOcr||!(x.pg.lines||[]).length).slice(0,limit);
+  /* A page that has BEEN through OCR is not re-queued just because it produced
+     no words. Without the second clause, every page that genuinely holds only
+     line-work is re-OCR'd on every run — several Tesseract passes each time, for
+     a result that cannot change — and the run reports it as still "remaining". */
+  const queue=f.pages.map((pg,i)=>({pg,page:i+1})).filter(x=>x.pg.needsOcr||(!(x.pg.lines||[]).length&&!x.pg.ocr)).slice(0,limit);
   if(!queue.length){if(!quiet)toast('Every page has a reliable text result');return 0;}
-  let done=0,stopped=null;
+  let done=0,stopped=null;const failed=[];let consecutive=0;
   for(const [index,item] of queue.entries()){
     ocrProgressContext=`${f.name} | Page ${item.page} of ${f.pages.length}`;
     setProcessingDock('Reading scanned pages',ocrProgressContext,Math.max(2,Math.round((index+1)/queue.length*(100/STAGES.length))),0);
     await paintProcessing();
-    try{await ocrPdfPage(f,item.page,{reanalyze:false,quiet:true});done++;}
-    catch(error){stopped={page:item.page,error};break;}
+    try{await ocrPdfPage(f,item.page,{reanalyze:false,quiet:true});done++;consecutive=0;}
+    catch(error){
+      /* ONE page failing must not abandon the document. This used to `break`.
+         Measured on MCCB-Schedule_BowGreen.pdf: pages 1-3 read in about twenty
+         seconds, page 4 threw, and the break left SIXTEEN of nineteen pages
+         unread — with no text they were then invisible to every completeness
+         check too, so the document simply came back small and said nothing.
+         A bad page costs its own page now, not the sixteen behind it. */
+      const message=String(error&&error.message||error);
+      failed.push({page:item.page,message});
+      const rec=f.pages[item.page-1]; if(rec) rec.ocrFailed=message;
+      /* But do not grind through four hundred pages of a dead worker: several
+         failures in a row means the pipeline is broken, not the page. */
+      if(++consecutive>=3){stopped={page:item.page,error};break;}
+    }
   }
   ocrProgressContext='';
   if(done&&reanalyze) await runAnalysis({auto:true});
-  const remain=f.pages.filter(pg=>pg.needsOcr||!(pg.lines||[]).length).length;
-  if(stopped)toast(`OCR stopped on page ${stopped.page}: ${stopped.error.message||stopped.error}. ${remain} page${remain===1?'':'s'} remain.`);
+  const remain=f.pages.filter(pg=>pg.needsOcr||(!(pg.lines||[]).length&&!pg.ocr)).length;
+  /* Every failed page is named, not just the one that stopped the run — and the
+     pages themselves carry ocrFailed, so Review reports them after the toast has
+     gone. A toast is the weakest possible record of a missing board. */
+  if(stopped)toast(`OCR gave up after ${consecutive} pages in a row failed (page ${stopped.page}: ${stopped.error.message||stopped.error}). ${done} page${done===1?'':'s'} read, ${remain} remain.`);
+  else if(failed.length)toast(`OCR read ${done} page${done===1?'':'s'}; ${failed.length} failed (page${failed.length===1?'':'s'} ${failed.map(x=>x.page).join(', ')}) and ${remain} remain - see Review.`);
   else if(!quiet||remain) toast(`OCR completed ${done} page${done===1?'':'s'}${remain?`; ${remain} remain - run OCR scans again`:''}`);
   renderViewer();
   return done;
@@ -1879,7 +2428,7 @@ async function autoOcrScannedFiles(){
   let total=0;
   for (const f of p.files){
     if (f.status!=='ready'||(f.ext!=='pdf'&&!IMAGE_EXTS.has(f.ext))) continue;
-    if (!f.pages.some(pg=>pg.needsOcr||!(pg.lines||[]).length)) continue;
+    if (!f.pages.some(pg=>pg.needsOcr||(!(pg.lines||[]).length&&!pg.ocr))) continue;
     toast(`Reading pages with missing or unreliable text in ${f.name}…`);
     try{ total+=await ocrScannedPages(f, Infinity, {reanalyze:false, quiet:true}); }
     catch(e){ toast('Auto-OCR: '+e.message); }
@@ -1895,6 +2444,12 @@ async function autoOcrScannedFiles(){
    to local-only (deterministic) extraction. */
 const AI_HEALTH_ENDPOINT='/api/extract/health';
 const AI_RUN_ENDPOINT='/api/extract/run';
+/* Set once the cloud-account layer initialises (see the account panel below).
+   The run route spends provider budget and is auth-gated by default, so the
+   request carries the Supabase session JWT when there is one. Stays null on a
+   fully local desktop install, where no request is ever made anyway. */
+let cloudAccount=null;
+function aiFetch(url,init){ return cloudAccount ? cloudAccount.authedFetch(url,init) : fetch(url,init); }
 let aiProbePromise=null;
 window.__aiStatus='unknown';
 function aiExtractReady(){
@@ -1939,9 +2494,13 @@ async function aiExtractPage(f,pageNo,pg){
   // the client wait so a hung request can't stall the UI.
   const ctrl=new AbortController(); const timer=setTimeout(()=>ctrl.abort(),90000);
   try{
-    const r=await fetch(apiUrl(AI_RUN_ENDPOINT),{method:'POST',headers:{'content-type':'application/json'},signal:ctrl.signal,
+    const r=await aiFetch(apiUrl(AI_RUN_ENDPOINT),{method:'POST',headers:{'content-type':'application/json'},signal:ctrl.signal,
+      /* Noise is worse than silence here. Sending an unreadable page's OCR
+         output would both pollute the prompt and route it to the text agent —
+         the server picks vision_parse only when there is an image and no text —
+         which is the reader that cannot do anything with a drawing. */
       body:JSON.stringify({filename:f.name, page_number:pageNo, image_base64, media_type:'image/jpeg',
-        text_lines:(pg.lines||[]).map(l=>l.text).slice(0,400), hints:{type:pg.type}})});
+        text_lines:pg.ocrUnreadable?[]:(pg.lines||[]).map(l=>l.text).slice(0,400), hints:{type:pg.type}})});
     if(!r.ok){ const err=await r.json().catch(()=>({})); throw new Error((err.error&&err.error.message)||err.error||('HTTP '+r.status)); }
     return await r.json();   // {result, verification?, provider, model}
   }catch(e){
@@ -1960,7 +2519,7 @@ function applyCrossCheck(A,v,fileId,pageNo){
   A.xcheck.pages++; A.xcheck.provider=v.provider||'gemini';
   (v.mismatches||[]).forEach(m=>{
     A.xcheck.mismatches++;
-    const bn=m.board?canonicalBoardRef(m.board).normalised:null;
+    const bn=bindDeviceBoard(m.board,primaryBoardForPage(A,fileId,pageNo));
     if (m.kind==='missing_in_primary'){
       const sec=m.second||{};
       A.rows.push({id:uid(), boardNorm:bn, fileId, page:pageNo, line:null, status:'pending', kind:'ai',
@@ -1978,11 +2537,46 @@ function applyCrossCheck(A,v,fileId,pageNo){
     }
   });
 }
-function mergeAiResult(A,out,fileId,pageNo){
+/* The board a page's schedule header names, registered as that page's primary
+   board by the regex pass. It is the document's own statement of which board
+   the page belongs to, so it is the right fallback for any extracted device
+   that did not carry a board reference of its own. */
+function primaryBoardForPage(A,fileId,pageNo){
+  for(const e of Object.values(A.boards||{})){
+    if((e.pages||[]).some(x=>x.fileId===fileId&&x.page===pageNo&&x.primary)) return e.norm;
+  }
+  return null;
+}
+/* A device's own board_ref is preferred, but a ref that merely extends the
+   page's board (way and phase glued on) or is a bare prefix of it names the
+   same board — collapse it rather than stranding the device under a phantom. */
+function bindDeviceBoard(ref,pageBoard){
+  const bn=ref?canonicalBoardRef(ref).normalised:null;
+  if(!bn) return pageBoard||null;
+  if(!pageBoard) return bn;
+  if(bn===pageBoard||bn.startsWith(pageBoard)||pageBoard.startsWith(bn)) return pageBoard;
+  return bn;
+}
+/* `master` rides on the RESPONSE ENVELOPE, beside `result` — not inside it —
+   and the call site passes the inner result. Taking it as an explicit argument
+   makes that impossible to get wrong silently; the out.master fallback keeps
+   any caller that does hand over a whole envelope working. */
+function mergeAiResult(A,out,fileId,pageNo,masterVerdict){
   if(!out) return;
+  /* How the agent read the sheet. A wrong layout reading is the largest miss
+     there is — it loses a whole board, or half of every row — and it surfaces
+     as an empty result rather than a wrong value, which is the hardest kind of
+     failure to spot. Kept so it can be shown next to the result instead of
+     being discarded like the master verdict once was. */
+  if(out.layout){ A.layouts=A.layouts||{}; A.layouts[fileId+'#'+pageNo]=out.layout; }
+  const pageBoard=primaryBoardForPage(A,fileId,pageNo);
   (out.boards||[]).forEach(b=>{
     if(!b.ref) return;
-    const canonical=canonicalBoardRef(b.ref), norm=canonical.normalised; if(!norm) return;
+    const canonical=canonicalBoardRef(b.ref);
+    /* The model returns a board_ref per row, so an 18-way board arrives as
+       DB-1-GF-1 … DB-1-GF-18. Bind to the page's declared board exactly as
+       device rows do, or each way registers as a board of its own. */
+    const norm=bindDeviceBoard(b.ref,pageBoard); if(!norm) return;
     if(!A.boards[norm]){
       const det=detectBoards(b.ref)[0];
       A.boards[norm]={norm, orig:canonical.display, type:det?det.type:'UNK', pages:[], parent:null, parentConf:0, manual:false};
@@ -1996,7 +2590,7 @@ function mergeAiResult(A,out,fileId,pageNo){
     }
   });
   (out.devices||[]).forEach(d=>{
-    const bn=d.board_ref?canonicalBoardRef(d.board_ref).normalised:null;
+    const bn=bindDeviceBoard(d.board_ref,pageBoard);
     // regex rows win: skip AI rows for slots the schedule parser already filled
     const dup=A.rows.some(r=>r.kind==='schedule'&&r.boardNorm===bn&&r.way===d.way
       &&(!r.phase||!d.phase||r.phase===d.phase||d.phase==='L1L2L3'));
@@ -2019,6 +2613,34 @@ function mergeAiResult(A,out,fileId,pageNo){
       {source:'ai',ocr:{confidence:aiRow.conf*100}},fl?.name||fileId);
     A.rows.push({...aiRow,...trace,extractionMethod:'AI-assisted extraction'});
   });
+  /* MASTER AUDIT (Gemini). The server runs it, returns it, and until now the
+     browser threw it away — the audit the whole agent hierarchy exists to
+     perform reached no one. Its findings are things present on the page that
+     BOTH extraction agents missed, so each becomes a review row: over-capture
+     into Review beats a silent omission, and the master never edits a count. */
+  const m=masterVerdict||out.master;
+  if(m && m.status==='reviewed'){
+    A.master=A.master||{pages:0,incomplete:0,missed:0};
+    A.master.pages++;
+    if(m.complete===false) A.master.incomplete++;
+    (m.missed||[]).forEach(item=>{
+      if(!item) return;
+      const bn=bindDeviceBoard(item.board_ref,pageBoard);
+      const way=item.way!=null&&item.way!==''?String(item.way):null;
+      // never duplicate a slot the extraction agents already filled
+      const already=A.rows.some(r=>r.fileId===fileId&&r.page===pageNo&&r.boardNorm===bn
+        &&String(r.way??'')===String(way??''));
+      if(already) return;
+      A.master.missed++;
+      A.rows.push({id:uid(), boardNorm:bn, fileId, page:pageNo, line:null, status:'pending', kind:'ai',
+        way, phase:null, desc:String(item.evidence||'Present on the page but captured by neither agent').slice(0,300),
+        device:null, rating:null, poles:null, poleConfiguration:null, curve:null, sens:null,
+        afdd:false, ka:null, cable:null, spare:false, space:false, incomer:false, isSpd:false, qty:1,
+        srcText:'Master audit: '+String(item.evidence||'').slice(0,200),
+        conf:0.4, xcheck:'Master auditor found this on the page; neither extraction agent returned it.',
+        extractionMethod:'Gemini master audit'});
+    });
+  }
   (out.feeds||[]).forEach(fd=>{
     if(!fd.to_ref) return;
     A.feeders.push({id:uid(), fileId, page:pageNo, line:null,
@@ -2040,9 +2662,35 @@ async function runAiExtraction(A,f,p,pageSet){
       const pageNo=pi+1;
       if (pageSet && !pageSet.has(pageNo)) return;
       const rowsHere=A.rows.filter(r=>r.fileId===id&&r.page===pageNo&&r.kind==='schedule').length;
-      // recall-first: any schedule/schematic/unknown page, plus any page the regex pass left empty
-      if (SCHEDULE_TYPES.has(pg.type)||pg.type==='sld'||pg.type==='schematic'||pg.type==='unknown'||rowsHere===0)
-        jobs.push({fl,id,pg,pageNo});
+      /* Recall-first, but not indiscriminate. Sending every page — which
+         "unknown || rowsHere===0" amounted to — meant a 441-page tender made
+         441 extraction calls for 45 schedule pages, and harvested "devices"
+         out of lighting calculations and specification prose that then had to
+         be reviewed out of the take-off by hand.
+         A page is still read whenever it is typed as a schedule or schematic,
+         OR shows any sign of carrying devices. A page with no such sign has
+         nothing for an agent to find. */
+      const core=window.EstimationExtractorCore;
+      const pageText=(pg.lines||[]).map(l=>l.text);
+      /* A specification clause about RCBO sensitivities carries every signal a
+         schedule does, so the spec chapter used to be read as if it held
+         devices — the 386-page Didcot tender returned 54 pages for its 45
+         schedules. A page that positively identifies as prose, or as a schedule
+         that is not a device schedule (cable, I/O, alarm, drawing register), is
+         vetoed — but only when it shows no schedule structure of its own, so
+         nothing is ever dropped for lack of evidence. */
+      const vetoed = core?.pageIsSpecificationProse
+        ? (core.pageIsSpecificationProse(pageText.join('\n'))||core.pageIsNonDeviceSchedule(pageText.join('\n')))
+          && !core.pageIsDeviceSchedule(pageText.join('\n'))
+        : false;
+      const typed = (SCHEDULE_TYPES.has(pg.type)||pg.type==='sld'||pg.type==='schematic') && !vetoed;
+      const signalled = core?.pageIsWorthExtracting ? core.pageIsWorthExtracting(pageText) : true;
+      /* A page OCR could not read shows no signal BECAUSE it could not be read,
+         so the two tests above both say "nothing here" on exactly the pages
+         where nothing has been tried yet. Large-format schematics are the
+         common case, and skipping one loses a whole switchboard. Vision is the
+         only reader left, so it always gets these. */
+      if (typed || signalled || pg.ocrUnreadable) jobs.push({fl,id,pg,pageNo});
     });
   }
   if(!jobs.length) return;
@@ -2052,7 +2700,20 @@ async function runAiExtraction(A,f,p,pageSet){
   for (let i=0;i<jobs.length;i+=CONC){
     await Promise.all(jobs.slice(i,i+CONC).map(async j=>{
       try{ const resp=await aiExtractPage(j.fl,j.pageNo,j.pg);
-        mergeAiResult(A, resp&&resp.result?resp.result:resp, j.id, j.pageNo);
+        mergeAiResult(A, resp&&resp.result?resp.result:resp, j.id, j.pageNo, resp&&resp.master);
+        /* Which sub-agent actually did the work, and on which key. The server
+           reports it per page and nothing consumed it, so an owner running a
+           pool of keys had no way to tell whether the pool was being used —
+           or whether one model was quietly serving every page. */
+        if(resp&&resp.agents){
+          A.agentUse=A.agentUse||{};
+          ['extractor','second'].forEach(role=>{
+            const a=resp.agents[role];
+            if(!a||!a.model) return;
+            const k=role+'\u0000'+a.model+'\u0000'+(a.key??'?');
+            A.agentUse[k]=(A.agentUse[k]||0)+1;
+          });
+        }
         applyCrossCheck(A, resp&&resp.verification, j.id, j.pageNo); A.aiPages++; }
       catch(e){ console.warn('AI extraction failed on '+j.fl.name+' p'+j.pageNo+':', e.message); A.aiErrors++; }
     }));
@@ -2061,22 +2722,97 @@ async function runAiExtraction(A,f,p,pageSet){
 }
 
 /* reconstruct lines (text + bbox) from a pdf.js text content object */
-function linesFromTextContent(tc, vp){
+/* Long vertical ruling lines, in viewport space.
+ *
+ * A drawing sheet that prints several board schedules side by side has no
+ * whitespace between them — measured, the widest corridor on one such sheet is
+ * 1.2% of the across-page span — so its own table borders are the only
+ * boundary there is. Page-border clip rectangles are drawn repeatedly and are
+ * not table rules, so anything hugging an edge or spanning the whole sheet is
+ * dropped. */
+async function verticalRulesForPage(page, vp){
+  const lib=window.pdfjsLib; if(!lib||!page.getOperatorList) return null;
+  const ops=await page.getOperatorList(); const OPS=lib.OPS, U=lib.Util;
+  let ctm=vp.transform.slice(); const stack=[]; const found=[];
+  const keep=(ax,ay,bx,by)=>{
+    if(Math.abs(bx-ax)>1.5||Math.abs(by-ay)<vp.height*0.25) return;
+    const x=(ax+bx)/2;
+    if(x<8||x>vp.width-8) return;                    // page border
+    if(Math.abs(by-ay)>vp.height*0.95) return;       // full-height clip box
+    found.push(x);
+  };
+  for(let i=0;i<ops.fnArray.length;i++){
+    const fn=ops.fnArray[i], args=ops.argsArray[i];
+    if(fn===OPS.save) stack.push(ctm.slice());
+    else if(fn===OPS.restore) ctm=stack.pop()||ctm;
+    else if(fn===OPS.transform) ctm=U.transform(ctm,args);
+    else if(fn===OPS.constructPath){
+      const [fns,coords]=args; let k=0,cx=0,cy=0;
+      const pt=(x,y)=>U.applyTransform([x,y],ctm);
+      for(const f of fns){
+        if(f===OPS.moveTo){ cx=coords[k++]; cy=coords[k++]; }
+        else if(f===OPS.lineTo){ const a=pt(cx,cy); cx=coords[k++]; cy=coords[k++]; const b=pt(cx,cy); keep(a[0],a[1],b[0],b[1]); }
+        else if(f===OPS.curveTo){ k+=6; cx=coords[k-2]; cy=coords[k-1]; }
+        else if(f===OPS.rectangle){ const x=coords[k++],y=coords[k++],w=coords[k++],h=coords[k++];
+          const a=pt(x,y), b=pt(x+w,y+h); keep(a[0],a[1],b[0],b[1]); }
+      }
+    }
+  }
+  if(!found.length) return null;
+  // cluster to the nearest few units so one drawn border is one boundary
+  return [...new Set(found.map(x=>Math.round(x/4)*4))].sort((a,b)=>a-b);
+}
+
+function linesFromTextContent(tc, vp, rules){
+  /* Each run carries its own transform, so a ROTATED sheet is detectable rather
+     than something to be guessed at. Grouping by y regardless merges text from
+     different table rows on a rotated page — a schedule then arrives as
+     "11-L3 10-L3" and its header as one line of labels and another of values
+     far apart, which is how a real 18-way board came to declare no board at all
+     and hand its devices to the previous one. */
   const items = tc.items.map(it=>{
     const tx = window.pdfjsLib.Util.transform(vp.transform, it.transform);
-    return {str:it.str, x:tx[4], y:tx[5], w:it.width*vp.scale, h:Math.hypot(tx[2],tx[3])||10};
+    return {str:it.str, x:tx[4], y:tx[5], w:it.width*vp.scale, h:Math.hypot(tx[2],tx[3])||10,
+      angle:Math.atan2(tx[1],tx[0])};
   }).filter(i=>i.str.trim());
-  items.sort((a,b)=> Math.abs(a.y-b.y)>5 ? a.y-b.y : a.x-b.x);
-  const lines=[];
-  items.forEach(it=>{
-    const last=lines[lines.length-1];
-    if (last && Math.abs(last.y-it.y)<=5){
-      const gap = it.x-(last.x+last.w);
-      last.text += (gap>8?'  ':' ')+it.str;
-      last.w = (it.x+it.w)-last.x;
-    } else lines.push({text:it.str, x:it.x, y:it.y, w:it.w, h:it.h});
-  });
-  return lines.map(l=>({text:l.text, bbox:[l.x, l.y-l.h, l.w, l.h*1.4]}));
+  const core=window.EstimationExtractorCore;
+  /* Board schedules printed SIDE BY SIDE. One text line then crosses several
+     tables — a board's REFERENCE shares a line with a neighbouring board's
+     circuit rows — so no amount of line-index work can separate them, and on a
+     real sheet four of seven boards received no rows at all. The drawing's
+     ruling lines do separate them: reading each band on its own turns a 2-D
+     layout back into the sequential one the rest of the pipeline handles.
+     Every guard sits in columnBandsFromRules; it returns null unless the page
+     really is banded, so a single-table page is untouched. */
+  if (core?.columnBandsFromRules && core.groupTextItemsIntoLines && Array.isArray(rules) && rules.length){
+    const isHeader=it=>/^REFERENCE$|^Id\s*No:?$/i.test(String(it.str||'').trim());
+    const bands=core.columnBandsFromRules(items, rules, {
+      across: it=>it.x,
+      isHeader,
+      bandNamesABoard: group=>group.some(isHeader),
+    });
+    if (bands){
+      const out=[];
+      bands.forEach(group=>core.groupTextItemsIntoLines(group).forEach(l=>out.push(l)));
+      return out.map(l=>({text:l.text, bbox:[l.x, l.y-l.h, l.w, l.h*1.4]}));
+    }
+  }
+  const grouped = core?.groupTextItemsIntoLines
+    ? core.groupTextItemsIntoLines(items)
+    : (()=>{ // identical fallback for a build without the core loaded
+        items.sort((a,b)=> Math.abs(a.y-b.y)>5 ? a.y-b.y : a.x-b.x);
+        const lines=[];
+        items.forEach(it=>{
+          const last=lines[lines.length-1];
+          if (last && Math.abs(last.y-it.y)<=5){
+            const gap = it.x-(last.x+last.w);
+            last.text += (gap>8?'  ':' ')+it.str;
+            last.w = (it.x+it.w)-last.x;
+          } else lines.push({text:it.str, x:it.x, y:it.y, w:it.w, h:it.h});
+        });
+        return lines;
+      })();
+  return grouped.map(l=>({text:l.text, bbox:[l.x, l.y-l.h, l.w, l.h*1.4]}));
 }
 function splitTextPages(txt){
   const parts = txt.includes('\f') ? txt.split('\f') : [txt];
@@ -2113,7 +2849,13 @@ async function ingestFile(file){
         const pg=await doc.getPage(i);
         const vp=pg.getViewport({scale:1});
         const tc=await pg.getTextContent();
-        const lines=linesFromTextContent(tc,vp);
+        /* The drawing's own ruling lines, which are the only thing that
+           separates board schedules printed side by side — see
+           linesFromTextContent. Cheap to ask for and skipped entirely on pages
+           with no vector content. */
+        let rules=null;
+        try{ rules=await verticalRulesForPage(pg,vp); }catch(e){ rules=null; }
+        const lines=linesFromTextContent(tc,vp,rules);
         const preliminary=classifyPage(lines.map(line=>line.text).join('\n'),i-1,doc.numPages);
         const textQuality=window.EstimationExtractorCore
           ? window.EstimationExtractorCore.assessPageText(lines,{expectedType:preliminary.type,pageWidth:vp.width,pageHeight:vp.height})
@@ -2335,14 +3077,33 @@ function renderCoverage(){
   const aiStats = appSettings.onlineExtraction&&p.analysis&&p.analysis.aiPages!=null ? ` · ${p.analysis.aiPages} page(s) read${p.analysis.aiErrors?', '+p.analysis.aiErrors+' failed':''}` : '';
   const xc=p.analysis&&p.analysis.xcheck;
   const xcChip = xc&&xc.pages ? `<span class="chip ${xc.mismatches?'amber':'green'}" title="A second AI model re-read every page; disagreements are in the Review queue">Cross-check (${esc(xc.provider||'gemini')}): ${xc.pages} page(s)${xc.mismatches?', '+xc.mismatches+' disagreement(s) → Review':' — models agree'}</span> ` : '';
+  const secs=(p.analysis&&p.analysis.scheduleSections)||[];
+  const secChips = secs.length
+    ? '<div style="margin-bottom:7px">'+secs.map(s=>
+        `<span class="chip green" title="${esc([s.introducedBy?'Introduced by: '+s.introducedBy:'',s.endedBy?'Ends at: '+s.endedBy:''].filter(Boolean).join(' · ')||'Detected from the pages themselves')}">`
+        +`${esc(s.fileName.slice(0,24))}: circuit schedules on pages ${s.from}–${s.to} of ${s.totalPages}</span>`).join(' ')
+      +'</div>'
+    : '';
   pagesEl.innerHTML = `<div style="margin-bottom:7px"><span class="chip ${aiCls}">Extraction service: ${esc(ai)}${esc(aiStats)}</span> ${xcChip}</div>`
+    + secChips
     + (cov.zeroRowSchedulePages.length
     ? '<span class="chip amber">Check '+cov.zeroRowSchedulePages.length+' schedule page(s) with no rows:</span> '
       + cov.zeroRowSchedulePages.slice(0,30).map(z=>{
           const fl=p.files.find(x=>x.id===z.fileId);
           return `<span class="chip grey">${esc(fl?fl.name.slice(0,24):'?')} p${z.page}</span>`;
         }).join(' ')
-    : '<span class="chip green">Every schedule-looking page produced rows.</span>');
+    : '<span class="chip green">Every schedule-looking page produced rows.</span>')
+    /* A drawing no reader could open is a harder failure than a schedule page
+       that parsed to nothing, so it gets its own line rather than being folded
+       into the count above. */
+    + ((cov.unreadablePages||[]).length
+    ? '<div style="margin-top:7px"><span class="chip red">'+cov.unreadablePages.length+' page(s) could not be read as text or by the extraction service:</span> '
+      + cov.unreadablePages.slice(0,30).map(z=>{
+          const fl=p.files.find(x=>x.id===z.fileId);
+          return `<span class="chip grey">${esc(fl?fl.name.slice(0,24):'?')} p${z.page}</span>`;
+        }).join(' ')
+      + ' <span class="hint" style="display:inline;margin:0">Large-format schematics scan poorly. Turn on online extraction, or supply the drawing at a higher resolution.</span></div>'
+    : '');
 }
 
 /* ============================ ANALYSIS CONTROLS ============================ */
@@ -2432,6 +3193,7 @@ window.accountAuthedFetch=(url,init)=>fetch(url,init);   // anonymous fallback
     fetchImpl: window.fetch.bind(window),
     configUrl: cfgUrl,
   });
+  cloudAccount=acc;   // lets aiFetch() sign the extraction request
   const $id=(s)=>document.getElementById(s);
   function paint(user){
     const row=$id('accountRow'); if(!row) return;
@@ -2607,18 +3369,87 @@ async function runAnalysis(opts){
       const pageNo=pi+1;
       if (pageSet && !pageSet.has(pageNo)) return;
       const lines=(pg.lines||[]).map(l=>l.text);
+      /* The same veto the extraction agents get. A specification chapter
+         describing the installation names boards it does not schedule — Didcot's
+         spec pages minted "MAIN LV PANEL" and "MCPS", neither of which has a
+         schedule anywhere in the document — and they then sit in the take-off
+         with no ways and no rows. A page that positively identifies as prose or
+         as a non-device schedule contributes no boards, unless it carries
+         schedule structure of its own. */
+      const core=window.EstimationExtractorCore;
+      const joined=lines.join('\n');
+      const vetoed=core?.pageIsSpecificationProse
+        ? (core.pageIsSpecificationProse(joined)||core.pageIsNonDeviceSchedule(joined))
+          && !core.pageIsDeviceSchedule(joined)
+        : false;
       const pageBoards=[];
-      lines.forEach(t=>detectBoards(t).forEach(b=>{ if(!pageBoards.some(x=>x.norm===b.norm)) pageBoards.push(b); }));
-      pageBoards.forEach(b=>regBoard(b,id,pageNo));
+      if(!vetoed) lines.forEach(t=>detectBoards(t).forEach(b=>{ if(!pageBoards.some(x=>x.norm===b.norm)) pageBoards.push(b); }));
       const isSched=SCHEDULE_TYPES.has(pg.type) && pg.type!=='cable-schedule';
-      let ctxBoard=null;
+      /* The header is resolved BEFORE any board is registered. Registering
+         every ref scanned out of row text first is what let one board's ways
+         and phases each mint a board of their own. */
+      let ctxBoard=null, segments=null;
       if (isSched){
-        ctxBoard=scheduleBoardFromLines(lines);
+        /* A sheet may print two board schedules side by side — the existing
+           board and its replacement. Resolved as one board, the whole sheet
+           went to whichever header came first. */
+        segments=scheduleBoardSegments(lines);
+        ctxBoard=segments?segments[0].board:scheduleBoardFromLines(lines);
         const hasBoardHeader=hasScheduleBoardHeader(lines);
         if (!ctxBoard && !hasBoardHeader && prevBoard) ctxBoard=prevBoard; // continuation page
-        if (ctxBoard){ regBoard(ctxBoard,id,pageNo,true); prevBoard=ctxBoard; }
+        if (ctxBoard) prevBoard=segments?segments[segments.length-1].board:ctxBoard;
         else if(hasBoardHeader) prevBoard=null;
       } else prevBoard=null;
+      const keptBoards=(ctxBoard&&window.EstimationExtractorCore?.reconcilePageBoards)
+        ? window.EstimationExtractorCore.reconcilePageBoards(ctxBoard.norm,pageBoards)
+        : pageBoards;
+      keptBoards.forEach(b=>regBoard(b,id,pageNo));
+      if (ctxBoard) regBoard(ctxBoard,id,pageNo,true);
+      /* Every board the sheet declares is a board, not just the first. Header
+         facts are read from each one's own block so a 12-way board and an
+         8-way board on the same sheet each get their own way count. */
+      if (segments) segments.forEach(seg=>{
+        regBoard(seg.board,id,pageNo,true);
+        if (window.EstimationExtractorCore?.parseBoardHeaderFacts){
+          const f2=window.EstimationExtractorCore.parseBoardHeaderFacts(lines.slice(seg.from,seg.to));
+          const e2=A.boards[seg.board.norm];
+          if (e2){
+            e2.header=Object.assign({},e2.header||{},{
+              ways_total: f2.waysTotal ?? (e2.header||{}).ways_total ?? null,
+              fed_from_ref: f2.servedBy || (e2.header||{}).fed_from_ref || null,
+              location: f2.location || (e2.header||{}).location || null,
+              serving: f2.description || (e2.header||{}).serving || null,
+              incomer_class: f2.incomer || (e2.header||{}).incomer_class || null,
+              incomer_rating_a: f2.incomerRatingA ?? (e2.header||{}).incomer_rating_a ?? null,
+              spare_percent: f2.sparePercent ?? (e2.header||{}).spare_percent ?? null,
+            });
+            if (f2.waysTotal) e2.waysTotal=f2.waysTotal;
+          }
+        }
+      });
+      /* The board's own header block states its way count, its upstream feed
+         and its incomer. These are the document's words, so they beat anything
+         inferred from rows — and the way count is what makes the capacity
+         sanity check possible. */
+      if (ctxBoard && window.EstimationExtractorCore?.parseBoardHeaderFacts){
+        const facts=window.EstimationExtractorCore.parseBoardHeaderFacts(lines);
+        const e=A.boards[ctxBoard.norm];
+        if (e){
+          e.header=Object.assign({}, e.header||{}, {
+            ways_total: facts.waysTotal ?? (e.header||{}).ways_total ?? null,
+            fed_from_ref: facts.servedBy || (e.header||{}).fed_from_ref || null,
+            location: facts.location || (e.header||{}).location || null,
+            serving: facts.description || (e.header||{}).serving || null,
+            incomer_class: facts.incomer || (e.header||{}).incomer_class || null,
+            incomer_rating_a: facts.incomerRatingA ?? (e.header||{}).incomer_rating_a ?? null,
+            /* What the drawing says is spare. Some schedules print no row for a
+               spare way and state the proportion here instead, so without it
+               every such board reads as short by exactly its spare capacity. */
+            spare_percent: facts.sparePercent ?? (e.header||{}).spare_percent ?? null,
+          });
+          if (facts.waysTotal) e.waysTotal=facts.waysTotal;
+        }
+      }
       const parsedLegend=window.EstimationExtractorCore
         ? window.EstimationExtractorCore.parseProtectionLegend(lines.join('\n'))
         : {legend:null};
@@ -2627,6 +3458,36 @@ async function runAnalysis(opts){
       const codedPage=isSched&&window.EstimationExtractorCore&&window.EstimationExtractorCore.parseTbaSchedulePage
         ? window.EstimationExtractorCore.parseTbaSchedulePage(lines,ctx)
         : {matched:false,rows:[]};
+      /* A schedule ROW names what its way feeds — a Trimble sheet's "Connected
+         To:" column simply holds the downstream board's reference, with none of
+         the words parseFeeders looks for ("fed from", "supplies", "sub-main
+         to"). On a 386-page tender that meant ZERO feed relationships were
+         captured from 45 schedule pages that each state them, and every board
+         showed "no known supply source" while the document said exactly what
+         supplied it.
+         A board named in a row of THIS board's schedule is fed BY this board.
+         The cable-identifier guard in detectBoards already keeps a cable's own
+         name out, and reconcilePageBoards drops the page board's own way and
+         phase extensions, so what is left is a genuine downstream board. */
+      const UPSTREAM_LABEL=/\b(?:SERVED\s+BY|FED\s+FROM|SUPPLIED\s+(?:FROM|BY))\b/i;
+      const feedsFromRow=(t,li)=>{
+        if(!ctx.board) return;
+        /* A line stating what feeds THIS board points the other way, and is
+           already read as the board's own header fact. Recording it here would
+           invert the tree. */
+        if(UPSTREAM_LABEL.test(t)) return;
+        const named=detectBoards(t);
+        if(!named.length) return;
+        const kept=window.EstimationExtractorCore?.reconcilePageBoards
+          ? window.EstimationExtractorCore.reconcilePageBoards(ctx.board,named) : named;
+        kept.forEach(b=>{
+          if(b.norm===ctx.board) return;
+          if(A.feeders.some(fd=>fd.from===ctx.board&&fd.to===b.norm)) return;
+          A.feeders.push({id:uid(), fileId:id, page:pageNo, line:li, from:ctx.board, to:b.norm,
+            cable:detectCables(t)[0]||null, device:detectDeviceIn(t), rating:ratingOf(t), poles:polesOf(t),
+            srcText:t.trim(), conf:0.75});
+        });
+      };
       const addScheduleRow=(row,line)=>{
         if (boardFilter && (!ctx.board || !boardFilter.has(ctx.board))) return;
         if (devFilter && row.device && !devFilter.has(row.device.toUpperCase()) && !row.spare && !row.space && !row.incomer) return;
@@ -2635,19 +3496,41 @@ async function runAnalysis(opts){
         A.rows.push({id:uid(), boardNorm:ctx.board, boardSection:ctx.boardSection, fileId:id, page:pageNo, line, status:'pending', kind:'schedule', ...row,...trace,conf:confidence});
       };
       if(codedPage.matched) codedPage.rows.forEach(row=>addScheduleRow(row,row.line));
+      /* A mirrored ("double-sided") chart prints two half-tables facing each
+         other across the busbar, so ONE line carries TWO ways. Every other row
+         parser reads left to right and returns one row, so these sheets matched
+         nothing and their boards came back with no devices at all. */
+      const mirrored=isSched&&!codedPage.matched&&window.EstimationExtractorCore?.looksLikeMirroredChart
+        ? window.EstimationExtractorCore.looksLikeMirroredChart(lines) : false;
       lines.forEach((t,li)=>{
         const lower=t.toLowerCase();
         if (f.ignore.length && f.ignore.some(w=>lower.includes(w))) return;
+        /* Rows belong to the board whose header block precedes them. */
+        if (segments){
+          const seg=segments.find(s=>li>=s.from&&li<s.to);
+          if (seg && seg.board.norm!==ctx.board){ ctx.board=seg.board.norm; ctx.boardOrig=seg.board.orig; ctx.boardSection=seg.board.section||null; }
+        }
         detectCables(t).forEach(c=>{
           A.cables.push({id:uid(), fileId:id, page:pageNo, line:li, boardNorm:ctx.board, srcText:t.trim(),
             conf: (isSched||pg.type==='cable-schedule')?0.85:0.7, status:'pending', ...c});
         });
         if (isSched){
+          if (mirrored){
+            const pair=window.EstimationExtractorCore.parseMirroredChartLine(t);
+            if (pair){
+              if (pair.left) addScheduleRow(pair.left,li);
+              if (pair.right) addScheduleRow(pair.right,li);
+              parseFeeders(t, pageBoards, ctx.board).forEach(fd=>A.feeders.push({id:uid(),fileId:id,page:pageNo,line:li,...fd}));
+              feedsFromRow(t,li);
+              return;
+            }
+          }
           const row=codedPage.matched?null:parseScheduleLine(t, ctx);
           if (row){
             addScheduleRow(row,li);
           }
           parseFeeders(t, pageBoards, ctx.board).forEach(fd=>A.feeders.push({id:uid(),fileId:id,page:pageNo,line:li,...fd}));
+          feedsFromRow(t,li);
         } else if (pg.type==='sld'||pg.type==='schematic'||pg.type==='notes'){
           const mainCtx = pageBoards.find(b=>b.type==='MAIN') || pageBoards.find(b=>b.type==='SMDB'||b.type==='MDB');
           parseFeeders(t, pageBoards, mainCtx?mainCtx.norm:null).forEach(fd=>A.feeders.push({id:uid(),fileId:id,page:pageNo,line:li,...fd}));
@@ -2670,6 +3553,26 @@ async function runAnalysis(opts){
           }
         }
       });
+      /* Ways the drawing declares spare as a BLOCK ("12-L1,L2,L3 - 18-L1,L2,L3
+         ... SPARE") are recorded as spare ways. Without this, completeness
+         reports them as unaccounted for on a board the drawing fully
+         describes — a false alarm on every such board, and a completeness
+         check that cries wolf stops being read. */
+      if (isSched && ctx.board && window.EstimationExtractorCore?.spareWayRanges){
+        const claimed=new Set(A.rows.filter(r=>r.boardNorm===ctx.board&&r.way!=null).map(r=>String(r.way)));
+        window.EstimationExtractorCore.spareWayRanges(lines).forEach(({from,to})=>{
+          for(let w=from;w<=to;w++){
+            if(claimed.has(String(w))) continue;
+            claimed.add(String(w));
+            A.rows.push({id:uid(), boardNorm:ctx.board, boardSection:ctx.boardSection, fileId:id, page:pageNo,
+              line:null, status:'pending', kind:'schedule', way:w, phase:null, desc:'Spare (declared as a block)',
+              device:null, rating:null, poles:null, poleConfiguration:null, curve:null, sens:null, afdd:false,
+              ka:null, cable:null, spare:true, space:false, incomer:false, qty:1,
+              srcText:`Ways ${from}-${to} declared SPARE`, conf:0.85,
+              extractionMethod:'Schedule spare block'});
+          }
+        });
+      }
       if (isSched && !codedPage.matched && window.EstimationExtractorCore){
         window.EstimationExtractorCore.finalizeScheduleContext(ctx);
       }
@@ -2685,6 +3588,89 @@ async function runAnalysis(opts){
   if(window.EstimationExtractorCore?.deduplicateExtractionRows){
     const deduplicated=window.EstimationExtractorCore.deduplicateExtractionRows(A.rows);
     A.rows=deduplicated.rows;A.duplicates=deduplicated.duplicates;
+  }
+  /* Cover and contents pages name boards in truncated form ("DB-1" for the
+     DB-1-GF whose schedule appears later), which otherwise stands as an extra
+     board owning no devices. Only a stub with NO rows of its own, prefixing
+     exactly one board that DOES have rows, is folded in — two boards that both
+     hold devices are never merged. */
+  const applyBoardMerge=({drop,keep})=>{
+    const from=A.boards[drop], to=A.boards[keep];
+    if(!from||!to||drop===keep) return;
+    A.rows.forEach(r=>{ if(r.boardNorm===drop) r.boardNorm=keep; });
+    A.cables.forEach(c=>{ if(c.boardNorm===drop) c.boardNorm=keep; });
+    A.feeders.forEach(fd=>{ if(fd.from===drop) fd.from=keep; if(fd.to===drop) fd.to=keep; });
+    Object.values(A.boards).forEach(b=>{ if(b.parent===drop) b.parent=keep; });
+    (from.pages||[]).forEach(p=>{ if(!to.pages.some(x=>x.fileId===p.fileId&&x.page===p.page)) to.pages.push(p); });
+    delete A.boards[drop];
+  };
+  /* A ref that is a declared board plus a trailing way number (DB-1-GF-5,
+     DB-1-GF-11) is a WAY of that board. The AI returns one board_ref per row,
+     so an 18-way board otherwise registers as 18 boards. */
+  if(window.EstimationExtractorCore?.planWayBoardMerges){
+    const declared=Object.values(A.boards).map(b=>({norm:b.norm,
+      isHeader:(b.pages||[]).some(p=>p.primary)}));
+    window.EstimationExtractorCore.planWayBoardMerges(declared).forEach(applyBoardMerge);
+  }
+  if(window.EstimationExtractorCore?.planPrefixMerges){
+    const counts=Object.values(A.boards).map(b=>({norm:b.norm,
+      rowCount:A.rows.filter(r=>r.boardNorm===b.norm&&r.status!=='rejected').length}));
+    window.EstimationExtractorCore.planPrefixMerges(counts).forEach(applyBoardMerge);
+  }
+  /* Upstream link from the board's own header. "SERVED BY MEP MAIN DB" is the
+     document stating the feed outright, which beats inferring it from
+     schematic lines. Deliberately conservative: the name is only turned into a
+     PARENT when it resolves to a board that already exists — a header must not
+     be able to invent boards, which is the failure mode this whole session has
+     been about. When it resolves to nothing it still shows on the card as text. */
+  Object.values(A.boards).forEach(b=>{
+    const raw=(b.header||{}).fed_from_ref;
+    if(!raw||b.parent||b.manual) return;
+    const norm=canonicalBoardRef(raw).normalised;
+    if(norm && norm!==b.norm && A.boards[norm]){ b.parent=norm; b.parentConf=0.9; }
+  });
+  /* Arithmetic the tool should never need a human to do: a board cannot hold
+     more devices than ways × phases. This is the check that would have caught
+     one board showing 86 devices while the rest showed none. */
+  if(window.EstimationExtractorCore?.boardCapacityWarnings){
+    A.capacityWarnings=window.EstimationExtractorCore.boardCapacityWarnings(
+      Object.values(A.boards).map(b=>({
+        norm:b.norm, waysTotal:b.waysTotal||(b.header||{}).ways_total||null,
+        phases:/single|1\s*ph|^sp$/i.test(String((b.header||{}).phase_config||''))?1:3,
+        deviceCount:A.rows.filter(r=>r.boardNorm===b.norm&&r.status!=='rejected'&&r.device&&!r.space&&!r.spare).length,
+      })));
+    if(A.capacityWarnings.length) console.warn('Board capacity exceeded:',A.capacityWarnings);
+  }
+  /* One way, two different readings. A drawing sheet often shows a board twice
+     — once as it is, once as proposed — under the same reference, and keeping
+     both counts a device that does not exist. Choosing between them is not this
+     tool's decision, so both go to Review with their source text. */
+  if(window.EstimationExtractorCore?.conflictingWayRows){
+    A.wayConflicts=window.EstimationExtractorCore.conflictingWayRows(A.rows);
+  }
+  /* One structured line describing what the deterministic pass actually did.
+     Every failure this project hit was silent — a page classified as unknown, a
+     board never marked primary, a merge that found nothing to merge — and none
+     of them raised anything. This makes the next diagnosis a screenshot of the
+     console rather than another round of inference. */
+  try{
+    const pageTypes={};
+    for (const id of f.fileIds){
+      const fl=p.files.find(x=>x.id===id); if(!fl) continue;
+      (fl.pages||[]).forEach(pg=>{ const t=pg.type||'unknown'; pageTypes[t]=(pageTypes[t]||0)+1; });
+    }
+    const declared=Object.values(A.boards).filter(b=>(b.pages||[]).some(x=>x.primary)).length;
+    const withWays=Object.values(A.boards).filter(b=>b.waysTotal||(b.header||{}).ways_total).length;
+    console.info('[extraction]',{
+      pageTypes,
+      boards:Object.keys(A.boards).length,
+      boardsDeclaredByHeader:declared,
+      boardsWithDeclaredWayCount:withWays,
+      rows:A.rows.length,
+      rowsWithoutBoard:A.rows.filter(r=>!r.boardNorm).length,
+      capacityWarnings:(A.capacityWarnings||[]).length,
+    });
+  }catch(_e){/* diagnostics must never break an analysis */
   }
   await showAnalysisStage(5,`${A.feeders.length} feeder relationship${A.feeders.length===1?'':'s'}`);
   A.feeders.forEach(fd=>{
@@ -2710,9 +3696,27 @@ async function runAnalysis(opts){
     for (const id of f.fileIds){
       const fl=p.files.find(x=>x.id===id); if(!fl||fl.status!=='ready') continue;
       fl.pages.forEach((pg,pi)=>{ if(pageSet && !pageSet.has(pi+1)) return;
-        covPages.push({fileId:id, page:pi+1, text:(pg.lines||[]).map(l=>l.text).join('\n'), type:pg.type}); });
+        covPages.push({fileId:id, page:pi+1, text:(pg.lines||[]).map(l=>l.text).join('\n'), type:pg.type,
+          unreadable:pg.ocrUnreadable===true,
+          /* So buildCoverage can tell "never read" from "read badly". */
+          needsOcr:pg.needsOcr===true, ocrFailed:pg.ocrFailed||null,
+          // how well OCR read it, so a marginal page can be told from a good one
+          ocrScore:(pg.ocr&&Number.isFinite(Number(pg.ocr.qualityScore)))?Number(pg.ocr.qualityScore):null}); });
     }
     A.coverage = window.EstimationExtractorCore.buildCoverage({boards:A.boards, rows:A.rows, pages:covPages});
+    /* Where the circuit charts begin and end. Reported per file, because in a
+       300-page tender "pages 18-62 of 386" is checkable against the document
+       in a way that a page count on its own is not. Nothing is excluded on the
+       strength of it — this is an observation, not a filter. */
+    if (window.EstimationExtractorCore.findScheduleSections){
+      A.scheduleSections=[];
+      for (const id of f.fileIds){
+        const fl=p.files.find(x=>x.id===id); if(!fl) continue;
+        const secs=window.EstimationExtractorCore.findScheduleSections(
+          covPages.filter(cp=>cp.fileId===id).map(cp=>({page:cp.page,text:cp.text})));
+        secs.filter(s=>s.pages>=3).forEach(s=>A.scheduleSections.push({...s,fileId:id,fileName:fl.name,totalPages:fl.pages.length}));
+      }
+    }
   }
   // §5.3 — schematic ↔ DB-schedule cross-referencing (deterministic code, not the model).
   try{ A.discrepancies = buildCrossReference(A, p, prev&&prev.discrepancies); }
@@ -2828,6 +3832,13 @@ function renderResults(){
   const sum=$('#anSummary');
   if (!A || !A.rows.length){
     sum.innerHTML='';
+    /* The coverage bar lives outside the two panels cleared here, so this early
+       return used to leave the PREVIOUS project's banner on screen — a project
+       with two boards and no devices displayed another project's nine boards
+       and their unaccounted ways. Every panel this function owns must be
+       cleared on every path, not only on the path that draws them. */
+    const bar=$('#anCoverage');
+    if (bar){ bar.innerHTML=''; bar.style.display='none'; }
     host.innerHTML='<div class="empty"><div class="ico">▦</div>No results yet — press <b>Count devices</b>.</div>';
     return;
   }
@@ -2844,6 +3855,61 @@ function renderResults(){
     ['Confirmed', confd],['Needs review', rev],
     ['Cables', A.cables.length],
   ].map(([k,v])=>`<div class="sumchip"><div class="v">${v}</div><div class="k">${k}</div></div>`).join('');
+  /* Project-wide completeness. An estimator should not have to open every
+     board to learn that one of them is short: boards that cannot be shown
+     complete are named here, and boards that cannot be CHECKED are counted
+     separately so "no gaps" is never confused with "not verified". */
+  const covBar=$('#anCoverage');
+  if (covBar){
+    const gaps=[], unchecked=[];
+    let okCount=0;
+    ((A.coverage&&A.coverage.perBoard)||[]).forEach(cov=>{
+      if(cov.inScope===false) return;
+      if(cov.expectedWays==null){ unchecked.push(cov.norm); return; }
+      if((cov.unaccountedWays||0)===0){ okCount++; return; }
+      gaps.push({norm:cov.norm, missing:cov.unaccountedWays, declared:cov.expectedWays});
+    });
+    const parts=[];
+    if(gaps.length){
+      gaps.sort((a,b)=>b.missing-a.missing);
+      parts.push(`<span class="cov-bad"><b>${gaps.length} board${gaps.length===1?'':'s'} with unaccounted ways:</b> `
+        +gaps.slice(0,6).map(g=>`${esc(boardLabel(g.norm))} (${g.missing} of ${g.declared})`).join(', ')
+        +(gaps.length>6?` and ${gaps.length-6} more`:'')+'</span>');
+    } else if(okCount){
+      parts.push(`<span class="cov-good">All ${okCount} checkable board${okCount===1?'':'s'} have every declared way accounted for.</span>`);
+    }
+    if(unchecked.length) parts.push(`<span class="cov-dim">${unchecked.length} board${unchecked.length===1?'':'s'} state no way count, so completeness is not checkable.</span>`);
+    /* Whether the master actually audited is itself a fact worth stating: an
+       audit that was skipped must never be mistaken for one that passed. */
+    if(A.agentUse&&Object.keys(A.agentUse).length){
+      const byRole={extractor:[],second:[]};
+      Object.entries(A.agentUse).forEach(([k,n])=>{
+        const [role,model,key]=k.split('\u0000');
+        (byRole[role]||[]).push(`${model.split('/').pop()} (key ${key}, ${n})`);
+      });
+      const bits=[];
+      if(byRole.extractor.length) bits.push('extract: '+byRole.extractor.join(', '));
+      if(byRole.second.length) bits.push('second opinion: '+byRole.second.join(', '));
+      if(bits.length) parts.push(`<span class="cov-dim">Sub-agents used \u2014 ${esc(bits.join(' \u00b7 '))}.</span>`);
+    }
+    /* State how the sheets were read. An estimator who can see "read as one way
+       per row" next to a half-empty board can tell a layout misreading from a
+       genuinely sparse schedule; without it both look the same. */
+    if(A.layouts&&Object.keys(A.layouts).length){
+      const tally={};
+      Object.values(A.layouts).forEach(l=>{ const k=l.rows_read||'unclear'; tally[k]=(tally[k]||0)+1; });
+      const label={left_to_right:'one way per row', mirrored:'mirrored, two ways per row', vertical:'vertical', unclear:'layout unclear'};
+      const bits=Object.entries(tally).map(([k,n])=>`${n} page${n===1?'':'s'} ${label[k]||k}`);
+      const unclear=tally.unclear||0;
+      parts.push(`<span class="${unclear?'cov-bad':'cov-dim'}">Read as — ${esc(bits.join(', '))}.</span>`);
+    }
+    if(A.master&&A.master.pages){
+      parts.push(`<span class="cov-dim">Master audit: ${A.master.pages} page${A.master.pages===1?'':'s'} reviewed`
+        +(A.master.missed?`, ${A.master.missed} item${A.master.missed===1?'':'s'} it found are in Review`:', nothing further found')+'.</span>');
+    }
+    covBar.innerHTML=parts.join(' ');
+    covBar.style.display=parts.length?'':'none';
+  }
 
   host.innerHTML='';
   const boardsSorted=Object.keys(by).sort((a,b)=> a==='__none__'?1: b==='__none__'?-1: a<b?-1:1);
@@ -2911,6 +3977,47 @@ function boardHeaderCard(b){
   ];
   return `<div class="bd-hdr">${fields.map(([k,v])=>`<div><div class="k">${esc(k)}</div><div class="v">${esc(String(v))}</div></div>`).join('')}</div>`;
 }
+/* Way-by-way circuit map: the board as the schedule itself lays it out — one
+   row per way, one column per phase. A three-phase way reads across; a single
+   phase way occupies its own line. Spares and spaces stay visible because a
+   board's spare capacity is part of the take-off, not noise to hide. */
+function buildWayMap(rows){
+  const ways=new Map();
+  let anyPhase=false;
+  rows.filter(r=>!r.incomer).forEach(r=>{
+    const key=(r.way===null||r.way===undefined||r.way==='')?'—':String(r.way);
+    if(!ways.has(key)) ways.set(key,{});
+    const ph=String(r.phase||'').toUpperCase();
+    const col=(ph==='L1'||ph==='L2'||ph==='L3')?ph:'ANY';
+    if(col!=='ANY') anyPhase=true;
+    (ways.get(key)[col]=ways.get(key)[col]||[]).push(r);
+  });
+  if(!ways.size) return null;
+  const cols=anyPhase?['L1','L2','L3']:['ANY'];
+  const order=[...ways.keys()].sort((a,b)=>{
+    const na=Number(a), nb=Number(b);
+    if(Number.isFinite(na)&&Number.isFinite(nb)) return na-nb;
+    if(Number.isFinite(na)) return -1;
+    if(Number.isFinite(nb)) return 1;
+    return String(a).localeCompare(String(b));
+  });
+  const cell=(list)=>{
+    if(!list||!list.length) return '<td class="wm-empty">·</td>';
+    return '<td>'+list.map(r=>{
+      if(r.space) return '<span class="wm-spare">space</span>';
+      if(r.spare) return '<span class="wm-spare">spare</span>';
+      const bits=[r.device||'device', r.rating!=null&&r.rating!==''?r.rating+'A':null].filter(Boolean).join(' ');
+      const name=String(r.desc||'').trim();
+      const flag=r.status==='pending'?' <span class="wm-flag" title="Pending review">•</span>':'';
+      return `<div class="wm-dev"><b>${esc(bits)}</b>${flag}${name?`<span class="wm-name">${esc(name)}</span>`:''}</div>`;
+    }).join('')+'</td>';
+  };
+  const wrap=document.createElement('div');
+  wrap.className='wm-wrap';
+  wrap.innerHTML=`<table class="wm"><thead><tr><th>Way</th>${cols.map(c=>`<th>${c==='ANY'?'Device':c}</th>`).join('')}</tr></thead>`
+    +`<tbody>${order.map(w=>`<tr><td class="wm-way">${esc(w)}</td>${cols.map(c=>cell(ways.get(w)[c])).join('')}</tr>`).join('')}</tbody></table>`;
+  return wrap;
+}
 function selectBoard(norm){
   state.selectedBoard = state.selectedBoard===norm ? null : norm;
   renderTakeoff();
@@ -2937,9 +4044,35 @@ function renderBoardDetail(){
   const rows=activeRows().filter(r=>(r.boardNorm||'__none__')===norm);
   const devs=deviceTotals(rows)[norm]||{};
   const total=Object.entries(devs).filter(([k])=>countable(k)).reduce((s,[,v])=>s+v.qty,0);
-  detail.innerHTML = (b? boardHeaderCard(b) : '<div class="p-body"><span class="hint">Rows with no detected board reference.</span></div>')
+  const capWarn=(A.capacityWarnings||[]).find(w=>w.norm===norm);
+  /* Completeness against the board's OWN declared way count, accumulated over
+     every page it occupies — the "nothing was missed" statement. */
+  /* Reads A.coverage — the project's ONE coverage model, the same one the
+     report, the Review queue and the coverage panel consume. A second
+     implementation here would be a second answer to the same question. */
+  const cov=b?((A.coverage&&A.coverage.perBoard)||[]).find(x=>x.norm===norm):null;
+  const covHtml=(!cov||cov.expectedWays==null)
+    ? (b?'<div class="cov-note">This board does not state a way count, so completeness cannot be checked.</div>':'')
+    : (cov.unaccountedWays||0)===0
+      ? `<div class="cov-ok">All ${cov.expectedWays} declared ways accounted for (${cov.capturedWays} captured).</div>`
+      : `<div class="cov-gap"><b>${cov.unaccountedWays} of ${cov.expectedWays} ways not accounted for.</b> ${cov.capturedWays} captured from this board's pages — the rest produced no row, so they are either spare or missed by extraction.</div>`;
+  detail.innerHTML = (capWarn?`<div class="cap-warn"><b>Check this board.</b> ${esc(capWarn.detail)}</div>`:'')
+    + covHtml
+    + (b? boardHeaderCard(b) : '<div class="p-body"><span class="hint">Rows with no detected board reference.</span></div>')
     + `<div style="padding:11px 18px;font-weight:800;font-size:13px;border-top:1px solid var(--line)">Devices on this board <span class="chip grey" style="margin-left:8px">${total} device${total===1?'':'s'}</span></div>`;
-  if (Object.keys(devs).length) detail.appendChild(buildDeviceTable(devs, label));
+  if (Object.keys(devs).length){
+    // at-a-glance counts first — "how many RCBOs, how many MCBs" — then the
+    // full table, then the way-by-way map of what sits on each outgoing way.
+    const chips=Object.entries(devs).filter(([k])=>countable(k)).sort((a,b)=>b[1].qty-a[1].qty)
+      .map(([k,v])=>`<span class="chip">${esc(k)} <b>${v.qty}</b></span>`).join(' ');
+    if(chips) detail.insertAdjacentHTML('beforeend',`<div class="wm-chips">${chips}</div>`);
+    detail.appendChild(buildDeviceTable(devs, label));
+    const map=buildWayMap(rows);
+    if(map){
+      detail.insertAdjacentHTML('beforeend','<div class="wm-head">Circuit map <span class="sub">one row per way, one column per phase — as the schedule lays it out</span></div>');
+      detail.appendChild(map);
+    }
+  }
   else detail.insertAdjacentHTML('beforeend','<div class="empty">No devices captured on this board yet.</div>');
 }
 function renderTakeoff(){
@@ -3166,7 +4299,8 @@ $('#reportXlsxBtn').addEventListener('click',async()=>{
   const button=$('#reportXlsxBtn'), label=button.textContent;
   button.disabled=true; button.textContent='Preparing Excel...';
   try{
-    const workbook=window.EstimationReport.createExcelWorkbook(model,window.ExcelJS);
+    const workbook=window.EstimationReport.createExcelWorkbook(model,window.ExcelJS,
+      {fullAudit:!!($('#reportFullAudit')&&$('#reportFullAudit').checked)});
     const buffer=await workbook.xlsx.writeBuffer();
     download(reportFileName('xlsx'),'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',buffer);
     toast('Excel take-off exported');
@@ -3392,10 +4526,29 @@ function renderReview(){
   const items=[];
   A.rows.filter(r=>r.status==='pending'&&r.conf<0.8).forEach(r=>items.push({kind:'row',r,conf:r.conf}));
   p.files.filter(f=>f.status==='ready'&&!f.native&&f.pages.some(pg=>!(pg.lines||[]).length)).forEach(f=>items.push({kind:'scan',f}));
-  Object.values(A.boards).filter(b=>!b.parent&&!b.manual&&b.type!=='MAIN').forEach(b=>items.push({kind:'orphan',b}));
+  /* "No known supply source" must mean the DOCUMENTS do not say — not that the
+     board they name is absent from this project. A sheet reading "SUPPLIED FROM
+     MAIN PANELBOARD" states the feed plainly; raising it as unknown sends an
+     estimator looking for something the drawing already answered. The feed only
+     becomes a parent link when the named board exists here, which is deliberate
+     — a header must not invent boards — but the header text is still an answer. */
+  Object.values(A.boards).filter(b=>!b.parent&&!b.manual&&b.type!=='MAIN'&&!((b.header||{}).fed_from_ref))
+    .forEach(b=>items.push({kind:'orphan',b}));
+  /* Sorted to the top: a way with two disagreeing readings is a device that may
+     not exist, and it is the one thing here an estimator must settle before
+     pricing. */
+  (A.wayConflicts||[]).forEach(c=>items.push({kind:'wayconflict',c,conf:0}));
   if (A.coverage){
     A.coverage.perBoard.filter(b=>(b.unaccountedWays||0)>0).forEach(b=>items.push({kind:'gap',g:b,conf:0}));
     A.coverage.zeroRowSchedulePages.forEach(z=>items.push({kind:'zeropage',z,conf:0.1}));
+    /* Sorted to the top of the queue: a page nothing could read is the largest
+       single omission the tool can have, and it is invisible everywhere else. */
+    (A.coverage.unreadablePages||[]).forEach(z=>items.push({kind:'unreadable',z,conf:0}));
+    /* A page that was never read at all outranks one that was read badly. */
+    (A.coverage.neverReadPages||[]).forEach(z=>items.push({kind:'neverread',z,conf:0}));
+    /* Read well enough to type, not well enough to parse. Silent before this:
+       one row is not zero rows, so the zero-row check never fired. */
+    (A.coverage.poorlyReadPages||[]).forEach(z=>items.push({kind:'poorlyread',z,conf:0.05}));
   }
   if (!items.length){ host.innerHTML='<div class="empty"><div class="ico">✓</div>Nothing to review — all results are confirmed or high confidence.</div>'; return; }
   host.innerHTML='';
@@ -3437,6 +4590,31 @@ function renderReview(){
         <div class="racts">${g.evidence?'<button class="btn sm" data-a="view">View page</button>':''}</div>`;
       const vb=div.querySelector('[data-a=view]');
       if (vb) vb.addEventListener('click',()=>{ state.viewer.fileId=g.evidence.fileId; state.viewer.page=g.evidence.page; setTab('viewer'); });
+    } else if (it.kind==='wayconflict'){
+      const c=it.c;
+      const readings=c.readings.map(r=>`${esc(r.spare?'Spare':(r.device||'?'))}${r.rating!=null?' '+r.rating+'A':''} <span class="hint" style="display:inline;margin:0">p${r.page}</span>`).join(' &nbsp;vs&nbsp; ');
+      div.innerHTML=`<div class="ric" style="background:var(--amber-soft)">\u26a0</div>
+        <div style="flex:1"><h4>${esc(boardLabel(c.boardNorm))} way ${c.way}${c.phase?' '+esc(c.phase):''} has ${c.readings.length} different readings</h4>
+        <div class="hint">${readings}</div>
+        <div class="hint">A way holds one device. This usually means the sheet shows the board twice — once as it is and once as proposed — under the same reference. Keeping both counts a device that does not exist; decide which applies before pricing.</div></div>
+        <div class="racts"><button class="btn sm" data-a="view">View page</button></div>`;
+      const vb=div.querySelector('[data-a=view]');
+      if(vb) vb.addEventListener('click',()=>{ const r=c.readings[0]; if(r&&r.page){ state.viewer.page=r.page; setTab('viewer'); } });
+    } else if (it.kind==='unreadable'){
+      const z=it.z, fl=p.files.find(x=>x.id===z.fileId);
+      div.innerHTML=`<div class="ric" style="background:var(--red-soft)">⚠</div>
+        <div style="flex:1"><h4>${esc(fl?fl.name:'?')} page ${z.page} could not be read</h4>
+        <div class="hint">OCR returned only line-work, and no device came back from the extraction service either. Nothing on this page is in the take-off. Large-format schematics are the usual cause — supply the drawing at a higher resolution, or enter its devices by hand.</div></div>
+        <div class="racts"><button class="btn sm" data-a="view">View page</button></div>`;
+      div.querySelector('[data-a=view]').addEventListener('click',()=>{ state.viewer.fileId=z.fileId; state.viewer.page=z.page; setTab('viewer'); });
+    } else if (it.kind==='poorlyread'){
+      const z=it.z, fl=p.files.find(x=>x.id===z.fileId);
+      div.innerHTML=`<div class="ric" style="background:var(--amber-soft)">\u25a4</div>
+        <div style="flex:1"><h4>${esc(fl?fl.name:'?')} page ${z.page} was read poorly \u2014 ${z.rows===0?'no':z.rows} circuit${z.rows===1?'':'s'} came off it</h4>
+        <div class="hint">The scan was clear enough to recognise the page as a schedule but not to read its table. On pages like this the descriptions usually survive and the way numbers and ratings do not, so treat this board as unread rather than empty.</div></div>
+        <div class="racts"><button class="btn sm" data-a="view">View page</button></div>`;
+      const vb=div.querySelector('[data-a=view]');
+      if(vb) vb.addEventListener('click',()=>{ state.viewer.fileId=z.fileId; state.viewer.page=z.page; setTab('viewer'); });
     } else if (it.kind==='zeropage'){
       const z=it.z, fl=p.files.find(x=>x.id===z.fileId);
       div.innerHTML=`<div class="ric" style="background:var(--amber-soft)">▤</div>

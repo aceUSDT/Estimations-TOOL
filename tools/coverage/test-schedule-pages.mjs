@@ -1,0 +1,1310 @@
+/* End-to-end regression: a multi-board schedule in the line shape the APP
+ * really produces.
+ *
+ * Every earlier fix in this area was verified against page text reconstructed
+ * by joining table cells into rows. The app does not produce that shape —
+ * pdf.js emits ONE LINE PER CELL, so "REFERENCE" and "DB-1-GF" arrive as two
+ * separate lines. Verifying against the wrong shape is how four consecutive
+ * fixes passed their tests and changed nothing in the product.
+ *
+ * The document modelled here is a real LV distribution board schedule:
+ * per-board header block, way/phase circuit refs, a spare block at the end.
+ */
+import { createRequire } from 'node:module';
+const require = createRequire(import.meta.url);
+const P = require('./app-pipeline.cjs');
+
+let fail = 0;
+const check = (name, cond, detail) => {
+  if (!cond) { console.log(`FAIL ${name}${detail ? ' — ' + detail : ''}`); fail++; }
+};
+
+/* One line per cell, exactly as pdf.js hands them over. */
+function boardPage(ref, ways, servedBy, description, liveWays) {
+  const cells = [
+    'REFERENCE', ref,
+    'SERVED BY', servedBy,
+    'DESCRIPTION', description,
+    'LOCATION', 'LVAC ROOM',
+    'NUMBER OF WAYS', `${ways} WAYS`,
+    'INCOMER', 'GENERIC ISOLATOR',
+    'INCOMER SIZE', '125A',
+    'Circuit Ref', 'Device Rating (A)', 'Device Type', 'RCD Applied', 'Circuit Type', 'Name',
+  ];
+  for (let w = 1; w <= liveWays; w++) {
+    for (const phase of ['L1', 'L2', 'L3']) {
+      cells.push(`${w}-${phase}`, '10', 'Acti9 iC60H, MCB, Type C', 'No', 'Lighting, radial circuits', `CIRCUIT ${w} ${phase}`);
+    }
+  }
+  cells.push(`${liveWays + 1}-L1,L2,L3 - ${ways}-L1,L2,L3`, '-', 'SPARE');
+  return cells;
+}
+
+const raw = [
+  { page: 1, lines: boardPage('DB-1-GF', 18, 'MEP MAIN DB', 'GROUND FLOOR LIGHTING & POWER', 11) },
+  { page: 2, lines: boardPage('DB-2-GF', 24, 'MEP MAIN DB', 'GROUND FLOOR MECHANICAL', 12) },
+  { page: 3, lines: boardPage('DB-3-FF', 18, 'MEP MAIN DB', 'FIRST FLOOR LIGHTING & POWER', 9) },
+];
+/* The app classifies at ingest and analyseDocument reads pg.type, so the test
+   must classify too — otherwise it exercises a path the product never takes. */
+const pages = raw.map((pg, i) => ({ ...pg, type: P.classifyPage(pg.lines.join('\n'), i, raw.length).type }));
+for (const pg of pages) {
+  check(`page ${pg.page} classified as a schedule`, P.SCHEDULE_TYPES.has(pg.type), `got ${pg.type}`);
+}
+
+const A = P.analyseDocument(pages);
+const boards = Object.keys(A.boards).sort();
+
+/* 1. Three board schedules are THREE boards. Not one per way, not one per
+      phase, and not one board that swallowed the other two. */
+check('three schedule pages ⇒ three boards', boards.length === 3, `got ${boards.length}: ${boards.join(', ')}`);
+for (const want of ['DB1GF', 'DB2GF', 'DB3FF']) {
+  check(`board ${want} present`, boards.includes(want), `got ${boards.join(', ')}`);
+}
+
+/* 2. No board name may carry a way number or a phase. */
+const wayShaped = boards.filter((b) => /\d(L[123])?$/.test(b) && !['DB1GF', 'DB2GF', 'DB3FF'].includes(b));
+check('no way/phase-shaped board names', wayShaped.length === 0, wayShaped.join(', '));
+
+/* 3. Each page declared its own board — none is a continuation of the one
+      before it. This is what stops one board absorbing the whole document. */
+for (const norm of ['DB1GF', 'DB2GF', 'DB3FF']) {
+  const b = A.boards[norm];
+  check(`${norm} was declared by a page header`, Boolean(b && b.isHeader));
+  check(`${norm} pages`, Boolean(b && b.pages.length === 1), b ? `on pages ${b.pages.join(',')}` : 'missing');
+}
+
+/* 4. The declared way count is read from the header block. */
+check('DB1GF ways read from header', A.boards.DB1GF && A.boards.DB1GF.waysTotal === 18,
+  A.boards.DB1GF ? String(A.boards.DB1GF.waysTotal) : 'missing');
+check('DB2GF ways read from header', A.boards.DB2GF && A.boards.DB2GF.waysTotal === 24,
+  A.boards.DB2GF ? String(A.boards.DB2GF.waysTotal) : 'missing');
+
+/* 5. The upstream feed is the document's own words. */
+check('DB1GF served-by captured', A.boards.DB1GF && /MEP MAIN DB/i.test(String(A.boards.DB1GF.servedBy || '')),
+  A.boards.DB1GF ? String(A.boards.DB1GF.servedBy) : 'missing');
+
+/* 6. Nothing may exceed its own capacity — the arithmetic that caught 83
+      devices on an 18-way board. */
+check('no board exceeds ways × phases', (A.capacityWarnings || []).length === 0,
+  JSON.stringify(A.capacityWarnings || []));
+
+/* A board whose schedule genuinely SPANS two pages must still work.
+ *
+ * The continuation rule exists for this: page 2 carries more ways of the same
+ * board and no header of its own, so it inherits. Tightening header detection
+ * must not break it — the failure being guarded against is the opposite one,
+ * a page that DOES declare a board being treated as a continuation. */
+{
+  const first = boardPage('DB-9-EX', 36, 'MEP MAIN DB', 'EXTERNAL LIGHTING', 12);
+  const contCells = [];
+  for (let w = 13; w <= 20; w++) {
+    for (const phase of ['L1', 'L2', 'L3']) {
+      contCells.push(`${w}-${phase}`, '16', 'Acti9 iC60H, MCB, Type B', 'No', 'Fixed Power', `CIRCUIT ${w} ${phase}`);
+    }
+  }
+  const rawSpan = [{ page: 1, lines: first }, { page: 2, lines: contCells }];
+  const spanPages = rawSpan.map((pg, i) => ({ ...pg, type: P.classifyPage(pg.lines.join('\n'), i, rawSpan.length).type }));
+  const S = P.analyseDocument(spanPages);
+  const spanBoards = Object.keys(S.boards);
+
+  check('a board spanning two pages stays ONE board', spanBoards.length === 1, `got ${spanBoards.join(', ')}`);
+  check('the spanning board is the declared one', spanBoards[0] === 'DB9EX', `got ${spanBoards[0]}`);
+  const b = S.boards.DB9EX;
+  check('continuation page is attributed to the same board', Boolean(b && b.pages.length === 2),
+    b ? `pages ${b.pages.join(',')}` : 'missing');
+  check('declared ways survive the continuation', Boolean(b && b.waysTotal === 36), b ? String(b.waysTotal) : 'missing');
+}
+
+/* Completeness per board comes from buildCoverage — the project's ONE coverage
+ * model, shared by the report, the Review queue and the coverage panel. A
+ * second implementation of the same question was written during this work and
+ * removed: two answers to "is this board complete?" is worse than none. */
+{
+  const { buildCoverage } = P.EstimationExtractorCore;
+  const boards = { DB1GF: { norm: 'DB1GF', orig: 'DB-1-GF', type: 'DB', pages: [{ fileId: 'f', page: 1, primary: true }] } };
+  const rows = [];
+  for (let w = 1; w <= 11; w++) for (const ph of ['L1', 'L2', 'L3']) rows.push({ boardNorm: 'DB1GF', way: String(w), phase: ph, device: 'MCB', kind: 'schedule' });
+  const pageText = 'REFERENCE DB-1-GF NUMBER OF WAYS 18 WAYS Circuit Ref 1-L1 10 Acti9 iC60H, MCB, Type C';
+  const cov = buildCoverage({ boards, rows, pages: [{ fileId: 'f', page: 1, type: 'db-schedule', text: pageText }] });
+  const board = (cov.perBoard || []).find((b) => b.norm === 'DB1GF');
+  check('coverage reads the declared way count', Boolean(board && board.expectedWays === 18),
+    board ? String(board.expectedWays) : 'no board');
+  check('coverage counts what was captured', Boolean(board && board.capturedWays === 11),
+    board ? String(board.capturedWays) : 'no board');
+  check('coverage reports the shortfall', Boolean(board && board.unaccountedWays === 7),
+    board ? String(board.unaccountedWays) : 'no board');
+
+  /* A page that never states a way count must report null, not zero: unknown
+     is not the same as complete. */
+  const noWays = buildCoverage({ boards, rows, pages: [{ fileId: 'f', page: 1, type: 'db-schedule', text: 'REFERENCE DB-1-GF Circuit Ref' }] });
+  const nb = (noWays.perBoard || []).find((b) => b.norm === 'DB1GF');
+  check('undeclared way count ⇒ expectedWays null', Boolean(nb && nb.expectedWays == null),
+    nb ? String(nb.expectedWays) : 'no board');
+}
+
+/* A page that produced NO TEXT AT ALL must be reported.
+ *
+ * Measured on MCCB-Schedule_BowGreen.pdf: page 4 is line-work, ocrPdfPage threw
+ * "OCR completed but found no readable words on this page", ocrScannedPages
+ * caught it and BROKE, and sixteen of nineteen pages were never attempted. Those
+ * pages were then invisible to every check in buildCoverage: with no text they
+ * cannot look schedule-ish, with no score they cannot be poorly read, and
+ * `unreadable` is only ever set by a COMPLETED OCR pass. The document came back
+ * small and said nothing, which is the failure the product invariants rank worst.
+ */
+{
+  const { buildCoverage } = P.EstimationExtractorCore;
+  const boards = { DB1GF: { norm: 'DB1GF', orig: 'DB-1-GF', type: 'DB', pages: [{ fileId: 'f', page: 1, primary: true }] } };
+  const read = { fileId: 'f', page: 1, type: 'db-schedule', text: 'REFERENCE DB-1-GF NUMBER OF WAYS 4 WAYS Circuit Ref 1-L1 10 MCB' };
+  const rows = [{ boardNorm: 'DB1GF', way: '1', phase: 'L1', device: 'MCB', kind: 'schedule' }];
+
+  /* Abandoned mid-run: OCR threw on it and never ran on the ones behind it. */
+  const abandoned = buildCoverage({ boards, rows, pages: [read,
+    { fileId: 'f', page: 4, type: 'unknown', text: '', needsOcr: true, ocrFailed: 'OCR completed but found no readable words on this page' },
+    { fileId: 'f', page: 5, type: 'unknown', text: '', needsOcr: true },
+  ] });
+  const never = abandoned.neverReadPages || [];
+  check('a page OCR failed on is reported', never.some((p) => p.page === 4 && /no readable words/.test(p.reason)),
+    JSON.stringify(never));
+  check('a page OCR never reached is reported', never.some((p) => p.page === 5), JSON.stringify(never));
+  check('never-read is not confused with unreadable',
+    (abandoned.unreadablePages || []).length === 0, JSON.stringify(abandoned.unreadablePages));
+
+  /* A genuinely blank sheet that nothing expected text from is NOT a finding —
+     otherwise every cover page and separator becomes an alarm, and an alarm
+     everyone ignores is worse than none (see the Didcot spare-capacity case). */
+  const blank = buildCoverage({ boards, rows, pages: [read, { fileId: 'f', page: 9, type: 'unknown', text: '' }] });
+  check('a blank page nothing expected text from is not reported',
+    (blank.neverReadPages || []).length === 0, JSON.stringify(blank.neverReadPages));
+
+  /* And a page OCR DID read, badly, stays in its own category.
+     The page has to belong to the board: buildCoverage scopes to a board's own
+     primary pages, so a loose page is skipped by design. My first version of
+     this check omitted that and failed — the fixture was wrong, not the code. */
+  const poorBoards = { DB1GF: { ...boards.DB1GF, pages: [{ fileId: 'f', page: 1, primary: true }, { fileId: 'f', page: 7, primary: true }] } };
+  const poor = buildCoverage({ boards: poorBoards, rows, pages: [read,
+    { fileId: 'f', page: 7, type: 'db-schedule', text: 'DB-1-GF NUMBER OF WAYS 4 WAYS', ocrScore: 0.71 }] });
+  check('a badly-read page is still poorly read, not never read',
+    (poor.neverReadPages || []).length === 0 && (poor.poorlyReadPages || []).length === 1,
+    JSON.stringify({ never: poor.neverReadPages, poor: poor.poorlyReadPages }));
+}
+
+/* THE WHOLE CHAIN, on the real line shape: analyse the pages, then run the
+ * project's coverage model over the result exactly as the app does.
+ *
+ * This is the check that would have caught the live failure. buildCoverage
+ * keys off board.pages[].primary, and no board was ever marked primary because
+ * the header never resolved from split cells — so the coverage panel, the
+ * report's coverage column and the gap review items were ALL silently inert.
+ * Nothing errored; they simply reported nothing, for months. */
+{
+  const { buildCoverage } = P.EstimationExtractorCore;
+  // the app feeds coverage the page text joined from its lines, with the type
+  const covPages = pages.map((pg) => ({ fileId: 'f', page: pg.page, text: pg.lines.join('\n'), type: pg.type }));
+  // analyseDocument keys board pages by number; coverage keys by fileId#page
+  const boards = {};
+  Object.values(A.boards).forEach((b) => {
+    boards[b.norm] = { ...b, pages: (b.pages || []).map((pn) => ({ fileId: 'f', page: pn, primary: Boolean(b.isHeader) })) };
+  });
+  const cov = buildCoverage({ boards, rows: A.rows, pages: covPages });
+
+  check('coverage produced a per-board result', Array.isArray(cov.perBoard) && cov.perBoard.length > 0,
+    JSON.stringify(cov.perBoard || []).slice(0, 120));
+
+  const gf = (cov.perBoard || []).find((b) => b.norm === 'DB1GF');
+  check('DB-1-GF declared ways read end to end', Boolean(gf && gf.expectedWays === 18),
+    gf ? `expectedWays=${gf.expectedWays}` : 'board missing from coverage');
+
+  // every board that declared a way count must be checkable — the failure mode
+  // being guarded is expectedWays coming back null across the board, which is
+  // what "silently inert" looked like.
+  const checkable = (cov.perBoard || []).filter((b) => b.expectedWays != null).length;
+  check('all three boards are checkable for completeness', checkable === 3, `${checkable} of 3`);
+}
+
+console.log(`PASS: ${pages.length} schedule pages → ${boards.length} boards, split-cell headers, real continuations, capacity intact.`);
+
+/* Rotated sheets must read exactly as upright ones.
+ *
+ * The owner's schedules are rotated, and pdf.js reports each run's own
+ * transform. Grouping by y regardless merged different table rows together:
+ * the header arrived as a line of LABELS and a line of VALUES tens of lines
+ * apart, so no page declared a board and every page's devices went to whichever
+ * board preceded it. */
+{
+  const { groupTextItemsIntoLines } = P.EstimationExtractorCore;
+  const table = [
+    { str: 'REFERENCE', x: 10, y: 100, w: 60, h: 10 }, { str: 'DB-1-GF', x: 80, y: 100, w: 50, h: 10 },
+    { str: 'SERVED BY', x: 10, y: 80, w: 60, h: 10 }, { str: 'MEP MAIN DB', x: 80, y: 80, w: 60, h: 10 },
+  ];
+  const rotate = (deg) => table.map((i) => {
+    const a = deg * Math.PI / 180, c = Math.cos(a), s = Math.sin(a);
+    return { str: i.str, x: i.x * c - i.y * s, y: i.x * s + i.y * c, w: i.w, h: i.h, angle: a };
+  });
+  const upright = JSON.stringify(groupTextItemsIntoLines(rotate(0)).map((l) => l.text));
+  for (const deg of [90, 180, 270]) {
+    const got = JSON.stringify(groupTextItemsIntoLines(rotate(deg)).map((l) => l.text));
+    if (got !== upright) { console.log(`FAIL [rotation] ${deg}° reads ${got}, upright reads ${upright}`); fail++; }
+  }
+  if (!/REFERENCE {2}DB-1-GF/.test(upright)) {
+    console.log(`FAIL [rotation] label and value not on one line: ${upright}`); fail++;
+  }
+  /* A few rotated stamps on an otherwise upright drawing must NOT transpose the
+     whole page — the majority decides. */
+  const mostlyUpright = [...rotate(0), { str: 'SCALE 1:50', x: 5, y: 5, w: 40, h: 8, angle: Math.PI / 2 }];
+  const stillUpright = groupTextItemsIntoLines(mostlyUpright).map((l) => l.text).join('|');
+  if (!/REFERENCE {2}DB-1-GF/.test(stillUpright)) {
+    console.log(`FAIL [rotation] minority rotation transposed the page: ${stillUpright}`); fail++;
+  }
+  if (!fail) console.log('PASS: rotated sheets read as upright ones.');
+}
+
+/* Line tolerance must scale with the text, not with A4.
+ *
+ * On a large-format drawing sheet one table row's cells sit tens of units
+ * apart, so a fixed 5-unit band made every CELL its own line: a circuit's way
+ * arrived on one line and its device type on another, and the row parser could
+ * match neither. */
+{
+  const { groupTextItemsIntoLines } = P.EstimationExtractorCore;
+
+  // large sheet: 40-unit text, one row whose cells span 20 units of drift
+  const bigRow = [
+    { str: '11-L3', x: 0, y: 1000, w: 60, h: 40, angle: 0 },
+    { str: '16', x: 100, y: 1012, w: 20, h: 40, angle: 0 },
+    { str: 'Acti9 iC60H, MCB, Type B', x: 160, y: 992, w: 200, h: 40, angle: 0 },
+    { str: 'MALE WC WATER HEATER', x: 400, y: 1005, w: 220, h: 40, angle: 0 },
+    { str: '10-L3', x: 0, y: 400, w: 60, h: 40, angle: 0 },   // a genuinely different row
+  ];
+  const big = groupTextItemsIntoLines(bigRow).map((l) => l.text);
+  const rowLine = big.find((t) => t.includes('11-L3'));
+  if (!rowLine || !/16/.test(rowLine) || !/Type B/.test(rowLine) || !/WATER HEATER/.test(rowLine)) {
+    console.log(`FAIL [tolerance] large-sheet row not assembled: ${JSON.stringify(big)}`); fail++;
+  }
+  if (big.length !== 2) { console.log(`FAIL [tolerance] expected 2 rows, got ${big.length}: ${JSON.stringify(big)}`); fail++; }
+
+  // normal page: 10-unit text, 12 units apart — must stay separate lines
+  const small = groupTextItemsIntoLines([
+    { str: 'REFERENCE', x: 10, y: 100, w: 60, h: 10, angle: 0 },
+    { str: 'SERVED BY', x: 10, y: 88, w: 60, h: 10, angle: 0 },
+  ]).map((l) => l.text);
+  if (small.length !== 2) { console.log(`FAIL [tolerance] normal page lines merged: ${JSON.stringify(small)}`); fail++; }
+
+  if (!fail) console.log('PASS: line tolerance scales with the text.');
+}
+
+/* The line band is MEASURED from the page, not assumed.
+ *
+ * On a table the gaps between text bands are bimodal — small within a row, one
+ * large between rows. Measured on a real schedule: ~2 and ~21 units within a
+ * row against ~636 between rows. Reading that separation is what took the
+ * deterministic pass from 41 device rows to 161 on that document, with every
+ * board's count matching its declared way count. */
+{
+  const { groupTextItemsIntoLines } = P.EstimationExtractorCore;
+
+  // a table: 6 rows, cells scattered within each row, rows far apart
+  const table = [];
+  for (let r = 0; r < 6; r++) {
+    const base = 1000 - r * 600;
+    table.push({ str: `${r + 1}-L1`, x: 0, y: base, w: 40, h: 10, angle: 0 });
+    table.push({ str: '16', x: 100, y: base + 20, w: 20, h: 10, angle: 0 });
+    table.push({ str: 'Acti9 iC60H, MCB, Type B', x: 160, y: base + 2, w: 180, h: 10, angle: 0 });
+    table.push({ str: `CIRCUIT ${r + 1}`, x: 400, y: base + 21, w: 90, h: 10, angle: 0 });
+  }
+  const rows = groupTextItemsIntoLines(table).map((l) => l.text);
+  if (rows.length !== 6) { console.log(`FAIL [measured] ${rows.length} rows, want 6: ${JSON.stringify(rows.slice(0, 3))}`); fail++; }
+  const first = rows.find((t) => /1-L1/.test(t)) || '';
+  if (!/16/.test(first) || !/Type B/.test(first) || !/CIRCUIT 1/.test(first)) {
+    console.log(`FAIL [measured] row not assembled: ${JSON.stringify(first)}`); fail++;
+  }
+
+  /* Ordinary body text is NOT bimodal — every gap is about a line height — so
+     nothing may be inferred and evenly spaced lines must stay separate. */
+  const prose = [];
+  for (let i = 0; i < 10; i++) prose.push({ str: `line ${i}`, x: 10, y: 500 - i * 12, w: 50, h: 10, angle: 0 });
+  const proseLines = groupTextItemsIntoLines(prose).map((l) => l.text);
+  if (proseLines.length !== 10) {
+    console.log(`FAIL [measured] evenly spaced text collapsed to ${proseLines.length} lines`); fail++;
+  }
+
+  if (!fail) console.log('PASS: line band measured from page geometry.');
+}
+
+/* A page whose board cannot be NAMED must not donate its devices to the
+ * previous board.
+ *
+ * This is the defect that reached a user's screen as one board holding 83
+ * devices against an 18-way capacity of 54, while every board after it held
+ * none. Unattributed is the correct outcome — an estimator can see and fix a
+ * gap, but silently wrong attribution looks like a finished take-off. */
+{
+  const declared = boardPage('DB-8-EX', 18, 'MEP MAIN DB', 'EXTERNAL', 6);
+  // a real page from the owner's document: a 110V board whose reference is a
+  // description, with circuit refs the schedule parser does not recognise
+  const unnamed = ['REFERENCE', 'SP&N DISTRIBUTION BOARD', 'SERVED BY', 'LVAC SWITCHBOARD',
+    'NUMBER OF WAYS', '12 WAYS', 'Circuit Ref',
+    'MCB/21  16  30mA  2 x 1/core x 2.5  1 x 1.5  Sockets Radial  GIS HALL 110V SOCKETS 1',
+    'MCB/22  16  30mA  2 x 1/core x 2.5  1 x 1.5  Sockets Radial  GIS HALL 110V SOCKETS 2'];
+  const rawMix = [{ page: 1, lines: declared }, { page: 2, lines: unnamed }];
+  const mixed = rawMix.map((pg, i) => ({ ...pg, type: P.classifyPage(pg.lines.join('\n'), i, rawMix.length).type }));
+  const M = P.analyseDocument(mixed);
+
+  const leaked = M.rows.filter((r) => r.page === 2 && r.boardNorm === 'DB8EX');
+  if (leaked.length) {
+    console.log(`FAIL [leak] ${leaked.length} rows from an unnamed board attributed to DB8EX`); fail++;
+  }
+  const own = M.rows.filter((r) => r.page === 1);
+  if (own.some((r) => r.boardNorm !== 'DB8EX')) {
+    console.log('FAIL [leak] the declared page lost its own rows'); fail++;
+  }
+  if (!fail) console.log('PASS: an unnamed board does not donate devices to its neighbour.');
+}
+
+/* A board named by DESCRIPTION is still a board.
+ *
+ * A real page reads "REFERENCE  110V AC DISTRIBUTION BOARD" and carries
+ * fourteen circuits. No code-shaped pattern matches it, so it resolved nothing
+ * and its devices sat unattributed — a bucket of homeless rows where a board
+ * should be. The name is taken only from the REFERENCE cell of a genuine
+ * header block, so body text cannot invent boards. */
+{
+  const descriptive = ['REFERENCE', '110V AC DISTRIBUTION BOARD', 'SERVED BY', 'LVAC SWITCHBOARD',
+    'NUMBER OF WAYS', '12 WAYS', 'INCOMER', 'GENERIC ISOLATOR', 'Circuit Ref',
+    'MCB/21  16  30mA  2 x 1/core x 2.5  Sockets Radial  GIS HALL 110V SOCKETS 1'];
+  const got = P.scheduleBoardFromLines(descriptive);
+  check('a descriptively named board resolves', Boolean(got && /110V AC/i.test(got.orig)),
+    got ? got.orig : 'NONE');
+
+  /* Codes still win: a page carrying both must resolve to the code. */
+  const coded = ['REFERENCE', 'DB-1-GF', 'SERVED BY', 'MEP MAIN DB', 'NUMBER OF WAYS', '18 WAYS',
+    'INCOMER', 'GENERIC ISOLATOR', 'SCHNEIDER ELECTRIC 125A DB-1-GF LVAC ROOM'];
+  const codedGot = P.scheduleBoardFromLines(coded);
+  check('a code-shaped reference still wins', Boolean(codedGot && codedGot.norm === 'DB1GF'),
+    codedGot ? codedGot.orig : 'NONE');
+
+  /* And the negatives must hold: no header block, no board. */
+  for (const page of [['Incoming Cable Reference', 'F28', 'Cable schedule'],
+                      ['Drawing Reference', '847-RME-XX', 'Revision B'],
+                      ['REFERENCE', 'SOME TEXT']]) {   // REFERENCE but no header block
+    const bad = P.scheduleBoardFromLines(page);
+    if (bad) { console.log(`FAIL [descriptive] ${page[0]} became board ${bad.orig}`); fail++; }
+  }
+}
+
+
+/* Device-prefixed circuit refs — "MCB/21 ..." rather than "21-L1 ...".
+ *
+ * A real 110V AC board numbers its ways by device, and no dialect matched, so
+ * all fourteen of its circuits were dropped on the floor. */
+{
+  const { parseKnownScheduleLine } = P.EstimationExtractorCore;
+
+  const rcbo = parseKnownScheduleLine('MCB/21  16  30mA  2 x 1/core x 2.5  1 x 1.5  Sockets Radial  GIS HALL 110V SOCKETS 1');
+  check('device-ref row parses', Boolean(rcbo), 'null');
+  if (rcbo) {
+    check('way comes from the ref', rcbo.way === 21, String(rcbo.way));
+    check('rating read', rcbo.rating === 16, String(rcbo.rating));
+    /* An RCD value promotes a declared MCB to an RCBO: a device with residual
+       current protection is an RCBO whatever the drawing labels it. */
+    check('RCD promotes MCB to RCBO', rcbo.device === 'RCBO', String(rcbo.device));
+    check('sensitivity read', rcbo.sens === 30, String(rcbo.sens));
+    /* Only the circuit NAME becomes the description — not the cable and CPC
+       columns that precede it. That requires matching the raw line, because
+       collapsing whitespace first destroys the column separators. */
+    check('description is the circuit name only', rcbo.desc === 'GIS HALL 110V SOCKETS 1', rcbo.desc);
+  }
+
+  const plain = parseKnownScheduleLine('MCB/05  32  No  2 x 1/core x 6  1 x 2.5  Fixed Power  TELECOMS ROOM 110V');
+  check('no RCD stays an MCB', Boolean(plain && plain.device === 'MCB'), plain ? plain.device : 'null');
+  check('name read without an RCD column', Boolean(plain && plain.desc === 'TELECOMS ROOM 110V'), plain ? plain.desc : 'null');
+
+  /* The way-and-phase dialect must be untouched by the new one. */
+  const wayPhase = parseKnownScheduleLine('11-L3  16  Acti9 iC60H, MCB, Type B  No  2 x 1/core x 2.5  Fixed Power  MALE WC WATER HEATER');
+  check('way-phase rows do not match the device-ref dialect',
+    !wayPhase || wayPhase.way !== 11 || wayPhase.phase === 'L3', JSON.stringify(wayPhase));
+}
+
+/* Ways declared SPARE as a block.
+ *
+ * A board with 18 ways may list 11 circuits then one merged row covering
+ * "12-L1,L2,L3 - 18-L1,L2,L3 ... SPARE". Unread, completeness reports seven
+ * ways unaccounted for on a board the drawing fully describes — a false alarm
+ * on every such board, and a check that cries wolf stops being read. */
+{
+  const { spareWayRanges } = P.EstimationExtractorCore;
+
+  // endpoints on the rows either side, because the merged cell is centred
+  const split = spareWayRanges(['18-L1,L2,L3', '-  -  -  -  SPARE', '12-L1,L2,L3 -']);
+  check('spare block read from surrounding rows', JSON.stringify(split) === JSON.stringify([{ from: 12, to: 18 }]),
+    JSON.stringify(split));
+
+  // the range stated inline on the spare row itself
+  const inline = spareWayRanges(['1-L1 - 12-L1  -  -  -  -  SPARE']);
+  check('spare block read inline', JSON.stringify(inline) === JSON.stringify([{ from: 1, to: 12 }]),
+    JSON.stringify(inline));
+
+  /* A neighbouring row carrying DEVICE DATA is a live circuit, not a spare
+     boundary. A real page has exactly that directly above its spare block, and
+     misreading it would silently delete a device — the worst error available. */
+  const live = spareWayRanges([
+    '24-L1,L2,L3  63  Acti9 iC60H, MCB, Type C  No  4 x 1/core x 16  Sockets',
+    '23-L1,L2,L3',
+    '-  -  -  -  SPARE',
+    '17-L1,L2,L3  -',
+  ]);
+  check('live circuit is not read as a spare boundary',
+    JSON.stringify(live) === JSON.stringify([{ from: 17, to: 23 }]), JSON.stringify(live));
+
+  // no SPARE anywhere ⇒ nothing inferred
+  check('no spare marker ⇒ no range', spareWayRanges(['12-L1,L2,L3', '11-L1  16  MCB']).length === 0);
+}
+
+/* The exit gate is LAST on purpose: it once sat mid-file, so checks appended
+   after it could fail while the suite still reported green. */
+/* A three-phase way whose phase cell arrives damaged by OCR.
+ *
+ * Amtech prints the phase column as "L1L2L3" for a three-phase way, and a scan
+ * loses the repeated L's. Verbatim from page 15 of
+ * examples/db-schedules/amtech/Broomfield-House_Circuit-Charts.pdf: "L213",
+ * "L1L213", "L123".
+ *
+ * The damage did not merely mis-read the phase, it lost the WHOLE ROW. All three
+ * way/phase marker patterns required a single L[123], so nothing matched, the
+ * positional-rating scan never ran, and the guard in parseScheduleLine saw no
+ * way, no device and no rating and returned null. On that one page it dropped
+ * ways 2, 3, 4, 5 and 8 — four carrying real devices at 16A, 32A, 16A and 25A.
+ * Across the document: 86 of 170 declared ways captured, rising to 121.
+ */
+{
+  const ctx = () => ({ board: 'DBK', sawHeader: true });
+  const damaged = [
+    ['2 L213 Load-255 16 NIA NA NA 25', 2, 16],
+    ['3 L1L213 Load-256 32 N/A NifA NA 4', 3, 32],
+    ['4 L1L213 Load-257 16 NIA NIA NA 25', 4, 16],
+    ['5 L213 Load-258 25 NIA NIA NA 4', 5, 25],
+    ['8 L123 0', 8, 0],
+  ];
+  for (const [line, way, rating] of damaged) {
+    const row = P.parseScheduleLine(line, ctx());
+    check(`damaged phase cell: "${line.split(' ')[1]}" is a three-phase way, not a dropped row`,
+      row && row.way === way && row.phase === 'L1L2L3' && row.rating === rating,
+      row ? JSON.stringify({ way: row.way, phase: row.phase, rating: row.rating }) : 'DROPPED');
+  }
+
+  /* The clean spelling must read identically, or the repair is only helping the
+     pages that were already damaged. */
+  const clean = P.parseScheduleLine('10 L1L2L3 0', ctx());
+  check('undamaged L1L2L3 reads the same way', clean && clean.way === 10 && clean.phase === 'L1L2L3');
+
+  /* Single-phase rows must be untouched by all of this. */
+  const single = P.parseScheduleLine('1 L1 Load-260 20 N/A NIA NA 4 15', ctx());
+  check('a single-phase cell is still a single phase', single && single.phase === 'L1' && single.rating === 20,
+    single ? JSON.stringify({ phase: single.phase, rating: single.rating }) : 'DROPPED');
+
+  /* A two-phase cell names TWO phases. Inflating it to three would invent a pole
+     on a device the estimator has to buy. */
+  const two = P.parseScheduleLine('6 L2L3 Load-1 20', ctx());
+  check('a two-phase cell is not inflated to three', two && two.phase === 'L2L3',
+    two ? String(two.phase) : 'DROPPED');
+
+  /* A three-phase way carries ONE multi-pole device, never three. */
+  check('a three-phase way is one device', P.parseScheduleLine('2 L213 Load-255 16', ctx()).qty === 1);
+
+  /* The SAME sheet, page 17, damages the cell a different way: OCR substitutes
+     the digits' look-alike letters, "L1L2L3" -> "LiLzLs" (i for 1, z for 2,
+     s for 3). That lost ways 7 and 9, carrying a 32A and a 10A device. */
+  for (const [line, way, rating] of [
+    ['7 LiLzLs Load-250 32 NIA NIA NA 4', 7, 32],
+    ['9 LiLzLs Load-252 10 NIA NIA NA 25', 9, 10],
+  ]) {
+    const row = P.parseScheduleLine(line, ctx());
+    check(`look-alike phase cell: "LiLzLs" is L1L2L3, not a dropped row`,
+      row && row.way === way && row.phase === 'L1L2L3' && row.rating === rating,
+      row ? JSON.stringify({ way: row.way, phase: row.phase, rating: row.rating }) : 'DROPPED');
+  }
+  /* Ordinary words beginning with L must not be mistaken for a phase cell now
+     that letters are accepted in it. All four appear on these very sheets. */
+  for (const line of ['5 Lighting circuit 20 MCB', '3 LIST of items',
+                      '7 Laundry Ring Main 32', '1 Isolator 20']) {
+    const row = P.parseScheduleLine(line, ctx());
+    /* Either the line is not a circuit row at all, or it is one with NO phase.
+       Anything else means an English word was read as a phase cell. */
+    check(`look-alike phase cell: "${line.split(' ')[1]}" is a word, not a phase`,
+      !row || row.phase == null, row ? String(row.phase) : 'no row');
+  }
+
+  /* THE SLASH MARKER — "7/L1", "12/L3".
+     This project's own domain pack documents it twice and nothing parsed it:
+       domain-pack.mjs  syntegral: ways as "CCT n" or "n/Lx"
+       domain-pack.mjs  hevacomp:  "7/L1 20 6.0 2.5 LSF Singles Fixed power ..."
+     It never surfaced because the Hevacomp example writes the compact form and
+     the Syntegral one is an unreadable scan, so the dialect the AGENTS are told
+     about was one the deterministic parser could not read. NOTE: no example PDF
+     in the repository exercises this shape, so the lines below are the documented
+     ones verbatim rather than a measured capture. */
+  for (const [line, way, phase, rating] of [
+    ['7/L1 20 6.0 2.5 LSF Singles Fixed power', 7, 'L1', 20],
+    ['7/L1 20 B 30mA No 1 6.0 SWA RADIAL Landlord supply', 7, 'L1', 20],
+    ['12/L3 32 C 2.5 1.5 Ring Office', 12, 'L3', 32],
+  ]) {
+    const row = P.parseScheduleLine(line, ctx());
+    check(`slash marker: "${line.split(' ')[0]}" is a way and a phase`,
+      row && row.way === way && row.phase === phase && row.rating === rating,
+      row ? JSON.stringify({ way: row.way, phase: row.phase, rating: row.rating }) : 'no row');
+  }
+  /* The damaged-cell handling composes with it. */
+  const slashDamaged = P.parseScheduleLine('9/LiLzLs 40 4.0 Fixed power', ctx());
+  check('slash marker: carries a damaged three-phase cell too',
+    slashDamaged && slashDamaged.way === 9 && slashDamaged.phase === 'L1L2L3' && slashDamaged.rating === 40,
+    slashDamaged ? JSON.stringify({ way: slashDamaged.way, phase: slashDamaged.phase }) : 'no row');
+  /* The leading "L" is what keeps this safe. Dates, page numbers and revision
+     fractions are everywhere on these sheets and must not become circuits. */
+  for (const line of ['Issued 7/12 for tender', 'Drawing 3/4 of set',
+                      'Rev 2/3 dated 01/05/2025', 'Page 7/32']) {
+    const row = P.parseScheduleLine(line, ctx());
+    check(`slash marker: "${line}" is not a circuit`, !row || row.phase == null,
+      row ? String(row.phase) : 'no row');
+  }
+
+  /* A DAMAGED RATING must not be scanned past.
+     Hevacomp's "3Lz 3z2* 15 1x2corex2.5 ... Radial 13A sockets" is way 3 at 32A.
+     "3z2*" is OCR of "32*"; skipping it took the next number on the row — the
+     CABLE SIZE — and reported the circuit as 15A. Falling back to the whole-line
+     rating scan is no better: the only "A" on the row is in its description, so
+     it would report 13A. Both are wrong numbers in a quotation, which is worse
+     than an absent one, so the rating stays unknown and the row goes to Review. */
+  const damagedRating = P.parseScheduleLine('3Lz 3z2* 15 1x2corex2.5 - PVC multi R E 13A ring Office', ctx());
+  check('damaged rating: the row survives with its way and phase',
+    damagedRating && damagedRating.way === 3 && damagedRating.phase === 'L2',
+    damagedRating ? JSON.stringify({ way: damagedRating.way, phase: damagedRating.phase }) : 'DROPPED');
+  check('damaged rating: reports unknown, not the cable size and not the description',
+    damagedRating && damagedRating.rating == null, damagedRating ? String(damagedRating.rating) : 'DROPPED');
+  check('damaged rating: goes to Review', damagedRating && damagedRating.conf < 0.8);
+
+  /* "10%" is OCR of "10*" and DOES parse — a trailing annotation mark is not
+     damage. Without it that token was skipped and a 10A circuit read as 1A. */
+  const annotated = P.parseScheduleLine('11L2 10% 1 1x2corex 15 - PVC multi R E Lighting', ctx());
+  check('trailing annotation mark is not damage: "10%" is 10A, not 1A',
+    annotated && annotated.rating === 10, annotated ? String(annotated.rating) : 'DROPPED');
+
+  /* A cell rebuilt from damaged characters is a reading, not a fact, so it must
+     sit below the app's review threshold (conf < 0.8).
+     This has to be asserted on a row that would OTHERWISE BE CONFIDENT — way,
+     phase, device and rating all present. Asserted on a classless row it passes
+     for the wrong reason: that row is already under the threshold because it
+     names no device, so the check held while the penalty did nothing. Found by
+     deleting the penalty and watching the test still pass. */
+  const confidentButRepaired = P.parseScheduleLine('2 L213 Load-255 16 MCB Type B', ctx());
+  check('a repaired phase cell goes to Review even on an otherwise confident row',
+    confidentButRepaired && confidentButRepaired.device && confidentButRepaired.rating === 16
+    && confidentButRepaired.conf < 0.8,
+    confidentButRepaired ? JSON.stringify({ device: confidentButRepaired.device, conf: confidentButRepaired.conf }) : 'DROPPED');
+  /* And an undamaged row of the same shape must stay confident, or the cap is
+     just a blanket downgrade. */
+  const confidentClean = P.parseScheduleLine('2 L1L2L3 Load-255 16 MCB Type B', ctx());
+  check('an undamaged row of the same shape stays confident',
+    confidentClean && confidentClean.conf >= 0.8, confidentClean ? String(confidentClean.conf) : 'DROPPED');
+}
+
+/* A SCANNED consumer-unit circuit chart, where the header survives OCR and the
+ * rows do not.
+ *
+ * Measured on examples/consumer-units/Dundee_CU-Circuit-Chart.pdf: five pages,
+ * three of them charts, and every one typed `unknown`. That switched off the
+ * schedule walk, so the document produced 0 boards, 0 rows — and, because a page
+ * that is not a schedule cannot be a schedule with no rows, it was reported
+ * NOWHERE. A silent zero is the worst outcome the product invariants name.
+ *
+ * The cause: this dialect writes "Board Identity" and "No of Ways", never
+ * "reference" or "board schedule", so the headerBlock signal could not see it,
+ * and the OCR'd rows are pipes and fragments so no row-shape signal fired either.
+ *
+ * Text below is copied from what OCR actually returned, damage included. */
+{
+  const cuClean = [
+    'Board Identity: Consumer Unit (General Apartment)',
+    'No of Ways: 3',
+    'DB Incomer Device Rating/Type: 63A Switched Disconnector',
+    'Way Phase Circuit Description CPD Rating(A) CPD Type RCD (mA) Cable Type',
+  ].join('\n');
+  check('scanned CU chart: the header alone types the page as a schedule',
+    P.classifyPage(cuClean, 2, 5).type === 'db-schedule', JSON.stringify(P.classifyPage(cuClean, 2, 5)));
+
+  /* Verbatim from page 4: OCR read "No of Ways" as "lo of Ways". The signal has
+     to survive that, or it only works on the pages that needed no help. */
+  const cuDamaged = [
+    'RYBKA',
+    'Board Identity: Consumer Unit = =',
+    'lo of Ways: 3 (At Design : Stage) (At Design ; Stage)',
+    'DB Incomer Device Rating/Type: 63A',
+    'Switched Disconnector',
+  ].join('\n');
+  check('scanned CU chart: OCR damage to the way count does not lose the page',
+    P.classifyPage(cuDamaged, 3, 5).type === 'db-schedule', JSON.stringify(P.classifyPage(cuDamaged, 3, 5)));
+
+  /* The other pages of the same PDF must NOT be dragged in with them. */
+  const cover = 'Dundee Terrace\nCircuit Chart — CU Apartment\nEDINBURGH GLASGOW INVERNESS';
+  check('scanned CU chart: the cover page is not a schedule',
+    P.classifyPage(cover, 0, 5).type !== 'db-schedule', JSON.stringify(P.classifyPage(cover, 0, 5)));
+  const issue = 'RYBKA\nIssue Record\nRevision Section No. By Checked By Date\n01 Issued for Tender KB cs 29.08.25\nJob Number 423.033.00';
+  check('scanned CU chart: the issue record is not a schedule',
+    P.classifyPage(issue, 1, 5).type !== 'db-schedule', JSON.stringify(P.classifyPage(issue, 1, 5)));
+  /* "Board identity" on its own is a phrase, not a chart. */
+  check('scanned CU chart: the phrase alone is not enough',
+    P.classifyPage('Refer to the board identity given on the schedule', 0, 1).type !== 'db-schedule');
+
+  /* The three implementations must agree. When they drifted before, tests passed
+     and the app was broken. */
+  const core = P.EstimationExtractorCore;
+  check('scanned CU chart: extractor-core agrees with the app copy',
+    core.classifyPageText(cuClean, 2, 5).type === 'db-schedule'
+    && core.classifyPageText(cuDamaged, 3, 5).type === 'db-schedule'
+    && core.classifyPageText(cover, 0, 5).type !== 'db-schedule');
+}
+
+/* A PANEL NAMED IN WORDS, and the outgoing ways identified by what they feed.
+ *
+ * Measured on MCCB-Schedule_BowGreen.pdf, a 19-page MCCB schedule carrying 400A
+ * and 100A devices on almost every row. Its take-off contained FOUR devices, and
+ * no board on the document declares a way count, so completeness reported nothing
+ * missing — a confident, near-empty take-off, which is the worst failure this
+ * product has. Two causes, one behind the other:
+ *
+ *   1. the panel that owns every outgoing device is headed "Board Ref: Main
+ *      Landlord MCCB Panel board". No code-shaped pattern matches it, so the
+ *      board resolved to nothing and every row on the sheet was orphaned;
+ *   2. the rows name the BOARD THEY FEED rather than a way number, and the way
+ *      numbers are largely lost to the scan, so parseScheduleLine dropped them.
+ *
+ * After both: 4 devices to 23.
+ */
+{
+  const head = [
+    'Schedule of Electrical Plant and Equipment — MCCB Schedule',
+    'Board Ref: Main Landlord MCCB Panel board Project: Bow Green, Phase 2',
+    'Location: LV Switchroom Project No: B1089% Rev: C01',
+    'Main Isolator: 2000A Date: 10.10.2025',
+  ];
+  const panel = P.scheduleBoardFromLines(head);
+  check('a panel named in words resolves from its labelled header',
+    Boolean(panel && /MAINLANDLORDMCCBPANEL/.test(panel.norm)), JSON.stringify(panel));
+  /* The name must stop at the next labelled field, or the board is called
+     "Main Landlord MCCB Panel board Project: Bow Green, Phase 2". */
+  check('the name stops at the next labelled field',
+    Boolean(panel && !/BOWGREEN|PROJECT/i.test(panel.norm)), panel ? panel.norm : 'none');
+
+  /* Guarded, or body text starts inventing boards. Every one of these appears on
+     real sheets in this corpus. */
+  for (const [line, why] of [
+    ['Board Type: Distribution', 'a different label entirely'],
+    ['All boards shall comply with BS 7671', 'specification prose'],
+    ['Drawing Reference: E-001 Rev C', 'a drawing, not a board'],
+    /* These two reach the descriptive path and must be rejected BY IT. The three
+       above are turned away earlier — by the label pattern and the drawing
+       lookbehind — so on their own they leave the keyword guard untested. Found
+       by deleting the guard and watching every check still pass. */
+    ['Board Ref: Bow Green Phase Two', 'a labelled value that names no board'],
+    ['Board Ref: Issued For Tender', 'a labelled value that is a status'],
+  ]) {
+    check(`no board invented from: ${why}`, !P.scheduleBoardFromLines([line]), line);
+  }
+  /* A code-shaped reference still wins over the descriptive path. */
+  const coded = P.scheduleBoardFromLines(['Board Ref: DB-LL-D Project: Bow Green']);
+  check('a code-shaped reference still wins', Boolean(coded && coded.norm === 'DBLLD'), JSON.stringify(coded));
+
+  /* The rows themselves: no way number, but they name one board and a rating. */
+  const ctx = () => ({ board: 'MAINLANDLORDMCCBPANELBOARD', sawHeader: true });
+  for (const [line, rating, feeds] of [
+    ['DB/LL/D a5 400A ML2.2', 400, 'DBLLD'],
+    ['DB/LL/G H 240 35 400A ML2.2', 400, 'DBLLG'],
+    ['DB/LL/COMMS — Comms Room LTG & PWR G 35 186 100A ML2.2', 100, 'DBLLCOMMS'],
+  ]) {
+    const row = P.parseScheduleLine(line, ctx());
+    check(`an outgoing way identified by the board it feeds: ${feeds}`,
+      Boolean(row && row.way === null && row.rating === rating && row.feedsBoardNorm === feeds),
+      row ? JSON.stringify({ way: row.way, rating: row.rating, feeds: row.feedsBoardNorm }) : 'DROPPED');
+    check(`${feeds}: a device with no way number of its own goes to Review`,
+      Boolean(row && row.conf < 0.8), row ? String(row.conf) : 'DROPPED');
+  }
+  /* TWO board references on a line is prose or a mis-split row, not a way.
+     Asserted WITHOUT a "Note:" prefix — that prefix makes it a note line, which
+     is rejected before the rule under test ever runs, so the original version of
+     this check passed with the rule deleted. */
+  check('two board references do not make a device',
+    !P.parseScheduleLine('DB/LL/D and DB/LL/E 400A ML2.2', ctx()));
+  check('two board references, no way number, still no device',
+    !P.parseScheduleLine('DB/LL/D to DB/LL/E 400A', ctx()));
+  /* And with no board section open there is nothing to hang it on. */
+  check('no open board section ⇒ no inferred device',
+    !P.parseScheduleLine('DB/LL/D a5 400A ML2.2', { sawHeader: true }));
+}
+
+if (fail) { console.log(`\n${fail} failure(s)`); process.exit(1); }
+console.log('PASS: descriptive board names, with codes still winning.');
+
+/* Not every page of a tender is a circuit schedule.
+ *
+ * A real 441-page document holds 45 schedule pages. Sending all 441 to the
+ * agents cost roughly ten times what the job needed and harvested "devices"
+ * out of lighting calculations and specification prose, which then had to be
+ * reviewed out of the take-off by hand. */
+{
+  const { pageHasElectricalSignal } = P.EstimationExtractorCore;
+
+  // worth reading — any ONE signal is enough, because a missed schedule page
+  // costs more than a wasted call
+  const worth = {
+    'way/phase rows': ['1-L1  10  Acti9 iC60H, MCB, Type C  No  2 x 1/core x 4'],
+    'board header': ['REFERENCE DB-1-GF', 'NUMBER OF WAYS 18 WAYS'],
+    'device with a rating': ['Schneider Acti9 MCB iC60H Type B  63A'],
+    'circuit ref column': ['Circuit Ref   Device Type   RCD Applied'],
+    'board reference alone': ['Sub-main to DB/GF in riser 2'],
+  };
+  for (const [name, lines] of Object.entries(worth)) {
+    check(`signal: ${name} is read`, pageHasElectricalSignal(lines) === true);
+  }
+
+  // nothing for an agent to find
+  const skip = {
+    'title block': ['1 of 1 Pages Client national grid', 'Site Name DIDCOT 400kV SUBSTATION'],
+    'lighting calculations': ['Object : Didcot SS Ground Floor Lighting Calculations', 'Installation : Didcot SS'],
+    'page footer only': ['Page 1 of 8'],
+    'empty page': [''],
+    'specification prose': ['The contractor shall provide all necessary labour and materials.'],
+  };
+  for (const [name, lines] of Object.entries(skip)) {
+    check(`signal: ${name} is skipped`, pageHasElectricalSignal(lines) === false,
+      JSON.stringify(lines[0]).slice(0, 60));
+  }
+}
+
+/* The signal test above is generous by design, and that generosity has a cost:
+ * a specification clause about RCBO sensitivities carries every signal a
+ * schedule does. On the 386-page Didcot tender the selection returned 54 pages
+ * for its 45 schedules — the spec chapter, the drawing register and the I/O
+ * cable schedule came with them.
+ *
+ * The veto removes a page only on POSITIVE evidence of being something else,
+ * and only when it shows no schedule structure of its own. Absence of evidence
+ * never excludes a page, because a missed board is the more serious failure.
+ *
+ * Text below is quoted from Didcot; page numbers are that document's. */
+{
+  const { pageIsWorthExtracting, pageIsSpecificationProse, pageIsNonDeviceSchedule,
+    pageIsDeviceSchedule, findScheduleSections } = P.EstimationExtractorCore;
+
+  // p9: specification prose. Names boards, switchgear and MCCBs, but describes
+  // them rather than scheduling them.
+  const specProse = 'Sub-distribution Boards A main switch board complete with a moulded case circuit '
+    + 'breakers will be located within the LVAC room. The main switch board will be as manufactured '
+    + 'by Schneider Electric or equal. Sub-distribution boards will be surface mounted and will be '
+    + 'fitted with a 125A isolator. Each board will be provided with a minimum of 20% spare ways. '
+    + 'Combined residual current devices will have a 30mA sensitivity and tripping characteristic '
+    + 'in accordance with BSEN61009 type B and C. A typed circuit chart will be fitted within or '
+    + 'adjacent to the board. All boards will be labelled in accordance with the drawings.';
+  check('veto: specification prose is recognised', pageIsSpecificationProse(specProse) === true);
+  check('veto: specification prose is not extracted', pageIsWorthExtracting([specProse]) === false);
+  /* The phrase "a typed circuit chart will be fitted" is a schedule title
+   * inside a sentence. Reading it as structure would let the whole spec
+   * chapter back in, so a title only counts on a page that is not prose. */
+  check('veto: a schedule title inside a sentence is not structure',
+    pageIsDeviceSchedule(specProse) === false);
+
+  // p299: an I/O cable schedule. The estimator's own rule — "where cable
+  // schedules start is where we mark the end of the circuit schedules".
+  const cableSchedule = 'DIDCOT 132kV GIS Building Services I/O Cable Schedule Signals Proposed for '
+    + 'connection to SCADA System name Interface Panel Terminal Reference SCADA Ferrule Cable Type '
+    + 'CSA Cores Field Terminals Notes Fire Alarm Fire Condition 001 A-B PH30 Fire resistant '
+    + 'multcore 1.5 1x3C From fire alarm panel.';
+  check('veto: cable schedule is recognised', pageIsNonDeviceSchedule(cableSchedule) === true);
+  check('veto: cable schedule is not extracted', pageIsWorthExtracting([cableSchedule]) === false);
+
+  // p4: a drawing register, which is a schedule of drawings and not of devices.
+  const drawingRegister = 'SECTION A: SCHEDULE OF M&E DRAWINGS Didcot 132kV GIS Building NUMBER SCALE '
+    + 'TITLE 32_LI_000220 1:200 BUILDING SERVICES - SITE WIDE POWER SUPPLIES 630A';
+  check('veto: drawing register is not extracted', pageIsWorthExtracting([drawingRegister]) === false);
+
+  // The veto must never outrank real schedule structure. A page carrying both
+  // is still read — this is the check that keeps the veto from costing a board.
+  const cableScheduleWithCircuits = `${cableSchedule} Circuit Ref 1-L1 32 MCB Type C 2-L2 16 MCB Type B`;
+  check('veto: a page with circuit rows survives the cable-schedule veto',
+    pageIsWorthExtracting([cableScheduleWithCircuits]) === true);
+  const proseWithSchedule = `${specProse} Distribution Board Schedule Way Id No Circuit Ref 1-L1 32 MCB`;
+  check('veto: a page with a schedule header survives the prose veto',
+    pageIsWorthExtracting([proseWithSchedule]) === true);
+
+  // A real schedule must not read as prose at any point.
+  const realSchedule = 'Distribution Board Schedule Job Number: Didcot SS Board Data Incomer Details '
+    + 'Device Rating (A): Total Connected Load (A): Ze: Board Rating (A): Name: Id No: L3 L2 L1 '
+    + 'Way Id No 1-L1 32 Acti9 iC60H MCB Type C 2-L2 16 MCB Type B';
+  check('veto: a real schedule is never read as prose', pageIsSpecificationProse(realSchedule) === false);
+  check('veto: a real schedule is extracted', pageIsWorthExtracting([realSchedule]) === true);
+  check('veto: a real schedule is identified as one', pageIsDeviceSchedule(realSchedule) === true);
+
+  /* Where the circuit charts begin and end. The estimator asked to be shown
+   * this for a 300-page tender: the divider page announces the section, and the
+   * next section heading closes it. */
+  const sections = findScheduleSections([
+    { page: 1, text: 'Contents' },
+    { page: 2, text: 'SECTION C : DIDCOT 132kV GIS CIRCUIT CHARTS & CABLE CALCULATIONS C1 – Circuit Charts The following information is to supplement the layout drawings.' },
+    { page: 3, text: realSchedule },
+    { page: 4, text: realSchedule },
+    { page: 5, text: realSchedule },
+    { page: 6, text: 'C2 – Containment Capacity and Loading The following tables demonstrate the capacity and extent of fill for strategic points.' },
+    { page: 7, text: cableSchedule },
+  ]);
+  check('sections: one run found', sections.length === 1, JSON.stringify(sections));
+  check('sections: run covers exactly the schedule pages',
+    sections[0] && sections[0].from === 3 && sections[0].to === 5 && sections[0].pages === 3,
+    JSON.stringify(sections[0]));
+  check('sections: the divider that introduces it is quoted',
+    /C1 – Circuit Charts$/.test(sections[0].introducedBy || ''), sections[0].introducedBy);
+  check('sections: the heading that ends it is quoted',
+    sections[0].endedBy === 'C2 – Containment Capacity and Loading', sections[0].endedBy);
+}
+
+/* A cable or load is named after the board and way it serves, so a board
+ * reference sits INSIDE its name. Reading those as boards invented two per page
+ * on the Didcot tender — DB-7 and DB-12 out of "Cbl_FC-143-MEP MAIN DB-7-" and
+ * "Cbl_SM-99-MEP MAIN DB-12" — each landing in the take-off with no ways and no
+ * rows against a board that does not exist.
+ *
+ * Both the core and the app's own detector are checked, because they are
+ * separate implementations and a fix applied to one is not a fix. */
+{
+  const { extractBoardReferences } = P.EstimationExtractorCore;
+  const cableRow = '7  Cbl_FC-143-MEP MAIN DB-7-  Multicore 90°C thermosetting  1 x 1 x 2c  16  '
+    + 'Load-148-MEP MAIN DB-7-L1  Schneider, ComPacT NSX MCCB, NSX100N - 25kA  63';
+  const submainRow = '12  Cbl_SM-99-MEP MAIN DB-12  Single-core 90°C thermosetting  1 x 4 x 1c  16  '
+    + 'Load-99-MEP MAIN DB-12  Generic, BS 88-2, Fuse, System E  2';
+  for (const [name, row] of [['cable id', cableRow], ['submain id', submainRow]]) {
+    check(`equipment id: core mints no board from a ${name}`,
+      extractBoardReferences(row).length === 0,
+      JSON.stringify(extractBoardReferences(row).map((b) => b.normalised)));
+    check(`equipment id: app mints no board from a ${name}`,
+      P.detectBoards(row).length === 0,
+      JSON.stringify(P.detectBoards(row).map((b) => b.norm)));
+  }
+
+  /* A board named in its own column is still a board. This is the check that
+   * keeps the guard from costing the downstream boards a panel feeds. */
+  const connectedTo = 'L3  DB-WORKSHOP  0  DB-WORKSHOP  None  N/A';
+  check('equipment id: a board in the Connected To column survives',
+    P.detectBoards(connectedTo).some((b) => b.norm === 'DBWORKSHOP'));
+  check('equipment id: core keeps a board in the Connected To column',
+    extractBoardReferences(connectedTo).some((b) => b.normalised === 'DBWORKSHOP'));
+}
+
+/* Mirrored ("double-sided") circuit charts.
+ *
+ * A consultant's whole drawing set returned ZERO devices. Three independent
+ * causes, each of which alone was enough:
+ *
+ *   1. "DB LP3" and "DB KIT" are separated by a SPACE. Every board pattern
+ *      required a dash, dot, slash or underscore, so no board resolved at all.
+ *   2. The header gate listed four labels that prove a page is a board
+ *      schedule. This dialect uses none of them — its header reads
+ *      "REFERENCE / LOCATION / TYPE 12-WAY TP&N" over a table headed
+ *      "WAY PHASE".
+ *   3. BUSBAR is one of the chart's COLUMN HEADINGS, and the classifier scored
+ *      the word as evidence of a single-line diagram — which switched off the
+ *      entire schedule walk.
+ *
+ * And then the layout itself: two half-tables facing each other across the
+ * busbar, so one printed line carries TWO ways. Every row parser here reads
+ * left to right and returns one row.
+ *
+ * Rows below are quoted from 2678-BWP-DR-E-70-0001; the expected values are
+ * from the estimator's own reading of the sheet. */
+{
+  const { parseMirroredChartLine, looksLikeMirroredChart, extractBoardReferences } = P.EstimationExtractorCore;
+
+  // 1. space-separated board references
+  for (const [name, expected] of [['REFERENCE  DB LP3 (EXISTING)', 'DBLP3'],
+    ['REFERENCE  DB LP3A', 'DBLP3A'], ['REFERENCE  DB KIT (EXISTING)', 'DBKIT']]) {
+    check(`mirrored: core resolves ${expected}`,
+      extractBoardReferences(name).some((b) => b.normalised === expected),
+      JSON.stringify(extractBoardReferences(name).map((b) => b.normalised)));
+    check(`mirrored: app resolves ${expected}`,
+      P.detectBoards(name).some((b) => b.norm === expected),
+      JSON.stringify(P.detectBoards(name).map((b) => b.norm)));
+  }
+  // the space form must not let prose mint a board
+  for (const prose of ['DB schedule', 'DB reference', 'the DB was replaced', 'DB TYPE']) {
+    check(`mirrored: "${prose}" mints no board`, P.detectBoards(prose).length === 0,
+      JSON.stringify(P.detectBoards(prose).map((b) => b.norm)));
+  }
+
+  const chart = [
+    'REFERENCE  DB LP3 (EXISTING)',
+    'TYPE  12-WAY TP&N - BOTTOM ENTRY / TOP EXIT (ABB DIST BOARD)',
+    'WAY PHASE  PHASE WAY',
+    'LOCATION  SERVICE  CIRCUIT  RATING DEVICE  BUSBAR  DEVICE RATING  CIRCUIT  SERVICE  LOCATION',
+    'STORES (G.67, G.68), ELEC CUPBOARD  LIGHTING  RADIAL  10  MCB  1  L1  L1  2  RCBO  10  RADIAL  LIGHTING  DUTY MANAGER',
+    'ELEC CUPBOARD, EAST CORRIDOR  SOCKETS  RING  2.5mm²/2.5mm²/S  32  RCBO  3  L3  L3  4  MCB  32  RADIAL  BATH  BATHING RM',
+    '*  SPARE  SPARE  -  -  9  L1  L1  10  RCBO  20  RADIAL  SOCKETS  SOCKET BEHIND BED & EN SUITE G78',
+  ];
+
+  // 2 + 3. the page must resolve a board and classify as a schedule
+  check('mirrored: layout is recognised', looksLikeMirroredChart(chart) === true);
+  const board = P.scheduleBoardFromLines(chart);
+  check('mirrored: the header resolves the board', board && board.norm === 'DBLP3', JSON.stringify(board));
+  check('mirrored: the page classifies as a schedule, not an SLD',
+    P.classifyPage(chart.join('\n'), 0, 1).type === 'db-schedule',
+    JSON.stringify(P.classifyPage(chart.join('\n'), 0, 1)));
+
+  // 4. one line, two ways — read outward on the left, inward on the right
+  const row = parseMirroredChartLine(chart[4]);
+  check('mirrored: left half is way 1 L1, MCB 10A',
+    row && row.left && row.left.way === 1 && row.left.phase === 'L1'
+      && row.left.device === 'MCB' && row.left.rating === 10, JSON.stringify(row && row.left));
+  check('mirrored: right half is way 2 L1, RCBO 10A',
+    row && row.right && row.right.way === 2 && row.right.phase === 'L1'
+      && row.right.device === 'RCBO' && row.right.rating === 10, JSON.stringify(row && row.right));
+  /* Room references identify the circuit. Stripping every number to remove the
+     rating turned "STORES (G.67, G.68)" into "STORES (G. , G. )". */
+  check('mirrored: room references survive rating removal',
+    /G\.67/.test(row.left.desc) && /G\.68/.test(row.left.desc), row.left.desc);
+  check('mirrored: ring/radial is read', row.left.circuitConfig === 'radial');
+
+  const ring = parseMirroredChartLine(chart[5]);
+  check('mirrored: ring circuit on way 3 L3 is RCBO 32A',
+    ring.left.way === 3 && ring.left.phase === 'L3' && ring.left.device === 'RCBO'
+      && ring.left.rating === 32 && ring.left.circuitConfig === 'ring', JSON.stringify(ring.left));
+  check('mirrored: cable size is captured, not read as a rating',
+    ring.left.cable && /2\.5mm/.test(ring.left.cable.orig), JSON.stringify(ring.left.cable));
+
+  const spare = parseMirroredChartLine(chart[6]);
+  check('mirrored: a spare way is a spare, not a device', spare.left.spare === true && spare.left.way === 9);
+  check('mirrored: its opposite half is still read', spare.right.device === 'RCBO' && spare.right.rating === 20);
+
+  /* A device whose rating did not survive the line grouping is still a device
+     and belongs in the take-off — but it is not a confident reading, so it
+     goes to Review rather than being dropped or presented as certain. */
+  const noRating = parseMirroredChartLine('RCBO RCBO  5  L2  L2  6  RCBO  20');
+  check('mirrored: a device with no rating is kept', noRating.left.device === 'RCBO');
+  check('mirrored: and is marked for review', noRating.left.rating === null && noRating.left.conf < 0.8);
+
+  /* The spine is way, phase, phase, way — consecutive, odd then even. A run of
+     unrelated numbers is not a busbar. */
+  check('mirrored: non-consecutive ways are not a spine',
+    parseMirroredChartLine('4  L1  L1  9  MCB  20') === null);
+  check('mirrored: even-then-odd is not a spine',
+    parseMirroredChartLine('2  L1  L1  3  MCB  20') === null);
+  check('mirrored: a busbar rating between the phases is tolerated',
+    (parseMirroredChartLine('10  RCBO  3  L2  250A L2  4  MCB  20') || {}).left?.way === 3);
+  check('mirrored: one matching line is not a layout',
+    looksLikeMirroredChart(['1  L1  L1  2  MCB  20']) === false);
+}
+
+/* One sheet, two board schedules — the existing board and its replacement,
+ * printed side by side. Resolved as one board, the whole sheet went to
+ * whichever header came first and the other board's ways were lost. */
+{
+  const twoBoards = [
+    'REFERENCE  DB LP3 (EXISTING)',
+    'TYPE  12-WAY TP&N',
+    'STORES  LIGHTING  RADIAL  10  MCB  1  L1  L1  2  RCBO  10  RADIAL  LIGHTING  DUTY MANAGER',
+    'REFERENCE  DB LP3A',
+    'TYPE  12-WAY TP&N',
+    'ELEC CUPBOARD  SOCKETS  RING  32  AFDD  1  L1  L1  2  AFDD  32  RING  SOCKETS  KITCHEN',
+  ];
+  const segs = P.scheduleBoardSegments(twoBoards);
+  check('two boards: the sheet is split', segs && segs.length === 2, JSON.stringify(segs));
+  check('two boards: first segment is DB LP3', segs[0].board.norm === 'DBLP3');
+  check('two boards: second segment is DB LP3A', segs[1].board.norm === 'DBLP3A');
+  check('two boards: the split falls on the second header', segs[1].from === 3, String(segs[1].from));
+
+  /* Two headers naming the SAME board are one board printed twice — splitting
+     it would divide its ways across two copies of itself. */
+  const sameBoard = [
+    'REFERENCE  DB KIT (EXISTING)', 'TYPE  8-WAY TP&N',
+    'WC  LIGHTING  RADIAL  10  MCB  1  L1  L1  2  MCB  20  RADIAL  SOCKETS  FRIDGE',
+    'REFERENCE  DB KIT (EXISTING)', 'TYPE  8-WAY TP&N',
+    'OFFICE  SOCKETS  RING  32  AFDD  1  L3  L3  2  MCB  20  RADIAL  SOCKETS  KITCHEN',
+  ];
+  check('two boards: one board printed twice is not split',
+    P.scheduleBoardSegments(sameBoard) === null);
+  // and a page with a single header keeps the original single-board path
+  check('two boards: a single header is not segmented',
+    P.scheduleBoardSegments(['REFERENCE  DB LP3A', 'TYPE  12-WAY TP&N']) === null);
+}
+
+/* Trimble/Amtech "Board Data" blocks declare the board as "Id No:".
+ *
+ * These pages carry no REFERENCE label at all, so they resolved no board — and
+ * their way count, which parsed perfectly well, had nothing to attach to. That
+ * is the reported error "boards clearly have the number of ways marked up, the
+ * tool somehow still misses it": the count was never the problem, the board
+ * was. The fallback then picked a ref out of a ROW, inventing a board per
+ * circuit. */
+{
+  const trimble = [
+    'Distribution Board Schedule',
+    'Board Data',
+    'Id No:  DB-7-GCS  ModelNo:  L1  L2  L3',
+    'Name:  DB GAS CART SOCKETS  No. of Ways:  24  Spare:  41.7',
+    'Incomer Details',
+    'Device Manufacturer: N/A  Device Type:  Isolating Switch  Device Rating (A): 160',
+    'Way  Id No  Cable Type  Cores  Connected To:  Overcurrent Protective Device  Rating (A)',
+    '1  Cbl_FC-86-DB-7-GCS-1  Single-core  Load-85-DB-7-GCS-1  Schneider, Acti9 MCB, iC60H Type B  63',
+  ];
+  const got = P.scheduleBoardFromLines(trimble);
+  check('Id No declares the board', Boolean(got && got.orig === 'DB-7-GCS'), got ? got.orig : 'NONE');
+
+  /* The way count is read by ONE reader shared with the coverage model. Two
+     readers had already drifted: coverage read "No. of Ways: 24" and the header
+     facts did not, so a whole dialect showed no ways on the board while the
+     same page reported them correctly elsewhere. */
+  const facts = P.EstimationExtractorCore.parseBoardHeaderFacts(trimble);
+  check('No. of Ways is read by parseBoardHeaderFacts', facts.waysTotal === 24, String(facts.waysTotal));
+  const expected = P.EstimationExtractorCore.expectedWaysFromText(trimble.join('\n'));
+  check('both way readers agree', Boolean(expected && expected.ways === facts.waysTotal),
+    `${expected && expected.ways} vs ${facts.waysTotal}`);
+
+  /* A declared reference is authoritative: "110-AC-MCB" names a 110V board and
+     the 110 is NOT a way number, however much it looks like one. */
+  const declared = P.EstimationExtractorCore.canonicalBoardReference('110-AC-MCB', { declared: true });
+  check('a declared ref keeps its leading number', declared.normalised === '110ACMCB', declared.normalised);
+  const rowRef = P.EstimationExtractorCore.canonicalBoardReference('154-DB-7-GCS-11');
+  check('a row ref still loses its way prefix', rowRef.normalised === 'DB7GCS11', rowRef.normalised);
+
+  /* A row's "Connected To" column is not a board. One 441-page tender produced
+     178 boards, nearly all of them row decoration wrapped around the real one. */
+  const kept = P.EstimationExtractorCore.reconcilePageBoards('DB7GCS',
+    ['DB7GCS', 'LOAD141DB7GCS5', 'CBLFC86DB7GCS1', 'MEPMAINDB']);
+  check('connected-load refs are rejected', JSON.stringify(kept) === JSON.stringify(['DB7GCS', 'MEPMAINDB']),
+    JSON.stringify(kept));
+}
+
+/* Board schedules printed SIDE BY SIDE.
+ *
+ * One text line then crosses several tables — a board's REFERENCE shares a line
+ * with a neighbouring board's circuit rows — so nothing working on line index
+ * can separate them, and on a real sheet four of seven boards received no rows
+ * at all. Whitespace cannot separate them either: measured, the widest vertical
+ * corridor on that sheet is 1.2% of the across-page span. The drawing's own
+ * ruling lines can, and do.
+ *
+ * Positions below are that sheet's: headers at x = 70, 920 and 1769, table
+ * rules at 903 and 1755. */
+{
+  const { columnBandsFromRules } = P.EstimationExtractorCore;
+  const isHeader = (it) => /^REFERENCE$/i.test(String(it.str || '').trim());
+  const opts = { across: (it) => it.x, isHeader, bandNamesABoard: (g) => g.some(isHeader) };
+
+  const sheet = [];
+  [70, 920, 1769].forEach((x, board) => {
+    sheet.push({ str: 'REFERENCE', x, y: 60 });
+    sheet.push({ str: `DB-${board + 1}`, x: x + 90, y: 60 });
+    for (let row = 0; row < 20; row += 1) sheet.push({ str: `${row + 1}-L1 32 MCB`, x: x + 20, y: 120 + row * 30 });
+  });
+  const bands = columnBandsFromRules(sheet, [903, 1755], opts);
+  check('bands: a side-by-side sheet splits into one band per table',
+    bands && bands.length === 3, bands ? String(bands.length) : 'null');
+  check('bands: nothing is dropped',
+    bands && bands.reduce((n, g) => n + g.length, 0) === sheet.length);
+  check('bands: each band holds only its own table',
+    bands && bands.every((g) => new Set(g.map((it) => Math.floor(it.x / 800))).size === 1));
+
+  /* A rule INSIDE one table is a column rule, not a table boundary. Splitting
+   * on it would scatter one board's rows across two bands, so a boundary is
+   * only taken between two header columns. */
+  const single = [];
+  single.push({ str: 'REFERENCE', x: 70, y: 60 });
+  single.push({ str: 'DB-1', x: 160, y: 60 });
+  for (let row = 0; row < 60; row += 1) single.push({ str: `${row + 1}-L1 32 MCB`, x: 90 + (row % 6) * 200, y: 120 + row * 20 });
+  check('bands: one table with inner column rules is not split',
+    columnBandsFromRules(single, [300, 500, 700, 900, 1100], opts) === null);
+
+  /* No ruled separation between two header columns means the drawing does not
+   * divide them there. Guessing a boundary would scatter a board's rows. */
+  /* Rules that do not fall between two header columns (here: outside them
+     entirely) leave the drawing undivided at the only places that matter. */
+  check('bands: without a rule between the headers, nothing is split',
+    columnBandsFromRules(sheet, [40, 1900], opts) === null);
+  check('bands: a page with no rules at all is untouched',
+    columnBandsFromRules(sheet, [], opts) === null);
+  check('bands: a short page is untouched',
+    columnBandsFromRules(sheet.slice(0, 12), [903, 1755], opts) === null);
+}
+
+if (fail) { console.log(`\n${fail} failure(s)`); process.exit(1); }
+
+/* Feeds stated by a schedule ROW.
+ *
+ * A Trimble sheet's "Connected To:" column simply holds the downstream board's
+ * reference, with none of the words parseFeeders looks for ("fed from",
+ * "supplies", "sub-main to"). On a 386-page tender that meant ZERO feed
+ * relationships were captured from 45 schedule pages that each state them, and
+ * every board reported "no known supply source" while the document said exactly
+ * what supplied it.
+ *
+ * Lines below are the shape that dialect really produces: a board declared as
+ * "Id No:", and rows already grouped into single lines. */
+{
+  const page = [
+    'Distribution Board Schedule',
+    'Board Data',
+    'Id No:  MEP MAIN DB  ModelNo:  L1  L2  L3',
+    'Name:  MCCB PANELBOARD  No. of Ways:  12  Spare:  33.3',
+    'Way  Id No  Cable Type  Cores  Phase  Connected To:  Overcurrent Protective Device  Rating (A)',
+    '1  L1  Single-core 90C thermosetting  1 x 4 x 1c  16  DB-1-GF  Schneider, Acti9 MCB, iC60H Type C  63',
+    '2  L1  Single-core 90C thermosetting  1 x 4 x 1c  16  DB-2-GF  Schneider, Acti9 MCB, iC60H Type C  63',
+    '3  L3  Multicore 90C thermosetting  1 x 1 x 2c  16  DB-WORKSHOP  Schneider, ComPacT NSX MCCB  100',
+  ];
+  const typed = [{ page: 1, lines: page, type: P.classifyPage(page.join('\n'), 0, 1).type }];
+  const F = P.analyseDocument(typed);
+  const feeds = (F.feeders || []).map((f) => `${f.from} -> ${f.to}`);
+  for (const want of ['MEPMAINDB -> DB1GF', 'MEPMAINDB -> DB2GF', 'MEPMAINDB -> DBWORKSHOP']) {
+    check(`feeds: row states ${want}`, feeds.includes(want), feeds.join(', ') || 'none');
+  }
+  check('feeds: a board does not feed itself', !feeds.some((f) => /^MEPMAINDB -> MEPMAINDB$/.test(f)), feeds.join(', '));
+  check('feeds: each pair is recorded once', new Set(feeds).size === feeds.length, feeds.join(', '));
+
+  /* A cable is named after the board and way it serves, so its identifier must
+     not become a board this one feeds. */
+  const cablePage = page.slice(0, 5).concat([
+    '7  Cbl_FC-143-MEP MAIN DB-7-  Multicore  1 x 1 x 2c  16  Load-148-MEP MAIN DB-7-L1  Schneider MCCB  63',
+  ]);
+  const C = P.analyseDocument([{ page: 1, lines: cablePage, type: P.classifyPage(cablePage.join('\n'), 0, 1).type }]);
+  check('feeds: a cable identifier is not a board that is fed',
+    !(C.feeders || []).some((f) => /^DB7$|^DB12$/.test(String(f.to))),
+    (C.feeders || []).map((f) => `${f.from} -> ${f.to}`).join(', '));
+
+  /* A line stating what feeds THIS board points the other way and would invert
+     the tree. It is already read as the board's own header fact. */
+  const upstream = page.slice(0, 4).concat(['SERVED BY  LVAC SWITCHBOARD', 'Way  Id No  Connected To:']);
+  const U = P.analyseDocument([{ page: 1, lines: upstream, type: P.classifyPage(upstream.join('\n'), 0, 1).type }]);
+  check('feeds: an upstream label does not invert the tree',
+    !(U.feeders || []).some((f) => f.from === 'MEPMAINDB' && /LVAC/.test(String(f.to))),
+    (U.feeders || []).map((f) => `${f.from} -> ${f.to}`).join(', '));
+}
+
+/* The way a row belongs to is the one its MARKER states.
+ *
+ * Rows on a large-format schedule routinely begin with the cable spec —
+ * "1 x 1.5", "2 x 1/core x 2.5" — and the way was read as the first number at
+ * the start of the line. Circuit 8's RCBO was recorded on way 1, circuit 24's
+ * SPD on way 1, circuit 12's MCB on way 1: devices landing on the WRONG
+ * circuit, which corrupts the circuit map and the completeness check rather
+ * than merely inflating a count. Four such collisions on one real sheet. */
+{
+  const ctx = () => ({ board: 'DB1', sawHeader: true, inNotes: false, lastWay: null, lastPhase: null, pendingRows: [] });
+  const cases = [
+    ['1 x 1.5  Separate  Lighting, radial circuits  GF CORRIDOR LIGHTING  8-L3  32  Acti9 iC60H, RCBO, Type B  30mA', 8],
+    ['1 x 16  Separate  Fixed Power  TYPE 2 SPD  24-L1,L2,L3  -  -  SPARE', 24],
+    ['1 x 1.5  Separate  Fixed Power  AH.1F.01 MVHR  12-L2  63  Acti9 iC60H, MCB, Type B', 12],
+    // a row that leads with its own marker is unchanged
+    ['5-L1  32  Acti9 iC60H, MCB, Type C  No  2 x 1/core x 2.5', 5],
+    // and so is a dialect that carries no marker at all
+    ['7  10  Acti9 iC60H, MCB, Type C  Lighting', 7],
+  ];
+  for (const [line, want] of cases) {
+    const row = P.parseScheduleLine(line, ctx());
+    check(`way marker: ${String(want).padStart(2)} from ${line.slice(0, 40)}`,
+      row && row.way === want, row ? `got ${row.way}` : 'no row');
+  }
+  /* A leading number followed by "x" is a core count, never a way. */
+  const cable = P.parseScheduleLine('2 x 1/core x 2.5  Separate  Sockets  MCB  32', ctx());
+  check('way marker: a core count is not a way', !cable || cable.way !== 2, cable ? String(cable.way) : 'no row');
+}
+
+/* A board's own reference is in its HEADER BLOCK, which precedes the table.
+ *
+ * A page headed "REFERENCE  MEP MAIN DB" resolved to DB-1-GF — the board its
+ * way 1 FEEDS — because "MEP MAIN DB" matches no code-shaped pattern, so the
+ * window scan read past it and the values-line scan carried on into the rows.
+ * Both now stop where the header does. */
+{
+  const descriptive = ['REFERENCE', 'MEP MAIN DB', 'NUMBER OF WAYS', '12 WAYS',
+    'Circuit Ref', '1-L1', '63', 'Acti9 iC60H, MCB, Type C', 'DB-1-GF'];
+  const got = P.scheduleBoardFromLines(descriptive);
+  check('header: a descriptive board name is not replaced by a row value',
+    got && got.norm === 'MEPMAINDB', got ? got.norm : 'null');
+
+  /* The cases that path already handled must be unaffected: a code-shaped
+     value beside its label, a value cell on the same line, and a ROTATED sheet
+     whose labels and values arrive as two separate lines. */
+  for (const [lines, want] of [
+    [['REFERENCE', 'DB-1-GF', 'SERVED BY', 'MEP MAIN DB', 'NUMBER OF WAYS', '18 WAYS', 'Circuit Ref'], 'DB1GF'],
+    [['REFERENCE  DB LP3 (EXISTING)', 'TYPE  12-WAY TP&N', 'WAY PHASE'], 'DBLP3'],
+    [['NUMBER OF WAYS  LOCATION  DESCRIPTION  SERVED BY  REFERENCE',
+      '18 WAYS  LVAC ROOM  GROUND FLOOR LIGHTING  MEP MAIN DB  DB-1-GF',
+      '1-L1  10  MCB'], 'DB1GF'],
+  ]) {
+    const b = P.scheduleBoardFromLines(lines);
+    check(`header: ${want} still resolves`, b && b.norm === want, b ? b.norm : 'null');
+  }
+}
+
+/* A circuit chart whose way and phase are ONE token, with no device named.
+ *
+ * Found by running a document the fixes in this session were NOT built against.
+ * A whole Hevacomp schedule returned zero rows for three compounding reasons,
+ * and the lines below are its real OCR output, quoted:
+ *
+ *   1. "17L2" has no separator, so no way pattern matched it — and no word
+ *      boundary either, so phaseOf() could not see the phase.
+ *   2. The classifier counts \bL[123]\b for the same reason and scored no
+ *      schedule signal at all, typing the page 'unknown', which switches off
+ *      the entire schedule walk.
+ *   3. The rows name no device class, and the parser required one.
+ *
+ * The rating is read by POSITION here because the only "A" on the row is in
+ * its description: "Radial 13A sockets" made a 20A circuit read as 13A. */
+{
+  const ctx = () => ({ board: 'G1', sawHeader: true, inNotes: false, lastWay: null, lastPhase: null, pendingRows: [] });
+  const rows = [
+    ['17L2 16\u00b0 1.5 1x2corex4 - PVC multi RE Fixed power Bar Water Boiler', 17, 'L2', 16],
+    ['18L1 20\u00b0 15 1x2coex25 - PVCmutiRE Radial 13A sockets Bar EPOS sockers', 18, 'L1', 20],
+    ['18L3 16* 1.5 1x2corex4 - PVC multi RE Fixed power Bar lce Chests 11.10', 18, 'L3', 16],
+  ];
+  for (const [line, way, phase, rating] of rows) {
+    const r = P.parseScheduleLine(line, ctx());
+    check(`compact marker: way ${way}${phase}`, r && r.way === way && r.phase === phase, r ? `${r.way}${r.phase}` : 'no row');
+    check(`compact marker: rating ${rating}A read by position`, r && r.rating === rating, r ? String(r.rating) : 'no row');
+    /* The class is left null rather than assumed, and must sit below the
+       review threshold — an unnamed device is uncertain, not settled. */
+    check(`compact marker: unnamed device goes to review`, r && !r.device && r.conf < 0.8, r ? `${r.device}/${r.conf}` : 'no row');
+  }
+  /* The same row shape with the phase SPACED off the way, and a load id before
+     the rating — "1 L1 Load-31 16". Amtech charts write it this way, and 32
+     pages of them returned nothing. Tokens carrying letters are identifiers,
+     not ratings, so the scan steps over "Load-31". */
+  for (const [line, way, phase, rating] of [
+    ['1 L1 Load-31 16 N/A N/A N/A 4 15', 1, 'L1', 16],
+    ['3 L1 Load-33 16 NIA N/A N/A 6 15', 3, 'L1', 16],
+  ]) {
+    const r = P.parseScheduleLine(line, ctx());
+    check(`spaced marker: way ${way} rating ${rating}A`,
+      r && r.way === way && r.phase === phase && r.rating === rating,
+      r ? `${r.way}${r.phase} ${r.rating}` : 'no row');
+  }
+  /* The dash form carries its rating the same way, and its rating was never
+     being read at all — there is no "A" beside it either. */
+  const dash = P.parseScheduleLine('5-L1  32  Acti9 iC60H, MCB, Type C  No  2 x 1/core x 2.5', ctx());
+  check('dash marker: rating read positionally', dash && dash.way === 5 && dash.rating === 32,
+    dash ? `${dash.way}/${dash.rating}` : 'no row');
+  /* A marker mid-row scans from where it matched, not from the line start. */
+  const mid = P.parseScheduleLine('1 x 1.5  Separate  Lighting  GF CORRIDOR  8-L3  32  Acti9 iC60H, RCBO, Type B', ctx());
+  check('mid-row marker: rating follows the marker, not the cable spec',
+    mid && mid.way === 8 && mid.rating === 32, mid ? `${mid.way}/${mid.rating}` : 'no row');
+
+  const spare = P.parseScheduleLine('16L1 - - - - - Spare -', ctx());
+  check('compact marker: a spare way is still a spare', spare && spare.way === 16 && spare.spare === true,
+    spare ? JSON.stringify({ way: spare.way, spare: spare.spare }) : 'no row');
+
+  const page = ['JCP - Page 47 of 52', 'Project The Angel Hotel, Cardiff',
+    '15L3 - - - - - Spare -', '16L1 - - - - - Spare -', rows[0][0], rows[1][0]];
+  check('compact marker: the page classifies as a schedule',
+    P.classifyPage(page.join('\n'), 1, 2).type === 'db-schedule',
+    JSON.stringify(P.classifyPage(page.join('\n'), 1, 2)));
+  /* One such line is a coincidence, not a table. */
+  check('compact marker: a single line is not a schedule',
+    P.classifyPage('Project notes\n17L2 see drawing', 0, 1).type !== 'db-schedule');
+}
+
+if (fail) { console.log(`\n${fail} failure(s)`); process.exit(1); }

@@ -16,7 +16,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '../..');
 const load = (p) => import(pathToFileURL(path.resolve(ROOT, p)));
 
-const { createPool, poolStatus, parseModelJson, MODEL_REGISTRY, ROLE_CHAINS } = await load('api/_lib/extraction/nvidia-pool.mjs');
+const { createPool, poolStatus, parseModelJson, MODEL_REGISTRY, ROLE_CHAINS, unlimitedOcrConfig } = await load('api/_lib/extraction/nvidia-pool.mjs');
 const { runAgentTeam, MASTER_VERDICT_SCHEMA } = await load('api/_lib/extraction/agent-team.mjs');
 const { crossCheckExtractions, buildInstruction } = await load('api/_lib/extraction/providers.mjs');
 
@@ -31,14 +31,98 @@ check('parseModelJson: fenced', parseModelJson('```json\n{"a":2}\n```').a === 2)
 check('parseModelJson: prose-wrapped', parseModelJson('Sure! {"a":3} hope that helps').a === 3);
 check('parseModelJson: garbage → null', parseModelJson('no json here') === null);
 
-/* ---- production chain sanity ---- */
+/* ---- production chain sanity ----
+ *
+ * The rule is that the DEFAULT path is never led by an unproven model. A
+ * self-hosted model (Baidu Unlimited-OCR) is a new category: it cannot run for
+ * anybody who has not stood up their own GPU and set UNLIMITED_OCR_BASE_URL, so
+ * it never touches the default path — but it is unproven on these documents, and
+ * an operator who DOES configure it is leading with something this project has
+ * never measured.
+ *
+ * So the rule is encoded as its intent rather than as "index 0": the first model
+ * that can run WITHOUT operator-specific configuration must be verified, and a
+ * self-hosted model must always have such a model behind it. Left as
+ * `chain[0].verified`, adding a self-hosted leader would simply have failed;
+ * relaxed to "some model is verified", a chain could lead with anything. */
+const defaultLeader = (chain) => chain.find((m) => MODEL_REGISTRY[m] && !MODEL_REGISTRY[m].selfHosted);
 for (const [role, chain] of Object.entries(ROLE_CHAINS)) {
   check(`chain ${role}: every model registered`, chain.every((m) => MODEL_REGISTRY[m]));
-  check(`chain ${role}: has a live-verified leader`, MODEL_REGISTRY[chain[0]] && MODEL_REGISTRY[chain[0]].verified === true);
+  const leader = defaultLeader(chain);
+  check(`chain ${role}: the model that runs by default is live-verified`,
+    Boolean(leader) && MODEL_REGISTRY[leader].verified === true, String(leader));
+  /* A self-hosted entry is opt-in and unproven, so it may never be the only
+     thing standing between a page and no reading at all. */
+  check(`chain ${role}: a self-hosted model has a fallback behind it`,
+    chain.every((m, i) => !MODEL_REGISTRY[m].selfHosted || chain.slice(i + 1).some((n) => !MODEL_REGISTRY[n].selfHosted)),
+    chain.join(' > '));
 }
-check('vision_parse is led by the proven row reader', ROLE_CHAINS.vision_parse[0] === 'nvidia/llama-3.1-nemotron-nano-vl-8b-v1');
-check('layout role exists for page zoning', Array.isArray(ROLE_CHAINS.layout) && ROLE_CHAINS.layout[0] === 'nvidia/nemotron-parse');
+check('vision_parse still falls back to the proven row reader',
+  defaultLeader(ROLE_CHAINS.vision_parse) === 'nvidia/llama-3.1-nemotron-nano-vl-8b-v1');
+check('layout role exists for page zoning',
+  Array.isArray(ROLE_CHAINS.layout) && defaultLeader(ROLE_CHAINS.layout) === 'nvidia/nemotron-parse');
+/* Unlimited-OCR is unproven HERE until someone probes it on a real UK schedule.
+   Claiming otherwise in the registry would be a lie the chain logic acts on. */
+check('the self-hosted parser is not marked verified without a measurement',
+  MODEL_REGISTRY['baidu/Unlimited-OCR'] && MODEL_REGISTRY['baidu/Unlimited-OCR'].verified === false);
 check('extract + second_opinion lead with different models', ROLE_CHAINS.extract[0] !== ROLE_CHAINS.second_opinion[0]);
+
+/* ---- self-hosted document parser (Baidu Unlimited-OCR) ----
+ *
+ * A 3.3B MIT vision-language model the operator runs themselves under vLLM or
+ * SGLang, both of which expose an OpenAI-compatible /chat/completions endpoint —
+ * the shape this pool already speaks. It leads the reading chain when hosted.
+ *
+ * It can never be a hard dependency: the desktop build must work from packaged
+ * assets with no network (CLAUDE.md), which a CUDA model cannot satisfy, and most
+ * operators will never stand one up. Unconfigured, it must vanish from the chain
+ * without costing anything. */
+{
+  const seen = [];
+  const stubFetch = async (url, init) => {
+    const body = JSON.parse(init.body);
+    seen.push({ url, model: body.model, auth: init.headers.Authorization || null });
+    return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: '{"devices":[]}' } }] }) };
+  };
+
+  check('unlimitedOcrConfig: unset ⇒ null', unlimitedOcrConfig({}) === null);
+  const cfg = unlimitedOcrConfig({ UNLIMITED_OCR_BASE_URL: 'http://gpu-box:8000/v1/' });
+  check('unlimitedOcrConfig: trailing slash trimmed', cfg && cfg.baseUrl === 'http://gpu-box:8000/v1', cfg && cfg.baseUrl);
+  check('unlimitedOcrConfig: defaults to the published model id', cfg && cfg.model === 'baidu/Unlimited-OCR');
+
+  /* Hosted: the chain leads with it, calls the operator's endpoint, and sends NO
+     Authorization header — a bare vLLM server rejects "Bearer undefined". */
+  const hosted = createPool({ keys: {}, fetchImpl: stubFetch,
+    selfHosted: { baseUrl: 'http://gpu-box:8000/v1', model: 'baidu/Unlimited-OCR', apiKey: null } });
+  const r1 = await hosted.callRole('vision_parse', { prompt: 'read', imageBase64: 'AAAA' });
+  check('hosted parser leads vision_parse', r1.model === 'baidu/Unlimited-OCR', r1.model);
+  check('hosted parser is called at the operator\'s endpoint',
+    seen[0] && seen[0].url === 'http://gpu-box:8000/v1/chat/completions', seen[0] && seen[0].url);
+  check('a keyless endpoint gets no Authorization header', seen[0] && seen[0].auth === null, String(seen[0] && seen[0].auth));
+  check('the call is reported as self-hosted, not against a pooled key', r1.keyId === 'self-hosted', String(r1.keyId));
+
+  /* A key is sent when the operator set one, and a custom model id is honoured
+     (quantised builds are published under different names). */
+  seen.length = 0;
+  const keyed = createPool({ keys: {}, fetchImpl: stubFetch,
+    selfHosted: { baseUrl: 'https://ocr.internal/v1', model: 'baidu/Unlimited-OCR-AWQ', apiKey: 'secret' } });
+  await keyed.callRole('vision_parse', { prompt: 'x', imageBase64: 'AAAA' });
+  check('a configured key is sent', seen[0] && seen[0].auth === 'Bearer secret');
+  check('a custom model id is honoured', seen[0] && seen[0].model === 'baidu/Unlimited-OCR-AWQ', seen[0] && seen[0].model);
+
+  /* THE CASE THAT MATTERS MOST: not configured. Nobody who has not stood up a
+     GPU may lose a single row to this feature. */
+  seen.length = 0;
+  const plain = createPool({ keys: { 3: 'nvapi-FAKE-KEY-THREE-0000' }, fetchImpl: stubFetch, selfHosted: null });
+  const r2 = await plain.callRole('vision_parse', { prompt: 'x', imageBase64: 'AAAA' });
+  check('unconfigured ⇒ the proven reader runs instead',
+    r2.model === 'nvidia/llama-3.1-nemotron-nano-vl-8b-v1', r2.model);
+  check('unconfigured ⇒ skipped as no_endpoint, not as an error',
+    r2.attempts.some((a) => a.model === 'baidu/Unlimited-OCR' && a.skipped === 'no_endpoint'),
+    JSON.stringify(r2.attempts));
+  check('unconfigured ⇒ nothing is sent to a self-hosted URL',
+    seen.every((c) => c.url.startsWith('https://integrate.api.nvidia.com/')), JSON.stringify(seen.map((c) => c.url)));
+}
 
 /* ---- pool harness ---- */
 const KEYS = { 1: 'nvapi-FAKE-KEY-ONE-000000', 2: 'nvapi-FAKE-KEY-TWO-000000', 3: 'nvapi-FAKE-KEY-THREE-0000' };
@@ -315,3 +399,188 @@ const teamOut = (master) => ({
 
 if (fail) { console.log(`\n${fail} failure(s)`); process.exit(1); }
 console.log('PASS: nvidia pool + agent team + engine selector + worker master-audit integration.');
+
+/* Per-role board contract + deterministic way coverage.
+ *
+ * The failures these encode were all seen in production output: the board ref
+ * returned per ROW ("DB-1-GF-5"), the phase folded into the board name, and
+ * three-phase ways collapsed to a single row. */
+{
+  const { declaredHeaderFacts, wayCoverage } = await import('../../api/_lib/extraction/agent-team.mjs');
+  const header = ['REFERENCE DB-1-GF SERVED BY MEP MAIN DB NUMBER OF WAYS 18 WAYS INCOMER GENERIC ISOLATOR'];
+  const facts = declaredHeaderFacts(header);
+  if (facts.boardRef !== 'DB-1-GF') { console.log(`FAIL [facts] boardRef ${facts.boardRef}`); process.exitCode = 1; }
+  if (facts.waysTotal !== 18) { console.log(`FAIL [facts] waysTotal ${facts.waysTotal}`); process.exitCode = 1; }
+
+  // the master is TOLD which ways are unaccounted for; it never counts them itself
+  const cov = wayCoverage(facts, { devices: [{ way: '1' }, { way: '2' }] }, { devices: [{ way: '3' }] });
+  if (!cov.checkable || cov.missing.length !== 15 || cov.missing[0] !== '4') {
+    console.log(`FAIL [coverage] missing ${JSON.stringify(cov.missing)}`); process.exitCode = 1;
+  }
+  // a page that declares no way count is NOT checkable — silence must never read as verified
+  const none = wayCoverage({ boardRef: 'DB-X', waysTotal: null }, { devices: [{ way: '1' }] });
+  if (none.checkable || none.missing.length) { console.log('FAIL [coverage] guessed without a declared way count'); process.exitCode = 1; }
+
+  // full coverage reports nothing missing
+  const all = wayCoverage({ waysTotal: 3 }, { devices: [{ way: '1' }, { way: '2' }, { way: '3' }] });
+  if (all.missing.length) { console.log(`FAIL [coverage] false miss ${JSON.stringify(all.missing)}`); process.exitCode = 1; }
+
+  if (!process.exitCode) console.log('ok  agent contract: declared facts + computed way coverage');
+}
+
+/* Key pool: every configured slot is usable, and the pool reports the key it
+ * ACTUALLY used. Both matter to an owner running several NVIDIA accounts —
+ * reporting a pinned slot that never ran tells them a dead key is healthy. */
+{
+  const pool = await import('../../api/_lib/extraction/nvidia-pool.mjs');
+  const fake = async () => ({ ok: true, json: async () => ({ choices: [{ message: { content: '{"devices":[]}' } }] }) });
+
+  // seven keys configured ⇒ seven recognised (the code read only three before)
+  const env = {}; for (let i = 1; i <= 7; i++) env[`NVIDIA_API_KEY_${i}`] = 'nvapi-' + 'x'.repeat(20);
+  const st = pool.poolStatus(env);
+  if (st.count !== 7) { console.log(`FAIL [pool] ${st.count} keys recognised, want 7`); process.exitCode = 1; }
+
+  // a model pinned to slot 1 borrows slot 5 when that is all there is, and says so
+  const only5 = pool.createPool({ keys: { 5: 'nvapi-' + 'x'.repeat(20) }, fetchImpl: fake });
+  const out = await only5.callModel('deepseek-ai/deepseek-v4-flash', { prompt: 'x' });
+  if (out.keyId !== 5) { console.log(`FAIL [pool] reported key ${out.keyId}, actually used 5`); process.exitCode = 1; }
+
+  // no keys at all ⇒ a stable error, never a crash
+  try {
+    await pool.createPool({ keys: {}, fetchImpl: fake }).callModel('deepseek-ai/deepseek-v4-flash', { prompt: 'x' });
+    console.log('FAIL [pool] no keys should raise no_key'); process.exitCode = 1;
+  } catch (e) {
+    if (e.code !== 'no_key') { console.log(`FAIL [pool] expected no_key, got ${e.code}`); process.exitCode = 1; }
+  }
+
+  if (!process.exitCode) console.log('ok  key pool: all slots usable, key actually used is reported');
+}
+
+/* The standing orders must actually reach the sub-agents, and the vision agent
+ * must get the orders written for reading an image.
+ *
+ * A prompt rule that is written but never sent is worse than none: it reads as
+ * a control while doing nothing, which is the same class of defect as the
+ * master verdict the client discarded. */
+{
+  const team = await import('../../api/_lib/extraction/agent-team.mjs');
+  const prompts = [];
+  const pool = {
+    callRole: async (role, req) => { prompts.push({ role, prompt: req.prompt }); return { content: '{"devices":[]}', model: 'm', keyId: 1, ms: 1 }; },
+  };
+  const deps = {
+    pool, crossCheck: () => ({ mismatches: [] }), geminiConfigured: false,
+    buildInstruction: () => 'INSTRUCTION',
+  };
+
+  const header = ['REFERENCE DB-1-GF', 'NUMBER OF WAYS 18 WAYS', 'SERVED BY MEP MAIN DB'];
+  await team.runAgentTeam({ textLines: header, filename: 'f.pdf', pageNumber: 1 }, deps);
+  const textPrompt = prompts[0] ? prompts[0].prompt : '';
+
+  const required = [
+    ['board named once', /named ONCE, in the page header/i],
+    ['no board built from a row', /NEVER build a board reference out of a row/i],
+    ['way and phase separate', /way number and the phase are SEPARATE/i],
+    ['three-phase is three devices', /three-phase way is THREE devices/i],
+    ['spare block expanded', /SPARE. declares ways 12/i],
+    ['RCD decides class', /residual\s+current value .* is an RCBO/is],
+    ['control equipment kept apart', /NOT a protective device/i],
+    ['agents must not count', /Do not count anything/i],
+  ];
+  for (const [name, re] of required) {
+    if (!re.test(textPrompt)) { console.log(`FAIL [orders] missing: ${name}`); process.exitCode = 1; }
+  }
+  // the page's own declared facts must be injected, not just the generic rules
+  if (!/DECLARES BOARD: DB-1-GF/.test(textPrompt)) { console.log('FAIL [orders] declared board not injected'); process.exitCode = 1; }
+  if (!/DECLARES 18 WAYS/.test(textPrompt)) { console.log('FAIL [orders] declared way count not injected'); process.exitCode = 1; }
+  // a text page must NOT receive the image-reading orders
+  if (/THIS PAGE IS AN IMAGE/.test(textPrompt)) { console.log('FAIL [orders] text page got vision orders'); process.exitCode = 1; }
+
+  prompts.length = 0;
+  await team.runAgentTeam({ imageBase64: 'aGk=', mediaType: 'image/jpeg', textLines: [], filename: 'f.pdf', pageNumber: 2 }, deps);
+  const visionPrompt = prompts[0] ? prompts[0].prompt : '';
+  if (prompts[0] && prompts[0].role !== 'vision_parse') { console.log(`FAIL [orders] image page routed to ${prompts[0].role}`); process.exitCode = 1; }
+  if (!/THIS PAGE IS AN IMAGE/.test(visionPrompt)) { console.log('FAIL [orders] vision page lacks image-reading orders'); process.exitCode = 1; }
+  if (!/ROTATED/.test(visionPrompt)) { console.log('FAIL [orders] vision orders omit rotation'); process.exitCode = 1; }
+
+  if (!process.exitCode) console.log('ok  standing orders reach the agents, vision orders only to vision');
+
+  /* A schematic is a different reading job: the failure recorded against the
+   * tool is that it returns the sub-boards hanging off a panel but not the
+   * panel or the MCCBs feeding them. The schematic orders exist to close that,
+   * so they must arrive on a schematic page and stay off a schedule page —
+   * a schedule row is not an outgoing way of a switchboard. */
+  if (/THIS PAGE IS A SCHEMATIC/.test(textPrompt)) {
+    console.log('FAIL [orders] schedule page got schematic orders'); process.exitCode = 1;
+  }
+
+  const scheduleFacts = team.declaredHeaderFacts(header);
+  if (scheduleFacts.schematic) { console.log('FAIL [orders] schedule page flagged schematic'); process.exitCode = 1; }
+  const schematicLines = ['LV SINGLE LINE DIAGRAM', 'MAIN LV SWITCHBOARD', '2500A ACB', '125A MCCB TO DB-1-GF'];
+  const schematicFacts = team.declaredHeaderFacts(schematicLines);
+  if (!schematicFacts.schematic) { console.log('FAIL [orders] schematic page not flagged'); process.exitCode = 1; }
+
+  prompts.length = 0;
+  await team.runAgentTeam({ textLines: schematicLines, filename: 'f.pdf', pageNumber: 3 }, deps);
+  const schematicPrompt = prompts[0] ? prompts[0].prompt : '';
+  /* The anatomy below is taken from an estimator's own annotated drawing: a
+   * 12-way TP&N panelboard with its identity block, its incoming chain, and its
+   * outgoing ways. Each order corresponds to something marked on that drawing
+   * that the tool had no instruction to look for. */
+  const schematicRequired = [
+    // Part 1 — the panel is a board, not just a thing that feeds boards
+    ['panel identity block read as a board header', /That block is the BOARD HEADER/],
+    // Part 2 — the incoming chain
+    ['incomer frame AND setting', /frame is 200A and the setting 160A/],
+    ['meter, SPD and CT are not protective devices', /NOT protective devices/],
+    // Part 3 — the outgoing ways
+    ['way, phase, rating and pole configuration', /pole configuration/],
+    ['device named by MODEL, not by a class word', /named by its MODEL, not by a class word/],
+    ['a frame\/trip pair returns both', /frame size and a trip/],
+    ['a per-phase way is three devices', /ONE way carrying THREE single-phase devices/],
+    ['a spare way is returned', /SPARE WAY" is a way that exists/],
+    ['a circled M is a meter on that way', /circled M drawn on an outgoing way/],
+    // across all three
+    ['feed returned as a pair', /Return the pair/i],
+    ['cable specification is not a rating', /not a device rating/i],
+    ['feeder pillars returned', /Feeder pillars/i],
+    ['"by others" is flagged, not dropped or priced', /BY OTHERS/],
+  ];
+  for (const [name, re] of schematicRequired) {
+    if (!re.test(schematicPrompt)) { console.log(`FAIL [schematic orders] missing: ${name}`); process.exitCode = 1; }
+  }
+  if (!process.exitCode) console.log('ok  schematic orders reach schematic pages only');
+
+  /* Every practice draws these sheets differently, so the orders can say what a
+   * board schedule MEANS but not where this one puts things. The agent is told
+   * to work the layout out first and state it — a wrong layout reading loses a
+   * whole board or half of every row, and shows up as an empty result rather
+   * than a wrong value, which is the hardest kind of failure to notice. */
+  const layoutRequired = [
+    ['read the layout first', /READ THE LAYOUT BEFORE YOU READ THE DATA/],
+    ['find the header block whatever it is called', /The label varies/i],
+    ['ask whether the sheet carries more than one board', /MORE THAN ONE board/],
+    ['identify columns by heading, not position', /by their headings, not by position/i],
+    ['mirrored charts read outward from the busbar', /two half-tables facing/i],
+    ['the mirrored giveaway is the way/phase spine', /way, phase, phase, way/i],
+    ['ignore notes printed beside the table', /run into your row text/i],
+    ['state the reading, and say so when unsure', /State your reading in "layout"/],
+  ];
+  for (const [name, re] of layoutRequired) {
+    if (!re.test(textPrompt)) { console.log(`FAIL [layout] missing: ${name}`); process.exitCode = 1; }
+  }
+
+  /* The master audits the layout reading too, because way arithmetic cannot
+   * catch it: a sheet read one-way-per-row when it is mirrored returns half the
+   * devices and a way count that looks plausible. */
+  const master = await import('../../api/_lib/extraction/agent-team.mjs');
+  if (typeof master.MASTER_VERDICT_SCHEMA !== 'object') { console.log('FAIL [layout] master schema missing'); process.exitCode = 1; }
+
+  const pack = await import('../../api/_lib/extraction/domain-pack.mjs');
+  const layoutField = pack.EXTRACTION_SCHEMA.properties.layout;
+  if (!layoutField) { console.log('FAIL [layout] schema has no layout field for the agent to answer in'); process.exitCode = 1; }
+  else if (!(layoutField.properties.rows_read.enum || []).includes('mirrored')) {
+    console.log('FAIL [layout] rows_read cannot express a mirrored sheet'); process.exitCode = 1;
+  }
+  if (!process.exitCode) console.log('ok  layout reconnaissance: ordered, answerable, and audited');
+}

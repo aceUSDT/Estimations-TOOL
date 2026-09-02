@@ -20,7 +20,14 @@ import { supabaseKvStore } from './commerce/kv.mjs';
 export function realDeps() {
   let sb = null;
   const getSb = () => (sb = sb || serviceClient());
-  const authRequired = process.env.AUTH_REQUIRED !== 'false';   // safe-by-default: auth on
+  /* Extraction runs WITHOUT a login by default. Reading a document is the whole
+     job of this tool, and requiring an account before it will do that is
+     friction in front of the only thing the product does.
+     Set AUTH_REQUIRED=true to put the gate back: a multi-tenant deployment that
+     stores extractions per customer needs it, and the durable job routes still
+     identify the user whenever a session is present. The per-IP spend guard
+     applies either way, so an open route is not an unmetered one. */
+  const authRequired = process.env.AUTH_REQUIRED === 'true';
   const deps = {
     // Engine-aware status: `configured` is true when EITHER the NVIDIA
     // sub-agent pool or Gemini can serve extractions; `mode` says which

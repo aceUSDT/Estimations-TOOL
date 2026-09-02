@@ -34,3 +34,29 @@ node coverage-report.mjs        # 3. → ../../reports/coverage-baseline.{md,jso
 
 `work/` (rendered PNGs + OCR cache) is gitignored; `reports/coverage-baseline.*` is committed
 so the baseline is diffable as extraction improves.
+
+## Diagnostic probes
+
+Two harnesses for measuring behaviour against a real document rather than a
+constructed fixture. Both need a static server on the repo root:
+`python3 -m http.server 8765`.
+
+```bash
+node dump-page-text.mjs <file.pdf> [out.json]    # per-page text via the app's own pdf.js
+node probe-schematic.mjs <file.pdf>              # drive the real app; dump what it reads
+```
+
+`probe-schematic.mjs` reports the page type, the OCR candidate the app actually
+selected and its score, whether the page was judged unreadable, the boards and
+rows produced, and the coverage/Review consequences. It is the source of the
+measured OCR readability floor in `extractor-core.js`:
+
+| document | best OCR score | tesseract confidence | verdict |
+| --- | --- | --- | --- |
+| `examples/schematics/SKM_scanned.pdf` | 0.578 | 28 | unreadable |
+| `examples/schematics/C056-BBK_LV-Schematic.pdf` | 0.592 | 40 | unreadable |
+| `examples/schematics/250405-GG_LV-Schematic.pdf` | 0.605 | 43 | unreadable |
+| `examples/scanned-ocr/doc08967_scanned.pdf` p1–6 | 0.770–0.882 | 60–85 | readable |
+
+The band between 0.605 and 0.770 is empty, so `OCR_READABLE_FLOOR` sits at 0.68.
+Re-run these before changing it.

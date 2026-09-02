@@ -48,6 +48,7 @@
 
   const NOT_SPECIFIED = "Not specified";
   const UNCLEAR = "Unclear";
+  const UNCLASSIFIED = "Unclassified device";
   const QUALIFICATIONS = {
     curve: "Tripping curve not specified in the source document. No curve has been assumed. Confirm the required tripping characteristic before procurement or final quotation.",
     breakingCapacity: "Breaking capacity not specified in the source document. No breaking capacity has been assumed. Confirm the required value before procurement or final quotation.",
@@ -172,14 +173,35 @@
   }
 
   function deviceLabel(row) {
-    const device = canonicalDevice(row);
+    /* Must agree with deviceSpecification's family, or the take-off groups a row
+       as unclassified and then labels it "Other device". */
+    const device = ratedButUnclassified(row) ? UNCLASSIFIED : canonicalDevice(row);
     const rating = formatRating(row && row.rating);
     const poles = /^(MCB|RCBO|AFDD\+RCBO|MCCB|ACB|RCD)$/i.test(device) ? poleLabel(row) : "";
     return [rating ? `${rating}A` : NOT_SPECIFIED, poles, device].filter(Boolean).join(" ");
   }
 
+  /* A way with a rating is a device even when the sheet never names its class.
+   *
+   * Measured on Broomfield House (Amtech, scanned): 180 rows extracted, 16 boards
+   * found, and the take-off came out EMPTY — every row carried device null,
+   * because that dialect prints "1 L1 Load-260 20 N/A 30mA Yes 4 15" and never
+   * the word MCB. `!row.device` discarded all 180 at the report stage, so the
+   * parser fix for those dialects delivered nothing to the estimator.
+   *
+   * Dropping a rated way from the take-off is the silent omission the product
+   * invariants forbid, so it is included and marked unclassified (see
+   * deviceSpecification) for the estimator to name. A row with neither a class
+   * nor a rating carries nothing to price and is still excluded. */
+  function ratedButUnclassified(row) {
+    if (row.device) return false;
+    const rating = Number(row.rating);
+    return Number.isFinite(rating) && rating > 0;
+  }
+
   function includeRow(row) {
-    if (!row || row.status === "rejected" || row.space || !row.device) return false;
+    if (!row || row.status === "rejected" || row.space) return false;
+    if (!row.device && !ratedButUnclassified(row)) return false;
     if (row.spare && !row.device) return false;
     if (row.kind === "mention" && row.status !== "confirmed") return false;
     return Number(row.qty || 1) > 0;
@@ -288,7 +310,11 @@
       const split = label.match(/^(DB(?:-[A-Z0-9]+)+)-(LP|L|P)$/i);
       if (split && /(?:^|-)\d{1,3}$/.test(split[1])) label = split[1];
       const norm = label.replace(/[\s._/\\-]+/g, "");
-      return { sourceNorm, norm, label: label || rawLabel, type: text(board && board.type) };
+      /* What the board's own header says feeds it. The quotation names it so a
+         supplier can tell two similarly-named boards apart. */
+      const fedFrom = text(board && ((board.header && board.header.fed_from_ref) || board.fedFrom))
+        || (board && board.parent ? text(board.parent) : "");
+      return { sourceNorm, norm, label: label || rawLabel, type: text(board && board.type), fedFrom };
     });
   }
 
@@ -360,7 +386,10 @@
   }
 
   function deviceSpecification(row) {
-    const deviceFamily = canonicalDevice(row);
+    /* Named explicitly rather than falling through to "Other device", which
+     * reads as a class we identified. This one was never printed, and the
+     * estimator has to name it before it can be priced. */
+    const deviceFamily = ratedButUnclassified(row) ? UNCLASSIFIED : canonicalDevice(row);
     const rating = normaliseRating(row && row.rating);
     const curve = normaliseCurve(row && row.curve);
     const breakingCapacity = normaliseBreakingCapacity(row && (row.breakingCapacity ?? row.breakingCapacityKa ?? row.ka));
@@ -545,6 +574,10 @@
         reportRow.notes.push(QUALIFICATIONS.poles);
         reportRow.reviewReasons.push("Pole configuration is unclear");
       }
+      if (reportRow.deviceFamily === UNCLASSIFIED) {
+        reportRow.notes.push("The source sheet states a way and a rating but never names the device class. The rating and quantity are as printed; confirm the device type before pricing.");
+        reportRow.reviewReasons.push("Device class is not stated on the source sheet");
+      }
       if (reportRow.confidence < 0.8) reportRow.reviewReasons.push("One or more source values have low confidence");
       if (reportRow.contributors.some((item) => item.reviewStatus !== "Approved")) reportRow.reviewReasons.push("One or more source records need review");
       if (reportRow.contributors.some((item) => item.corrections.length)) reportRow.reviewReasons.push("An automatic OCR correction needs confirmation");
@@ -618,6 +651,10 @@
       associated,
       reviewCount,
       coverageIssueCount,
+      /* Carried onto the model so the WORKBOOK can state completeness, not just
+         count issues. The take-off an estimator hands over is the artefact that
+         has to be honest about what it could not account for. */
+      coverage: coverage || null,
       unassignedQty,
       includedRows: included.length,
       sourceTotal,
@@ -889,6 +926,165 @@
     });
   }
 
+  /* The quotable document.
+   *
+   * The workbook grew to seven sheets, of which one — an Extraction Audit —
+   * ran to 1,291 rows and another to 259 rows of nineteen columns, around
+   * eighteen rows of actual take-off. Every one of those columns exists for a
+   * reason and none of them is what a supplier prices from: a quotation is
+   * "board, item, quantity", grouped per board, with the qualifications stated
+   * once. That is the shape of the supplier quotes this take-off is sent to
+   * price against, and it is what this sheet produces.
+   *
+   * Nothing is deleted to achieve it — the provenance sheets still exist and
+   * are still built on request. They are simply not what an estimator is handed
+   * first. */
+  function quoteLines(model) {
+    const out = [];
+    const boards = model.boards || [];
+    const coverageFor = (board) => {
+      const per = (model.coverage && model.coverage.perBoard) || [];
+      return per.find((c) => text(c.norm) === text(board.norm) || text(c.norm) === text(board.sourceNorm)) || null;
+    };
+    boards.forEach((board, index) => {
+      /* Merged by label. The take-off keeps lines apart when they differ in
+         something it tracks — purpose, curve evidence, source page — but two
+         lines that PRINT identically and carry different quantities read as a
+         mistake on a quotation, and a supplier cannot price the difference
+         between them. Whatever separates them is still in the detail sheets. */
+      const byLabel = new Map();
+      (model.groups || []).forEach((group) => {
+        group.rows.forEach((row) => {
+          const qty = Number(row.quantities[index]) || 0;
+          if (qty <= 0) return;
+          const existing = byLabel.get(row.label);
+          if (existing) {
+            existing.qty += qty;
+            existing.review = existing.review || row.reviewStatus === "Review required";
+          } else {
+            byLabel.set(row.label, { label: row.label, qty, review: row.reviewStatus === "Review required" });
+          }
+        });
+      });
+      const items = Array.from(byLabel.values());
+      if (!items.length) return;
+      const cov = coverageFor(board);
+      /* The board line carries what a supplier needs to identify the board and
+         nothing else: its reference, its size, and what feeds it. The internal
+         type code ("DB") is not one of those things. */
+      const ways = cov && cov.expectedWays != null ? `${cov.expectedWays} way` : null;
+      const fed = text(board.fedFrom) ? `fed from ${text(board.fedFrom)}` : null;
+      const detail = [ways, fed].filter(Boolean).join(' · ');
+      out.push({
+        kind: 'board',
+        code: String(index + 1).padStart(3, '0'),
+        label: board.label + (detail ? ` — ${detail}` : ''),
+        qty: items.reduce((s, i) => s + i.qty, 0),
+      });
+      items.forEach((item) => out.push({ kind: 'item', label: item.label, qty: item.qty, review: item.review }));
+      /* A board that cannot be shown complete says so HERE, next to its own
+         items, rather than in a separate sheet the reader may never open. A
+         quotation built on an incomplete take-off is the expensive mistake. */
+      if (cov && cov.expectedWays != null && Number(cov.unaccountedWays || 0) > 0) {
+        out.push({
+          kind: 'note',
+          label: `${cov.unaccountedWays} of ${cov.expectedWays} ways not accounted for on this board — check before pricing.`,
+        });
+      }
+    });
+    return out;
+  }
+
+  function createQuoteWorksheet(workbook, model) {
+    const sheet = workbook.addWorksheet("Quotation Take-Off", {
+      views: [{ state: "frozen", ySplit: 4, activeCell: "A5" }],
+      pageSetup: { paperSize: 9, orientation: "portrait", fitToPage: true, fitToWidth: 1, fitToHeight: 0, margins: { left: 0.5, right: 0.5, top: 0.6, bottom: 0.6, header: 0.3, footer: 0.3 } },
+    });
+    /* Four columns, matching the supplier quotations this take-off is sent to
+       be priced against: #, product code, item description, quantity. The
+       product code is left BLANK — this tool reads schedules, not catalogues,
+       and inventing a manufacturer reference would be the worst kind of guess.
+       The column is here because the supplier fills it in and sends it back,
+       so the sheet round-trips instead of having to be retyped. */
+    const LAST = 4;
+    sheet.columns = [{ width: 6 }, { width: 16 }, { width: 58 }, { width: 11 }];
+    addTitleRows(sheet, model, "Device take-off for quotation", LAST);
+
+    /* Cells are written positionally, never with addRow: this module is loaded
+       into a vm sandbox by the tests, and an array built inside that sandbox is
+       not the host realm's Array, so addRow silently produces empty rows. Every
+       other sheet here writes the same way for the same reason. */
+    let cursor = 3;
+    const put = (values) => {
+      values.forEach((value, index) => { sheet.getCell(cursor, index + 1).value = value; });
+      const row = sheet.getRow(cursor);
+      cursor += 1;
+      return row;
+    };
+
+    const headerRow = cursor;
+    put(["#", "Product code", "Item description", "Quantity"]);
+    sheet.getRow(headerRow).height = 20;
+    styleHeaderRow(sheet, headerRow, LAST);
+
+    const firstData = cursor;
+    quoteLines(model).forEach((line) => {
+      const at = cursor;
+      put([
+        line.kind === "board" ? line.code : "",
+        "",
+        line.kind === "item" ? `    ${line.label}` : line.label,
+        line.kind === "note" ? "" : line.qty,
+      ]);
+      const row = sheet.getRow(at);
+      if (line.kind === "board") {
+        row.font = { name: "Montserrat", size: 10, bold: true };
+        for (let c = 1; c <= LAST; c += 1) sheet.getCell(at, c).fill = { type: "pattern", pattern: "solid", fgColor: { argb: XLSX_COLORS.grey } };
+      } else if (line.kind === "note") {
+        row.font = { name: "Montserrat", size: 9, italic: true };
+        sheet.getCell(at, 3).fill = { type: "pattern", pattern: "solid", fgColor: { argb: XLSX_COLORS.amber } };
+      } else {
+        row.font = { name: "Montserrat", size: 10 };
+        /* An item that still needs review is marked in the quotable document
+           itself. Pricing an unreviewed line is exactly what this must not let
+           happen quietly. */
+        if (line.review) sheet.getCell(at, 3).fill = { type: "pattern", pattern: "solid", fgColor: { argb: XLSX_COLORS.amber } };
+      }
+      sheet.getCell(at, LAST).alignment = { horizontal: "right" };
+    });
+
+    const totalAt = cursor;
+    const totalRow = put(["", "", "PROJECT TOTAL — protective devices", model.grandTotal]);
+    totalRow.font = { name: "Montserrat", size: 11, bold: true };
+    for (let c = 1; c <= LAST; c += 1) sheet.getCell(totalAt, c).fill = { type: "pattern", pattern: "solid", fgColor: { argb: XLSX_COLORS.peach } };
+    styleDataRange(sheet, firstData, totalAt, LAST);
+    sheet.getCell(totalAt, LAST).alignment = { horizontal: "right" };
+
+    /* Qualifications belong on the quotation, stated once, the way a supplier
+       states them — not on a sheet of their own that nobody opens. */
+    cursor += 1;
+    const qualAt = cursor;
+    put(["", "", "Notes and qualifications", ""]);
+    sheet.getRow(qualAt).font = { name: "Montserrat", size: 11, bold: true };
+    if (model.reviewCount) {
+      put(["", "", `${model.reviewCount} line${model.reviewCount === 1 ? "" : "s"} need review before pricing — shaded above, and listed in full on the Review Required sheet.`, ""]);
+    }
+    if (model.coverageIssueCount) {
+      put(["", "", `${model.coverageIssueCount} board${model.coverageIssueCount === 1 ? "" : "s"} could not be shown complete — see Board Completeness.`, ""]);
+    }
+    const seen = new Set();
+    qualificationRows(model).forEach((q) => {
+      const line = text(q[3]);
+      if (!line || seen.has(line) || seen.size >= 25) return;
+      seen.add(line);
+      put(["", "", line, ""]);
+    });
+    if (!model.reviewCount && !model.coverageIssueCount && !seen.size) {
+      put(["", "", "No outstanding qualifications — every device is reviewed and every declared way is accounted for.", ""]);
+    }
+    return sheet;
+  }
+
   function createTakeOffWorksheet(workbook, model) {
     const sheet = workbook.addWorksheet("Device Take-Off", {
       views: [{ state: "frozen", xSplit: 6, ySplit: 3, activeCell: "G4" }],
@@ -1004,6 +1200,49 @@
     sheet.pageSetup.printArea = `A1:${columnName(lastColumn)}${totalRow}`;
     sheet.pageSetup.printTitlesRow = "1:3";
     return sheet;
+  }
+
+  /* One row per board: what the drawing declared, what was captured, and what
+   * could not be accounted for.
+   *
+   * "Not checkable" is reported as its own status and never as complete. A board
+   * that never stated a way count has not been verified, and a take-off that
+   * implies otherwise is worse than one that admits the gap — the estimator
+   * cannot see which is which once it is a number on a page. */
+  function completenessRows(model) {
+    const coverage = model && model.coverage;
+    const perBoard = coverage && Array.isArray(coverage.perBoard) ? coverage.perBoard : [];
+    if (!perBoard.length) return [];
+    const rows = perBoard.slice().sort((a, b) => {
+      const gap = Number(b.unaccountedWays || 0) - Number(a.unaccountedWays || 0);
+      return gap || naturalCompare(text(a.orig || a.norm), text(b.orig || b.norm));
+    });
+    return rows.map((board) => {
+      const declared = board.expectedWays == null ? null : Number(board.expectedWays);
+      const unaccounted = board.unaccountedWays == null ? null : Number(board.unaccountedWays);
+      /* A board that declares itself part spare is not short by its spare
+         capacity, and saying so is what keeps the check believable. */
+      const spareWays = board.spareWays == null ? null : Number(board.spareWays);
+      const spareNote = spareWays
+        ? ` (${spareWays} of them declared spare${board.sparePercent != null ? `, ${board.sparePercent}%` : ""})`
+        : "";
+      const status = declared == null
+        ? "Not checkable — board states no way count"
+        : unaccounted > 0
+          ? `Incomplete — ${unaccounted} way${unaccounted === 1 ? "" : "s"} unaccounted for${spareNote}`
+          : `Complete — every declared way accounted for${spareNote}`;
+      return [
+        text(board.orig || board.norm),
+        declared == null ? "—" : declared,
+        Number(board.capturedWays || 0),
+        declared == null ? "—" : unaccounted,
+        Number(board.rowsCaptured || 0),
+        status,
+        board.evidence && board.evidence.text
+          ? `p${board.evidence.page}: ${text(board.evidence.text)}`
+          : "—",
+      ];
+    });
   }
 
   function createFlatSheet(workbook, name, headers, rows, widths) {
@@ -1151,7 +1390,16 @@
     return rows;
   }
 
-  function createExcelWorkbook(model, ExcelJS) {
+  /* `options.fullAudit` adds the two provenance sheets.
+   *
+   * They are off by default because they are not what anyone quotes from: on a
+   * real project they came to 1,291 and 259 rows around eighteen rows of
+   * take-off, and an estimator opening the file met the audit trail before the
+   * numbers. Nothing is lost — the same call with fullAudit: true still
+   * produces them, every row still carries its document, page, source text and
+   * confidence, and the Review and Completeness sheets that an estimator does
+   * act on are always present. */
+  function createExcelWorkbook(model, ExcelJS, options = {}) {
     if (!ExcelJS || typeof ExcelJS.Workbook !== "function") throw new Error("Excel export library is unavailable");
     const reconciliation = validateModel(model);
     if (!reconciliation.valid) throw new Error(`Report reconciliation failed: ${reconciliation.issues.join("; ")}`);
@@ -1163,22 +1411,31 @@
     workbook.modified = model.generatedAt;
     workbook.calcProperties.fullCalcOnLoad = true;
 
+    // The quotable document comes first — it is what the file is for.
+    createQuoteWorksheet(workbook, model);
     createTakeOffWorksheet(workbook, model);
-    createFlatSheet(workbook, "Device Detail", [
-      "Consolidated Group ID", "Device Description", "Board", "Circuit / Way", "Quantity", "Current Rating (A)",
-      "Application / Purpose", "Circuit Description", "Pole Configuration", "Tripping Curve", "Breaking Capacity", "Role",
-      "Source Document", "Page", "Source Region", "Source Text", "Confidence", "Extraction Method", "Review Status",
-    ], detailRows(model), [34, 28, 14, 14, 10, 14, 20, 36, 15, 14, 16, 12, 28, 9, 24, 48, 12, 25, 16]);
+    if (options.fullAudit) {
+      createFlatSheet(workbook, "Device Detail", [
+        "Consolidated Group ID", "Device Description", "Board", "Circuit / Way", "Quantity", "Current Rating (A)",
+        "Application / Purpose", "Circuit Description", "Pole Configuration", "Tripping Curve", "Breaking Capacity", "Role",
+        "Source Document", "Page", "Source Region", "Source Text", "Confidence", "Extraction Method", "Review Status",
+      ], detailRows(model), [34, 28, 14, 14, 10, 14, 20, 36, 15, 14, 16, 12, 28, 9, 24, 48, 12, 25, 16]);
+    }
+    createFlatSheet(workbook, "Board Completeness", [
+      "Board", "Declared Ways", "Ways Captured", "Ways Unaccounted", "Rows Captured", "Status", "Evidence For Declared Ways",
+    ], completenessRows(model), [22, 14, 14, 16, 14, 30, 46]);
     createFlatSheet(workbook, "Review Required", [
       "Scope", "Group / Source ID", "Device", "Field", "Issue", "Required Action", "Source Pages", "Confidence", "Status",
     ], reviewRows(model), [20, 34, 28, 18, 36, 55, 36, 12, 18]);
     createFlatSheet(workbook, "Assumptions and Qualifications", [
       "Scope", "Group ID", "Device", "Qualification", "Applies To / Source", "Status",
     ], qualificationRows(model), [18, 34, 28, 70, 42, 18]);
-    createFlatSheet(workbook, "Extraction Audit", [
-      "Audit ID", "Consolidated Group ID", "Source Record ID", "Field", "Original OCR / Source Text", "Normalised Value",
-      "Source Document", "Page", "Bounding Box", "Extraction Method", "Confidence", "Correction Applied", "Correction Reason", "Review Status",
-    ], auditRows(model), [34, 34, 22, 20, 55, 20, 28, 9, 24, 25, 12, 22, 42, 18]);
+    if (options.fullAudit) {
+      createFlatSheet(workbook, "Extraction Audit", [
+        "Audit ID", "Consolidated Group ID", "Source Record ID", "Field", "Original OCR / Source Text", "Normalised Value",
+        "Source Document", "Page", "Bounding Box", "Extraction Method", "Confidence", "Correction Applied", "Correction Reason", "Review Status",
+      ], auditRows(model), [34, 34, 22, 20, 55, 20, 28, 9, 24, 25, 12, 22, 42, 18]);
+    }
     if (model.associated && model.associated.grandTotal) {
       createMatrixWorksheet(workbook, model, {
         sheetName: "Control Equipment",
