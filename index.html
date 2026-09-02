@@ -18,6 +18,10 @@
     --purple:#7b5cd6; --purple-soft:#f0ebfb;
     --mono:"SF Mono",ui-monospace,Menlo,Consolas,monospace;
     --shadow:0 1px 2px rgba(22,32,46,.05);
+    /* One gutter for the whole shell: app bar, processing dock and page
+       all indent by exactly this, so they share a single left edge at
+       every width instead of three different ones. */
+    --gutter:clamp(16px,1.6vw,32px);
   }
   *{box-sizing:border-box;margin:0;padding:0;}
   html,body{height:100%;}
@@ -80,6 +84,12 @@
   .lock-prompt{font-size:12.5px;color:var(--txt2);line-height:1.5;margin:-14px 0 16px;}
   .brand{display:flex;align-items:center;gap:11px;}
   .brand-logo{height:22px;display:block;}
+  /* In the app bar the brand is the way home, so it is a button. The reset
+     keeps it looking identical to the lock screen's static brand. */
+  button.brand{background:none;border:0;padding:6px 8px;margin-left:-8px;font:inherit;color:inherit;
+    cursor:pointer;border-radius:5px;transition:background-color .12s cubic-bezier(.2,0,0,1);}
+  button.brand:hover{background:rgba(255,255,255,.08);}
+  button.brand:focus-visible{outline:2px solid var(--brand);outline-offset:2px;}
   .brand .bt{font-size:15px;font-weight:700;letter-spacing:0;}
   .lock-card input{width:100%;padding:12px 14px;border:1px solid var(--line2);border-radius:8px;font-size:14px;
     margin-bottom:10px;outline:none;}
@@ -92,7 +102,7 @@
 
   /* ---------- app chrome ---------- */
   .appbar{height:54px;background:var(--nav);color:#dce6f5;display:flex;align-items:center;gap:16px;
-    padding:0 18px;position:sticky;top:0;z-index:50;}
+    padding:0 var(--gutter);position:sticky;top:0;z-index:50;}
   .appbar .brand .bt{color:#fff;font-size:15px;}
   .appbar .brand .bt small{color:#7c90ad;}
   .crumb{font-size:12px;color:#93a5c0;display:flex;align-items:center;gap:7px;}
@@ -108,7 +118,7 @@
   .processing-dock{position:sticky;top:54px;z-index:45;background:#fff;border-bottom:1px solid var(--line2);
     box-shadow:0 5px 14px rgba(15,31,51,.08);}
   .processing-dock[hidden]{display:none;}
-  .processing-dock-inner{max-width:1600px;margin:0 auto;padding:9px 22px;display:grid;
+  .processing-dock-inner{width:100%;margin:0;padding:9px var(--gutter);display:grid;
     grid-template-columns:minmax(300px,auto) minmax(180px,1fr) auto;align-items:center;gap:14px;}
   .processing-summary{display:flex;align-items:center;gap:10px;min-width:0;}
   .processing-spinner{width:16px;height:16px;border:2px solid #b9c7d6;border-top-color:var(--brand);
@@ -131,7 +141,7 @@
   .processing-dock.complete .processing-spinner{animation:none;border-color:var(--green);background:var(--green);}
   .processing-dock.failed .processing-spinner{animation:none;border-color:var(--red);background:var(--red);}
   @keyframes processing-spin{to{transform:rotate(360deg);}}
-  .page{max-width:1340px;margin:0 auto;padding:24px 22px 70px;}
+  .page{width:100%;margin:0;padding:24px var(--gutter) 70px;}
   h1.pg{font-size:20px;font-weight:800;letter-spacing:0;}
   .pg-sub{color:var(--txt2);font-size:12.5px;margin-top:3px;}
 
@@ -614,7 +624,6 @@
   .panel,.proj-card,.dropzone,.cmp-pane,.modal,.lock-card{border-radius:6px;}
   .panel,.proj-card,.cmp-pane{box-shadow:var(--shadow);}
   .btn,.in,.sel,.back-btn{border-radius:5px;}
-  .page{max-width:1600px;}
   .appbar{border-bottom:3px solid var(--brand);}
   .ptabs{padding:0 10px;background:#fff;border:1px solid var(--line);border-radius:6px;}
   .ptab{padding:11px 14px;}
@@ -628,13 +637,13 @@
     .report-source-fields{grid-template-columns:repeat(2,minmax(0,1fr));}
   }
   @media(max-width:540px){
-    .appbar{padding:0 12px;gap:8px;}
+    .appbar{gap:8px;}
     .appbar .brand .bt{white-space:nowrap;}
     .appbar .crumb{display:none;}
     .appbar .storage-state,.appbar #lockBtn{display:none;}
     .appbar .right{gap:2px;min-width:0;}
     .appbar .link-btn{padding:6px;font-size:11.5px;}
-    .processing-dock-inner{padding:9px 22px;grid-template-columns:minmax(0,1fr);gap:7px;}
+    .processing-dock-inner{grid-template-columns:minmax(0,1fr);gap:7px;}
     .processing-steps{display:none;}
     .processing-copy{grid-template-columns:auto minmax(0,1fr);}
     .tree .kids{margin-left:12px;padding-left:10px;}
@@ -688,8 +697,9 @@
 <!-- ================= APP ================= -->
 <div class="view" id="appView">
   <div class="appbar">
-    <div class="brand"><img class="brand-logo" src="./assets/hager-logo.png" alt="Hager">
-      <div class="bt"><span>Estimation</span><span class="brand-accent">Tools</span></div></div>
+    <button class="brand" id="homeBtn" type="button" title="All projects"
+      aria-label="Estimation Tools — go to all projects"><img class="brand-logo" src="./assets/hager-logo.png" alt="">
+      <div class="bt"><span>Estimation</span><span class="brand-accent">Tools</span></div></button>
     <div class="crumb" id="crumb"><b>Projects</b></div>
     <div class="right">
       <span class="storage-state" id="storageState" title="Projects and original files are stored in this device profile">Stored on this computer</span>
@@ -1760,7 +1770,12 @@ function setTab(name){
   return null;
 }
 $$('.ptab').forEach(t=>t.addEventListener('click',()=>setTab(t.dataset.pt)));
-$('#backBtn').addEventListener('click', ()=>{ pauseGuidedReview();state.cur=null;if(!analysisBusy)hideProcessing();renderProjects(); show('home'); });
+/* One way home, shared by the back arrow and the brand in the app bar, so
+   they cannot drift apart — the logo must leave guided review and the
+   processing dock in the same state the arrow does. */
+function goHome(){ pauseGuidedReview(); state.cur=null; if(!analysisBusy) hideProcessing(); renderProjects(); show('home'); }
+$('#backBtn').addEventListener('click', goHome);
+$('#homeBtn').addEventListener('click', goHome);
 $('#backupProjectBtn').addEventListener('click',()=>backupProject(state.cur));
 $('#restoreProjectBtn').addEventListener('click',()=>$('#restoreProjectInput').click());
 $('#newProjectBtn').addEventListener('click',()=>$('.proj-card.new')?.click());
