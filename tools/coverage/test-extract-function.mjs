@@ -91,11 +91,19 @@ function walk(schema, where) {
 walk(EXTRACTION_SCHEMA, '$');
 check('prompt persists the P-code legend', EXTRACTION_SYSTEM_PROMPT.includes('P1=MCB'));
 check('prompt persists the spare phase-slot rule', /Never mark a whole way spare/.test(EXTRACTION_SYSTEM_PROMPT));
+check('prompt persists the outgoing 30mA RCBO commercial grouping rule', /belongs in the RCBO procurement group/.test(EXTRACTION_SYSTEM_PROMPT)
+  && /Do not apply this conversion when 30mA is absent or the row is an incomer/.test(EXTRACTION_SYSTEM_PROMPT));
 check('prompt bounds occupancy labels instead of reading room names as empty ways', /Open Space next to dining/.test(EXTRACTION_SYSTEM_PROMPT)
   && /bounded cell values/.test(EXTRACTION_SYSTEM_PROMPT)
   && /require review rather than deleting the device/.test(EXTRACTION_SYSTEM_PROMPT));
 check('prompt forbids counting', /NEVER count/.test(EXTRACTION_SYSTEM_PROMPT));
 check('prompt rejects schematic proximity inference', /NEVER infer a feed from proximity/.test(EXTRACTION_SYSTEM_PROMPT));
+check('prompt understands transposed schedule matrices', /field names form horizontal bands/.test(EXTRACTION_SYSTEM_PROMPT)
+  && /one ordinary device row per printed WAY/.test(EXTRACTION_SYSTEM_PROMPT));
+check('prompt distinguishes explicit schematic refs from circuit labels', /REF: PBT1/.test(EXTRACTION_SYSTEM_PROMPT)
+  && /Do not truncate PBT1 to PB1/.test(EXTRACTION_SYSTEM_PROMPT)
+  && /LL PB 1/.test(EXTRACTION_SYSTEM_PROMPT));
+check('prompt follows schematic conductors across the complete drawing', /continue following it upstream or downstream across the entire drawing/.test(EXTRACTION_SYSTEM_PROMPT));
 check('prompt preserves nonnumeric ways', /L7, L8, P1, P2/.test(EXTRACTION_SYSTEM_PROMPT));
 check('prompt keeps schematic metadata out of quantities', /never take-off items/.test(EXTRACTION_SYSTEM_PROMPT));
 check('prompt reconciles authored source errors without silent repair', /SOURCE ERRORS/.test(EXTRACTION_SYSTEM_PROMPT)

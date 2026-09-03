@@ -88,3 +88,34 @@ export const nestedPanelboard = {
     stats: { segments: 5, junctionCandidates: 0 },
   },
 };
+
+export const corroboratedRootPanelboards = {
+  pageWidth: 1000,
+  pageHeight: 700,
+  lines: [
+    { text: 'LV SCHEMATIC', words: [word('LV SCHEMATIC', 20, 20, 90)] },
+    { text: 'REF: MSP1 MAINS SWITCH PANEL', words: [word('REF:', 58, 620, 28), word('MSP1', 88, 620, 35),
+      word('MAINS SWITCH PANEL', 126, 620, 120)] },
+    { text: 'REF: PBT1 TENANT PANELBOARD SUPPLY PANEL RATING', words: [word('REF:', 355, 85, 28),
+      word('PBT1', 385, 85, 34), word('PANELBOARD', 360, 100, 62), word('SUPPLY', 370, 112, 38),
+      word('PANEL RATING', 360, 124, 72)] },
+    { text: 'REF: PBT2 TENANT PANELBOARD SUPPLY PANEL RATING', words: [word('REF:', 655, 85, 28),
+      word('PBT2', 685, 85, 34), word('PANELBOARD', 660, 100, 62), word('SUPPLY', 670, 112, 38),
+      word('PANEL RATING', 660, 124, 72)] },
+    { text: '125A MCCB TPN', words: [word('125A', 390, 245, 28), word('MCCB', 390, 263, 34), word('TPN', 390, 281, 22)] },
+    { text: '125A MCCB TPN', words: [word('125A', 690, 245, 28), word('MCCB', 690, 263, 34), word('TPN', 690, 281, 22)] },
+  ],
+  vectorGeometry: {
+    version: 1,
+    pageWidth: 1000,
+    pageHeight: 700,
+    segments: [
+      { x1: 100, y1: 640, x2: 100, y2: 580, width: 1, pathId: 'root-incomer' },
+      { x1: 100, y1: 520, x2: 700, y2: 520, width: 1, pathId: 'root-outgoing-busbar' },
+      { x1: 400, y1: 520, x2: 400, y2: 100, width: 1, pathId: 'tenant-one' },
+      { x1: 700, y1: 520, x2: 700, y2: 100, width: 1, pathId: 'tenant-two' },
+    ],
+    junctions: [],
+    stats: { segments: 4, junctionCandidates: 0 },
+  },
+};

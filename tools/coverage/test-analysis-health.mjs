@@ -93,6 +93,19 @@ test('a missing standalone schedule feed is advisory rather than a failed extrac
   assert.ok(h.reasons.some((reason) => reason.code === 'BOARD_FEED_MISSING'));
 });
 
+test('an unresolved See LV Schematic feed remains advisory for schedule-only documents', () => {
+  const h = core.buildAnalysisHealth({
+    coverage: { perBoard: [{ norm: 'DB-01', inScope: true, rowsCaptured: 12, capturedWays: 12,
+      expectedWays: 12, unaccountedWays: 0 }], summary: { expectedWays: 12, capturedWays: 12 } },
+    boards: { 'DB-01': { header: { supplied_from_text: 'See LV Schematic' } } },
+    rows: Array.from({ length: 12 }, (_, i) => row({ way: i + 1 })),
+    pages: [page()],
+    files: [{ id: 'f1', status: 'ready' }],
+  });
+  assert.equal(h.state, 'incomplete');
+  assert.ok(h.reasons.some((reason) => reason.code === 'BOARD_FEED_MISSING'));
+});
+
 test('active outgoing rows with zero parser output remain a hard extraction gap', () => {
   const h = core.buildAnalysisHealth({
     coverage: {
@@ -292,7 +305,9 @@ test('diagnostic v3 records attempts and page micro-metrics without leaking arbi
       fileId: 'secret-file', rowsParsed: 0, spatialColumns: ['way', 'rating'], spatialGridAccepted: false,
       spatialBlockingReasons: ['circuit_column_missing'], spatialWarnings: ['primary_board_not_resolved'],
       inputStats: { width: 841.89, height: 595.28, positionedLines: 38, spatialWords: 214, tableRows: 26, tableCells: 312 },
-      boardResolved: false, boardDetection: { referencesDetected: 3, primaryReferences: 0, circuitReferences: 3 },
+      boardResolved: false, boardOwnershipMethod: 'filename_reference_review',
+      boardDetection: { referencesDetected: 3, primaryReferences: 0, circuitReferences: 3 },
+      transposedSchedule: { matched: true, confidence: 0.88, roles: ['way', 'rating', 'phase'], wayCount: 24, fixedDeviceClass: 'MCB' },
       extractionAttempts: [{ strategy: 'geometry-strict', matched: false, rows: 0, confidence: 0.61, debugText: 'SECRET CUSTOMER CONTENT' }],
       rowOutcome: { unassignedRows: 7, reviewRows: 7 },
     })],
@@ -302,6 +317,10 @@ test('diagnostic v3 records attempts and page micro-metrics without leaking arbi
   assert.equal(exported.input.spatialWords, 214);
   assert.equal(exported.input.tableCells, 312);
   assert.deepEqual(exported.spatial.missingRoles, ['circuit_reference_or_description']);
+  assert.equal(exported.boardDetection.ownershipMethod, 'filename_reference_review');
+  assert.deepEqual(exported.spatial.transposedProfile, {
+    matched: true, confidence: 0.88, roles: ['way', 'rating', 'phase'], wayCount: 24, fixedDeviceClass: 'MCB',
+  });
   assert.equal(exported.extractionAttempts[0].strategy, 'geometry-strict');
   assert.equal(exported.extractionAttempts[0].confidence, 0.61);
   assert.ok(exported.verdict.reasonCodes.includes('BOARD_REFERENCE_UNRESOLVED'));

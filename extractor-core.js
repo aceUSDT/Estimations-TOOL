@@ -460,7 +460,12 @@
     const lower = source.toLowerCase();
     const scores = {};
     const add = (type, score) => { scores[type] = (scores[type] || 0) + score; };
-    const strongSchematicTitle = /\b(?:LV\s+SCHEMATIC|ELECTRICAL\s+SCHEMATIC|SINGLE[- ]LINE\s+(?:DIAGRAM|SCHEMATIC)|ONE[- ]LINE\s+DIAGRAM)\b/i.test(source);
+    const schematicTitlePattern = /\b(?:LV\s+SCHEMATIC|ELECTRICAL\s+SCHEMATIC|SINGLE[- ]LINE\s+(?:DIAGRAM|SCHEMATIC)|ONE[- ]LINE\s+DIAGRAM)\b/i;
+    const strongSchematicTitle = source.split(/\r?\n/).some((line) => {
+      const value = line.replace(/\s+/g, ' ').trim();
+      return schematicTitlePattern.test(value)
+        && !/^(?:SEE|REFER(?:\s+TO)?|INCOMER\s*:|SUPPLIED\s+FROM\s*:|FED\s+FROM\s*:|CABLE\s+TYPE\s*:)/i.test(value);
+    });
     if (/drawing register|drawing list|drawing index|dwg register/.test(lower)) add('register', 8);
     if (/\blegend\b/.test(lower) && /symbol|description|abbrev/.test(lower)) add('legend', 5);
     if (/lighting (?:layout|plan|drawing)/.test(lower)) add('lighting-plan', 5);
@@ -1695,21 +1700,65 @@
 
   function expectedWaysFromText(text) {
     const source = String(text || '');
+    const threePhase = /\b(?:TP\s*&?\s*N|TPN|3\s*PHASE|THREE\s+PHASE)\b/i.test(source);
+    const hybrid = source.match(/\b(\d{1,3})\s*[- ]?WAYS?\b[\s\S]{0,100}?\b(?:WITH|PLUS)\s+(\d{1,3})\s*AFDD\s*[- ]?WAYS?\b/i);
+    if (hybrid) {
+      const primaryWays = Number(hybrid[1]);
+      const supplementalWays = Number(hybrid[2]);
+      const slotCapacity = primaryWays * (threePhase ? 3 : 1) + supplementalWays;
+      if (primaryWays >= 2 && primaryWays <= 200 && supplementalWays >= 1 && slotCapacity <= 600) {
+        return {
+          ways: primaryWays,
+          evidence: hybrid[0].trim(),
+          hybrid: true,
+          supplementalWays,
+          phaseFactor: threePhase ? 3 : 1,
+          slotCapacity,
+          slotModel: 'hybrid_board',
+        };
+      }
+    }
     const split = source.match(/\b(\d{1,3})\s*[- ]?Ways?\s+Power\s*\+\s*(\d{1,3})\s*[- ]?Ways?\s+Lighting\b/i);
     if (split) {
       const ways = Number(split[1]) + Number(split[2]);
-      if (ways >= 2 && ways <= 200) return { ways, evidence: split[0].trim(), split: true };
+      if (ways >= 2 && ways <= 200) return {
+        ways, evidence: split[0].trim(), split: true,
+        sections: [Number(split[1]), Number(split[2])], phaseFactor: threePhase ? 3 : 1,
+        slotCapacity: threePhase ? ways * 3 : null, slotModel: 'split_board',
+      };
+    }
+    const inlineSplit = source.match(/\b(\d{1,3})\s*(?:[- ]?WAYS?)?\s*\+\s*(\d{1,3})\s*[- ]?WAYS?\b/i);
+    if (inlineSplit) {
+      const ways = Number(inlineSplit[1]) + Number(inlineSplit[2]);
+      if (ways >= 2 && ways <= 200) return {
+        ways, evidence: inlineSplit[0].trim(), split: true,
+        sections: [Number(inlineSplit[1]), Number(inlineSplit[2])], phaseFactor: threePhase ? 3 : 1,
+        slotCapacity: threePhase ? ways * 3 : null, slotModel: 'split_board',
+      };
     }
     const compactSplit = source.match(/\bWAYS?\s*(?:[-:=]|TOTAL\s*[:=])?\s*(\d{1,3})\s*\+\s*(\d{1,3})\b/i);
     if (compactSplit) {
       const ways = Number(compactSplit[1]) + Number(compactSplit[2]);
-      if (ways >= 2 && ways <= 200) return { ways, evidence: compactSplit[0].trim(), split: true };
+      if (ways >= 2 && ways <= 200) return {
+        ways, evidence: compactSplit[0].trim(), split: true,
+        sections: [Number(compactSplit[1]), Number(compactSplit[2])], phaseFactor: threePhase ? 3 : 1,
+        slotCapacity: threePhase ? ways * 3 : null, slotModel: 'split_board',
+      };
     }
     for (const pattern of WAY_HEADER_PATTERNS) {
       const match = source.match(pattern);
       if (match) {
         const ways = Number(match[1]);
-        if (ways >= 2 && ways <= 200) return { ways, evidence: match[0].trim() };
+        if (ways >= 2 && ways <= 200) {
+          const standaloneAfdd = new RegExp(`\\b${ways}\\s*[- ]?WAYS?\\b[\\s\\S]{0,40}?\\bAFDD\\s+BOARD\\b`, 'i').test(source);
+          return {
+            ways,
+            evidence: match[0].trim(),
+            phaseFactor: threePhase ? 3 : 1,
+            slotCapacity: standaloneAfdd ? ways : (threePhase ? ways * 3 : null),
+            slotModel: standaloneAfdd ? 'afdd_outgoing_positions' : (threePhase ? 'three_phase_board' : null),
+          };
+        }
       }
     }
     return null;
@@ -1782,20 +1831,26 @@
 
     const combined = sourceLines.join('\n');
     const ways = expectedWaysFromText(combined);
-    if (ways) set('ways_total', ways.ways, ways.evidence);
+    if (ways) {
+      set('ways_total', ways.ways, ways.evidence);
+      if (ways.slotCapacity != null) set('way_capacity_slots', ways.slotCapacity, ways.evidence);
+      if (ways.supplementalWays != null) set('afdd_ways', ways.supplementalWays, ways.evidence);
+      if (ways.sections) set('way_sections', ways.sections.slice(), ways.evidence);
+      if (ways.slotModel) set('way_capacity_model', ways.slotModel, ways.evidence);
+    }
     labelled('board_ref', /\b(?:DIST\s*\/\s*BD|DISTRIBUTION\s+BOARD|DB|BOARD)\s*(?:REF(?:ERENCE)?|IDENTITY)\b\s*[:=\-]?\s*(.+)$/i);
     labelled('description', /\bBOARD\s+DESCRIPTION\b\s*[:=\-]?\s*(.+)$/i);
     labelled('description', /^DESCRIPTION\s*[:=\-]\s*(.+)$/i);
     labelled('location', /\bLOCATION\b\s*[:=\-]?\s*(.+)$/i);
     labelled('purpose', /\bPURPOSE\b\s*[:=\-]?\s*(.+)$/i);
-    labelled('size_text', /\bSIZE\b\s*[:=\-]?\s*(.+)$/i);
-    labelled('board_type_text', /\bSIZE\b\s*[:=\-]?\s*(.+)$/i);
+    labelled('size_text', /\bSIZE(?:\s*,?\s*TYPE\s*(?:AND|&)\s*RATING)?\b\s*[:=\-]?\s*(.+)$/i);
+    labelled('board_type_text', /\bSIZE(?:\s*,?\s*TYPE\s*(?:AND|&)\s*RATING)?\b\s*[:=\-]?\s*(.+)$/i);
     labelled('fed_from_ref', /\b(?:DB\s+FED\s+FROM|FED\s+FROM|SERVED\s+BY|SUPPLIED\s+FROM)\b\s*[:=\-]?\s*(.+)$/i);
     labelled('supplied_from_text', /\bSUPPLIED\s+FROM\b\s*[:=\-]?\s*(.+)$/i);
     labelled('serving', /\bSERVING\b\s*[:=\-]?\s*(.+)$/i);
     labelled('board_model', /\b(?:BOARD\s+MODEL|MODEL|CAT(?:ALOGUE)?\.?\s*(?:NO|NUMBER)?)\b\s*[:=\-]?\s*(.+)$/i);
     labelled('metering', /\bMETERING\b\s*[:=\-]?\s*(.+)$/i);
-    labelled('supply_cable_details', /\bSUPPLY\s+CABLE\s+DETAILS?\b\s*[:=\-]?\s*(.+)$/i);
+    labelled('supply_cable_details', /^(?:SUPPLY\s+)?CABLE\s+(?:DETAILS?|TYPE)\b\s*[:=\-]?\s*(.+)$/i);
     labelled('supply_cpd_details', /\bSUPPLY\s+CPD\s+DETAILS?\b\s*[:=\-]?\s*(.+)$/i);
     labelled('internal_isolator_details', /\bINTERNAL\s+ISOLATOR\s+DETAILS?\b\s*[:=\-]?\s*(.+)$/i);
 
@@ -1809,6 +1864,11 @@
     if (voltage) set('voltage_v', Number(voltage[1]), voltage[0]);
 
     for (const line of sourceLines) {
+      if (/\bSIZE\s*,?\s*TYPE\s*(?:AND|&)\s*RATING\b/i.test(line)) {
+        const rating = line.match(/:\s*(\d+(?:\.\d+)?)\s*A\b/i)
+          || line.match(/\b(\d+(?:\.\d+)?)\s*A\b/i);
+        if (rating) set('board_rating_a', Number(rating[1]), line);
+      }
       const spareCapacity = line.match(/\bSPARE(?:\s+CAPACITY)?\b\s*[:=]\s*(\d+(?:\.\d+)?)\s*%?/i);
       if (spareCapacity) set('spare_capacity_pct', Number(spareCapacity[1]), line);
       if (/\b(?:INCOMER|INCOMING\s+(?:DEVICE|SUPPLY)|MAIN\s+SWITCH)\b/i.test(line)) {
@@ -1892,6 +1952,21 @@
 
   const COVERAGE_SCHEDULE_TYPES = new Set(['db-schedule', 'main-schedule', 'equipment-schedule']);
 
+  function coverageRowSlotKeys(row) {
+    if (!row || row.way == null) return [];
+    const base = `${row.boardSection || ''}:${row.way}`;
+    const phase = String(row.phase || '').toUpperCase();
+    if (/^L[123]$/.test(phase)) return [`${base}:${phase}`];
+    const printedPhases = Array.isArray(row.physicalPhaseSlots)
+      ? [...new Set(row.physicalPhaseSlots.map((value) => String(value || '').toUpperCase()).filter((value) => /^L[123]$/.test(value)))]
+      : [];
+    if (printedPhases.length >= 2) return printedPhases.map((value) => `${base}:${value}`);
+    const physicalCount = Math.max(1, Math.min(12, Number(row.physicalSlotCount)
+      || ((row.sharedPhaseSpan || phase === '3PH') ? Number(row.occupies_ways) || 3 : 1)));
+    if (physicalCount === 1) return [base];
+    return Array.from({ length: physicalCount }, (_, index) => `${base}:S${index + 1}`);
+  }
+
   /**
    * @param boards map norm → {norm, orig, pages:[{fileId,page}] }
    * @param rows   extracted rows (schedule kind) with boardNorm/way/page/fileId
@@ -1920,6 +1995,11 @@
     for (const board of boardValues) {
       let expected = null;
       let evidence = null;
+      const descriptorCapacity = expectedWaysFromText([
+        board.header?.size_text,
+        board.header?.board_type_text,
+      ].filter(Boolean).join(' '));
+      let capacityModel = descriptorCapacity;
       const boardPages = (hasPrimaryMetadata
         ? (board.pages || []).filter((ref) => ref && ref.primary)
         : (board.pages || [])).filter((ref) => {
@@ -1938,12 +2018,14 @@
           const found = pg && expectedWaysFromText(pg.text);
           if (found && (!expected || found.ways > expected)) {
             expected = found.ways;
+            capacityModel = found;
             evidence = { fileId: ref.fileId, page: ref.page, text: found.evidence };
           }
         }
       }
       if (trustedHeaderWayCount || (expected == null && validExtractedWayCount)) {
         expected = extractedWayCount;
+        if (descriptorCapacity && descriptorCapacity.ways !== extractedWayCount) capacityModel = null;
         const source = headerWaySource;
         evidence = {
           fileId: boardPages[0]?.fileId || null,
@@ -1955,8 +2037,33 @@
       const boardRows = scheduleRows.filter((r) => r.boardNorm === board.norm);
       const observedRows = boardRows.filter((row) => !row.inferredWay || row.status === 'confirmed');
       const ways = new Set(observedRows.filter((r) => r.way != null).map((r) => `${r.boardSection || ''}:${r.way}`));
+      const observedSlots = new Set(observedRows.flatMap(coverageRowSlotKeys));
       const explicitSpareWays = new Set(observedRows.filter((row) => row.spare && row.way != null)
         .map((row) => `${row.boardSection || ''}:${row.way}`));
+      const explicitSpareSlots = new Set(observedRows.filter((row) => row.spare).flatMap(coverageRowSlotKeys));
+      const phasesByWay = new Map();
+      observedRows.forEach((row) => {
+        if (row.way == null || !/^L[123]$/i.test(String(row.phase || ''))) return;
+        const key = `${row.boardSection || ''}:${row.way}`;
+        if (!phasesByWay.has(key)) phasesByWay.set(key, new Set());
+        phasesByWay.get(key).add(String(row.phase).toUpperCase());
+      });
+      const phaseMatrixEvidence = observedRows.some((row) => row.sharedPhaseSpan || String(row.phase || '').toUpperCase() === '3PH'
+        || Number(row.physicalSlotCount || 0) >= 3)
+        || [...phasesByWay.values()].some((phases) => phases.size >= 2);
+      const structuredSlotModel = ['hybrid_board', 'afdd_outgoing_positions'].includes(String(capacityModel?.slotModel || board.header?.way_capacity_model || ''));
+      let expectedCapacity = expected;
+      let capacityUnit = 'way';
+      const declaredSlotCapacity = Number(board.header?.way_capacity_slots ?? capacityModel?.slotCapacity);
+      if (Number.isInteger(declaredSlotCapacity) && declaredSlotCapacity > 0
+        && (structuredSlotModel || phaseMatrixEvidence)) {
+        expectedCapacity = declaredSlotCapacity;
+        capacityUnit = 'outgoing_position';
+      } else if (expected != null && phaseMatrixEvidence
+        && (capacityModel?.split || Number(board.header?.phase_count) === 3 || Number(capacityModel?.phaseFactor) === 3)) {
+        expectedCapacity = expected * 3;
+        capacityUnit = 'outgoing_position';
+      }
       const inferredWays = new Set(boardRows.filter((row) => row.inferredWay && row.status !== 'confirmed' && row.way != null)
         .map((row) => `${row.boardSection || ''}:${row.way}`));
       const protectionRows = boardRows.filter((r) => isPopulatedProtectionRow(r) && r.status !== 'rejected');
@@ -1969,29 +2076,33 @@
           || /(?:SPATIAL|USER|MANUAL|CALIBRAT)/i.test(String(spareCapacitySource?.extractionMethod || '')));
       let declaredSpareWays = 0;
       let declaredUnprintedSpareWays = 0;
-      let accountedWays = ways.size;
-      if (expected != null && trustedSpareCapacity) {
-        const rawSpareWays = expected * spareCapacityPct / 100;
+      let accountedWays = capacityUnit === 'outgoing_position' ? observedSlots.size : ways.size;
+      if (expectedCapacity != null && trustedSpareCapacity) {
+        const rawSpareWays = expectedCapacity * spareCapacityPct / 100;
         const roundedSpareWays = Math.round(rawSpareWays);
         const percentageMapsToWholeWays = Math.abs(rawSpareWays - roundedSpareWays) <= 0.25;
         if (percentageMapsToWholeWays) {
           declaredSpareWays = roundedSpareWays;
-          const unprinted = Math.max(0, declaredSpareWays - explicitSpareWays.size);
-          const reconciled = ways.size + unprinted;
-          if (reconciled <= expected) {
+          const printedSpareCount = capacityUnit === 'outgoing_position' ? explicitSpareSlots.size : explicitSpareWays.size;
+          const observedCount = capacityUnit === 'outgoing_position' ? observedSlots.size : ways.size;
+          const unprinted = Math.max(0, declaredSpareWays - printedSpareCount);
+          const reconciled = observedCount + unprinted;
+          if (reconciled <= expectedCapacity) {
             declaredUnprintedSpareWays = unprinted;
             accountedWays = reconciled;
           }
         }
       }
-      const unaccounted = expected != null ? Math.max(0, expected - accountedWays) : null;
+      const unaccounted = expectedCapacity != null ? Math.max(0, expectedCapacity - accountedWays) : null;
       const upstreamType = /^(?:MAIN|MDB|SMDB|MCC|SB|PB)$/.test(String(board.type || '').toUpperCase());
       const upstreamReference = /^(?:MAIN|MSB|SWB|SMDB|MDB|PB|MCC|MCP|GENERATOR)/i.test(String(board.orig || '').replace(/[\s._/\\-]+/g, ''));
       const inScope = board.inScope !== false && boardPages.length > 0 && !upstreamType && !upstreamReference;
       perBoard.push({
         norm: board.norm, orig: board.orig,
-        expectedWays: expected, evidence,
+        expectedWays: expectedCapacity, declaredWays: expected, evidence,
         capturedWays: accountedWays, observedWays: ways.size,
+        expectedSlots: capacityUnit === 'outgoing_position' ? expectedCapacity : null,
+        observedSlots: observedSlots.size, capacityUnit,
         declaredSpareWays, declaredUnprintedSpareWays, spareCapacityPct: validSpareCapacity ? spareCapacityPct : null,
         inferredWays: inferredWays.size, rowsCaptured: boardRows.length,
         protectionRows: protectionRows.length,
@@ -2279,7 +2390,6 @@
    */
   function buildAnalysisHealth({ coverage, boards, rows, pages, files, feeders, discrepancies }) {
     const reasons = new Map();
-    let unresolvedFeedEvidence = false;
     const addReason = (code, ref) => {
       if (!reasons.has(code)) reasons.set(code, { code, message: HEALTH_REASONS[code] || code, count: 0, refs: [] });
       const entry = reasons.get(code);
@@ -2375,12 +2485,6 @@
       const hasFeed = Boolean(board && board.parent);
       if (!hasFeed && !(board && board.orphaned === true)) {
         addReason('BOARD_FEED_MISSING', { board: norm });
-        unresolvedFeedEvidence = unresolvedFeedEvidence || [
-          board?.fed_from_ref,
-          board?.supplied_from_text,
-          board?.header?.fed_from_ref,
-          board?.header?.supplied_from_text,
-        ].some((value) => String(value || '').trim());
       }
     }
     if (boardCount === 0 && schedulePages.length > 0) addReason('SCHEDULE_DOC_NO_BOARDS', null);
@@ -2407,7 +2511,6 @@
     if (reasons.size > 0) state = 'incomplete';
     if (reasons.has('ZERO_DEVICES_WITH_BOARDS') || reasons.has('NO_CONTENT')
       || reasons.has('DEVICE_COUNT_BELOW_BOARD_COUNT') || reasons.has('WAYS_OVER_CAPACITY')
-      || unresolvedFeedEvidence
       || reasons.has('SCHEMATIC_FEEDS_MISSING')
       || reasons.has('SCHEMATIC_VECTOR_GEOMETRY_MISSING') || reasons.has('SCHEMATIC_TOPOLOGY_UNRESOLVED')
       || reasons.has('SCHEMATIC_TOPOLOGY_AMBIGUOUS') || reasons.has('SCHEMATIC_SCHEDULE_FEED_MISMATCH')
@@ -2641,6 +2744,7 @@
         indexReferences: diagnosticCount(pg.boardDetection?.indexReferences),
         circuitReferences: diagnosticCount(pg.boardDetection?.circuitReferences),
         resolved: pg.boardResolved == null ? null : Boolean(pg.boardResolved),
+        ownershipMethod: diagnosticCode(pg.boardOwnershipMethod),
         headerRoles: diagnosticCodes(pg.boardHeaderRoles),
       },
       calibration: {
@@ -2667,6 +2771,13 @@
         populatedRows: diagnosticCount(pg.spatialGridStats?.populatedRows),
         observedRows: diagnosticCount(pg.spatialTableStats?.observedRowCount),
         inferredRows: diagnosticCount(pg.spatialTableStats?.inferredRowCount),
+        transposedProfile: {
+          matched: Boolean(pg.transposedSchedule?.matched),
+          confidence: diagnosticNumber(pg.transposedSchedule?.confidence),
+          roles: diagnosticCodes(pg.transposedSchedule?.roles),
+          wayCount: diagnosticCount(pg.transposedSchedule?.wayCount),
+          fixedDeviceClass: diagnosticCode(pg.transposedSchedule?.fixedDeviceClass),
+        },
       },
       output: {
         rowsParsed: diagnosticCount(pg.rowsParsed),
@@ -2690,6 +2801,7 @@
       schematic: {
         topologyMethod: diagnosticCode(pg.schematicTopologyMethod),
         graphStats: pg.schematicGraphStats || null,
+        referenceStats: pg.schematicReferenceStats || null,
         vectorStats: pg.schematicVectorStats || null,
         unresolvedCount: (pg.schematicUnresolvedBoards || []).length,
         ambiguousCount: (pg.schematicAmbiguousBoards || []).length,

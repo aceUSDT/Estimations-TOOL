@@ -79,6 +79,37 @@ Observed pattern: `DB-<level><zone>-<service>`
 These conventions are **project-specific**. Parse them opportunistically to
 enrich, and never let a parsed convention override an explicitly stated field.
 
+### Compact panelboard and switchboard blocks
+
+Some A0 drawings place several self-contained board blocks beside the single-line
+network. Treat each framed block as a small electrical document with this order:
+
+1. Board identity and details (`REF:`, panel rating, fault current, phase, ways).
+2. Incomer and busbar.
+3. Every outgoing way, including MCCBs, meters, SPDs, spares and blank positions.
+4. The cable and downstream load or board attached to each outgoing way.
+
+Short labelled identities such as `REF: MSP1`, `REF: PBT1`, `REF: PBLL1`,
+`REF: LS1`, `REF: DBT4` and `REF: DB ESS` are board nodes exactly as printed.
+Do not shorten `PBT1` to `PB1`. By contrast, labels such as `LL PB 1` and
+`LS PB 2` beside outgoing devices are circuit/load labels unless a separate
+equipment block explicitly identifies a board with that reference.
+
+Keep the board or panel rating separate from each outgoing-device rating. A
+panel may be rated 400 A while an outgoing way reads `MCCB 160 A`; the take-off
+for that way is the 160 A MCCB. The same separation applies to incomer rating,
+fault current and downstream cable size.
+
+An embedded schedule may be transposed: field names form horizontal bands such
+as `CPC`, `CABLE`, `MCB`, `PHASE`, `AFDD`, `TYPE`, `WAY`, while each circuit is a
+vertical column. Detect the intersecting field band and circuit column, then
+normalise it to one ordinary outgoing record per printed way. Do not require
+calibration merely because rows and columns are swapped.
+
+PDF page rotation and Viewer rotation do not change electrical meaning. Store
+all evidence in canonical source-page coordinates, transform it only for display,
+and map user calibration boxes back to source coordinates before re-analysis.
+
 ---
 
 ## Edges — the critical rule

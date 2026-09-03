@@ -606,17 +606,45 @@
     const distances = new Array(graph.nodes.length).fill(Infinity);
     const previousNode = new Array(graph.nodes.length).fill(null);
     const previousEdge = new Array(graph.nodes.length).fill(null);
-    const visited = new Set();
-    distances[startId] = 0;
-    while (visited.size < graph.nodes.length) {
-      let current = null;
-      let best = Infinity;
-      for (let index = 0; index < distances.length; index += 1) {
-        if (!visited.has(index) && distances[index] < best) { current = index; best = distances[index]; }
+    const heap = [];
+    const push = (entry) => {
+      heap.push(entry);
+      let index = heap.length - 1;
+      while (index > 0) {
+        const parent = Math.floor((index - 1) / 2);
+        if (heap[parent].distance <= entry.distance) break;
+        heap[index] = heap[parent];
+        index = parent;
       }
-      if (current == null || !Number.isFinite(best)) break;
+      heap[index] = entry;
+    };
+    const pop = () => {
+      if (!heap.length) return null;
+      const root = heap[0];
+      const tail = heap.pop();
+      if (heap.length && tail) {
+        let index = 0;
+        while (true) {
+          const left = index * 2 + 1;
+          const right = left + 1;
+          if (left >= heap.length) break;
+          const child = right < heap.length && heap[right].distance < heap[left].distance ? right : left;
+          if (heap[child].distance >= tail.distance) break;
+          heap[index] = heap[child];
+          index = child;
+        }
+        heap[index] = tail;
+      }
+      return root;
+    };
+    distances[startId] = 0;
+    push({ nodeId: startId, distance: 0 });
+    while (heap.length) {
+      const currentEntry = pop();
+      if (!currentEntry || currentEntry.distance !== distances[currentEntry.nodeId]) continue;
+      const current = currentEntry.nodeId;
+      const best = currentEntry.distance;
       if (current === targetId) break;
-      visited.add(current);
       for (const edgeId of graph.nodes[current].edges) {
         const edge = graph.edges[edgeId];
         const next = edge.a === current ? edge.b : edge.a;
@@ -625,6 +653,7 @@
         distances[next] = candidate;
         previousNode[next] = current;
         previousEdge[next] = edgeId;
+        push({ nodeId: next, distance: candidate });
       }
     }
     if (!Number.isFinite(distances[targetId])) return null;
@@ -666,11 +695,12 @@
 
   function boardCandidatesFromWords(input, words, zones) {
     const candidates = [];
-    const add = (text, items, sourceText = text) => {
+    const add = (text, items, sourceText = text, options = {}) => {
       const canonical = Core.canonicalBoardReference(text);
       if (!canonical?.normalised) return;
       const norm = canonical.normalised;
-      if (!/^(?:DB|LVS|MSB|MDB|SMDB|PB|SB|PANEL|MAIN)/.test(norm)) return;
+      if (!/^(?:DB|DBT|DBLL|LVS|MSP|MSB|MDB|SMDB|PBT|PBLL|PB|LS|SB|PANEL|MAIN)/.test(norm)) return;
+      if (!options.explicitLabel && /\b(?:LL|LS)\s+PB\s*\d+/i.test(String(sourceText || ''))) return;
       const cell = sourceCell(items, 'schematic_board_reference');
       const box = boxObject(cell?.bbox);
       if (!box || zones.some((zone) => pointInBox({ x: (box.x0 + box.x1) / 2, y: (box.y0 + box.y1) / 2 }, zone.bbox))) return;
@@ -683,7 +713,15 @@
         cx: (box.x0 + box.x1) / 2,
         cy: (box.y0 + box.y1) / 2,
         confidence: cell.confidence,
+        explicitLabel: Boolean(options.explicitLabel),
       });
+    };
+    const explicitReferenceMatches = (text) => {
+      const source = String(text || '').replace(/\s+/g, ' ');
+      const matches = [];
+      const pattern = /\bREF(?:ERENCE)?\s*[:#=-]?\s*((?:DB(?:[\s._/-]+[A-Z0-9]{1,12})+)|(?:DBT|DBLL|PBT|PBLL|MSP|LVS|MSB|MDB|SMDB|PB|LS|SB)[\s._/-]?\d+[A-Z0-9._/-]*)\b/gi;
+      for (const match of source.matchAll(pattern)) matches.push(match[1].replace(/\s+/g, ' ').trim());
+      return matches;
     };
     words.forEach((word) => {
       (Core.extractBoardReferences?.(word.text) || []).forEach((reference) => add(reference.original, [word], word.text));
@@ -697,17 +735,48 @@
           || String(reference.original || '').toUpperCase().includes(String(word.text || '').toUpperCase()));
         add(reference.original, matching.length ? matching : available.slice(0, 1), line.text || reference.original);
       });
+      explicitReferenceMatches(line.text).forEach((reference) => {
+        const compact = reference.replace(/[^A-Z0-9]/gi, '').toUpperCase();
+        const matching = available.filter((word) => {
+          const token = String(word.text || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
+          return token && (compact.includes(token) || token.includes(compact));
+        });
+        add(reference, matching.length ? matching : available.slice(0, 1), line.text || reference, { explicitLabel: true });
+      });
       if (/\bMAIN\s+LV\s+(?:SWITCHBOARD|PANELBOARD)\b/i.test(line.text || '')) {
         const mainWords = available.filter((word) => /MAIN|LV|SWITCHBOARD|PANELBOARD/i.test(word.text || ''));
         add('MAIN-LV-SWITCHBOARD', mainWords.length ? mainWords : available.slice(0, 1), line.text);
       }
     });
+    const referenceLabels = words.filter((word) => /^\s*REF(?:ERENCE)?\s*[:#=-]?\s*$/i.test(String(word.text || '')));
+    const explicitTokens = words.filter((word) => /^(?:DB(?:[\s._/-]+[A-Z0-9]{1,12})+|DBT\d+|DBLL\d+|PBT\d+|PBLL\d+|MSP\d+|LVS\d+|MSB\d+|MDB\d+|SMDB\d+|PB\d+|LS\d+|SB\d+)$/i.test(String(word.text || '').trim()));
+    referenceLabels.forEach((label) => {
+      const nearby = explicitTokens.map((token) => ({
+        token,
+        distance: Math.hypot(token.cx - label.cx, token.cy - label.cy),
+      })).filter((item) => item.distance <= Math.max(55, Math.max(label.width, label.height) * 8))
+        .sort((left, right) => left.distance - right.distance)[0]?.token;
+      if (nearby) add(nearby.text, [label, nearby], `${label.text} ${nearby.text}`, { explicitLabel: true });
+    });
+    const minimumPage = Math.max(1, Math.min(Number(input.pageWidth) || 1, Number(input.pageHeight) || 1));
+    const genericMainCandidates = candidates.filter((candidate) => candidate.norm === 'MAINLVSWITCHBOARD');
+    genericMainCandidates.forEach((generic) => {
+      const nearbySpecific = candidates.filter((candidate) => /^(?:LVS|MSP|MSB|MDB|SMDB)\d/.test(candidate.norm))
+        .map((candidate) => ({ candidate, distance: Math.hypot(candidate.cx - generic.cx, candidate.cy - generic.cy) }))
+        .filter((entry) => entry.distance <= Math.max(90, minimumPage * 0.055))
+        .sort((left, right) => left.distance - right.distance);
+      if (!nearbySpecific[0] || (nearbySpecific[1] && nearbySpecific[1].distance - nearbySpecific[0].distance < minimumPage * 0.015)) return;
+      nearbySpecific[0].candidate.rootLabel = true;
+      generic.aliasOf = nearbySpecific[0].candidate.norm;
+    });
     const byNorm = new Map();
-    candidates.forEach((candidate) => {
+    candidates.filter((candidate) => !candidate.aliasOf).forEach((candidate) => {
       const prior = byNorm.get(candidate.norm);
-      const sourceScore = /^MAIN/.test(candidate.norm) ? 3 : /^(?:LVS|MSB|MDB)/.test(candidate.norm) ? 1 : 0;
+      const sourceScore = candidate.rootLabel || /^(?:MAIN|MSP)/.test(candidate.norm) ? 3
+        : /^(?:LVS|MSB|MDB|SMDB)/.test(candidate.norm) ? 2 : 0;
       candidate.sourceScore = sourceScore;
-      if (!prior || sourceScore > prior.sourceScore || candidate.sourceCell.text.length > prior.sourceCell.text.length) byNorm.set(candidate.norm, candidate);
+      if (!prior || sourceScore > prior.sourceScore || (candidate.explicitLabel && !prior.explicitLabel)
+        || candidate.sourceCell.text.length > prior.sourceCell.text.length) byNorm.set(candidate.norm, candidate);
     });
     return [...byNorm.values()];
   }
@@ -828,6 +897,7 @@
     });
     const minPage = Math.max(1, Math.min(pageWidth, pageHeight));
     const snapDistance = clamp(minPage * 0.028, 16, 90);
+    const anchorCandidatesByNorm = new Map();
     const componentQuality = (componentId) => {
       const component = graph.components[componentId];
       const box = boxObject(component?.bbox);
@@ -837,6 +907,7 @@
     };
     boards.forEach((board) => {
       const box = boxObject(board.bbox);
+      const candidateDistance = Number(board.sourceScore) >= 3 ? clamp(minPage * 0.16, snapDistance, 420) : snapDistance;
       const points = [
         { x: board.cx, y: board.cy },
         { x: box.x0, y: board.cy }, { x: box.x1, y: board.cy },
@@ -846,14 +917,33 @@
         node,
         distance: Math.min(...points.map((point) => distance(point, node))),
         quality: componentQuality(node.component),
-      })).filter((item) => item.distance <= snapDistance && item.quality >= 0.2)
+      })).filter((item) => item.distance <= candidateDistance && item.quality >= 0.2)
         .sort((left, right) => (left.distance + (1 - left.quality) * snapDistance * 0.35) - (right.distance + (1 - right.quality) * snapDistance * 0.35));
+      const distinctComponents = [];
+      const seenComponents = new Set();
+      ranked.forEach((item) => {
+        if (seenComponents.has(item.node.component) || distinctComponents.length >= 6) return;
+        seenComponents.add(item.node.component);
+        distinctComponents.push({ component: item.node.component, nodeId: item.node.id, x: item.node.x, y: item.node.y,
+          distance: round(item.distance), quality: round(item.quality, 3) });
+      });
+      anchorCandidatesByNorm.set(board.norm, distinctComponents);
       board.anchor = ranked[0]?.node || null;
       board.anchorDistance = ranked[0]?.distance ?? null;
       board.anchorConfidence = ranked[0] ? clamp(1 - ranked[0].distance / snapDistance, 0.25, 0.98) : 0;
       board.anchorAmbiguous = Boolean(ranked[1] && ranked[0].node.component !== ranked[1].node.component
         && Math.abs(ranked[0].distance - ranked[1].distance) <= graph.tolerance * 2);
       const nearby = words.filter((word) => Math.hypot(word.cx - board.cx, word.cy - board.cy) <= minPage * 0.08);
+      const detailNearby = words.filter((word) => Math.hypot(word.cx - board.cx, word.cy - board.cy) <= minPage * 0.045);
+      const detailText = detailNearby.map((word) => word.text).join(' ').replace(/\s+/g, ' ');
+      const boardDetailEvidence = /\b(?:PANELBOARD|MAINS?\s+SWITCH\s+PANEL|PANEL\s+RATING|FAULT\s+CURRENT|CABLE\s+ENTRY)\b/i.test(detailText)
+        && /\b(?:SUPPLY|PANEL\s+RATING|FAULT\s+CURRENT|WAY|TP\s*&?\s*N)\b/i.test(detailText);
+      if (boardDetailEvidence) {
+        board.sourceScore = Math.max(Number(board.sourceScore) || 0, /^(?:MAIN|MSP)/.test(board.norm) ? 4 : 2);
+        board.sourceEvidence = 'schematic_board_detail_block';
+      } else if (board.explicitLabel) {
+        board.sourceEvidence = 'explicit_ref_label';
+      }
       const location = nearby.find((word) => /^\s*\[[^\]]{2,80}\]\s*$/.test(word.text));
       const ways = nearby.find((word) => /\b\d{1,3}\s*(?:-|\s)?WAYS?\b/i.test(word.text));
       board.location = location ? location.text.replace(/^\s*\[|\]\s*$/g, '').trim() : null;
@@ -861,13 +951,42 @@
       board.waysTotal = ways ? Number(ways.text.match(/\d{1,3}/)?.[0]) : null;
       board.waysCell = ways ? sourceCell([ways], 'schematic_ways') : null;
     });
-    const anchored = boards.filter((board) => board.anchor && !board.anchorAmbiguous);
-    const rootsByComponent = new Map();
-    anchored.filter((board) => board.sourceScore > 0 || /^(?:LVS|MSB|MDB|MAIN)/.test(board.norm)).forEach((board) => {
-      const prior = rootsByComponent.get(board.anchor.component);
-      const score = board.sourceScore * 4 + componentQuality(board.anchor.component) * 2 - (board.anchorDistance || 0) / snapDistance;
-      if (!prior || score > prior.score) rootsByComponent.set(board.anchor.component, { board, score });
+    const sourceAnchorRecoveries = [];
+    boards.filter((board) => Number(board.sourceScore) >= 3 && board.anchor).forEach((board) => {
+      const candidates = anchorCandidatesByNorm.get(board.norm) || [];
+      const supported = candidates.map((candidate) => {
+        const corroboratingSources = boards.filter((other) => other.norm !== board.norm && other.anchor
+          && other.anchor.component === candidate.component && Number(other.sourceScore) > 0
+          && Number(other.sourceScore) < Number(board.sourceScore));
+        return { candidate, corroboratingSources };
+      }).filter((entry) => entry.corroboratingSources.length >= 2)
+        .sort((left, right) => right.corroboratingSources.length - left.corroboratingSources.length
+          || left.candidate.distance - right.candidate.distance);
+      const selected = supported[0];
+      if (!selected || selected.candidate.component === board.anchor.component) return;
+      const previousComponent = board.anchor.component;
+      board.anchor = graph.nodes[selected.candidate.nodeId];
+      board.anchorDistance = selected.candidate.distance;
+      board.anchorConfidence = clamp(0.7 + Math.min(0.16, selected.corroboratingSources.length * 0.03)
+        - selected.candidate.distance / Math.max(minPage, 1) * 0.2, 0.65, 0.88);
+      board.anchorAmbiguous = false;
+      board.anchorMethod = 'corroborated_outgoing_component';
+      sourceAnchorRecoveries.push({
+        board: board.norm,
+        fromComponent: previousComponent,
+        toComponent: selected.candidate.component,
+        distance: selected.candidate.distance,
+        corroboratingSources: selected.corroboratingSources.map((other) => other.norm),
+      });
     });
+    const anchored = boards.filter((board) => board.anchor && !board.anchorAmbiguous);
+    const sourceCandidatesByComponent = new Map();
+    anchored.filter((board) => board.sourceScore > 0 || /^(?:LVS|MSB|MDB|MAIN)/.test(board.norm)).forEach((board) => {
+      const score = board.sourceScore * 4 + componentQuality(board.anchor.component) * 2 - (board.anchorDistance || 0) / snapDistance;
+      if (!sourceCandidatesByComponent.has(board.anchor.component)) sourceCandidatesByComponent.set(board.anchor.component, []);
+      sourceCandidatesByComponent.get(board.anchor.component).push({ board, score });
+    });
+    sourceCandidatesByComponent.forEach((entries) => entries.sort((left, right) => right.score - left.score));
     const feeds = [];
     const devices = [];
     const unresolvedBoards = [];
@@ -879,16 +998,30 @@
       return rootPathCache.get(key);
     };
     for (const target of anchored) {
-      const root = rootsByComponent.get(target.anchor.component)?.board;
-      if (!root) {
-        if (!(target.sourceScore > 0 || /^(?:LVS|MSB|MDB|MAIN)/.test(target.norm))) unresolvedBoards.push(target.norm);
+      const componentSources = sourceCandidatesByComponent.get(target.anchor.component) || [];
+      const eligibleSources = componentSources.filter((entry) => entry.board.norm !== target.norm
+        && (target.sourceScore <= 0 || entry.board.sourceScore > target.sourceScore));
+      if (!eligibleSources.length) {
+        const authoritativeRoot = Number(target.sourceScore) > 0 && !componentSources.some((entry) => entry.board.norm !== target.norm
+          && Number(entry.board.sourceScore) >= Number(target.sourceScore));
+        if (!authoritativeRoot) unresolvedBoards.push(target.norm);
         continue;
       }
-      if (root.norm === target.norm || root.anchor.id === target.anchor.id) continue;
-      const rootPath = pathFromRoot(root, target);
+      const highestAuthority = Math.max(...eligibleSources.map((entry) => Number(entry.board.sourceScore) || 0));
+      const rootOptions = eligibleSources.filter((entry) => Number(entry.board.sourceScore) === highestAuthority).map((entry) => {
+        const path = pathFromRoot(entry.board, target);
+        if (!path) return null;
+        const inferred = path.edgeIds.filter((edgeId) => graph.edges[edgeId]?.inferred).length;
+        const cost = path.distance + inferred * minPage * 0.08 - entry.board.sourceScore * minPage * 0.01;
+        return { ...entry, path, cost };
+      }).filter(Boolean).sort((left, right) => left.cost - right.cost || right.score - left.score);
+      const root = rootOptions[0]?.board;
+      const rootPath = rootOptions[0]?.path;
       if (!rootPath) { unresolvedBoards.push(target.norm); continue; }
       const rootPathSet = new Set(rootPath.nodeIds);
-      const parentEvidence = anchored.filter((candidate) => candidate.norm !== target.norm && candidate.anchor.component === target.anchor.component)
+      const parentEvidence = anchored.filter((candidate) => candidate.norm !== target.norm
+        && candidate.anchor.component === target.anchor.component && Number(candidate.sourceScore) > 0
+        && (Number(target.sourceScore) <= 0 || Number(candidate.sourceScore) > Number(target.sourceScore)))
         .map((candidate) => {
           const candidatePath = pathFromRoot(root, candidate);
           if (!candidatePath) return null;
@@ -901,9 +1034,20 @@
         }).filter(Boolean)
         .sort((left, right) => right.distanceFromRoot - left.distanceFromRoot
           || right.overlapLength - left.overlapLength || right.candidate.anchorConfidence - left.candidate.anchorConfidence);
-      const selectedParentEvidence = parentEvidence[0] || { candidate: root, mode: 'component_root', overlapLength: 0 };
-      const parent = selectedParentEvidence.candidate;
-      const path = shortestPath(graph, parent.anchor.id, target.anchor.id);
+      let selectedParentEvidence = parentEvidence[0] || { candidate: root, mode: 'component_root', overlapLength: 0 };
+      let parent = selectedParentEvidence.candidate;
+      let path = shortestPath(graph, parent.anchor.id, target.anchor.id);
+      let rejectedIntermediateParent = false;
+      if (path && parent.norm !== root.norm) {
+        const parentInferred = path.edgeIds.filter((edgeId) => graph.edges[edgeId]?.inferred).length;
+        const rootInferred = rootPath.edgeIds.filter((edgeId) => graph.edges[edgeId]?.inferred).length;
+        if (parentInferred > Math.max(4, rootInferred + 2)) {
+          parent = root;
+          path = rootPath;
+          selectedParentEvidence = { candidate: root, mode: 'component_root_low_quality_parent_rejected', overlapLength: 0 };
+          rejectedIntermediateParent = true;
+        }
+      }
       if (!path || path.nodeIds.length < 2) { unresolvedBoards.push(target.norm); continue; }
       const corridor = clamp(minPage * 0.014, 8, 42);
       const pathWords = words.filter((word) => !zones.some((zone) => pointInBox({ x: word.cx, y: word.cy }, zone.bbox))
@@ -959,7 +1103,8 @@
           parentBusbarOverlap: round(selectedParentEvidence.overlapLength || 0),
           crossingPolicy: 'shared_endpoint_or_filled_junction_only',
         },
-        warnings: inferredEdges.length ? ['small_collinear_vector_gap_bridged'] : [],
+        warnings: [...(inferredEdges.length ? ['small_collinear_vector_gap_bridged'] : []),
+          ...(rejectedIntermediateParent ? ['low_quality_intermediate_parent_rejected'] : [])],
       });
       const meter = pathWords.find((word) => /^(?:M|METER)$/i.test(word.text));
       const spd = pathWords.find((word) => /^(?:SPD|1\s*\+\s*2|T1\s*\+\s*T2)$/i.test(word.text));
@@ -968,12 +1113,29 @@
     }
     boards.filter((board) => !board.anchor && !unresolvedBoards.includes(board.norm)).forEach((board) => unresolvedBoards.push(board.norm));
     const warnings = [];
-    if (!rootsByComponent.size) warnings.push('schematic_source_board_not_resolved');
+    if (!sourceCandidatesByComponent.size) warnings.push('schematic_source_board_not_resolved');
     if (unresolvedBoards.length) warnings.push('schematic_topology_unresolved');
     if (ambiguousBoards.length) warnings.push('schematic_topology_ambiguous');
+    if (sourceAnchorRecoveries.length) warnings.push('schematic_source_anchor_recovered');
     const usedInferredBridges = feeds.reduce((sum, feed) => sum + Number(feed.pathEvidence?.inferredBridges || 0), 0);
     const usedSymbolBridges = feeds.reduce((sum, feed) => sum + Number(feed.pathEvidence?.symbolBridges || 0), 0);
     if (usedInferredBridges) warnings.push('schematic_vector_gaps_bridged_for_review');
+    const sourceBoards = [...new Set([...sourceCandidatesByComponent.values()].flatMap((entries) => entries.map((entry) => entry.board.norm)))];
+    const ambiguousSourceComponents = [...sourceCandidatesByComponent.entries()].filter(([, entries]) => entries.length > 1
+      && Math.abs(entries[0].score - entries[1].score) < 0.75).length;
+    if (ambiguousSourceComponents) warnings.push('schematic_peer_source_blocks_require_review');
+    const referenceStats = {
+      candidates: boards.length,
+      explicitLabels: boards.filter((board) => board.explicitLabel).length,
+      detailBlockSources: boards.filter((board) => board.sourceEvidence === 'schematic_board_detail_block').length,
+      anchored: anchored.length,
+      sourceBoards: sourceBoards.length,
+      sourceAnchorRecoveries: sourceAnchorRecoveries.length,
+      ambiguousSourceComponents,
+      tracedFeeds: feeds.length,
+      lowConfidenceFeeds: feeds.filter((feed) => Number(feed.confidence || 0) < 0.6).length,
+      feedsUsingInferredBridges: feeds.filter((feed) => Number(feed.pathEvidence?.inferredBridges || 0) > 0).length,
+    };
     return {
       matched: feeds.length > 0,
       confidence: feeds.length ? feeds.reduce((sum, feed) => sum + feed.confidence, 0) / feeds.length : 0,
@@ -981,12 +1143,15 @@
       feeds,
       devices,
       warnings,
-      sourceBoards: [...rootsByComponent.values()].map((entry) => entry.board.norm),
+      sourceBoards,
       topologyMethod: 'pdf_vector_trace',
       vectorStats: vector.stats || null,
       graphStats: { ...graph.stats, usedInferredBridges, usedSymbolBridges },
       diagnostics: { unresolvedBoards: [...new Set(unresolvedBoards)], ambiguousBoards, exclusionZones: zones,
-        graphStats: { ...graph.stats, usedInferredBridges, usedSymbolBridges } },
+        sourceAnchorRecoveries,
+        sourceAnchorCandidates: Object.fromEntries(boards.filter((board) => board.sourceScore > 0)
+          .map((board) => [board.norm, anchorCandidatesByNorm.get(board.norm) || []])),
+        referenceStats, graphStats: { ...graph.stats, usedInferredBridges, usedSymbolBridges } },
     };
   }
 

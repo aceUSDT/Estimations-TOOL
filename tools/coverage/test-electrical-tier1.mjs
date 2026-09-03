@@ -63,6 +63,7 @@ test('T-01 binds protection and cable values to the correct geometry columns', a
   assert.equal(cableValue(row, 'live_csa_mm2', 'size'), 6);
   assert.equal(cableValue(row, 'cpc_csa_mm2', 'cpc'), 6);
   assert.equal(cableValue(row, 'install_method', 'installMethod'), 'A');
+  assert.equal(row.tripUnit, null, 'a repeated cable-size decimal must never become a trip unit');
 });
 
 test('T-02 reports BS EN 61009 rows as 30 mA RCBOs', async () => {

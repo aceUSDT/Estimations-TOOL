@@ -14,14 +14,14 @@
 
   const COLUMN_DEFINITIONS = [
     { role: 'way', patterns: [/\bWAY\b/, /^CCT$/, /^CKT$/, /^CIRCUIT\s*(?:NO|NUMBER)?$/] },
-    { role: 'phase', patterns: [/\bPHASE\b/, /L1.*L2.*L3/, /LINE.*PHASE/] },
+    { role: 'phase', patterns: [/^PHASE(?:\s+(?:NO|NUMBER))?$/, /L1.*L2.*L3/, /LINE.*PHASE/] },
     { role: 'device_standard', patterns: [/DEVICE.*BS/, /BS.*(?:EN|STANDARD)/, /PROTECTION.*STANDARD/] },
     { role: 'device_class', patterns: [/DEVICE.*(?:CLASS|FAMILY)/, /PROTECTIVE.*DEVICE.*TYPE/, /^MCB\s*\/\s*RCBO$/] },
-    { role: 'trip_unit', patterns: [/^TYPE$/, /TRIP.*UNIT/, /RELEASE.*TYPE/] },
+    { role: 'trip_unit', patterns: [/TRIP.*UNIT/, /RELEASE.*TYPE/] },
     { role: 'product_range', patterns: [/PRODUCT.*RANGE/, /FRAME.*(?:SIZE|RANGE)/, /DEVICE.*RANGE/] },
-    { role: 'rating', patterns: [/\bRATING\b.*(?:A|AMP)/, /CURRENT.*RATING/, /^IN\s*\(?A\)?$/] },
+    { role: 'rating', patterns: [/\bRATING\b.*(?:\bA\b|\bAMPS?\b)/, /CURRENT.*RATING/, /^IN\s*\(?A\)?$/] },
     { role: 'trip_curve', patterns: [/TRIP.*CURVE/, /CHARACTERISTIC/, /^CURVE$/] },
-    { role: 'pole_configuration', patterns: [/POLE.*(?:CONFIG|NUMBER|NO)/, /NO.*OF.*POLES/, /^POLES?$/] },
+    { role: 'pole_configuration', patterns: [/POLE.*(?:CONFIG|NUMBER|NO)/, /(?:NO|NUMBER).*OF.*POLES/, /^POLES?$/] },
     { role: 'breaking_capacity', patterns: [/SHORT.*CIRCUIT.*CAPACITY/, /(?=.*\bSHORT\b)(?=.*\bCIRCUIT\b)(?=.*\bCAPACITY\b)/, /BREAKING.*CAPACITY/, /FAULT.*RATING/, /^KA$/] },
     { role: 'afdd', patterns: [/\bAFDD\b/, /\bAFFD\b/, /ARC.*FAULT/] },
     { role: 'rcd', patterns: [/^RCD$/, /RCD.*(?:YES|NO|PROTECT)/] },
@@ -201,6 +201,28 @@
     });
   }
 
+  function scheduleGeometryWords(words, input = {}) {
+    const list = words || [];
+    const axis = (word) => {
+      const angle = ((Number(word.rotation) % 360) + 360) % 360;
+      return (angle >= 55 && angle <= 125) || (angle >= 235 && angle <= 305) ? 'vertical' : 'horizontal';
+    };
+    const vertical = list.filter((word) => axis(word) === 'vertical').length;
+    const horizontal = list.length - vertical;
+    const calibratedRotation = (input.calibrationHint?.regions || []).some((region) => {
+      const angle = normaliseRightAngle(region.viewerRotation || region.sourceViewerRotation || 0);
+      return angle === 90 || angle === 270;
+    });
+    const verticalSchedule = vertical >= 8 && vertical >= Math.max(4, horizontal * 1.2);
+    if (!calibratedRotation && !verticalSchedule) return { words: list, normalised: false, vertical, horizontal };
+    return {
+      words: list.map((word) => ({ ...word, sourceRotation: word.rotation, rotation: 0 })),
+      normalised: true,
+      vertical,
+      horizontal,
+    };
+  }
+
   function spatialRows(words, yTolerance = null) {
     const clean = horizontalWords(words).slice().sort((a, b) => a.cy - b.cy || a.x0 - b.x0);
     const medianHeight = clean.length ? clean.map((word) => word.height).sort((a, b) => a - b)[Math.floor(clean.length / 2)] : 8;
@@ -229,6 +251,18 @@
     });
   }
 
+  function compositeWayPhase(value) {
+    const source = String(value || '').trim().toUpperCase();
+    const labelled = source.replace(/^(?:WAY|CCT|CKT|CIRCUIT)\s*[:#-]?\s*/i, '').replace(/\s+/g, '');
+    const match = labelled.match(/^([A-Z]{1,3}\d{1,3})(?:[\/-]?)(L[123])$/);
+    if (!match || Number(match[1].match(/\d+$/)?.[0]) > 200) return null;
+    // Composite labels such as A1L1/A1L2/A1L3 are phase lanes of one
+    // electrical way. Group by the printed base identifier so a populated
+    // middle lane can be reconciled as one three-pole device, while genuinely
+    // independent phase rows remain separate rows after lane parsing.
+    return { way: match[1], phase: match[2], printed: labelled };
+  }
+
   function extractWayIdentifier(value) {
     const source = String(value || '').trim().toUpperCase();
     const explicitlyLabelled = /^(?:WAY|CCT|CKT|CIRCUIT)\b/i.test(source);
@@ -238,6 +272,8 @@
       const way = Number(numericPhase[1]);
       return way >= 1 && way <= 200 ? way : null;
     }
+    const composite = compositeWayPhase(value);
+    if (composite) return composite.way;
     const hasOpaqueSeparator = /^[A-Z]{1,3}[-/]\d{1,3}$/.test(labelled);
     const normalisedOpaque = labelled.replace(/^([A-Z]{1,3})[-/](\d{1,3})$/, '$1$2');
     const opaque = normalisedOpaque.match(/^([A-Z]{1,3}\d{1,3})$/)?.[1] || null;
@@ -247,7 +283,9 @@
   }
 
   function extractPhase(value) {
-    return String(value || '').trim().match(/^(?:\d{1,3})?(L[123])$/i)?.[1]?.toUpperCase() || null;
+    return compositeWayPhase(value)?.phase
+      || String(value || '').trim().match(/^(?:\d{1,3})?(?:[\/-]?)(L[123])$/i)?.[1]?.toUpperCase()
+      || null;
   }
 
   function clusterByX(words, tolerance) {
@@ -292,14 +330,44 @@
     }).filter((cluster) => cluster.sorted.length >= (options.allowSingle ? 1 : 2));
     scored.sort((a, b) => b.score - a.score);
     const anchors = scored[0]?.sorted || [];
+    if (options.preserveLanes) return anchors;
     const byWay = new Map();
     for (const anchor of anchors) {
       const way = extractWayIdentifier(anchor.text);
       if (!byWay.has(way)) byWay.set(way, []);
       byWay.get(way).push(anchor);
     }
-    return Array.from(byWay.values()).map((group) => group.find((word) => extractPhase(word.text) === 'L2') || group[0])
+    return Array.from(byWay.values()).map((group) => {
+      // A page/footer number can share the way column's x coordinate. When the
+      // schedule prints phase-coded identifiers (1L1/1L2/1L3), those are the
+      // bounded way evidence; a bare "1" outside that group must not stretch
+      // way 1's band over the rows that follow.
+      const phaseCoded = group.filter((word) => extractPhase(word.text));
+      const boundedGroup = phaseCoded.length ? phaseCoded : group;
+      const ordered = boundedGroup.slice().sort((left, right) => left.cy - right.cy);
+      const representative = ordered.find((word) => extractPhase(word.text) === 'L2') || ordered[0];
+      return { ...representative, groupWords: ordered };
+    })
       .sort((a, b) => a.cy - b.cy);
+  }
+
+  function wayAnchorExtent(anchor) {
+    const words = Array.isArray(anchor?.groupWords) && anchor.groupWords.length ? anchor.groupWords : [anchor];
+    const ys = words.map((word) => Number(word?.cy)).filter(Number.isFinite);
+    return {
+      top: ys.length ? Math.min(...ys) : Number(anchor?.cy) || 0,
+      bottom: ys.length ? Math.max(...ys) : Number(anchor?.cy) || 0,
+    };
+  }
+
+  function wayAnchorBand(anchors, index, dataTop, dataBottom) {
+    const current = wayAnchorExtent(anchors[index]);
+    const prior = index > 0 ? wayAnchorExtent(anchors[index - 1]) : null;
+    const next = index < anchors.length - 1 ? wayAnchorExtent(anchors[index + 1]) : null;
+    return {
+      top: prior ? (prior.bottom + current.top) / 2 : dataTop,
+      bottom: next ? (current.bottom + next.top) / 2 : dataBottom,
+    };
   }
 
   function median(values) {
@@ -326,11 +394,22 @@
     }
     const stripTolerance = Math.max(6, pageWidth * 0.012);
     const strips = clusterByX(headerWords, stripTolerance).map((cluster) => {
-      const ordered = cluster.words.slice().sort((a, b) => a.cy - b.cy);
+      const yOrdered = cluster.words.slice().sort((a, b) => a.cy - b.cy);
+      const rotations = yOrdered.map((word) => Number(word.rotation)).filter(Number.isFinite);
+      const stripRotation = median(rotations) || 0;
+      // pdf.js emits the tokens of -90 degree column labels from the bottom
+      // of the printed phrase upward. Read those strips in reverse geometric
+      // order so "Rating (A)", "RCD/RCBO Type", and similar labels remain
+      // meaningful after ingestion splits a text item into individual words.
+      const ordered = stripRotation < -45 ? yOrdered.slice().reverse() : yOrdered;
       const text = ordered.map((word) => word.text).join(' ');
       add(text, ordered, 'vertical_strip', 0.92);
+      if (ordered.length > 1) {
+        const alternate = ordered.slice().reverse();
+        add(alternate.map((word) => word.text).join(' '), alternate, 'vertical_strip_alternate', 0.78);
+      }
       return { x: cluster.cx, text, words: ordered };
-    });
+    }).sort((left, right) => left.x - right.x);
     for (let index = 0; index < strips.length - 1; index += 1) {
       const grouped = [strips[index]];
       for (let next = index + 1; next < strips.length && next <= index + 2; next += 1) {
@@ -397,7 +476,8 @@
     const tripUnitX = repeatedX(dataWords, (word) => {
       if (Number.isFinite(standardX) && word.cx <= standardX) return false;
       if (Number.isFinite(ratingX) && word.cx >= ratingX) return false;
-      return /^(?:TMD|TM-D|LSI|LSIG|MICROLOGIC|\d{1,2}\.\d+)$/i.test(word.text);
+      return canonicalTripUnit(word.text) != null || /^MICROLOGIC$/i.test(String(word.text || ''))
+        || /^\d{1,2}\.\d+$/.test(String(word.text || '').trim());
     }, tolerance);
     const indicatorClusters = clusterByX(dataWords.filter((word) => indicatorValue(word.text) != null), tolerance)
       .filter((cluster) => cluster.words.length >= 2);
@@ -494,10 +574,23 @@
       }
     }
 
+    const phaseColumn = selected.get('phase');
+    const phaseHeaderIsConductorSize = phaseColumn && candidates.some((candidate) => {
+      if (Math.abs(candidate.x - phaseColumn.x) > Math.max(tolerance * 1.5, pageWidth * 0.025)) return false;
+      const label = normaliseLabel(candidate.text);
+      return /(?:PHASE.*NEUTRAL|NEUTRAL.*PHASE)/.test(label) && /\bMM\b|CONDUCTOR|CSA/.test(label);
+    });
+    if (phaseColumn && !Number.isFinite(guesses.phase) && phaseHeaderIsConductorSize) selected.delete('phase');
+
     const deviceClassColumn = selected.get('device_class');
     const tripUnitColumn = selected.get('trip_unit');
     if (deviceClassColumn && tripUnitColumn && !Number.isFinite(tripUnitX)
       && Math.abs(deviceClassColumn.x - tripUnitColumn.x) <= tolerance * 1.5) {
+      selected.delete('trip_unit');
+    }
+    const cpcColumn = selected.get('cpc_csa');
+    if (selected.has('trip_unit') && cpcColumn && !Number.isFinite(tripUnitX)
+      && Math.abs(cpcColumn.x - selected.get('trip_unit').x) <= Math.max(tolerance * 2, pageWidth * 0.03)) {
       selected.delete('trip_unit');
     }
     const standardColumn = selected.get('device_standard');
@@ -515,8 +608,15 @@
     const semantic = ['phase', 'circuit_reference', 'description', 'device_class', 'breaking_capacity', 'trip_curve']
       .filter((role) => selected.has(role)).length;
     const confidence = Math.min(0.99, 0.35 + critical * 0.14 + semantic * 0.045 + Math.min(0.12, wayAnchors.length * 0.015));
+    const ratingHeader = normaliseLabel(selected.get('rating')?.evidence?.text || '');
+    const combinedProtectionRating = candidates.some((candidate) => {
+      const label = normaliseLabel(candidate.text);
+      return /\bMCB\s+RCBO\b/.test(label) && /\bRATING\b/.test(label);
+    });
+    const deviceFamilyHint = combinedProtectionRating || /\bMCB\s+RCBO\b/.test(ratingHeader)
+      ? 'MCB_OR_RCBO' : null;
     return {
-      columns, confidence,
+      columns, confidence, deviceFamilyHint,
       headerBand: [0, headerTop, pageWidth, dataTop - headerTop],
       dataBand: [0, dataTop, pageWidth, dataBottom - dataTop],
       rowSpacing,
@@ -557,6 +657,7 @@
       dataBand: [0, dataTop, pageWidth, Math.max(1, dataBottom - dataTop)],
       rowSpacing,
       continuation: true,
+      deviceFamilyHint: hint.deviceFamilyHint || null,
     };
   }
 
@@ -585,10 +686,49 @@
     return [x, y, width, height];
   }
 
+  function normaliseRightAngle(value) {
+    const angle = ((Number(value) || 0) % 360 + 360) % 360;
+    return (Math.round(angle / 90) % 4) * 90;
+  }
+
+  function rotatePagePoint(point, pageWidth, pageHeight, rotation = 0) {
+    const x = Number(Array.isArray(point) ? point[0] : point?.x);
+    const y = Number(Array.isArray(point) ? point[1] : point?.y);
+    const width = Math.max(1, Number(pageWidth) || 1);
+    const height = Math.max(1, Number(pageHeight) || 1);
+    const angle = normaliseRightAngle(rotation);
+    if (angle === 90) return [height - y, x];
+    if (angle === 180) return [width - x, height - y];
+    if (angle === 270) return [y, width - x];
+    return [x, y];
+  }
+
+  function rotatePageBox(value, pageWidth, pageHeight, rotation = 0) {
+    const box = bboxObject({ bbox: value });
+    if (!box) return null;
+    const angle = normaliseRightAngle(rotation);
+    const width = Math.max(1, Number(pageWidth) || 1);
+    const height = Math.max(1, Number(pageHeight) || 1);
+    const boxWidth = box.x1 - box.x0;
+    const boxHeight = box.y1 - box.y0;
+    if (angle === 90) return [height - box.y1, box.x0, boxHeight, boxWidth];
+    if (angle === 180) return [width - box.x1, height - box.y1, boxWidth, boxHeight];
+    if (angle === 270) return [box.y0, width - box.x1, boxHeight, boxWidth];
+    return [box.x0, box.y0, boxWidth, boxHeight];
+  }
+
+  function unrotatePageBox(value, pageWidth, pageHeight, rotation = 0) {
+    const angle = normaliseRightAngle(rotation);
+    const displayWidth = angle === 90 || angle === 270 ? pageHeight : pageWidth;
+    const displayHeight = angle === 90 || angle === 270 ? pageWidth : pageHeight;
+    return rotatePageBox(value, displayWidth, displayHeight, (360 - angle) % 360);
+  }
+
   function transformNormalisedBox(box, transform) {
     const [x, y, width, height] = box;
     if (transform === 'clockwise') return [1 - y - height, x, height, width];
     if (transform === 'counterclockwise') return [y, 1 - x - width, height, width];
+    if (transform === 'halfturn') return [1 - x - width, 1 - y - height, width, height];
     return [x, y, width, height];
   }
 
@@ -596,6 +736,7 @@
     const [x, y] = point;
     if (transform === 'clockwise') return [1 - y, x];
     if (transform === 'counterclockwise') return [y, 1 - x];
+    if (transform === 'halfturn') return [1 - x, 1 - y];
     return [x, y];
   }
 
@@ -669,14 +810,31 @@
     const sourceOrientation = record.orientation
       || (Number(record.sourceWidth) >= Number(record.sourceHeight) ? 'landscape' : 'portrait');
     const targetOrientation = width >= height ? 'landscape' : 'portrait';
+    const legacyCoordinateSpace = Number(record.coordinateVersion || 0) < 2;
     const transforms = sourceOrientation && sourceOrientation !== targetOrientation
-      ? ['clockwise', 'counterclockwise', 'identity'] : ['identity'];
+      ? ['clockwise', 'counterclockwise', 'identity', 'halfturn']
+      : (legacyCoordinateSpace ? ['identity', 'clockwise', 'counterclockwise', 'halfturn'] : ['identity']);
     const candidates = transforms.map((transform, index) => ({
       norm: normalisedCalibrationBox(transformNormalisedBox(base, transform)),
       transform,
       preference: transforms.length - index,
       relocated: false,
     })).filter((candidate) => candidate.norm);
+    if (legacyCoordinateSpace) {
+      const sourceWidth = Math.max(1, Number(record.sourceWidth) || width);
+      const sourceHeight = Math.max(1, Number(record.sourceHeight) || height);
+      const legacyPixels = [base[0] * sourceWidth, base[1] * sourceHeight,
+        base[2] * sourceWidth, base[3] * sourceHeight];
+      [90, 180, 270].forEach((viewerRotation, index) => {
+        const restored = unrotatePageBox(legacyPixels, sourceWidth, sourceHeight, viewerRotation);
+        const norm = restored && normalisedCalibrationBox([
+          restored[0] / sourceWidth, restored[1] / sourceHeight,
+          restored[2] / sourceWidth, restored[3] / sourceHeight,
+        ]);
+        if (norm) candidates.push({ norm, transform: `legacy-viewer-${viewerRotation}`,
+          preference: 1 - index * 0.01, relocated: false });
+      });
+    }
     const words = collectSpatialWords(input);
     if (words.length && Number(record.sourcePage) !== Number(input.documentPage || input.page)) {
       const cells = spatialRows(words).flatMap((row) => row.cells || []);
@@ -811,7 +969,7 @@
   function cleanBoardReferenceField(value) {
     const source = String(value || '').replace(/\s+/g, ' ').trim();
     return source.replace(
-      /^(?:(?:BOARD\s+DATA)\s*)?(?:(?:(?:DIST\s*\/\s*BD|DISTRIBUTION\s+BOARD|DB|BOARD)\s*(?:REF(?:ERENCE)?|IDENTITY))|(?:ID|IDENTIFICATION)\s*(?:NO\.?|NUMBER|REF(?:ERENCE)?)?)\s*[:#=\-]?\s*/i,
+      /^(?:(?:BOARD\s+DATA)\s*)?(?:(?:MAIN\s+(?:(?:MCCB|MCB|ACB)\s+)?BOARD)|(?:(?:DIST\s*\/\s*BD|DISTRIBUTION\s+BOARD|DB|BOARD)\s*(?:REF(?:ERENCE)?|IDENTITY))|(?:ID|IDENTIFICATION)\s*(?:NO\.?|NUMBER|REF(?:ERENCE)?)?)\s*[:#=\-]?\s*/i,
       '',
     ).trim();
   }
@@ -916,6 +1074,11 @@
     if (/^(?:YES|Y|TRUE|1|CHECKED|TICK)$/i.test(token) || /[\u2713\u2714\u2611\uF0FC]/.test(token)) return true;
     if (/^(?:NO|N|FALSE|0|X|-|--)$/i.test(token) || /[\u00D7\u2715\u2716\u2610\uF0FB]/.test(token)) return false;
     return null;
+  }
+
+  function explicitAbsentValue(value) {
+    const token = String(typeof value === 'object' ? value?.text || '' : value ?? '').trim();
+    return Boolean(token) && /^(?:N\s*\/\s*A|NA|N\.A\.|NOT\s+APPLICABLE|NONE|NO|-|--)$/i.test(token);
   }
 
   function highlightBox(source, context = {}) {
@@ -1156,6 +1319,8 @@
   }
 
   function phaseValues(value) {
+    const lanePhase = extractPhase(value);
+    if (lanePhase) return [lanePhase];
     const explicit = Core.explicitPhaseEvidence?.(value);
     if (explicit?.phases?.length === 3) return explicit.phases.slice();
     const source = String(value || '').toUpperCase().replace(/\s+/g, '');
@@ -1172,11 +1337,14 @@
     const deviceClassText = cellText(cells, 'device_class');
     const typeText = cellText(cells, 'trip_unit');
     const typeDevice = typeText.match(/^\s*(AFDD\s*\+\s*RCBO|RCBO|MCCB|MCB|ACB|RCCB|RCD|FUSE|ISOLATOR)\s*$/i)?.[1] || null;
-    const resolvedDeviceClassText = deviceClassText || typeDevice || '';
+    let resolvedDeviceClassText = deviceClassText || typeDevice || context.fixedDeviceClass || '';
     const typeCurve = typeDevice ? null : typeText.match(/^\s*([BCD])\s*$/i)?.[1]?.toUpperCase() || null;
-    const tripUnit = typeCurve || typeDevice ? null
-      : (parseProtectionDescriptor(typeText).tripUnit || (/^\d+(?:\.\d+)?$/.test(typeText) ? typeText : null));
-    const productRange = protectionProductRange([standardText, deviceClassText, typeText, cellText(cells, 'product_range'), allText].join(' '));
+    const tripUnit = typeCurve || typeDevice ? null : canonicalTripUnit(typeText);
+    const numericTripSetting = /^\d{1,2}\.\d+$/.test(typeText) ? typeText : null;
+    let productRange = protectionProductRange([standardText, deviceClassText, typeText, cellText(cells, 'product_range'), allText].join(' '));
+    if (!productRange && numericTripSetting && /MICROLOGIC/i.test(String(context.boardProtectionText || ''))) {
+      productRange = `Micrologic ${numericTripSetting}`;
+    }
     let curve = (cellText(cells, 'trip_curve').match(/\b[BCD]\b/i)?.[0] || typeCurve || '').toUpperCase() || null;
     const rating = numberValue(cells.rating, { max: 6300 });
     const ka = numberValue(cells.breaking_capacity, { max: 150 });
@@ -1189,10 +1357,11 @@
     const detectedReference = Core.extractBoardReferences(circuitText)[0] || null;
     const circuitReference = detectedReference?.original || null;
     const descriptionCellText = cellText(cells, 'description');
-    const description = descriptionCellText || circuitText || '';
+    let description = descriptionCellText || circuitText || '';
     const occupancyLabels = new Set([
-      descriptionCellText, circuitText, deviceClassText, standardText, typeText, cellText(cells, 'occupancy'),
-    ].map((value) => Core.occupancyLabel?.(value)).filter(Boolean));
+      descriptionCellText, circuitText, deviceClassText, standardText, typeText,
+      cellText(cells, 'occupancy'), cellText(cells, 'circuit_type'),
+    ].map((value) => Core.scheduleOccupancyLabel?.(value) || Core.occupancyLabel?.(value)).filter(Boolean));
     const spareText = occupancyLabels.has('spare');
     const explicitSpace = occupancyLabels.has('space');
     const rcdRaw = numberValue(cells.rcd_ma, { min: 0.001, max: 1000 });
@@ -1200,17 +1369,23 @@
     const rcdIndicator = indicatorValue(cells.rcd);
     const textualRcdProtection = /\b(?:C\s*\/\s*W|WITH)\s+RCD\b/i.test(allText);
     const dedicatedRcdTypeText = [cellText(cells, 'rcd_type'), cellText(cells, 'rcd')].filter(Boolean).join(' ');
-    const rcdType = dedicatedRcdTypeText.match(/\b(?:RCD\s*)?(?:TYPE\s*)?(AC|A|B|F)\b/i)?.[1]?.toUpperCase() || null;
+    const rcdType = explicitAbsentValue(dedicatedRcdTypeText) ? null
+      : dedicatedRcdTypeText.match(/\b(?:RCD\s*)?(?:TYPE\s*)?(AC|A|B|F)\b/i)?.[1]?.toUpperCase() || null;
     const rcdArrangementText = cellText(cells, 'rcd_arrangement').toLowerCase();
     const rcdArrangement = rcdArrangementText.match(/\b(integral|separate|shared|upstream)\b/)?.[1] || null;
-    const rcdProtected = rcdIndicator === true || rcdMa != null || textualRcdProtection || Boolean(rcdType || rcdArrangement) ? true : rcdIndicator;
+    const explicitNoRcd = [cells.rcd, cells.rcd_ma, cells.rcd_type].some(explicitAbsentValue);
+    const rcdProtected = rcdIndicator === true || rcdMa != null || textualRcdProtection || Boolean(rcdType || rcdArrangement)
+      ? true : (explicitNoRcd ? false : rcdIndicator);
     const afddIndicator = indicatorValue(cells.afdd);
+    if (!resolvedDeviceClassText && context.deviceFamilyHint === 'MCB_OR_RCBO' && rating != null) {
+      resolvedDeviceClassText = rcdProtected === true ? 'RCBO' : 'MCB';
+    }
     const earthFaultText = cellText(cells, 'earth_fault_device');
     const arcFlashText = cellText(cells, 'arc_flash_device');
     const resolution = resolveProtectionDevice({
       standard: standardText,
       deviceClass: resolvedDeviceClassText,
-      tripUnit,
+      tripUnit: tripUnit || numericTripSetting,
       rating,
       description,
       rcdProtected,
@@ -1222,14 +1397,20 @@
     const hasDeviceEvidence = Boolean(resolution.device || rating != null || standardText || resolvedDeviceClassText);
     const occupancyConflict = occupancyLabels.size > 1;
     const spare = spareText;
+    if (spare && !description) description = 'Spare';
     const space = explicitSpace || (!spare && !hasDeviceEvidence && !description);
-    const calibratedPole = parseProtectionDescriptor(cellText(cells, 'pole_configuration'));
+    const poleText = cellText(cells, 'pole_configuration');
+    const calibratedPole = parseProtectionDescriptor(poleText);
+    const numericPole = Number(poleText.match(/^\s*([1-4])\s*$/)?.[1]) || null;
     const poles = calibratedPole.poles != null ? calibratedPole.poles
+      : (numericPole != null ? numericPole
       : (uniquePhases.length >= 3 && hasDeviceEvidence ? 3
-        : (uniquePhases.length === 1 && hasDeviceEvidence ? 1 : null));
+        : (uniquePhases.length === 1 && hasDeviceEvidence ? 1 : null)));
     const phase = poles === 3 ? '3PH' : (uniquePhases.length === 1 ? uniquePhases[0] : null);
     const circuitTypeRaw = cellText(cells, 'circuit_type').toUpperCase();
-    const circuitConfig = /^(?:RD|RAD|RADIAL)$/.test(circuitTypeRaw) ? 'RADIAL' : (/^(?:RG|RING)$/.test(circuitTypeRaw) ? 'RING' : null);
+    const circuitConfig = /^(?:R|RD|RAD|RADIAL|RADIAL FINAL CIRCUIT)$/.test(circuitTypeRaw)
+      ? 'RADIAL'
+      : (/^(?:RG|RFC|RING|RING FINAL CIRCUIT)$/.test(circuitTypeRaw) ? 'RING' : null);
     const liveCsa = numberValue(cells.line_csa, { max: 1000 });
     const cpcCsa = numberValue(cells.cpc_csa, { max: 1000 });
     const cableType = cellText(cells, 'cable_type') || null;
@@ -1237,8 +1418,10 @@
     const installMethod = cableType || referenceMethod;
     const confidence = Math.min(resolution.confidence || 0.55, schemaConfidence || 0.55,
       ...Object.values(cells).filter(Boolean).map((cell) => Number(cell.confidence) || 0.6));
-    const requiresReview = Boolean(inferredCurve) || space || occupancyConflict || (!spare && (!resolution.device || rating == null
-      || ((resolution.device === 'RCBO' || resolution.device === 'AFDD+RCBO') && rcdMa == null))) || confidence < 0.78;
+    const requiresReview = spare || space
+      ? occupancyConflict
+      : Boolean(inferredCurve || occupancyConflict || !resolution.device || rating == null
+        || ((resolution.device === 'RCBO' || resolution.device === 'AFDD+RCBO') && rcdMa == null) || confidence < 0.78);
     const rowCells = Object.entries(cells)
       .filter(([role, cell]) => Boolean(cell) && !(context.phaseLane && role === 'way'))
       .map(([, cell]) => cell);
@@ -1299,8 +1482,8 @@
         phase: cells.phase || source,
         device: cells.device_class || cells.device_standard || source,
         protectionStandard: cells.device_standard || source,
-        tripUnit: cells.trip_unit || source,
-        productRange: cells.product_range || cells.device_class || cells.trip_unit || source,
+        tripUnit: tripUnit ? (cells.trip_unit || source) : null,
+        productRange: productRange ? (cells.product_range || cells.device_class || cells.trip_unit || source) : null,
         rating: cells.rating || source,
         curve: cells.trip_curve || cells.trip_unit || source,
         breakingCapacity: cells.breaking_capacity || source,
@@ -1346,13 +1529,14 @@
   }
 
   function inferPhaseLaneModel(words, wayAnchors, schema, boardHeader = {}) {
-    const ys = wayAnchors.map((word) => word.cy);
     const sequences = new Map();
     for (let index = 0; index < wayAnchors.length; index += 1) {
-      const top = index ? (ys[index - 1] + ys[index]) / 2 : schema.dataBand[1];
-      const bottom = index < wayAnchors.length - 1
-        ? (ys[index] + ys[index + 1]) / 2
-        : schema.dataBand[1] + schema.dataBand[3];
+      const { top, bottom } = wayAnchorBand(
+        wayAnchors,
+        index,
+        schema.dataBand[1],
+        schema.dataBand[1] + schema.dataBand[3],
+      );
       const lanes = physicalPhaseLanes(words.filter((word) => word.cy >= top && word.cy < bottom), schema);
       const labels = lanes.map((lane) => lane.printedPhase);
       if (labels.length !== 3 || new Set(labels).size !== 3 || labels.some((label) => !/^L[123]$/.test(label || ''))) continue;
@@ -1461,6 +1645,10 @@
         : interpreted;
     }
     const aggregate = parseSpatialRow(aggregateCells, schema.confidence, context);
+    if (aggregate && phases.length >= 2) {
+      aggregate.physicalSlotCount = phases.length;
+      aggregate.physicalPhaseSlots = phases.map((item) => item.phase).filter(Boolean);
+    }
     const aggregateCorrection = aggregateCells.phase?.correction;
     const aggregateRepair = aggregateCorrection ? {
       original: aggregateCorrection.original,
@@ -1484,6 +1672,8 @@
       let row = parseSpatialRow(cells, schema.confidence, { ...context, phaseLane: true, laneTop, laneBottom });
       row = applyPhaseReconciliation(row, item.phaseRepair, item.phaseConflict, cells.phase);
       if (!row) return null;
+      row.physicalSlotCount = 1;
+      row.physicalPhaseSlots = item.phase ? [item.phase] : [];
       row.phaseSlotIndependent = true;
       row.sharedPhaseSpan = false;
       row.poleEvidenceBasis = 'bounded_phase_lane';
@@ -1528,8 +1718,10 @@
     // decisive evidence against treating a lone populated middle lane as a
     // merged three-pole device.
     if (technical.length >= 2 || explicitOccupancies.length) return phaseRows;
-    if (technical.length === 1 && technical[0].phase !== 'L2') return phaseRows;
-    if ((technical.length === 1 && technical[0].phase === 'L2')
+    const soleTechnicalIndex = technical.length === 1 ? phaseRows.indexOf(technical[0]) : -1;
+    const soleTechnicalLane = soleTechnicalIndex >= 0 ? phases[soleTechnicalIndex]?.phase : null;
+    if (technical.length === 1 && soleTechnicalLane !== 'L2') return phaseRows;
+    if ((technical.length === 1 && soleTechnicalLane === 'L2')
       || (technical.length === 0 && meaningful.length === 1 && meaningful[0].phase === 'L2')) {
       aggregate.inferredPoleGrouping = true;
       aggregate.sharedPhaseSpan = true;
@@ -1664,7 +1856,9 @@
     if (!roles.has('circuit_reference') && !roles.has('description')) blockingReasons.push('circuit_column_missing');
     if (!populatedRows.length) blockingReasons.push('no_bounded_schedule_rows');
     if (Number(schema?.confidence || 0) < 0.62) blockingReasons.push('column_schema_low_confidence');
-    if (!roles.has('device_standard') && !roles.has('device_class')) reviewReasons.push('device_column_missing');
+    if (!roles.has('device_standard') && !roles.has('device_class') && !schema?.deviceFamilyHint) {
+      reviewReasons.push('device_column_missing');
+    }
     const reasons = [...blockingReasons, ...reviewReasons];
     return {
       accepted: blockingReasons.length === 0,
@@ -2170,15 +2364,15 @@
     const firstIdentifier = profile.identifiers[0];
     if (!firstIdentifier) return null;
     const headerBottom = firstIdentifier.cy;
-    const id = lastHeaderWord(words, /^ID$/, headerBottom, 0, pageWidth * 0.18)
+    const id = lastHeaderWord(words, /^ID(?:\s+NO)?$/, headerBottom, 0, pageWidth * 0.18)
       || { cx: pageWidth * 0.07, x0: pageWidth * 0.05, x1: pageWidth * 0.09 };
-    const connected = lastHeaderWord(words, /^CONNECTED$/, headerBottom, pageWidth * 0.08, pageWidth * 0.44);
-    const cores = lastHeaderWord(words, /^CORES$/, headerBottom, pageWidth * 0.25, pageWidth * 0.52);
-    const cable = lastHeaderWord(words, /^CABLE$/, headerBottom, pageWidth * 0.36, pageWidth * 0.72);
-    const length = lastHeaderWord(words, /^LENGTH$/, headerBottom, pageWidth * 0.55, pageWidth * 0.78);
-    const ir = lastHeaderWord(words, /^IR\s*A$/, headerBottom, pageWidth * 0.7, pageWidth);
-    const rating = lastHeaderWord(words, /^IN\s*A$/, headerBottom, pageWidth * 0.72, pageWidth);
-    const device = lastHeaderWord(words, /^TYPE$/, headerBottom, pageWidth * 0.76, pageWidth);
+    const connected = lastHeaderWord(words, /^CONNECTED(?:\s+(?:FROM|TO))?$/, headerBottom, pageWidth * 0.08, pageWidth * 0.44);
+    const cores = lastHeaderWord(words, /^CORES?$/, headerBottom, pageWidth * 0.25, pageWidth * 0.52);
+    const cable = lastHeaderWord(words, /^CABLE(?:\s+TYPE)?$/, headerBottom, pageWidth * 0.36, pageWidth * 0.72);
+    const length = lastHeaderWord(words, /^LENGTH(?:\s+M)?$/, headerBottom, pageWidth * 0.55, pageWidth * 0.78);
+    const ir = lastHeaderWord(words, /^IR(?:\s*A)?$/, headerBottom, pageWidth * 0.7, pageWidth);
+    const rating = lastHeaderWord(words, /^IN(?:\s*A)?$/, headerBottom, pageWidth * 0.72, pageWidth);
+    const device = lastHeaderWord(words, /^(?:DEVICE\s+)?TYPE$/, headerBottom, pageWidth * 0.76, pageWidth);
     const rcd = lastHeaderWord(words, /^RCD$/, headerBottom, pageWidth * 0.82, pageWidth);
     const afdd = lastHeaderWord(words, /^A(?:F|FF)DD$/, headerBottom, pageWidth * 0.88, pageWidth);
     if (!connected || !cores || !cable || !length || !rating || !device || !rcd || !afdd) return null;
@@ -2190,7 +2384,8 @@
       connectedRight: Math.max(connected.x1 + 4, cores.x0 - 5),
       cableLeft: Math.max(0, cores.x0 - 5),
       cableRight: Math.max(cable.x1 + 8, length.x0 - 5),
-      irLeft: ir ? midpoint(length, ir) : Math.max(length.x1, pageWidth * 0.77),
+      irLeft: ir ? Math.max(midpoint(length, ir), ir.x0 - Math.max(3, pageWidth * 0.005))
+        : Math.max(length.x1, pageWidth * 0.77),
       irRight: ir ? midpoint(ir, rating) : midpoint(length, rating),
       ratingLeft: ir ? midpoint(ir, rating) : midpoint(length, rating),
       ratingRight: midpoint(rating, device),
@@ -2335,6 +2530,7 @@
       const afddCell = regionCell(groupWords, schema.bounds.afddLeft, schema.bounds.afddRight, top, bottom, 'afdd');
       const cableCell = regionCell(groupWords, schema.bounds.cableLeft, schema.bounds.cableRight, top, bottom, 'cable');
       const descriptor = parseProtectionDescriptor(deviceCell?.text || '');
+      const tripUnit = descriptor.tripUnit || canonicalTripUnit(tripCell?.text);
       const rating = numberValue(ratingCell, { min: 0.1, max: 6300 });
       const rcdProtected = cableScheduleProtectionState(rcdCell);
       const afdd = cableScheduleProtectionState(afddCell);
@@ -2345,7 +2541,7 @@
       const resolution = resolveProtectionDevice({
         standard: descriptor.protectionStandard,
         deviceClass: descriptor.explicitDevice || deviceCell?.text,
-        tripUnit: tripCell?.text,
+        tripUnit,
         rating,
         rcdProtected,
         rcdArrangement,
@@ -2362,13 +2558,15 @@
       ])].filter((reference) => Core.normaliseBoardReference(reference) !== Core.normaliseBoardReference(boardRef));
       const missingCurve = /^(?:MCB|RCBO|AFDD\+RCBO)$/i.test(resolution.device || '')
         && !descriptor.curve && !inferredCurve;
+      const missingTripUnit = /^(?:MCCB|ACB)$/i.test(resolution.device || '') && !tripUnit;
       const requiresReview = Boolean(resolution.classConflict || !resolution.device || rating == null
-        || inferredCurve || missingCurve || rcdProtected == null || afdd == null || boardRefs.length !== 1);
+        || inferredCurve || missingCurve || missingTripUnit || rcdProtected == null || afdd == null || boardRefs.length !== 1);
       const reasons = [...resolution.reasons];
       if (rcdProtected === false) reasons.push('RCD column explicitly states N/A / not applicable');
       if (afdd === false) reasons.push('AFDD column explicitly states N/A / not applicable');
       if (inferredCurve) reasons.push(inferredCurve.reason);
       if (missingCurve) reasons.push('Trip curve is not printed and the board rating does not prove the 100A-250A distribution-board default');
+      if (missingTripUnit) reasons.push('MCCB / ACB trip unit is not printed; select LSI, LSIG, LSNI, TM, ATFM, ATAM, or LI during review');
       return {
         way: anchor.parsed.way,
         wayNumber: anchor.parsed.wayNumber,
@@ -2381,7 +2579,7 @@
         classConflict: resolution.classConflict,
         curve: descriptor.curve || inferredCurve?.curve || null,
         curveInferred: Boolean(inferredCurve),
-        tripUnit: String(tripCell?.text || '').trim() && !recordIsEmpty(tripCell?.text) ? canonicalTripUnit(tripCell.text) : null,
+        tripUnit,
         productRange: descriptor.productRange,
         poleConfiguration: anchor.parsed.poleConfiguration,
         protectionStandard: descriptor.protectionStandard || resolution.protectionStandard,
@@ -2422,7 +2620,7 @@
           device: deviceCell || source,
           rating: ratingCell || source,
           curve: deviceCell || source,
-          tripUnit: tripCell || source,
+          tripUnit: descriptor.tripUnit ? deviceCell : (tripUnit ? tripCell : null),
           poles: cleanedSourceCell([anchor], 'phase'),
           rcdProtection: rcdCell || source,
           rcdSensitivity: rcdCell || source,
@@ -2610,22 +2808,34 @@
     };
   }
 
-  function parseSpatialSchedulePage(input = {}) {
-    const words = collectSpatialWords(input);
+  function parseSpatialSchedulePageDirect(input = {}) {
+    const sourceWords = collectSpatialWords(input);
+    const wordOrientation = scheduleGeometryWords(sourceWords, input);
+    const words = wordOrientation.words;
+    const withOrientation = (result) => {
+      if (!wordOrientation.normalised || !result) return result;
+      result.geometryOrientation = {
+        textAxisNormalised: true,
+        verticalWords: wordOrientation.vertical,
+        horizontalWords: wordOrientation.horizontal,
+      };
+      if (result.schema) result.schema.textAxisNormalised = true;
+      return result;
+    };
     const pageWidth = Number(input.pageWidth || input.width || Math.max(1, ...words.map((word) => word.x1)));
     const pageHeight = Number(input.pageHeight || input.height || Math.max(1, ...words.map((word) => word.y1)));
     if (words.length < 8 || !Number.isFinite(pageWidth) || !Number.isFinite(pageHeight)) {
-      return { matched: false, confidence: 0, words: words.length, rows: [], feeds: [], references: [], warnings: ['insufficient_spatial_words'] };
+      return withOrientation({ matched: false, confidence: 0, words: words.length, rows: [], feeds: [], references: [], warnings: ['insufficient_spatial_words'] });
     }
     const calibrations = calibrationRegions(input);
     const cableProfile = trimbleCableScheduleProfile(words, pageWidth);
     if (cableProfile.matched) {
-      return parseTrimbleCableSchedulePage(input, words, cableProfile, pageWidth, pageHeight);
+      return withOrientation(parseTrimbleCableSchedulePage(input, words, cableProfile, pageWidth, pageHeight));
     }
     const trimbleProfile = trimbleDialectProfile(words);
     if (trimbleProfile.matched) {
       const trimbleResult = parseTrimbleStackedSchedulePage(input, words, trimbleProfile, pageWidth, pageHeight);
-      if (trimbleResult.schema) return trimbleResult;
+      if (trimbleResult.schema) return withOrientation(trimbleResult);
     }
     const tableRegion = calibrations.find((region) => region.role === 'outgoing_table');
     const tableWords = tableRegion ? wordsInsideCalibration(words, tableRegion, 1) : words;
@@ -2634,14 +2844,19 @@
     const hintedWayX = wayRegion ? (wayRegion.box.x0 + wayRegion.box.x1) / 2
       : input.schemaHint?.columns?.find((column) => column.role === 'way')?.x;
     const allowSingleWay = Boolean(input.allowSingleWay || wayRegion);
+    const physicalWayAnchors = findWayAnchors(wayWords, pageWidth, {
+      allowSingle: allowSingleWay,
+      expectedX: hintedWayX,
+      preserveLanes: true,
+    });
     const wayAnchors = findWayAnchors(wayWords, pageWidth, { allowSingle: allowSingleWay, expectedX: hintedWayX });
     const inferredSchema = input.schemaHint
-      ? continuationSchema(tableWords, wayAnchors, pageWidth, pageHeight, input.schemaHint)
-      : inferScheduleColumns(tableWords, wayAnchors, pageWidth, pageHeight);
-    const schema = calibratedSchema(inferredSchema, input, words, wayAnchors, pageWidth, pageHeight);
+      ? continuationSchema(tableWords, physicalWayAnchors, pageWidth, pageHeight, input.schemaHint)
+      : inferScheduleColumns(tableWords, physicalWayAnchors, pageWidth, pageHeight);
+    const schema = calibratedSchema(inferredSchema, input, words, physicalWayAnchors, pageWidth, pageHeight);
     const minimumWays = allowSingleWay ? 1 : 2;
     if (wayAnchors.length < minimumWays || !schema?.columns?.some((column) => column.role === 'way')) {
-      return { matched: false, confidence: schema?.confidence || 0, words: words.length, schema, rows: [], feeds: [], references: [], warnings: ['way_column_not_resolved'] };
+      return withOrientation({ matched: false, confidence: schema?.confidence || 0, words: words.length, schema, rows: [], feeds: [], references: [], warnings: ['way_column_not_resolved'] });
     }
     const header = extractSpatialBoardHeader(input, words, schema);
     const phaseLaneModel = inferPhaseLaneModel(words, wayAnchors, schema, header.header);
@@ -2655,12 +2870,17 @@
       boardHeader: header.header,
       phaseLaneModel,
       calibratedPhaseLayout: schema.calibratedPhaseLayout || header.header.phase_layout_calibration || null,
+      fixedDeviceClass: input.fixedDeviceClass || null,
+      deviceFamilyHint: schema.deviceFamilyHint || null,
     };
-    const ys = wayAnchors.map((word) => word.cy);
     const rows = [];
     for (let index = 0; index < wayAnchors.length; index += 1) {
-      const top = index ? (ys[index - 1] + ys[index]) / 2 : schema.dataBand[1];
-      const bottom = index < wayAnchors.length - 1 ? (ys[index] + ys[index + 1]) / 2 : schema.dataBand[1] + schema.dataBand[3];
+      const { top, bottom } = wayAnchorBand(
+        wayAnchors,
+        index,
+        schema.dataBand[1],
+        schema.dataBand[1] + schema.dataBand[3],
+      );
       const rowWords = tableWords.filter((word) => word.cy >= top && word.cy < bottom);
       rows.push(...parseSpatialWayRows(rowWords, wayAnchors[index], top, bottom, schema, context));
     }
@@ -2680,7 +2900,10 @@
     }
     const expectedWays = Number(header.header.ways_total);
     const usesOpaqueWays = rows.some((row) => typeof row.way === 'string' && !/^\d+$/.test(row.way));
-    if (input.materializeMissingWays !== false && !usesOpaqueWays && Number.isInteger(expectedWays) && expectedWays > 0 && expectedWays <= 200) {
+    // Header capacity is a reconciliation constraint, not evidence that an
+    // unprinted circuit exists. Only an explicit human-guided recovery may
+    // materialize placeholder ways; normal extraction preserves printed rows.
+    if (input.materializeMissingWays === true && !usesOpaqueWays && Number.isInteger(expectedWays) && expectedWays > 0 && expectedWays <= 200) {
       const present = new Set(rows.map((row) => Number(row.way)).filter(Number.isInteger));
       for (let way = 1; way <= expectedWays; way += 1) {
         if (!present.has(way)) rows.push(inferredHeaderWay(way, header));
@@ -2705,7 +2928,7 @@
     if (rows.some((row) => row.phaseRepair)) warnings.push('source_phase_labels_reconciled');
     if (rows.some((row) => row.phaseConflict)) warnings.push('source_phase_labels_unresolved');
     if (rows.some((row) => row.requiresReview)) warnings.push('row_review_required');
-    return {
+    return withOrientation({
       matched: grid.accepted,
       confidence: Math.min(schema.confidence, ref ? 0.98 : 0.65),
       words: words.length,
@@ -2726,7 +2949,263 @@
       feeds,
       references: header.references,
       warnings,
+    });
+  }
+
+  function transposedBandRole(row, fixedDeviceClass = null) {
+    const words = (row?.words || []).slice().sort((left, right) => left.x0 - right.x0);
+    const labels = words.map((word) => normaliseLabel(word.text));
+    const has = (pattern) => labels.some((label) => pattern.test(label));
+    const numericValues = words.filter((word) => /^\d+(?:\.\d+)?(?:\s*A)?$/i.test(String(word.text || '').trim()));
+    if (has(/^(?:WAY|CCT|CKT|CIRCUIT(?: NO| NUMBER)?)$/)) return 'way';
+    if (has(/^PHASE$/)) return 'phase';
+    if (has(/^(?:AFDD|AFFD)$/)) return 'afdd';
+    if (has(/^RCD$/)) return 'rcd';
+    if (has(/^(?:RCD )?(?:MA|SENSITIVITY)$/)) return 'rcd_ma';
+    if (has(/^(?:POLE|POLES|NO OF POLES)$/)) return 'pole_configuration';
+    if (has(/^(?:KA|BREAKING CAPACITY|FAULT RATING)$/)) return 'breaking_capacity';
+    if (has(/^(?:LOAD|DESCRIPTION|DUTY|SERVING)$/)) return 'description';
+    if (has(/^(?:TYPE|CURVE|CHARACTERISTIC)$/)) {
+      return /^(?:MCCB|ACB)$/i.test(fixedDeviceClass || '') ? 'trip_unit' : 'trip_curve';
+    }
+    const classLabel = labels.find((label) => /^(?:AFDD\+RCBO|RCBO|MCCB|MCB|ACB|RCCB|RCD|FUSE|ISOLATOR)$/.test(label));
+    if (classLabel && numericValues.length >= 2) return 'rating';
+    if (has(/^(?:RATING|RATING A|IN A|CURRENT RATING)$/)) return 'rating';
+    return null;
+  }
+
+  function transposedScheduleProfile(input, words, pageWidth, pageHeight) {
+    const rows = spatialRows(words);
+    const calibratedBands = calibrationRegions(input).filter((region) => CALIBRATION_COLUMN_ROLES.has(region.role)
+      && (region.axis === 'row' || (region.box.x1 - region.box.x0) > (region.box.y1 - region.box.y0) * 1.45));
+    let fixedDeviceClass = input.fixedDeviceClass || null;
+    for (const row of rows) {
+      const classWord = (row.words || []).find((word) => /^(?:AFDD\s*\+\s*RCBO|RCBO|MCCB|MCB|ACB|RCCB|RCD|FUSE|ISOLATOR)$/i.test(String(word.text || '').trim()));
+      const numericValues = (row.words || []).filter((word) => /^\d+(?:\.\d+)?(?:\s*A)?$/i.test(String(word.text || '').trim()));
+      if (classWord && numericValues.length >= 2) {
+        fixedDeviceClass = String(classWord.text || '').toUpperCase().replace(/\s+/g, '');
+        break;
+      }
+    }
+    const bands = [];
+    rows.forEach((row) => {
+      const role = transposedBandRole(row, fixedDeviceClass);
+      const cell = sourceCell(row.words || [], role);
+      if (role && cell?.bbox) bands.push({ role, row, bbox: cell.bbox });
+    });
+    calibratedBands.forEach((region) => {
+      if (!bands.some((band) => band.role === region.role)) {
+        bands.push({ role: region.role, row: null,
+          bbox: [region.box.x0, region.box.y0, region.box.x1 - region.box.x0, region.box.y1 - region.box.y0], calibrated: true });
+      }
+    });
+    const wayBand = bands.find((band) => band.role === 'way');
+    const wayBox = bboxObject({ bbox: wayBand?.bbox });
+    const wayWords = wayBand?.row?.words?.filter((word) => {
+      const value = extractWayIdentifier(word.text);
+      return value != null && word.cx > (wayBox?.x0 ?? 0) + Math.max(2, pageWidth * 0.002);
+    }) || wordsInsideCalibration(words, wayBand?.calibrated ? { box: wayBox } : null)
+      .filter((word) => extractWayIdentifier(word.text) != null);
+    const distinctWays = new Set(wayWords.map((word) => String(extractWayIdentifier(word.text))));
+    const horizontalWaySpan = wayWords.length >= 2
+      && (Math.max(...wayWords.map((word) => word.cx)) - Math.min(...wayWords.map((word) => word.cx)))
+        > Math.max(pageWidth * 0.04, (Math.max(...wayWords.map((word) => word.cy)) - Math.min(...wayWords.map((word) => word.cy))) * 2);
+    const calibratedRoles = new Set(calibratedBands.map((region) => region.role));
+    const structuralRoles = new Set(bands.map((band) => band.role));
+    const calibratedEvidence = calibratedRoles.has('way')
+      && (calibratedRoles.has('rating') || calibratedRoles.has('device_class'));
+    const automaticEvidence = distinctWays.size >= 2 && horizontalWaySpan
+      && ['phase', 'rating', 'trip_curve', 'trip_unit', 'afdd', 'rcd']
+        .filter((role) => structuralRoles.has(role)).length >= 2;
+    return {
+      matched: calibratedEvidence || automaticEvidence,
+      confidence: calibratedEvidence ? 0.98 : (automaticEvidence ? 0.88 : 0),
+      rows,
+      bands,
+      wayWords,
+      fixedDeviceClass,
+      pageWidth,
+      pageHeight,
     };
+  }
+
+  function isTransposedSchedulePage(input = {}) {
+    const words = collectSpatialWords(input);
+    const pageWidth = Number(input.pageWidth || input.width || Math.max(1, ...words.map((word) => word.x1)));
+    const pageHeight = Number(input.pageHeight || input.height || Math.max(1, ...words.map((word) => word.y1)));
+    if (words.length < 8 || !Number.isFinite(pageWidth) || !Number.isFinite(pageHeight)) {
+      return { matched: false, confidence: 0, roles: [], wayCount: 0 };
+    }
+    const profile = transposedScheduleProfile(input, words, pageWidth, pageHeight);
+    return {
+      matched: profile.matched,
+      confidence: profile.confidence,
+      roles: [...new Set(profile.bands.map((band) => band.role))],
+      wayCount: new Set(profile.wayWords.map((word) => String(extractWayIdentifier(word.text)))).size,
+      fixedDeviceClass: profile.fixedDeviceClass || null,
+    };
+  }
+
+  function transposedSourceRegions(input, words, profile) {
+    const regions = calibrationRegions(input).map((region) => ({
+      ...region,
+      bbox: [region.box.x0, region.box.y0, region.box.x1 - region.box.x0, region.box.y1 - region.box.y0],
+    }));
+    profile.bands.forEach((band) => {
+      if (regions.some((region) => region.role === band.role)) return;
+      regions.push({ role: band.role, bbox: band.bbox, axis: 'row', synthetic: true });
+    });
+    const rowCells = profile.rows.map((row) => sourceCell(row.words || [], 'row')).filter(Boolean);
+    const boardCell = rowCells.find((cell) => /\b(?:DISTRIBUTION\s+BOARD\s+(?:REF(?:ERENCE)?|ID)|MAIN\s+(?:(?:MCCB|MCB|ACB)\s+)?BOARD)\b/i.test(cell.text));
+    if (boardCell?.bbox && !regions.some((region) => region.role === 'board_ref')) {
+      regions.push({ role: 'board_ref', bbox: boardCell.bbox, axis: 'row', synthetic: true });
+    }
+    const bandBoxes = profile.bands.map((band) => bboxObject({ bbox: band.bbox })).filter(Boolean);
+    if (!regions.some((region) => region.role === 'description') && bandBoxes.length && profile.wayWords.length >= 2) {
+      const bandTop = Math.min(...bandBoxes.map((box) => box.y0));
+      const bandBottom = Math.max(...bandBoxes.map((box) => box.y1));
+      const wayLeft = Math.min(...profile.wayWords.map((word) => word.cx));
+      const wayRight = Math.max(...profile.wayWords.map((word) => word.cx));
+      const candidates = words.filter((word) => word.cx >= wayLeft - profile.pageWidth * 0.015
+        && word.cx <= wayRight + profile.pageWidth * 0.015
+        && (word.cy < bandTop - profile.pageHeight * 0.01 || word.cy > bandBottom + profile.pageHeight * 0.01)
+        && !/^\d+(?:\.\d+)?$/.test(String(word.text || '').trim())
+        && !/\b(?:BOARD|PROJECT|DRAWING|SCHEDULE|LEGEND)\b/i.test(String(word.text || '')));
+      const above = candidates.filter((word) => word.cy < bandTop);
+      const below = candidates.filter((word) => word.cy > bandBottom);
+      const descriptions = above.length >= below.length ? above : below;
+      const descriptionBox = bboxObject({ bbox: unionBox(descriptions) });
+      if (descriptionBox && descriptions.length >= Math.max(2, Math.floor(profile.wayWords.length / 2))) {
+        regions.push({
+          role: 'description', axis: 'row', synthetic: true,
+          bbox: [Math.max(0, wayLeft - profile.pageWidth * 0.02), descriptionBox.y0,
+            Math.min(profile.pageWidth, wayRight + profile.pageWidth * 0.02) - Math.max(0, wayLeft - profile.pageWidth * 0.02),
+            descriptionBox.y1 - descriptionBox.y0],
+        });
+      }
+    }
+    return regions;
+  }
+
+  function rotateSpatialWord(word, pageWidth, pageHeight, rotation) {
+    const bbox = rotatePageBox([word.x0, word.y0, word.x1 - word.x0, word.y1 - word.y0], pageWidth, pageHeight, rotation);
+    return { ...word, bbox, rotation: 0, sourceRotation: word.rotation || 0 };
+  }
+
+  function rotateCalibrationRegion(region, pageWidth, pageHeight, rotation) {
+    const bbox = rotatePageBox(region.bbox, pageWidth, pageHeight, rotation);
+    if (!bbox) return null;
+    const sourceBox = bboxObject({ bbox: region.bbox });
+    const sourceAxis = region.axis === 'auto' && sourceBox
+      ? ((sourceBox.x1 - sourceBox.x0) >= (sourceBox.y1 - sourceBox.y0) * 1.45 ? 'row' : 'column')
+      : region.axis;
+    return {
+      ...region,
+      bbox,
+      axis: sourceAxis === 'row' ? 'column' : (sourceAxis === 'column' ? 'row' : 'auto'),
+      coordinateSpace: 'transposed-parser',
+    };
+  }
+
+  function restoreTransposedCell(cell, pageWidth, pageHeight, rotation) {
+    if (!cell || typeof cell !== 'object') return cell;
+    const restored = { ...cell };
+    if (cell.bbox) restored.bbox = unrotatePageBox(cell.bbox, pageWidth, pageHeight, rotation);
+    if (Array.isArray(cell.words)) {
+      restored.words = cell.words.map((word) => ({
+        ...word,
+        bbox: word.bbox ? unrotatePageBox(word.bbox, pageWidth, pageHeight, rotation) : word.bbox,
+        rotation: word.sourceRotation ?? word.rotation,
+      }));
+    }
+    return restored;
+  }
+
+  function restoreTransposedResult(result, profile, rotation, sourceCalibrationCount) {
+    if (!result) return result;
+    const restoreCell = (cell) => restoreTransposedCell(cell, profile.pageWidth, profile.pageHeight, rotation);
+    const rows = (result.rows || []).map((row) => ({
+      ...row,
+      sourceCell: restoreCell(row.sourceCell),
+      highlightBbox: row.highlightBbox ? unrotatePageBox(row.highlightBbox, profile.pageWidth, profile.pageHeight, rotation) : row.highlightBbox,
+      fieldSources: Object.fromEntries(Object.entries(row.fieldSources || {}).map(([role, cell]) => [role, restoreCell(cell)])),
+      resolutionSource: row.resolutionSource === 'spatial_column_schema' ? 'transposed_spatial_column_schema' : row.resolutionSource,
+      resolutionReasons: [...new Set([...(row.resolutionReasons || []), 'Field-band schedule normalised to circuit rows'])],
+    }));
+    const evidence = Object.fromEntries(Object.entries(result.board?.evidence || {}).map(([role, cell]) => [role, restoreCell(cell)]));
+    const tableBbox = result.table?.bbox
+      ? unrotatePageBox(result.table.bbox, profile.pageWidth, profile.pageHeight, rotation) : result.table?.bbox;
+    return {
+      ...result,
+      dialect: 'transposed_schedule_matrix',
+      rows,
+      feeds: (result.feeds || []).map((feed) => ({ ...feed, sourceCell: restoreCell(feed.sourceCell) })),
+      board: result.board ? { ...result.board, evidence } : null,
+      table: result.table ? { ...result.table, bbox: tableBbox } : result.table,
+      schema: result.schema ? {
+        ...result.schema,
+        dialect: 'transposed_schedule_matrix',
+        transferEligible: false,
+        sourceOrientation: 'field_bands',
+        rotationApplied: rotation,
+      } : result.schema,
+      calibration: {
+        ...(result.calibration || {}),
+        applied: sourceCalibrationCount,
+        roles: [],
+        automaticTransposition: true,
+      },
+      geometryOrientation: {
+        ...(result.geometryOrientation || {}),
+        fieldBandsNormalised: true,
+        rotationApplied: rotation,
+      },
+      warnings: [...new Set([...(result.warnings || []), 'transposed_schedule_matrix_normalised'])],
+    };
+  }
+
+  function spatialResultScore(result) {
+    const quality = spatialParseQuality(result);
+    return (result?.matched ? 100 : 0) + (quality.boardResolved ? 24 : 0)
+      + quality.completeRows * 5 + quality.activeRows * 2 + Math.min(20, quality.rows)
+      - (result?.grid?.blockingReasons?.length || 0) * 12;
+  }
+
+  function parseTransposedSchedulePage(input, words, profile, rotation) {
+    const sourceRegions = transposedSourceRegions(input, words, profile);
+    const regions = sourceRegions.map((region) => rotateCalibrationRegion(region,
+      profile.pageWidth, profile.pageHeight, rotation)).filter(Boolean);
+    const transformed = parseSpatialSchedulePageDirect({
+      ...input,
+      lines: [],
+      words: words.map((word) => rotateSpatialWord(word, profile.pageWidth, profile.pageHeight, rotation)),
+      pageWidth: profile.pageHeight,
+      pageHeight: profile.pageWidth,
+      pageType: 'db-schedule',
+      fixedDeviceClass: profile.fixedDeviceClass,
+      calibrationHint: { applicable: regions.length, regions, roles: [...new Set(regions.map((region) => region.role))] },
+    });
+    const sourceCalibrationCount = calibrationRegions(input).length;
+    const restored = restoreTransposedResult(transformed, profile, rotation, sourceCalibrationCount);
+    if (restored?.calibration) {
+      restored.calibration.roles = [...new Set(calibrationRegions(input).map((region) => region.role))];
+    }
+    return restored;
+  }
+
+  function parseSpatialSchedulePage(input = {}) {
+    const direct = parseSpatialSchedulePageDirect(input);
+    const words = collectSpatialWords(input);
+    const pageWidth = Number(input.pageWidth || input.width || Math.max(1, ...words.map((word) => word.x1)));
+    const pageHeight = Number(input.pageHeight || input.height || Math.max(1, ...words.map((word) => word.y1)));
+    if (words.length < 8 || !Number.isFinite(pageWidth) || !Number.isFinite(pageHeight)) return direct;
+    const profile = transposedScheduleProfile(input, words, pageWidth, pageHeight);
+    if (!profile.matched) return direct;
+    const candidates = [direct,
+      parseTransposedSchedulePage(input, words, profile, 90),
+      parseTransposedSchedulePage(input, words, profile, 270)];
+    candidates.sort((left, right) => spatialResultScore(right) - spatialResultScore(left));
+    return candidates[0];
   }
 
   function buildSpatialLayoutHint(result, { maxRows = 80 } = {}) {
@@ -2781,16 +3260,20 @@
     };
   }
 
-  function spatialSchemaTransferEligible(result) {
+  function spatialTransferredRowsEligible(result) {
     if (!result?.matched || !result.rows?.length || !result.schema?.columns?.length) return false;
     if (result.schema.transferEligible === false || result.grid?.accepted === false) return false;
-    if (!result.board?.ref) return false;
-    const blockingWarnings = (result.warnings || []).some((warning) => /^(?:primary_board_not_resolved|unproven_schedule_grid:)/.test(warning));
+    const blockingWarnings = (result.warnings || []).some((warning) => /^unproven_schedule_grid:/.test(warning));
     if (blockingWarnings) return false;
     const activeRows = result.rows.filter((row) => Core.isPopulatedProtectionRow
       ? Core.isPopulatedProtectionRow(row) : !row.space && !row.spare);
     return activeRows.every((row) => !row.classConflict
       && !row.validation?.invalidSensitivity && !row.validation?.invalidBreakingCapacity);
+  }
+
+  function spatialSchemaTransferEligible(result) {
+    if (!result?.board?.ref || !spatialTransferredRowsEligible(result)) return false;
+    return !(result.warnings || []).includes('primary_board_not_resolved');
   }
 
   function spatialOccupancyContinuationEligible(result) {
@@ -2884,6 +3367,7 @@
         width: Number(entry.input.pageWidth || entry.input.width),
         height: Number(entry.input.pageHeight || entry.input.height),
         schema: entry.result.schema,
+        board: entry.result.board || null,
         confidence: Number(entry.result.confidence || entry.result.schema.confidence || 0),
       }));
     const limit = Math.max(1, Math.min(6, Number(options.maxSchemaCandidates) || 4));
@@ -2896,17 +3380,19 @@
         ...candidate,
         aspectDelta: Math.abs(aspect - candidate.width / Math.max(1, candidate.height)),
         pageDistance: Math.abs(entry.input.documentPage - candidate.page),
+        followsCandidate: candidate.page < entry.input.documentPage,
       })).filter((candidate) => candidate.aspectDelta <= Math.max(0.12, aspect * 0.16))
         .sort((left, right) => left.aspectDelta - right.aspectDelta
-          || right.confidence - left.confidence || left.pageDistance - right.pageDistance)
+          || left.pageDistance - right.pageDistance
+          || Number(right.followsCandidate) - Number(left.followsCandidate)
+          || right.confidence - left.confidence)
         .slice(0, limit);
       const candidates = [];
       for (const hint of hints) {
-        const targetRoles = new Set((entry.result?.schema?.columns || []).map((column) => column.role));
-        const hintRoles = new Set((hint.schema?.columns || []).map((column) => column.role));
-        const overlap = [...targetRoles].filter((role) => hintRoles.has(role)).length;
-        const roleCompatibility = targetRoles.size ? overlap / targetRoles.size : 1;
-        if (targetRoles.size >= 3 && roleCompatibility < 0.6) continue;
+        // A failed independent parse often invents a small, incompatible
+        // schema from continuation-page data. It is not valid counter-evidence
+        // against a proven document schema; the recovered rows and grid are
+        // validated below before any transfer is accepted.
         const schemaHint = scaleSpatialSchemaHint(hint.schema, hint.width, hint.height, width, height);
         if (!schemaHint) continue;
         const recovered = parseSpatialSchedulePage({
@@ -2920,6 +3406,10 @@
           sourcePage: hint.page,
           matched: false,
           rows: recovered.rows?.length || 0,
+          confidence: Number(Number(recovered.confidence || 0).toFixed(2)),
+          gridAccepted: recovered.grid?.accepted !== false,
+          blockingReasons: recovered.grid?.blockingReasons || [],
+          warnings: recovered.warnings || [],
         });
         if (recovered.matched && recovered.rows?.length) {
           const activeRows = recovered.rows.filter((row) => Core.isPopulatedProtectionRow
@@ -2928,14 +3418,25 @@
           const unresolvedPhaseRows = recovered.rows.filter((row) => row.phaseConflict).length;
           const completeness = activeRows.length ? completeRows.length / activeRows.length : 1;
           const occupancyContinuation = spatialOccupancyContinuationEligible(recovered);
+          const rejectionReasons = [];
+          if (Number(recovered.confidence || 0) < 0.62) rejectionReasons.push('recovered_confidence_below_0_62');
+          if (Number(recovered.grid?.populatedRows || 0) <= 0) rejectionReasons.push('no_populated_rows');
+          if (unresolvedPhaseRows > Math.max(1, Math.floor(recovered.rows.length * 0.5))) rejectionReasons.push('phase_conflicts_exceed_limit');
+          if (!occupancyContinuation && !(completeness >= 0.5 && spatialTransferredRowsEligible(recovered))) {
+            rejectionReasons.push('neither_occupancy_continuation_nor_complete_transfer');
+          }
           const transferAccepted = Number(recovered.confidence || 0) >= 0.62
             && Number(recovered.grid?.populatedRows || 0) > 0
             && unresolvedPhaseRows <= Math.max(1, Math.floor(recovered.rows.length * 0.5))
             && (occupancyContinuation
-              || (completeness >= 0.5 && spatialSchemaTransferEligible(recovered)));
+              || (completeness >= 0.5 && spatialTransferredRowsEligible(recovered)));
           entry.attempts[entry.attempts.length - 1].matched = transferAccepted;
           entry.attempts[entry.attempts.length - 1].completeness = Number(completeness.toFixed(2));
           entry.attempts[entry.attempts.length - 1].occupancyContinuation = occupancyContinuation;
+          entry.attempts[entry.attempts.length - 1].activeRows = activeRows.length;
+          entry.attempts[entry.attempts.length - 1].completeRows = completeRows.length;
+          entry.attempts[entry.attempts.length - 1].unresolvedPhaseRows = unresolvedPhaseRows;
+          entry.attempts[entry.attempts.length - 1].rejectionReasons = transferAccepted ? [] : rejectionReasons;
           if (transferAccepted) candidates.push({ result: recovered, hint, completeness });
         }
       }
@@ -2943,9 +3444,38 @@
         || Number(right.completeness || 0) - Number(left.completeness || 0)
         || Number(right.result.grid?.populatedRows || 0) - Number(left.result.grid?.populatedRows || 0)
         || left.hint.pageDistance - right.hint.pageDistance);
-      return candidates.length
-        ? { ...entry, result: candidates[0].result, schemaSourcePage: candidates[0].hint.page }
-        : { ...entry, schemaSourcePage: null };
+      if (!candidates.length) return { ...entry, schemaSourcePage: null };
+      const selected = candidates[0];
+      let selectedResult = selected.result;
+      const inheritsPriorBoard = !selectedResult.board?.ref && selected.hint.board?.ref
+        && selected.hint.page < entry.input.documentPage && selected.hint.pageDistance <= 2;
+      if (inheritsPriorBoard) {
+        const inheritedBoard = {
+          ...selected.hint.board,
+          continuationSourcePage: selected.hint.page,
+          inheritedForPage: entry.input.documentPage,
+        };
+        const fromRef = inheritedBoard.ref;
+        selectedResult = {
+          ...selectedResult,
+          board: inheritedBoard,
+          feeds: (selectedResult.rows || []).filter((row) => row.circuitReference).map((row) => ({
+            fromRef,
+            toRef: row.circuitReference,
+            way: row.way,
+            device: row.device,
+            rating: row.rating,
+            poles: row.poles,
+            cable: row.cable,
+            confidence: row.conf,
+            sourceCell: row.fieldSources?.circuitReference,
+          })),
+          warnings: [...new Set((selectedResult.warnings || [])
+            .filter((warning) => warning !== 'primary_board_not_resolved')
+            .concat('schedule_continuation_board_inherited'))],
+        };
+      }
+      return { ...entry, result: selectedResult, schemaSourcePage: selected.hint.page };
     });
     return { pages: outputs, catalogue };
   }
@@ -3269,6 +3799,8 @@
     CALIBRATION_ROLE_DEFINITIONS,
     buildCalibrationSignature,
     resolveCalibrationRegion,
+    rotatePageBox,
+    unrotatePageBox,
     collectSpatialWords,
     extractContextualBoardReferences,
     inferScheduleColumns,
@@ -3276,6 +3808,7 @@
     resolveProtectionDevice,
     classifyBoardFamily,
     familyTypeCode,
+    isTransposedSchedulePage,
     parseSpatialSchedulePage,
     parseSpatialScheduleDocument,
     trimbleCableScheduleProfile,

@@ -30,7 +30,7 @@ const executablePath = [
 ].find((candidate) => candidate && fs.existsSync(candidate));
 assert.ok(executablePath, 'No Chromium-compatible browser executable was found');
 
-const browser = await chromium.launch({ executablePath });
+const browser = await chromium.launch({ executablePath, headless: true });
 const context = await browser.newContext({
   ignoreHTTPSErrors: true,
   viewport: { width: 1600, height: 900 },
@@ -152,7 +152,14 @@ try {
       health: state.cur.analysis.health,
     };
   });
-  assert.equal(extraction.analysisVersion, 28, 'real project must use the current analysis model');
+  if (process.env.VERBOSE_PRIVATE === '1') {
+    console.log(JSON.stringify(await page.evaluate(() => state.cur.files.map((file) => ({
+      name: file.name,
+      pages: file.pages.map((sourcePage, index) => ({ page: index + 1, type: sourcePage.type,
+        lines: (sourcePage.lines || []).map((line) => line.text) })),
+    }))), null, 2));
+  }
+  assert.equal(extraction.analysisVersion, 29, 'real project must use the current analysis model');
   assert.ok(extraction.scheduleRows > 0,
     `schedule rows must be extracted before opening Viewer: ${JSON.stringify({ pageInput: extraction.pageInput,
       spatialProbe: extraction.spatialProbe, pageDiagnostics: extraction.pageDiagnostics, health: extraction.health })}`);
@@ -266,6 +273,33 @@ try {
   assert.deepEqual(guidedNext.currentCardIds, [guidedNext.currentId], 'the right evidence list must move to exactly one current row');
   assert.deepEqual(guidedNext.attentionRowIds, [guidedNext.currentId], 'the red source highlight must move to exactly one current row');
 
+  await page.evaluate(async () => { state.viewer.rot = 90; await renderViewer(); });
+  await page.waitForFunction(() => viewerCommittedSequence === viewerRenderSequence
+    && document.querySelector('#vStage .v-pagewrap canvas')?.height > 0
+    && document.querySelector('#vStage .attention[data-row-id]'));
+  const rotatedViewer = await page.evaluate(() => {
+    const wrap = document.querySelector('#vStage .v-pagewrap');
+    const attention = document.querySelector('#vStage .attention[data-row-id]');
+    const pageBox = wrap?.getBoundingClientRect();
+    const evidenceBox = attention?.getBoundingClientRect();
+    return {
+      rotation: state.viewer.rot,
+      portrait: Boolean(pageBox && pageBox.height > pageBox.width),
+      evidenceInside: Boolean(pageBox && evidenceBox && evidenceBox.left >= pageBox.left - 5
+        && evidenceBox.top >= pageBox.top - 5 && evidenceBox.right <= pageBox.right + 5
+        && evidenceBox.bottom <= pageBox.bottom + 5),
+      currentId: attention?.dataset.rowId || null,
+    };
+  });
+  assert.equal(rotatedViewer.rotation, 90, 'real Viewer must retain the requested page rotation');
+  assert.ok(rotatedViewer.portrait, 'the landscape source page must render portrait after a 90 degree rotation');
+  assert.ok(rotatedViewer.evidenceInside, 'the current evidence overlay must stay inside the rotated real PDF page');
+  assert.equal(rotatedViewer.currentId, guidedNext.currentId, 'rotation must not change the current audit row');
+  await page.screenshot({ path: path.join(shotsDir, 'real-viewer-rotated.png'), fullPage: false });
+  await page.evaluate(async () => { state.viewer.rot = 0; await renderViewer(); });
+  await page.waitForFunction(() => viewerCommittedSequence === viewerRenderSequence
+    && document.querySelector('#vStage .attention[data-row-id]'));
+
   await page.setViewportSize({ width: 390, height: 844 });
   await page.evaluate(() => renderViewer());
   await page.waitForTimeout(500);
@@ -366,17 +400,22 @@ try {
       applicablePages: diagnostics.length,
       appliedPages: diagnostics.filter((item) => Number(item.calibration?.applied) > 0).length,
       projections: diagnostics.flatMap((item) => item.calibration?.projections || []).map((item) => item.projection),
+      savedRecords: project.calibrations.map((record) => ({ fileId: record.fileId, sourcePage: record.sourcePage,
+        sourcePageType: record.sourcePageType, scope: record.scope, role: record.role })),
+      pageCalibration: project.analysis.pageDiagnostics.filter((item) => item.fileId === file.id)
+        .map((item) => ({ page: item.page, type: item.type, calibration: item.calibration })),
     };
   });
   assert.equal(calibrationReanalysis.dirty, false, 'successful calibration re-analysis must clear the pending state');
   assert.equal(calibrationReanalysis.analysisRevision, calibrationReanalysis.revision, 'analysis must commit the active calibration revision');
   assert.equal(calibrationReanalysis.afterCount, calibrationReanalysis.beforeCount, 'calibration re-analysis must preserve reconciled device counts');
   assert.ok(calibrationReanalysis.afterConfirmed >= calibrationReanalysis.beforeConfirmed, 'calibration re-analysis must preserve prior approvals');
-  assert.ok(calibrationReanalysis.applicablePages > 0, 'saved calibration must reach at least one document page');
+  assert.ok(calibrationReanalysis.applicablePages > 0,
+    `saved calibration must reach at least one document page: ${JSON.stringify(calibrationReanalysis)}`);
   assert.ok(calibrationReanalysis.appliedPages > 0, 'saved calibration must be consumed by the spatial parser');
 
   assert.deepEqual(browserErrors, [], `browser errors: ${browserErrors.join('; ')}`);
-  console.log(JSON.stringify({ extraction, viewer, guidedStart, guidedNext, mobile, schematicViewer, calibrationReanalysis, shotsDir }, null, 2));
+  console.log(JSON.stringify({ extraction, viewer, guidedStart, guidedNext, rotatedViewer, mobile, schematicViewer, calibrationReanalysis, shotsDir }, null, 2));
   console.log('PASS: real Viewer extraction, overlays, board sync, guided progression, calibration re-analysis, and responsive layout.');
 } finally {
   await browser.close();

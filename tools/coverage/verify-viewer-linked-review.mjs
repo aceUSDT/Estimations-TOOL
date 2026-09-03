@@ -32,6 +32,9 @@ try {
   await page.locator('#vDetList .det[data-row-id]').first().waitFor();
 
   await page.locator('#vCalibrateMode').click();
+  assert.deepEqual(await page.evaluate(() => filenameBoardCandidatesOf('Kings-Road_G1-GF-DB-LL.pdf')
+    .map((candidate) => candidate.norm)), ['G1GFDBLL'],
+  'a single board reference in a filename must retain its complete prefix');
   const calibrationMenu = await page.locator('#vCalibrationRole').evaluate((select) => ({
     values: [...select.options].map((option) => option.value),
     labels: [...select.options].map((option) => option.textContent.trim()),
@@ -53,7 +56,21 @@ try {
     fileId: viewerFile().id, sourcePage: 1, scope: 'document', sourcePageType: 'db-schedule',
   }, viewerFile().id, 2, { w: 1000, h: 700, type: 'schematic' })), false,
   'schedule calibration must not spill onto schematic or reference pages');
+  assert.equal(await page.evaluate(() => calibrationApplies({
+    fileId: viewerFile().id, sourcePage: 1, scope: 'document', sourcePageType: 'unknown',
+  }, viewerFile().id, 2, { w: 1000, h: 700, type: 'db-schedule' })), true,
+  'a calibration must remain applicable when it teaches an initially unknown page to become a schedule');
+  const rotationRoundTrips = await page.evaluate(() => [0, 90, 180, 270].map((rotation) => {
+    const source = [37, 91, 126, 48];
+    const displayed = viewerRotatedBox(source, 400, 700, rotation);
+    return viewerSourceBox(displayed, 400, 700, rotation);
+  }));
+  rotationRoundTrips.forEach((box, index) => assert.deepEqual(box, [37, 91, 126, 48],
+    `${[0, 90, 180, 270][index]} degree Viewer selection must return to canonical PDF coordinates`));
+  await page.evaluate(() => { state.viewer.rot = 90; });
   await page.locator('#vCalibrateMode').click();
+  assert.equal(await page.evaluate(() => state.viewer.rot), 90, 'leaving calibration mode must preserve the user page rotation');
+  await page.evaluate(async () => { state.viewer.rot = 0; await renderViewer(); });
 
   const cards = page.locator('#vDetList .det[data-row-id]');
   assert.ok(await cards.count() > 2, 'fixture page must expose multiple linked device rows');

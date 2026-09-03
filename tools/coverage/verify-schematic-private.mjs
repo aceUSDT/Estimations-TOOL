@@ -25,8 +25,10 @@ if (!inputPath) throw new Error('Usage: node verify-schematic-private.mjs <schem
 const pageNumber = Number(valueAfter('--page', '1'));
 const minimumBoards = Number(valueAfter('--minimum-boards', '5'));
 const minimumFeeds = Number(valueAfter('--minimum-feeds', '1'));
+const minimumScheduleRows = Number(valueAfter('--minimum-schedule-rows', '0'));
 const maximumMs = Number(valueAfter('--maximum-ms', '10000'));
 const expectedEdges = valuesAfter('--expect-edge');
+const expectedBoards = valuesAfter('--expect-board');
 const absolute = path.resolve(inputPath);
 assert.equal(path.extname(absolute).toLowerCase(), '.pdf', 'private verifier accepts a PDF source');
 
@@ -82,20 +84,41 @@ const geometry = Core.extractPdfVectorGeometry({ operatorList, OPS: pdfjs.OPS, v
   pageWidth: viewport.width, pageHeight: viewport.height, ignoreAnnotations: true });
 const parsed = Core.parseSchematicTopologyPage({ lines, pageWidth: viewport.width, pageHeight: viewport.height,
   pageType: 'sld', vectorGeometry: geometry });
+const schedule = Core.parseSpatialSchedulePage({ lines, pageWidth: viewport.width, pageHeight: viewport.height,
+  pageType: 'schematic' });
+const transposedSchedule = Core.isTransposedSchedulePage({ lines, pageWidth: viewport.width, pageHeight: viewport.height });
 const elapsedMs = Math.round(performance.now() - started);
 
 if (args.includes('--verbose')) {
   console.log(JSON.stringify(parsed.boards.map((board) => ({ ref: board.ref, norm: board.norm,
     sourceScore: board.sourceScore, anchor: board.anchor ? [board.anchor.x, board.anchor.y, board.anchor.component] : null,
-    anchorDistance: board.anchorDistance, ambiguous: board.anchorAmbiguous })), null, 2));
+    anchorDistance: board.anchorDistance, sourceBox: board.sourceCell?.bbox || null,
+    anchorCandidates: parsed.diagnostics?.sourceAnchorCandidates?.[board.norm] || [], ambiguous: board.anchorAmbiguous })), null, 2));
   console.log(JSON.stringify(parsed.feeds.map((feed) => ({ from: feed.fromRef, to: feed.toRef, rating: feed.rating,
     device: feed.device, cable: feed.cable?.size || null, confidence: feed.confidence, pathEvidence: feed.pathEvidence,
     warnings: feed.warnings })), null, 2));
   console.log(JSON.stringify(parsed.diagnostics, null, 2));
+  console.log(JSON.stringify({
+    schedule: {
+      matched: Boolean(schedule.matched), dialect: schedule.dialect || null, board: schedule.board?.ref || null,
+      transposedProfile: transposedSchedule,
+      warnings: schedule.warnings || [], schema: schedule.schema?.columns?.map((column) => column.role) || [],
+      rows: (schedule.rows || []).map((row) => ({ way: row.way, phase: row.phase, device: row.device,
+        rating: row.rating, curve: row.curve, tripUnit: row.tripUnit, description: row.desc,
+        spare: row.spare, requiresReview: row.requiresReview })),
+    },
+  }, null, 2));
 }
 assert.ok(geometry.segments.length >= 100, 'vector geometry was captured');
 assert.ok(parsed.boards.length >= minimumBoards, `at least ${minimumBoards} schematic board nodes were found`);
+for (const expected of expectedBoards) {
+  const norm = Core.canonicalBoardReference(expected)?.normalised;
+  assert.ok(norm && parsed.boards.some((board) => Core.canonicalBoardReference(board.ref)?.normalised === norm),
+    `expected schematic board exists: ${expected}`);
+}
 assert.ok(parsed.feeds.length >= minimumFeeds, `at least ${minimumFeeds} conductor-traced feeds were found`);
+assert.ok((schedule.rows || []).length >= minimumScheduleRows,
+  `at least ${minimumScheduleRows} schedule-matrix rows were found`);
 assert.ok(parsed.feeds.every((feed) => feed.topologyMethod === 'pdf_vector_trace' && feed.path?.length >= 2), 'every feed carries vector path evidence');
 assert.ok(!parsed.feeds.some((feed) => feed.pathEvidence?.crossingPolicy !== 'shared_endpoint_or_filled_junction_only'), 'crossing policy is explicit');
 for (const expected of expectedEdges) {
@@ -115,6 +138,13 @@ console.log(JSON.stringify({
   graph: parsed.graphStats,
   boards: parsed.boards.length,
   feeds: parsed.feeds.length,
+  scheduleMatrix: {
+    matched: Boolean(schedule.matched),
+    dialect: schedule.dialect || null,
+    board: schedule.board?.ref || null,
+    rows: schedule.rows?.length || 0,
+    transposedProfile: transposedSchedule,
+  },
   unresolvedBoards: parsed.diagnostics?.unresolvedBoards?.length || 0,
   ambiguousBoards: parsed.diagnostics?.ambiguousBoards?.length || 0,
   warnings: parsed.warnings,

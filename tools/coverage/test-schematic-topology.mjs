@@ -6,7 +6,7 @@ await import('../../spatial-schedule-core.js');
 await import('../../schematic-topology-core.js');
 
 const Core = globalThis.EstimationExtractorCore;
-const { directFeeder, crossedWithoutJunction, crossedWithJunction, nestedPanelboard } = await import('./fixtures/schematic-topology-synthetic.mjs');
+const { directFeeder, crossedWithoutJunction, crossedWithJunction, nestedPanelboard, corroboratedRootPanelboards } = await import('./fixtures/schematic-topology-synthetic.mjs');
 
 test('PDF operator replay preserves transforms, paint state, junctions, and annotation exclusion', () => {
   const OPS = {
@@ -96,6 +96,8 @@ test('a small collinear vector gap is bridged but remains review evidence', () =
 test('a feeder is emitted only from a traced source-to-target vector route', () => {
   const parsed = Core.parseSchematicTopologyPage(directFeeder);
   assert.equal(parsed.matched, true);
+  assert.ok(parsed.boards.some((board) => board.norm === 'LVS1' && board.sourceScore >= 3));
+  assert.ok(!parsed.boards.some((board) => board.norm === 'MAINLVSWITCHBOARD'), 'generic main label is folded into the explicit source identity');
   assert.equal(parsed.feeds.length, 1);
   assert.equal(parsed.feeds[0].fromRef, 'LVS1');
   assert.equal(parsed.feeds[0].toRef, 'DB-A-01');
@@ -108,6 +110,43 @@ test('a feeder is emitted only from a traced source-to-target vector route', () 
   assert.equal(parsed.feeds[0].pathEvidence.crossingPolicy, 'shared_endpoint_or_filled_junction_only');
 });
 
+test('explicit short REF labels identify schematic boards without promoting circuit labels', () => {
+  const labelled = {
+    pageWidth: 800,
+    pageHeight: 600,
+    lines: [
+      { text: 'LV SCHEMATIC', words: [{ text: 'LV SCHEMATIC', bbox: [20, 20, 90, 12], confidence: 1 }] },
+      { text: 'REF: MSP1 MAINS SWITCH PANEL PANEL RATING 1600A SUPPLY 400V', words: [
+        { text: 'REF:', bbox: [58, 484, 28, 12], confidence: 1 },
+        { text: 'MSP1', bbox: [88, 484, 35, 12], confidence: 1 },
+        { text: 'MAINS SWITCH PANEL', bbox: [126, 484, 120, 12], confidence: 1 },
+        { text: 'PANEL RATING 1600A', bbox: [126, 501, 112, 12], confidence: 1 },
+        { text: 'SUPPLY 400V', bbox: [126, 518, 72, 12], confidence: 1 },
+      ] },
+      { text: 'REF: PBT1 TENANT PANELBOARD 6WAY TP&N', words: [
+        { text: 'REF:', bbox: [470, 83, 28, 12], confidence: 1 },
+        { text: 'PBT1', bbox: [500, 83, 34, 12], confidence: 1 },
+        { text: 'TENANT PANELBOARD', bbox: [538, 83, 108, 12], confidence: 1 },
+        { text: '6WAY TP&N', bbox: [538, 100, 64, 12], confidence: 1 },
+      ] },
+      { text: 'LL PB 1', words: [{ text: 'LL PB 1', bbox: [300, 180, 44, 12], confidence: 1 }] },
+      { text: '125A MCCB TPN', words: [
+        { text: '125A', bbox: [490, 228, 28, 12], confidence: 1 },
+        { text: 'MCCB', bbox: [490, 246, 34, 12], confidence: 1 },
+        { text: 'TPN', bbox: [490, 264, 22, 12], confidence: 1 },
+      ] },
+    ],
+    vectorGeometry: directFeeder.vectorGeometry,
+  };
+  const parsed = Core.parseSchematicTopologyPage(labelled);
+  assert.ok(parsed.boards.some((board) => board.norm === 'MSP1' && board.sourceScore >= 3));
+  assert.ok(parsed.boards.some((board) => board.norm === 'PBT1' && board.explicitLabel));
+  assert.ok(!parsed.boards.some((board) => board.norm === 'PB1'), 'LL PB 1 is an outgoing circuit label, not a board identity');
+  assert.equal(parsed.feeds.length, 1);
+  assert.equal(parsed.feeds[0].fromRef, 'MSP1');
+  assert.equal(parsed.feeds[0].toRef, 'PBT1');
+});
+
 test('a child branching from a proven panelboard busbar receives the immediate parent', () => {
   const parsed = Core.parseSchematicTopologyPage(nestedPanelboard);
   const child = parsed.feeds.find((feed) => feed.toRef === 'DB-CHILD');
@@ -117,6 +156,15 @@ test('a child branching from a proven panelboard busbar receives the immediate p
   assert.ok(child?.pathEvidence.parentBusbarOverlap >= 90);
   assert.equal(direct?.fromRef, 'LVS1');
   assert.notEqual(direct?.pathEvidence.parentEvidence, 'terminal_busbar_branch');
+});
+
+test('an authoritative switchboard root can recover its outgoing component from multiple panelboard anchors', () => {
+  const parsed = Core.parseSchematicTopologyPage(corroboratedRootPanelboards);
+  const recovered = parsed.diagnostics.sourceAnchorRecoveries.find((entry) => entry.board === 'MSP1');
+  assert.deepEqual(new Set(recovered?.corroboratingSources), new Set(['PBT1', 'PBT2']));
+  assert.ok(parsed.feeds.some((feed) => feed.fromRef === 'MSP1' && feed.toRef === 'PBT1'));
+  assert.ok(parsed.feeds.some((feed) => feed.fromRef === 'MSP1' && feed.toRef === 'PBT2'));
+  assert.deepEqual(parsed.diagnostics.unresolvedBoards, []);
 });
 
 test('nearby labels and bare crossings cannot invent a feeder', () => {

@@ -1200,7 +1200,7 @@ const state = {
   reportMode: 'board',
   reviewFlow: {active:false,currentRowId:null,initialCount:0,moving:false,boardOrder:[],initialByBoard:{},rowOrderByBoard:{}},
 };
-const ANALYSIS_VERSION=28;
+const ANALYSIS_VERSION=29;
 const uid = () => 'x'+(state.nextId++)+'_'+Math.random().toString(36).slice(2,6);
 
 /* ====================== PERSISTENCE (IndexedDB) ====================== */
@@ -1541,6 +1541,14 @@ function detectBoards(line){
     .map(({orig,norm,type,section})=>({orig,norm,type,section}));
 }
 
+function filenameBoardCandidatesOf(name){
+  const base=String(name||'').replace(/\.[^.]+$/,'');
+  const candidates=[base,...base.split('_')].flatMap(fragment=>detectBoards(fragment));
+  const unique=[...new Map(candidates.map(candidate=>[candidate.norm,candidate])).values()];
+  return unique.filter(candidate=>!unique.some(other=>other!==candidate
+    &&other.norm.length>candidate.norm.length&&other.norm.endsWith(candidate.norm)));
+}
+
 function scheduleBoardFromLines(lines){
   let sawLabel=false;
   for(const line of lines){
@@ -1601,7 +1609,12 @@ function classifyPage(text, pageIdx, totalPages){
   const low = text.toLowerCase();
   const scores = {};
   const add=(t,n)=>scores[t]=(scores[t]||0)+n;
-  const strongSchematicTitle=/\b(?:LV\s+SCHEMATIC|ELECTRICAL\s+SCHEMATIC|SINGLE[- ]LINE\s+(?:DIAGRAM|SCHEMATIC)|ONE[- ]LINE\s+DIAGRAM)\b/i.test(text);
+  const schematicTitlePattern=/\b(?:LV\s+SCHEMATIC|ELECTRICAL\s+SCHEMATIC|SINGLE[- ]LINE\s+(?:DIAGRAM|SCHEMATIC)|ONE[- ]LINE\s+DIAGRAM)\b/i;
+  const strongSchematicTitle=text.split(/\r?\n/).some(line=>{
+    const value=line.replace(/\s+/g,' ').trim();
+    return schematicTitlePattern.test(value)
+      && !/^(?:SEE|REFER(?:\s+TO)?|INCOMER\s*:|SUPPLIED\s+FROM\s*:|FED\s+FROM\s*:|CABLE\s+TYPE\s*:)/i.test(value);
+  });
   if (/drawing register|drawing list|drawing index|dwg register/.test(low)) add('register',8);
   if (/\blegend\b/.test(low) && /symbol|description|abbrev/.test(low)) add('legend',5);
   if (/lighting (?:layout|plan|drawing)/.test(low)) add('lighting-plan',5);
@@ -1886,11 +1899,35 @@ function calibrationPageFamily(type){
   if(value==='specification'||value==='legend'||value==='drawing-register')return 'reference';
   return value||'unknown';
 }
+function calibrationStructuralFamily(pageRecord){
+  const declared=calibrationPageFamily(pageRecord?.type);
+  const core=window.EstimationExtractorCore;
+  const lines=pageRecord?.lines||[];
+  const textLines=lines.map(line=>line?.text||String(line||''));
+  const candidate=core?.scoreScheduleCandidate?.(textLines)||{score:0,signals:[]};
+  const words=core?.collectSpatialWords?.({lines,tableRows:pageRecord?.tableRows||[]})||[];
+  const cableSchedule=words.length>=8&&core?.trimbleCableScheduleProfile
+    ?core.trimbleCableScheduleProfile(words,pageRecord?.w).matched:false;
+  const transposed=words.length>=8&&core?.isTransposedSchedulePage
+    ?core.isTransposedSchedulePage({lines,tableRows:pageRecord?.tableRows||[],pageWidth:pageRecord?.w,
+      pageHeight:pageRecord?.h,calibrationHint:{applicable:0,regions:[],roles:[]}}).matched:false;
+  if(cableSchedule||transposed||(candidate.score>=0.45&&(candidate.signals||[]).length>=2))return 'schedule';
+  const text=textLines.join('\n');
+  const vectorSegments=Number(pageRecord?.vectorGeometry?.stats?.segments||0);
+  if(declared==='schematic'||vectorSegments>100&&/\b(?:SINGLE\s+LINE|SCHEMATIC|DISTRIBUTION\s+BOARD|MCCB|MCB)\b/i.test(text))return 'schematic';
+  return declared;
+}
 function calibrationApplies(record,fileId,pageNo,pageRecord){
   if(!record||record.fileId!==fileId)return false;
   if(record.scope==='page'&&Number(record.sourcePage)!==Number(pageNo))return false;
   if(record.scope==='following'&&Number(pageNo)<Number(record.sourcePage))return false;
-  if(record.sourcePageType&&pageRecord?.type&&calibrationPageFamily(record.sourcePageType)!==calibrationPageFamily(pageRecord.type))return false;
+  if(record.sourcePageType&&pageRecord?.type){
+    const sourceFamily=calibrationPageFamily(record.sourcePageType),targetFamily=calibrationPageFamily(pageRecord.type);
+    const sourcePage=Number(record.sourcePage)===Number(pageNo);
+    const structuralFamily=sourcePage?sourceFamily:calibrationStructuralFamily(pageRecord);
+    if(sourceFamily!=='unknown'&&targetFamily!=='unknown'&&sourceFamily!==targetFamily
+      &&structuralFamily!==sourceFamily)return false;
+  }
   return true;
 }
 function pageCalibrations(project,fileId,pageNo,pageRecord){
@@ -1904,6 +1941,7 @@ function calibrationHintForPage(project,fileId,pageNo,pageRecord){
     regions:records.map(record=>{
       const resolved=core?.resolveCalibrationRegion?.(record,{...pageRecord,pageWidth:width,pageHeight:height,documentPage:pageNo});
       return {id:record.id,role:record.role,kind:record.kind,axis:record.axis||record.signature?.axis||'auto',scope:record.scope,
+        viewerRotation:Number(record.viewerRotation||0),coordinateVersion:Number(record.coordinateVersion||0),
         projection:resolved?.projection||'identity',
         projectionScore:resolved?.score||0,bbox:resolved?.bbox||[record.bboxNorm[0]*width,record.bboxNorm[1]*height,
           record.bboxNorm[2]*width,record.bboxNorm[3]*height]};
@@ -3407,9 +3445,14 @@ async function runAnalysis(opts){
       const spatialEvidence=spatialWords.length>=8;
       const cableScheduleDialect=spatialEvidence&&core.trimbleCableScheduleProfile
         ? core.trimbleCableScheduleProfile(spatialWords,pg.w).matched : false;
-      const regular=!schematic
+      const transposedSchedule=spatialEvidence&&core.isTransposedSchedulePage
+        ? core.isTransposedSchedulePage({lines:pg.lines||[],tableRows:pg.tableRows||[],pageWidth:pg.w,pageHeight:pg.h,calibrationHint})
+        : {matched:false,confidence:0,roles:[],wayCount:0};
+      const calibrationSchedule=calibrationHint.regions.some(region=>['way','circuit_reference','description','occupancy','phase',
+        'device_class','rating','trip_curve','trip_unit','breaking_capacity','rcd','rcd_ma','afdd'].includes(region.role));
+      const regular=calibrationSchedule||transposedSchedule.matched||(!schematic
         &&(SCHEDULE_TYPES.has(pg.type)||(sched.score>=0.45&&sched.signals.length>=2)||(headerEvidence&&spatialEvidence)
-          ||cableScheduleDialect||calibrationHint.regions.length>0);
+          ||cableScheduleDialect||calibrationHint.regions.length>0));
       if(!regular)return;
       candidates.push({documentPage:pageNo,lines:pg.lines||[],tableRows:pg.tableRows||[],pageWidth:pg.w,pageHeight:pg.h,
         pageType:pg.type,allowSingleWay:sched.score>=0.55&&sched.signals.length>=2,calibrationHint});
@@ -3440,6 +3483,7 @@ async function runAnalysis(opts){
   const pageDiag=[];   // per-page stage counters for the health model + diagnostics export
   for (const id of f.fileIds){
     const fl=p.files.find(x=>x.id===id); if(!fl||fl.status!=='ready') continue;
+      const filenameBoardCandidates=filenameBoardCandidatesOf(fl.name);
       let prevBoard=null;
       let prevSpatialSchema=null;
       fl.pages.forEach((pg,pi)=>{
@@ -3460,10 +3504,15 @@ async function runAnalysis(opts){
       const calibrationHint=calibrationHintForPage(p,id,pageNo,pg);
       const schematicPage=pg.type==='sld'||pg.type==='schematic';
       const documentSpatial=documentSpatialByFile.get(id)?.get(pageNo)||null;
-      const regularSchedule=!schematicPage
+      const transposedSchedule=core?.isTransposedSchedulePage
+        ? core.isTransposedSchedulePage({lines:pg.lines||[],tableRows:pg.tableRows||[],pageWidth:pg.w,pageHeight:pg.h,calibrationHint})
+        : {matched:false,confidence:0,roles:[],wayCount:0};
+      const calibrationSchedule=calibrationHint.regions.some(region=>['way','circuit_reference','description','occupancy','phase',
+        'device_class','rating','trip_curve','trip_unit','breaking_capacity','rcd','rcd_ma','afdd'].includes(region.role));
+      const regularSchedule=calibrationSchedule||transposedSchedule.matched||(!schematicPage
         && (SCHEDULE_TYPES.has(pg.type) || (schedCandidate.score>=0.45&&schedCandidate.signals.length>=2)
           || Boolean(documentSpatial?.result?.matched&&documentSpatial.result.rows?.length)
-          || calibrationHint.regions.length>0);
+          || calibrationHint.regions.length>0));
       if(documentSpatial?.result?.matched&&documentSpatial.result.rows?.length&&schedCandidate.score<0.45){
         schedCandidate.score=0.45;
         if(!schedCandidate.signals.includes('document-schema'))schedCandidate.signals.push('document-schema');
@@ -3520,6 +3569,7 @@ async function runAnalysis(opts){
         recoveryAttempted:Boolean(pg.recovery),recoveryOutcome:pg.recovery?.outcome||
           (pg.recovery?.error?'error':pg.recovery?'attempted':null),
         scheduleScore:schedCandidate.score, scheduleSignals:schedCandidate.signals, rowsParsed:0,
+        transposedSchedule,
         takeoffEvidence:core?.detectScheduleTakeoffEvidence?.(pg.lines||lines)||null,
         spatialContinuation,
         spatialMatched:Boolean(spatial?.matched&&spatial?.rows?.length),spatialWords:spatial?.words??spatialWordCount,
@@ -3544,6 +3594,7 @@ async function runAnalysis(opts){
         schematicFeeds:schematicSpatial?.feeds?.length||0,schematicWarnings:schematicSpatial?.warnings||[],
         schematicTopologyMethod:schematicSpatial?.topologyMethod||null,
         schematicGraphStats:schematicSpatial?.graphStats||null,
+        schematicReferenceStats:schematicSpatial?.diagnostics?.referenceStats||null,
         schematicUnresolvedBoards:schematicSpatial?.diagnostics?.unresolvedBoards||[],
         schematicAmbiguousBoards:schematicSpatial?.diagnostics?.ambiguousBoards||[],
         schematicVectorStats:schematicSpatial?.vectorStats||pg.vectorGeometry?.stats||null,
@@ -3558,12 +3609,29 @@ async function runAnalysis(opts){
         }else ctxBoard=scheduleBoardFromLines(lines);
         const hasBoardHeader=hasScheduleBoardHeader(lines);
         if (!ctxBoard && !hasBoardHeader && prevBoard) ctxBoard=prevBoard; // continuation page
+        const hasDocumentPrimary=Object.values(A.boards).some(board=>(board.pages||[])
+          .some(page=>page.fileId===id&&page.primary));
+        const filenameBoardFallback=!ctxBoard&&!prevBoard&&!hasDocumentPrimary&&filenameBoardCandidates.length===1
+          ? filenameBoardCandidates[0] : null;
+        if(filenameBoardFallback)ctxBoard=filenameBoardFallback;
         if (ctxBoard){ regBoard(ctxBoard,id,pageNo,true); prevBoard=ctxBoard; if(spatial?.schema)prevSpatialSchema=spatial.schema; }
         else if(hasBoardHeader){ prevBoard=null;prevSpatialSchema=null; }
         diagnostic.boardResolved=Boolean(ctxBoard);
         diagnostic.primaryBoardRef=ctxBoard?.orig||null;
         diagnostic.primaryBoardNorm=ctxBoard?.norm||null;
-        diagnostic.boardOwnershipMethod=spatial?.board?.ref?'spatial_board_header':(ctxBoard?'labelled_text_header':null);
+        diagnostic.boardOwnershipMethod=spatial?.board?.ref?'spatial_board_header'
+          :(filenameBoardFallback?'filename_reference_review':(ctxBoard?'labelled_text_header':null));
+        if(filenameBoardFallback){
+          diagnostic.spatialWarnings=[...new Set([...(diagnostic.spatialWarnings||[]),'filename_board_reference_used_for_review'])];
+          const board=A.boards[ctxBoard.norm];
+          if(board){
+            board.identitySource='filename_reference_review';
+            board.identityConfidence=0.55;
+            board.headerEvidence=board.headerEvidence||{};
+            board.headerEvidence.board_ref={text:ctxBoard.orig,originalText:fl.name,bbox:null,confidence:0.55,
+              extractionMethod:'Filename reference recovery'};
+          }
+        }
         diagnostic.downstreamCircuitReferences=(spatial?.references||[]).filter(reference=>reference.role==='circuit_reference')
           .map(reference=>reference.original);
         contextualRefs.filter(reference=>reference.role==='index_board').forEach(reference=>{
@@ -3602,7 +3670,7 @@ async function runAnalysis(opts){
         const board=A.boards[ctxBoard.norm];
         if(board&&localHeader){
           board.header=Object.assign(board.header||{},localHeader.header||{});
-          board.headerEvidence=localHeader.evidence||{};
+          board.headerEvidence=Object.assign(board.headerEvidence||{},localHeader.evidence||{});
           diagnostic.boardHeaderRoles=Object.keys(localHeader.header||{}).filter(field=>localHeader.header[field]!=null&&localHeader.header[field]!=='');
           if(spatial?.board?.classification){
             board.family=spatial.board.classification.family;
@@ -3656,7 +3724,8 @@ async function runAnalysis(opts){
         const trace=sourceTrace(row,evidenceLine,pg,fl.name);
         const confidence=trace.lineConfidence?Math.min(Number(row.conf??1),trace.lineConfidence):row.conf;
         const record={id:uid(),fileId:id,page:pageNo,line,status:'pending',kind:'schedule',...row,...trace,
-          boardNorm:effectiveBoardNorm,boardSection:effectiveBoardSection,boardOwnershipConflict:ownershipConflict,conf:confidence};
+          boardNorm:effectiveBoardNorm,boardSection:effectiveBoardSection,boardOwnershipConflict:ownershipConflict,
+          boardIdentitySource:diagnostic.boardOwnershipMethod||null,conf:confidence};
         record.sourceKey=stableRowSourceKey(record);A.rows.push(record);
       };
       if(codedPage.matched) codedPage.rows.forEach(row=>addScheduleRow(row,row.line));
@@ -5866,6 +5935,7 @@ function saveCalibrationSelection(f,pg,bbox){
     {...pg,pageWidth:width,pageHeight:height},{role:definition.role,bbox:[x,y,w,h]})||existing?.signature||null;
   const record={id:existing?.id||uid(),fileId:f.id,sourcePage:V.page,scope:cal.scope,role:definition.role,kind:definition.kind,
     bboxNorm,signature,axis:signature?.axis||'auto',sourcePageType:pg.type||null,
+    viewerRotation:((Number(V.rot)||0)%360+360)%360,coordinateVersion:2,coordinateSpace:'page',
     sourceWidth:width,sourceHeight:height,orientation:width>=height?'landscape':'portrait',
     createdAt:existing?.createdAt||now,updatedAt:now};
   if(existing)Object.assign(existing,record);else records.push(record);
@@ -5939,15 +6009,32 @@ async function applyCalibrations(){
     void renderViewer();
   }
 }
-function appendCalibrationOverlays(wrap,f,pg,scale){
+function viewerRotatedBox(bbox,width,height,rotation=0){
+  const core=window.EstimationExtractorCore;
+  if(core?.rotatePageBox)return core.rotatePageBox(bbox,width,height,rotation);
+  const [x,y,w,h]=(bbox||[]).map(Number),angle=((Number(rotation)||0)%360+360)%360;
+  if(angle===90)return [height-y-h,x,h,w];
+  if(angle===180)return [width-x-w,height-y-h,w,h];
+  if(angle===270)return [y,width-x-w,h,w];
+  return [x,y,w,h];
+}
+function viewerSourceBox(bbox,width,height,rotation=0){
+  const core=window.EstimationExtractorCore;
+  if(core?.unrotatePageBox)return core.unrotatePageBox(bbox,width,height,rotation);
+  const angle=((Number(rotation)||0)%360+360)%360,displayWidth=angle===90||angle===270?height:width;
+  const displayHeight=angle===90||angle===270?width:height;
+  return viewerRotatedBox(bbox,displayWidth,displayHeight,(360-angle)%360);
+}
+function appendCalibrationOverlays(wrap,f,pg,scale,rotation=0){
   const hint=calibrationHintForPage(state.cur,f.id,state.viewer.page,pg);
   hint.regions.forEach(region=>{
+    const bbox=viewerRotatedBox(region.bbox,pg.w,pg.h,rotation);if(!bbox)return;
     const overlay=document.createElement('div');overlay.className='calibration-overlay';overlay.dataset.label=calibrationRoleLabel(region.role);
-    overlay.style.left=(region.bbox[0]*scale)+'px';overlay.style.top=(region.bbox[1]*scale)+'px';
-    overlay.style.width=Math.max(2,region.bbox[2]*scale)+'px';overlay.style.height=Math.max(2,region.bbox[3]*scale)+'px';wrap.appendChild(overlay);
+    overlay.style.left=(bbox[0]*scale)+'px';overlay.style.top=(bbox[1]*scale)+'px';
+    overlay.style.width=Math.max(2,bbox[2]*scale)+'px';overlay.style.height=Math.max(2,bbox[3]*scale)+'px';wrap.appendChild(overlay);
   });
 }
-function bindCalibrationDrag(wrap,f,pg,scale){
+function bindCalibrationDrag(wrap,f,pg,scale,rotation=0){
   const cal=state.viewer.calibration;if(!cal.enabled)return;
   wrap.classList.add('calibration-cursor');let start=null,box=null;
   const point=event=>{const rect=wrap.getBoundingClientRect(),cssScale=parseFloat(wrap.dataset.cssScale||'1')||1;
@@ -5964,7 +6051,8 @@ function bindCalibrationDrag(wrap,f,pg,scale){
   wrap.addEventListener('pointerup',event=>{
     if(!start||!box)return;const end=point(event),x=Math.min(start.x,end.x),y=Math.min(start.y,end.y);
     const width=Math.abs(end.x-start.x),height=Math.abs(end.y-start.y);box.remove();box=null;start=null;
-    saveCalibrationSelection(f,pg,[x/scale,y/scale,width/scale,height/scale]);
+    const sourceBox=viewerSourceBox([x/scale,y/scale,width/scale,height/scale],pg.w,pg.h,rotation);
+    saveCalibrationSelection(f,pg,sourceBox);
   });
 }
 function applyAssistedSeed(text,row,evidence={}){
@@ -5996,7 +6084,7 @@ function clearAssistedMarkup(){
   V.assist.seed=null;V.assist.results=[];V.assist.markupId=null;
   saveProject(p);renderViewer();
 }
-function bindAssistedDrag(wrap,f,pg,scale){
+function bindAssistedDrag(wrap,f,pg,scale,rotation=0){
   const V=state.viewer;if(!V.assist.enabled)return;
   wrap.classList.add('assist-cursor');
   let start=null,box=null;
@@ -6014,10 +6102,12 @@ function bindAssistedDrag(wrap,f,pg,scale){
   wrap.addEventListener('pointerup',e=>{
     if(!start||!box)return;const end=point(e),x0=Math.min(start.x,end.x),y0=Math.min(start.y,end.y),x1=Math.max(start.x,end.x),y1=Math.max(start.y,end.y);
     box.remove();box=null;start=null;
-    const pad=(x1-x0<5&&y1-y0<5)?6:0;
+    const displayBox=[x0/scale,y0/scale,(x1-x0)/scale,(y1-y0)/scale];
+    const sourceBox=viewerSourceBox(displayBox,pg.w,pg.h,rotation),pad=(x1-x0<5&&y1-y0<5)?6/scale:0;
     const selected=(pg.lines||[]).map((line,index)=>({line,index})).filter(({line})=>{
-      if(!line.bbox)return false;const [x,y,w,h]=line.bbox.map(n=>n*scale);
-      return x<=x1+pad&&x+w>=x0-pad&&y<=y1+pad&&y+h>=y0-pad;
+      if(!line.bbox||!sourceBox)return false;const [x,y,w,h]=line.bbox;
+      return x<=sourceBox[0]+sourceBox[2]+pad&&x+w>=sourceBox[0]-pad
+        &&y<=sourceBox[1]+sourceBox[3]+pad&&y+h>=sourceBox[1]-pad;
     });
     if(!selected.length){toast('No readable text was inside that highlight');return;}
     const lineIds=new Set(selected.map(x=>x.index));
@@ -6456,7 +6546,8 @@ async function renderViewer(){
       if (pg.lines){
         if (showOvl) dets.forEach(d=>{
           if(d.kind==='feeder')return;
-          const ln=pg.lines[d.line],bbox=d.bbox||ln?.bbox; if(!bbox) return;
+          const ln=pg.lines[d.line],sourceBbox=d.bbox||ln?.bbox;
+          const bbox=sourceBbox&&viewerRotatedBox(sourceBbox,pg.w||vp1.width,pg.h||vp1.height,V.rot);if(!bbox)return;
           const focused=V.evidenceId&&d.r?.id===V.evidenceId;
           const o=document.createElement('div'); o.className='ovl '+d.color+(d.kind==='row'?' row-link':'')+(d.kind==='assisted'?' assisted':'')+(focused?' attention':'');
           o.title=d.countTitle||d.label;o.dataset.detKey=d.viewerKey;
@@ -6472,15 +6563,16 @@ async function renderViewer(){
         });
         if (q) pg.lines.forEach(ln=>{                    // §5.2 in-document search overlays
           if(!ln.bbox||!ln.text.toLowerCase().includes(q)) return;
+          const bbox=viewerRotatedBox(ln.bbox,pg.w||vp1.width,pg.h||vp1.height,V.rot);if(!bbox)return;
           const o=document.createElement('div'); o.className='ovl search';
-          o.style.left=(ln.bbox[0]*sc-2)+'px'; o.style.top=(ln.bbox[1]*sc-1)+'px';
-          o.style.width=(ln.bbox[2]*sc+4)+'px'; o.style.height=(ln.bbox[3]*sc+2)+'px';
+          o.style.left=(bbox[0]*sc-2)+'px'; o.style.top=(bbox[1]*sc-1)+'px';
+          o.style.width=(bbox[2]*sc+4)+'px'; o.style.height=(bbox[3]*sc+2)+'px';
           wrap.appendChild(o);
         });
       }
-      if(showOvl||V.calibration.enabled)appendCalibrationOverlays(wrap,f,pg,sc);
-      bindCalibrationDrag(wrap,f,pg,sc);
-      bindAssistedDrag(wrap,f,pg,sc);
+      if(showOvl||V.calibration.enabled)appendCalibrationOverlays(wrap,f,pg,sc,V.rot);
+      bindCalibrationDrag(wrap,f,pg,sc,V.rot);
+      bindAssistedDrag(wrap,f,pg,sc,V.rot);
       if (cssR!==1){
         wrap.style.transform='scale('+cssR+')'; wrap.style.transformOrigin='top left';
         const sizer=document.createElement('div');
@@ -6491,15 +6583,21 @@ async function renderViewer(){
       } else { stage.innerHTML=''; stage.appendChild(wrap); }
     }catch(e){ if(stale())return;stage.innerHTML='<div class="empty">Could not render this PDF page: '+esc(e.message)+'</div>'; }
   } else if(isImage){
-    const scale=V.zoom,wrap=document.createElement('div');wrap.className='v-pagewrap';
-    wrap.style.width=(pg.w*scale)+'px';wrap.style.height=(pg.h*scale)+'px';
-    const img=document.createElement('img');img.alt=f.name;img.style.width='100%';img.style.height='100%';img.style.display='block';
+    const scale=V.zoom,rotation=((Number(V.rot)||0)%360+360)%360,rotated=rotation===90||rotation===270;
+    const wrap=document.createElement('div');wrap.className='v-pagewrap';
+    wrap.style.width=((rotated?pg.h:pg.w)*scale)+'px';wrap.style.height=((rotated?pg.w:pg.h)*scale)+'px';
+    const img=document.createElement('img');img.alt=f.name;img.style.width=(pg.w*scale)+'px';img.style.height=(pg.h*scale)+'px';
+    img.style.display='block';img.style.position='absolute';img.style.left='0';img.style.top='0';img.style.transformOrigin='top left';
+    if(rotation===90)img.style.transform=`translate(${pg.h*scale}px,0) rotate(90deg)`;
+    else if(rotation===180)img.style.transform=`translate(${pg.w*scale}px,${pg.h*scale}px) rotate(180deg)`;
+    else if(rotation===270)img.style.transform=`translate(0,${pg.w*scale}px) rotate(270deg)`;
     const imageUrl=URL.createObjectURL(new Blob([rawStore[f.id]],{type:imageMime(f.ext)}));
     img.onload=()=>URL.revokeObjectURL(imageUrl);img.src=imageUrl;wrap.appendChild(img);
-    if(showOvl)appendSchematicPaths(wrap,dets,pg.w,pg.h,scale,0);
+    if(showOvl)appendSchematicPaths(wrap,dets,pg.w,pg.h,scale,V.rot);
     if(showOvl&&pg.lines) dets.forEach(d=>{
       if(d.kind==='feeder')return;
-      const line=pg.lines[d.line],bbox=d.bbox||line?.bbox;if(!bbox)return;
+      const line=pg.lines[d.line],sourceBbox=d.bbox||line?.bbox;
+      const bbox=sourceBbox&&viewerRotatedBox(sourceBbox,pg.w,pg.h,V.rot);if(!bbox)return;
       const focused=V.evidenceId&&d.r?.id===V.evidenceId;
       const overlay=document.createElement('div');overlay.className='ovl '+d.color+(d.kind==='row'?' row-link':'')+(focused?' attention':'');overlay.title=d.countTitle||d.label;overlay.dataset.detKey=d.viewerKey;
       if(d.kind==='row'&&d.r?.id)overlay.dataset.rowId=d.r.id;
@@ -6507,9 +6605,9 @@ async function renderViewer(){
       overlay.style.left=(bbox[0]*scale-2)+'px';overlay.style.top=(bbox[1]*scale-1)+'px';
       overlay.style.width=(bbox[2]*scale+4)+'px';overlay.style.height=(bbox[3]*scale+2)+'px';wrap.appendChild(overlay);
     });
-    if(showOvl||V.calibration.enabled)appendCalibrationOverlays(wrap,f,pg,scale);
-    bindCalibrationDrag(wrap,f,pg,scale);
-    bindAssistedDrag(wrap,f,pg,scale);
+    if(showOvl||V.calibration.enabled)appendCalibrationOverlays(wrap,f,pg,scale,V.rot);
+    bindCalibrationDrag(wrap,f,pg,scale,V.rot);
+    bindAssistedDrag(wrap,f,pg,scale,V.rot);
     stage.innerHTML='';stage.appendChild(wrap);
   } else {
     // text page rendering with inline highlights
@@ -6600,7 +6698,6 @@ async function renderViewer(){
       V.assist.enabled=false;
       V.calibration.enabled=true;
       V.calibration.role=extractionGap?.boardNorm?'way':'board_ref';
-      V.rot=0;
       $('#vOvl').checked=true;
       requestAnimationFrame(()=>renderViewer());
     });
@@ -6811,7 +6908,7 @@ $('#vCalibrateMode').addEventListener('click',()=>{
     else if(!(diagnostic?.spatialColumns||[]).includes('rating'))V.calibration.role='rating';
     else if(!(diagnostic?.spatialColumns||[]).some(role=>role==='description'||role==='circuit_reference'))V.calibration.role='description';
     else if((diagnostic?.rowsParsed||0)===0)V.calibration.role='way';
-    V.assist.enabled=false;V.rot=0;$('#vOvl').checked=true;
+    V.assist.enabled=false;$('#vOvl').checked=true;
   }
   renderViewer();
 });

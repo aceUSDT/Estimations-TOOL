@@ -15,6 +15,12 @@ check('12-way', core.expectedWaysFromText('a 12-way SP&N board')?.ways === 12);
 check('Number of ways', core.expectedWaysFromText('Number of ways (TP): 6')?.ways === 6);
 check('No of Ways', core.expectedWaysFromText('No of Ways 8')?.ways === 8);
 check('split board ways', core.expectedWaysFromText('125A TP+N/12 Way Power + 8 Way Lighting Split Distribution Board')?.ways === 20);
+check('8+8 TPN split uses 48 physical outgoing positions',
+  core.expectedWaysFromText('125A 8+8 Way TPN Split-metered DB')?.slotCapacity === 48);
+check('hybrid TPN plus AFDD uses mixed physical capacity',
+  core.expectedWaysFromText('250A 10 Ways TPN DB With 12 AFDD Ways (hybrid board)')?.slotCapacity === 42);
+check('standalone TP&N AFDD board counts printed AFDD positions once',
+  core.expectedWaysFromText('125A 12 Way TP&N AFDD Board Type B')?.slotCapacity === 12);
 check('no false positive on M25 WAYFINDING', core.expectedWaysFromText('the motorway junction') === null);
 check('rejects way 1', core.expectedWaysFromText('WAY 1') === null); // 1 < min 2 threshold
 
@@ -102,6 +108,61 @@ const splitCoverage = core.buildCoverage({
 check('split board expected=20', splitCoverage.perBoard[0].expectedWays === 20);
 check('split board captured=20', splitCoverage.perBoard[0].capturedWays === 20);
 check('split board complete', splitCoverage.perBoard[0].unaccountedWays === 0);
+
+const physicalRows = (boardNorm, sections, waysPerSection) => sections.flatMap((boardSection) =>
+  Array.from({ length: waysPerSection }, (_, index) => ['L1', 'L2', 'L3'].map((phase) => ({
+    boardNorm, boardSection, way: index + 1, phase, page: 1, fileId: 'physical',
+    kind: 'schedule', device: 'MCB', rating: 20,
+  }))).flat());
+
+const physicalSplitCoverage = core.buildCoverage({
+  boards: { DBSPLIT: { norm: 'DBSPLIT', orig: 'DB/SPLIT', pages: [{ fileId: 'physical', page: 1, primary: true }] } },
+  rows: physicalRows('DBSPLIT', ['L', 'P'], 8),
+  pages: [{ fileId: 'physical', page: 1, text: 'Board Reference: DB/SPLIT\n125A 8+8 Way TPN Split-metered DB', type: 'db-schedule' }],
+});
+check('8+8 TPN split expects 48 physical positions', physicalSplitCoverage.perBoard[0].expectedWays === 48,
+  JSON.stringify(physicalSplitCoverage.perBoard[0]));
+check('8+8 TPN split reconciles all 48 printed phase positions', physicalSplitCoverage.perBoard[0].capturedWays === 48);
+check('8+8 TPN split reports outgoing-position capacity', physicalSplitCoverage.perBoard[0].capacityUnit === 'outgoing_position');
+
+const hybridRows = [
+  ...physicalRows('DBHYBRID', ['TPN'], 10),
+  ...Array.from({ length: 12 }, (_, index) => ({
+    boardNorm: 'DBHYBRID', boardSection: 'AFDD', way: index + 1,
+    phase: `L${(index % 3) + 1}`, page: 1, fileId: 'hybrid', kind: 'schedule',
+    device: 'AFDD+RCBO', rating: 20, sens: 30, afdd: true,
+  })),
+];
+const hybridCoverage = core.buildCoverage({
+  boards: { DBHYBRID: { norm: 'DBHYBRID', orig: 'DB/HYBRID', pages: [{ fileId: 'hybrid', page: 1, primary: true }] } },
+  rows: hybridRows,
+  pages: [{ fileId: 'hybrid', page: 1, text: 'Board Reference: DB/HYBRID\n250A 10 Ways TPN DB With 12 AFDD Ways', type: 'db-schedule' }],
+});
+check('hybrid board expects 42 physical positions', hybridCoverage.perBoard[0].expectedWays === 42,
+  JSON.stringify(hybridCoverage.perBoard[0]));
+check('hybrid board reconciles 30 TPN plus 12 AFDD positions', hybridCoverage.perBoard[0].capturedWays === 42);
+check('hybrid board has no false coverage gap', hybridCoverage.perBoard[0].unaccountedWays === 0);
+
+const afddCoverage = core.buildCoverage({
+  boards: { DBAFDD: { norm: 'DBAFDD', orig: 'DB/AFDD', pages: [{ fileId: 'afdd', page: 1, primary: true }] } },
+  rows: Array.from({ length: 12 }, (_, index) => ({
+    boardNorm: 'DBAFDD', way: index + 1, phase: `L${(index % 3) + 1}`,
+    page: 1, fileId: 'afdd', kind: 'schedule', device: 'AFDD+RCBO', rating: 20, sens: 30, afdd: true,
+  })),
+  pages: [{ fileId: 'afdd', page: 1, text: 'Board Reference: DB/AFDD\n125A 12 Way TP&N AFDD Board Type B', type: 'db-schedule' }],
+});
+check('standalone AFDD board expects 12 positions', afddCoverage.perBoard[0].expectedWays === 12);
+check('standalone AFDD board does not triple-count positions', afddCoverage.perBoard[0].capturedWays === 12);
+check('standalone AFDD board has no false coverage gap', afddCoverage.perBoard[0].unaccountedWays === 0);
+
+const sourceConflictCoverage = core.buildCoverage({
+  boards: { DBMECH: { norm: 'DBMECH', orig: 'DB/MECH', pages: [{ fileId: 'mech', page: 1, primary: true }] } },
+  rows: physicalRows('DBMECH', ['PRINTED'], 8).map((row) => ({ ...row, fileId: 'mech' })),
+  pages: [{ fileId: 'mech', page: 1, text: 'Board Reference: DB/MECH\n125A 8+8 Way TPN Split-metered DB', type: 'db-schedule' }],
+});
+check('source header/table conflict preserves expected 48 positions', sourceConflictCoverage.perBoard[0].expectedWays === 48);
+check('source header/table conflict preserves 24 printed positions', sourceConflictCoverage.perBoard[0].capturedWays === 24);
+check('source header/table conflict remains a 24-position review gap', sourceConflictCoverage.perBoard[0].unaccountedWays === 24);
 
 const ownedCoverage = core.buildCoverage({
   boards: {

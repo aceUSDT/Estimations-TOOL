@@ -26,6 +26,8 @@ deployment check has been performed.
 | EX-14 | Reconcile authored source contradictions only when same-document geometry and electrical invariants corroborate the repair; retain printed evidence, cap confidence, and require review. Otherwise remain unresolved. | `test-spatial-schedule.mjs`, `test-extract-function.mjs`, `test-agent-team.mjs` |
 | EX-15 | Interpret spare/space as bounded occupancy cells, never as words inside load descriptions; populated device evidence remains countable, partial protection evidence cannot bypass review, and any true occupancy conflict stays visible across Viewer, health, reports, and totals. | `test-commercial-extraction.mjs`, `test-report-core.mjs`, `verify-viewer-linked-review.mjs` |
 | EX-16 | For raster-only schematics, attach the page image and accept an AI-proposed feeder only after local pixel-continuity validation; unsupported paths remain unresolved and cannot enable export. | `test-schematic-topology.mjs`, `verify-scanned-schematic.mjs`, `test-analysis-health.mjs` |
+| EX-17 | Detect transposed field-band schedules without calibration, bind each field-band/circuit-column intersection to one ordinary outgoing row, and map all evidence back to source-page coordinates. | `test-spatial-schedule.mjs`, `test-ui-contract.mjs` |
+| EX-18 | Preserve explicit short schematic references such as PBT, PBLL, MSP, DBT and LS labels without promoting similarly named outgoing circuit labels to board nodes. | `test-schematic-topology.mjs`, `verify-schematic-private.mjs` |
 
 ## Review and correction workflow
 
@@ -39,6 +41,7 @@ deployment check has been performed.
 | RV-06 | Full-screen viewer, collapsible/resizable thumbnail and evidence panels, mobile layout, row counts, and specification colours remain usable without overlap. | `verify-viewer-linked-review.mjs`, desktop/mobile screenshots |
 | RV-07 | The operator can approve all remaining rows on one board after confirmation; every row receives its own audit entry and remains individually undoable. | `verify-viewer-linked-review.mjs` |
 | RV-08 | Pending, approved specifications, corrected rows, and rejected rows use stable, distinct colours without changing extraction identity or counts. | `verify-viewer-linked-review.mjs` |
+| RV-09 | Calibration and evidence overlays remain aligned at 0, 90, 180 and 270 degree Viewer rotations; saved regions use canonical source-page coordinates and re-analysis preserves prior approvals. | `test-spatial-schedule.mjs`, `verify-viewer-linked-review.mjs`, `verify-real-viewer.mjs` |
 
 ## Reports
 
@@ -49,7 +52,7 @@ deployment check has been performed.
 | RP-03 | Device Take-Off has boards down rows, one column per full distinct device specification, and reconciled quantities/totals. | `test-report-core.mjs` |
 | RP-04 | Neither deliverable worksheet contains `Not specified`, `Unclear`, or unresolved prose embedded in a device name. | `test-report-core.mjs` |
 | RP-05 | Every on-screen report line opens its contributing source records and can launch correction. | `test-ui-contract.mjs`, browser verification |
-| RP-06 | Export remains blocked while analysis health or quantity reconciliation is incomplete. | `test-analysis-health.mjs`, `test-report-core.mjs` |
+| RP-06 | Export remains blocked for pending audit decisions, unresolved key take-off coverage, unassigned devices or invalid quantity reconciliation; advisory blank-page and topology diagnostics remain visible but do not block an audited reconciled report. | `test-analysis-health.mjs`, `test-report-core.mjs` |
 
 ## Hosting, privacy, and release
 

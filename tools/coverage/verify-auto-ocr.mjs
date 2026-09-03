@@ -103,7 +103,10 @@ try {
       zeroRowPages: state.cur.analysis.coverage.zeroRowSchedulePages.length,
     } : null,
     health: state.cur.analysis.health,
-    pageDiagnostics: state.cur.analysis.pageDiagnostics,
+    pageDiagnostics: state.cur.analysis.pageDiagnostics?.filter(item => {
+      const auditPage = ${Number(process.env.AUDIT_PAGE_NUMBER) || 0};
+      return !auditPage || Number(item.page) === auditPage;
+    }),
     boardDetails: Object.fromEntries(Object.entries(state.cur.analysis.boards).filter(([key]) => {
       const auditBoard = ${JSON.stringify(process.env.AUDIT_BOARD || '')};
       return !auditBoard || key === auditBoard;
@@ -116,9 +119,12 @@ try {
     }])),
     rowDetails: ${process.env.AUDIT_ROWS === '1' ? `state.cur.analysis.rows.filter(row => {
       const auditBoard = ${JSON.stringify(process.env.AUDIT_BOARD || '')};
-      return !auditBoard || row.boardNorm === auditBoard || String(row.circuitReference || '').replace(/[^A-Z0-9]/gi, '').toUpperCase() === auditBoard;
+      const auditPage = ${Number(process.env.AUDIT_PAGE_NUMBER) || 0};
+      const boardMatches = !auditBoard || row.boardNorm === auditBoard
+        || String(row.circuitReference || '').replace(/[^A-Z0-9]/gi, '').toUpperCase() === auditBoard;
+      return boardMatches && (!auditPage || Number(row.page) === auditPage);
     }).map(row => ({
-      id: row.id, boardNorm: row.boardNorm, way: row.way, phase: row.phase,
+      id: row.id, page: row.page, boardNorm: row.boardNorm, way: row.way, phase: row.phase,
       device: row.device, rating: row.rating, poles: row.poles,
       rcdProtected: row.rcdProtected, sens: row.sens, afdd: row.afdd,
       spare: row.spare, space: row.space, desc: row.desc,
@@ -126,6 +132,26 @@ try {
       sourceKey: row.sourceKey, highlightBbox: row.highlightBbox,
       resolutionSource: row.resolutionSource, resolutionReasons: row.resolutionReasons,
     }))` : 'undefined'},
+    rowCountByPage: Object.values(state.cur.analysis.rows.reduce((pages, row) => {
+      const key = String(row.page || 0);
+      const current = pages[key] || (pages[key] = { page: row.page || null, rows: 0, devices: 0, spares: 0, blanks: 0, review: 0 });
+      current.rows += 1;
+      if (window.EstimationExtractorCore.isCountableProtectionDevice(window.EstimationExtractorCore.reconcileCombinedProtection(row))) current.devices += 1;
+      if (row.spare) current.spares += 1;
+      if (row.space) current.blanks += 1;
+      if (row.requiresReview) current.review += 1;
+      return pages;
+    }, {})).sort((left, right) => left.page - right.page),
+    rowCountByBoard: Object.entries(state.cur.analysis.rows.reduce((boards, row) => {
+      const key = row.boardNorm || 'UNASSIGNED';
+      const current = boards[key] || (boards[key] = { board: key, rows: 0, devices: 0, spares: 0, blanks: 0, review: 0 });
+      current.rows += 1;
+      if (window.EstimationExtractorCore.isCountableProtectionDevice(window.EstimationExtractorCore.reconcileCombinedProtection(row))) current.devices += 1;
+      if (row.spare) current.spares += 1;
+      if (row.space) current.blanks += 1;
+      if (row.requiresReview) current.review += 1;
+      return boards;
+    }, {})).map(([, value]) => value).sort((left, right) => left.board.localeCompare(right.board)),
     feederDetails: ${(process.env.AUDIT_ROWS === '1' || process.env.AUDIT_FEEDERS === '1') ? `state.cur.analysis.feeders.filter(feeder => {
       const auditBoard = ${JSON.stringify(process.env.AUDIT_BOARD || '')};
       return !auditBoard || feeder.from === auditBoard || feeder.to === auditBoard;
@@ -135,23 +161,30 @@ try {
       cable: feeder.cable, confidence: feeder.conf, sourceRole: feeder.sourceRole,
     }))` : 'undefined'},
     spatialAudit: ${(process.env.AUDIT_ROWS === '1' || process.env.AUDIT_SCHEMA === '1') ? `(() => {
-      const pg = state.cur.files[0]?.pages?.[0];
+      const auditPage = Math.max(1, ${Number(process.env.AUDIT_PAGE_NUMBER) || 1});
+      const pg = state.cur.files[0]?.pages?.[auditPage - 1];
       if (!pg || !window.EstimationExtractorCore?.parseSpatialSchedulePage) return null;
       const parsed = window.EstimationExtractorCore.parseSpatialSchedulePage({
         lines: pg.lines || [], tableRows: pg.tableRows || [],
         pageWidth: pg.w, pageHeight: pg.h, pageType: pg.type,
       });
       return {
+        page: auditPage,
         matched: parsed.matched,
+        rowCount: parsed.rows?.length || 0,
+        reviewRows: parsed.rows?.filter(row => row.requiresReview).length || 0,
+        grid: parsed.grid || null,
         schema: parsed.schema?.columns?.map(column => ({
           role: column.role, x: column.x, left: column.left, right: column.right,
           source: column.source, evidence: column.evidence?.text || null,
         })),
         header: parsed.board?.header || null,
-        rows: parsed.rows?.slice(0, 4).map(row => ({
+        rows: parsed.rows?.slice(0, ${Math.max(4, Number(process.env.AUDIT_ROW_LIMIT) || 80)}).map(row => ({
           way: row.way, phase: row.phase, device: row.device, rating: row.rating,
           rcdProtected: row.rcdProtected, sens: row.sens, poles: row.poles,
-          cells: Object.fromEntries(Object.entries(row.fieldSources || {}).map(([key, cell]) => [key, cell?.text || null])),
+          spare: row.spare, space: row.space, desc: row.desc,
+          requiresReview: row.requiresReview, highlightBbox: row.highlightBbox,
+          ${process.env.AUDIT_COMPACT === '1' ? '' : "cells: Object.fromEntries(Object.entries(row.fieldSources || {}).map(([key, cell]) => [key, cell?.text || null])),"}
         })),
       };
     })()` : 'undefined'},
@@ -175,7 +208,42 @@ try {
     reviewItems: (() => { setTab('review'); return document.querySelectorAll('#reviewList .rev-item').length; })(),
   })`);
   res.elapsedMs = Date.now() - analysisStartedAt;
-  console.log(JSON.stringify(res, null, 2));
+  const printable = process.env.AUDIT_ROWS_ONLY === '1' ? {
+    pageDiagnostics: res.pageDiagnostics,
+    rowDetails: res.rowDetails,
+    spatialAudit: res.spatialAudit,
+    elapsedMs: res.elapsedMs,
+  } : process.env.AUDIT_FOCUSED === '1' ? {
+    rows: res.rows,
+    status: res.status,
+    health: res.health,
+    pageDiagnostics: res.pageDiagnostics,
+    boardDetails: res.boardDetails,
+    rowDetails: res.rowDetails,
+    rowCountByPage: res.rowCountByPage,
+    spatialAudit: res.spatialAudit,
+    elapsedMs: res.elapsedMs,
+  } : process.env.SUMMARY_ONLY === '1' ? {
+    ocrReady: res.ocrReady,
+    pages: res.pageLines.length,
+    pageTypes: res.pageTypes,
+    rows: res.rows,
+    feeders: res.feeders,
+    schematicDevices: res.schematicDevices,
+    boards: res.boards,
+    takeoffBoards: res.takeoffBoards,
+    status: res.status,
+    coverage: res.coverage,
+    health: res.health,
+    boardDetails: res.boardDetails,
+    rowDetails: res.rowDetails,
+    rowCountByPage: res.rowCountByPage,
+    rowCountByBoard: res.rowCountByBoard,
+    spatialAudit: res.spatialAudit,
+    reviewItems: res.reviewItems,
+    elapsedMs: res.elapsedMs,
+  } : res;
+  console.log(JSON.stringify(printable, null, 2));
   if (!res.pageLines.every((n) => n > 0)) throw new Error('document ingestion did not populate page lines');
   if (scanned > 0 && !res.ocrReady) throw new Error('auto-OCR did not populate scanned pages');
   if (!res.coverage) throw new Error('analysis.coverage missing — reconciliation pass did not run');

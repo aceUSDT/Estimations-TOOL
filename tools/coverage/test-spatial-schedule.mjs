@@ -11,6 +11,9 @@ assert.equal(Core.parseProtectionDescriptor('MCCB ATFM').tripUnit, 'ATFM');
 assert.equal(Core.parseProtectionDescriptor('MCCB ATAM').tripUnit, 'ATAM');
 assert.equal(Core.parseProtectionDescriptor('MCCB LI').tripUnit, 'LI');
 assert.equal(Core.parseProtectionDescriptor('Hager h3+ MCCB P160 LSI').productRange, 'H3+ / P160');
+assert.equal(Core.extractWayIdentifier('L1'), null, 'a plain phase label is not a way identifier');
+assert.equal(Core.extractWayIdentifier('L1L2'), 'L1', 'a composite section/phase label preserves its L1 base way');
+assert.equal(Core.extractWayIdentifier('L3L3'), 'L3', 'all L-prefixed composite ways remain extractable');
 
 const word = (text, x, y, width = Math.max(8, String(text).length * 4.5), height = 10, rotation = 0) => ({
   text,
@@ -99,12 +102,13 @@ assert.equal(result.board.header.internal_isolator_rating_a, 400);
 assert.equal(result.rows.length, 8);
 assert.deepEqual(result.rows.slice(0, 7).map((row) => row.rating), [100, 100, 100, 100, 50, 63, 63]);
 assert.ok(result.rows.slice(0, 7).every((row) => row.device === 'MCCB'));
-assert.ok(result.rows.slice(0, 7).every((row) => row.tripUnit === '6.2'));
+assert.ok(result.rows.slice(0, 7).every((row) => row.tripUnit == null));
+assert.ok(result.rows.slice(0, 7).every((row) => row.productRange === 'Micrologic 6.2'));
 assert.ok(result.rows.slice(0, 7).every((row) => row.ka === 25));
 assert.ok(result.rows.slice(0, 7).every((row) => row.poles === 3 && row.phase === '3PH'));
 assert.equal(result.rows[7].space, true);
 assert.equal(result.rows[7].qty, 0);
-assert.equal(result.rows[7].requiresReview, true);
+assert.equal(result.rows[7].requiresReview, false, 'a printed, bounded empty way has no unresolved electrical evidence');
 assert.equal(result.feeds.length, 7);
 assert.ok(result.rows[0].fieldSources.rating.bbox);
 assert.notDeepEqual(result.rows[0].fieldSources.rating.bbox, result.rows[0].fieldSources.circuitReference.bbox);
@@ -183,11 +187,25 @@ const compact = Core.parseSpatialSchedulePage({
   pageType: 'db-schedule',
 });
 assert.equal(compact.matched, true);
-assert.deepEqual(compact.rows.filter((row) => !row.inferredWay).map((row) => [row.device, row.rating, row.curve]), [['MCB', 16, 'B'], ['RCBO', 32, 'C']]);
+assert.deepEqual(compact.rows.map((row) => [row.device, row.rating, row.curve]), [['MCB', 16, 'B'], ['RCBO', 32, 'C']]);
 assert.equal(compact.rows.find((row) => row.way === 2).rcdProtected, true, 'a valid RCD sensitivity corroborates protection when the tick glyph is absent');
 assert.equal(compact.rows.find((row) => row.way === 2).sens, 30);
-assert.deepEqual(compact.rows.filter((row) => row.inferredWay).map((row) => row.way), [3, 4, 5, 6]);
+assert.equal(compact.rows.some((row) => row.inferredWay), false, 'normal extraction must not fabricate header-promised rows');
 assert.equal(compact.board.classification.family, 'distribution_board');
+
+const explicitPlaceholderRecovery = Core.parseSpatialSchedulePage({
+  lines: [
+    { text: 'DISTRIBUTION BOARD SCHEDULE' },
+    { text: 'Board Reference: DB-TEST-02' },
+    { text: 'Size: 6 WAY TPN' },
+  ],
+  words: compactWords,
+  pageWidth: 520,
+  pageHeight: 220,
+  pageType: 'db-schedule',
+  materializeMissingWays: true,
+});
+assert.deepEqual(explicitPlaceholderRecovery.rows.filter((row) => row.inferredWay).map((row) => row.way), [3, 4, 5, 6]);
 
 const inferredCurveWords = compactWords.filter((item) => !(item.text === 'B' && item.bbox[1] === 80));
 const inferredCurveSchedule = Core.parseSpatialSchedulePage({
@@ -299,6 +317,123 @@ assert.deepEqual(middlePhaseWay.map((row) => [row.phase, row.device, row.poles, 
 ]);
 assert.equal(middlePhaseWay.filter((row) => row.device).length, 1);
 assert.ok(middlePhaseWay.every((row) => row.phase !== '3PH'), 'spare neighbours must prevent TP promotion');
+
+// Rotated headers and composite identifiers are common in consultant-authored
+// schedules. The base way and physical phase lane must be separated without
+// losing the printed row, and explicit N/A RCD cells must never become Type A.
+const compositeHeaderWords = [
+  word('Way No.', 20, 45, 10, 75, 90),
+  word('MCB/RCBO Rating (A)', 50, 45, 10, 75, 90),
+  word('Trip Curve', 75, 45, 10, 75, 90),
+  word('RCD/RCBO Rating (mA)', 95, 45, 10, 75, 90),
+  word('RCD/RCBO Type', 115, 45, 10, 75, 90),
+  word('Number of Poles', 135, 45, 10, 75, 90),
+  word('Arc Fault Detection', 155, 45, 10, 75, 90),
+  word('Cable Type', 175, 45, 10, 75, 90),
+  word('Phase & Neutral (mm2)', 195, 45, 10, 75, 90),
+  word('CPC (mm2/SWA)', 215, 45, 10, 75, 90),
+  word('Circuit Configuration', 235, 45, 10, 75, 90),
+  word('Duty', 285, 45, 10, 75, 90),
+];
+const addCompositeRow = (identifier, y, values = []) => {
+  compositeHeaderWords.push(word(identifier, 20, y));
+  const xs = [50, 75, 95, 115, 135, 155, 175, 195, 215, 235, 285];
+  values.forEach((value, index) => compositeHeaderWords.push(word(String(value), xs[index], y)));
+};
+addCompositeRow('A1L1', 150, [32, 'C', 30, 'A', 2, 'Y', 2, 4, 2.5, 'RFC', 'Test socket circuit']);
+addCompositeRow('A1L2', 166, ['-', '-', '-', '-', '-', '-', '-', '-', '-', '-', 'Spare']);
+addCompositeRow('A1L3', 182, ['-', '-', '-', '-', '-', '-', '-', '-', '-', '-', 'Spare']);
+addCompositeRow('P2L1', 214);
+addCompositeRow('P2L2', 230, [63, 'C', 'N/A', 'N/A', 3, 'N', 3, 25, 16, 'R', 'DB/QA/02']);
+addCompositeRow('P2L3', 246);
+['A3L1', 'A3L2', 'A3L3', 'A4L1', 'A4L2', 'A4L3'].forEach((identifier, index) => {
+  addCompositeRow(identifier, 270 + index * 16, ['-', '-', '-', '-', '-', '-', '-', '-', '-', '-', 'Spare']);
+});
+
+const compositeSchedule = Core.parseSpatialSchedulePage({
+  lines: [
+    { text: 'DISTRIBUTION BOARD SCHEDULE' },
+    { text: 'Board Reference: DB/QA/01' },
+    { text: 'Location: Test electrical room' },
+    { text: 'Size, Type and Rating: 125A 12 Way TP&N AFDD Board Type B' },
+    { text: 'Incomer: 63A 3P + N Switch Disconnector' },
+    { text: 'Supplied from: DB/QA/00' },
+    { text: 'Cable Type: 25mm2 Cu/XLPE/SWA/LSOH + 16mm2 CPC' },
+  ],
+  words: compositeHeaderWords,
+  pageWidth: 420,
+  pageHeight: 400,
+  pageType: 'db-schedule',
+  materializeMissingWays: false,
+});
+assert.equal(compositeSchedule.matched, true, `composite rotated schedule failed: ${JSON.stringify({ warnings: compositeSchedule.warnings, grid: compositeSchedule.grid, schema: compositeSchedule.schema?.columns?.map((column) => column.role), rows: compositeSchedule.rows?.length })}`);
+assert.equal(compositeSchedule.board.ref, 'DB/QA/01');
+assert.equal(compositeSchedule.board.header.board_rating_a, 125);
+assert.equal(compositeSchedule.board.header.ways_total, 12);
+assert.equal(compositeSchedule.board.header.incomer_rating_a, 63);
+assert.equal(compositeSchedule.board.header.supply_cable_details, '25mm2 Cu/XLPE/SWA/LSOH + 16mm2 CPC');
+assert.equal(compositeSchedule.rows.length, 10);
+const afddRcbo = compositeSchedule.rows.find((row) => row.way === 'A1' && row.device);
+assert.ok(afddRcbo, `composite A1 device row missing: ${JSON.stringify(compositeSchedule.rows.map((row) => ({ way: row.way, phase: row.phase, device: row.device, rating: row.rating, spare: row.spare })))}`);
+assert.deepEqual(
+  [afddRcbo.phase, afddRcbo.device, afddRcbo.rating, afddRcbo.curve, afddRcbo.sens, afddRcbo.rcdType, afddRcbo.poles, afddRcbo.afdd, afddRcbo.circuitConfig],
+  ['L1', 'AFDD+RCBO', 32, 'C', 30, 'A', 2, true, 'RING'],
+);
+assert.equal(compositeSchedule.rows.filter((row) => row.spare).length, 8);
+assert.ok(compositeSchedule.rows.filter((row) => row.spare).every((row) => !row.requiresReview));
+const mergedThreePole = compositeSchedule.rows.find((row) => row.way === 'P2');
+assert.deepEqual(
+  [mergedThreePole.phase, mergedThreePole.device, mergedThreePole.rating, mergedThreePole.rcdProtected, mergedThreePole.rcdType, mergedThreePole.poles, mergedThreePole.poleConfiguration],
+  ['3PH', 'MCB', 63, false, null, 3, 'TP'],
+);
+assert.ok(!compositeSchedule.warnings.includes('row_review_required'));
+
+const continuationWords = [];
+const addContinuationRow = (identifier, y, values = []) => {
+  continuationWords.push(word(identifier, 20, y));
+  const xs = [50, 75, 95, 115, 135, 155, 175, 195, 215, 235, 285];
+  values.forEach((value, index) => continuationWords.push(word(String(value), xs[index], y)));
+};
+addContinuationRow('Q2L3', 90, [32, 'C', 30, 'A', 2, 'Y', 2, 4, 2.5, 'RFC', 'Continuation socket']);
+addContinuationRow('Q3L1', 106, [16, 'C', 30, 'A', 2, 'Y', 2, 2.5, 1.5, 'R', 'Control panel']);
+addContinuationRow('Q3L2', 122, [16, 'C', 30, 'A', 2, 'Y', 2, 2.5, 1.5, 'R', 'Data cabinet']);
+addContinuationRow('Q3L3', 138, ['-', '-', '-', '-', '-', '-', '-', '-', '-', '-', 'Spare']);
+['Q4L1', 'Q4L2', 'Q4L3'].forEach((identifier, index) => {
+  addContinuationRow(identifier, 154 + index * 16, ['-', '-', '-', '-', '-', '-', '-', '-', '-', '-', 'Spare']);
+});
+const compositeDocument = Core.parseSpatialScheduleDocument([
+  {
+    documentPage: 1,
+    lines: compositeSchedule.board ? [
+      { text: 'DISTRIBUTION BOARD SCHEDULE' },
+      { text: 'Board Reference: DB/QA/01' },
+      { text: 'Size, Type and Rating: 125A 12 Way TP&N AFDD Board Type B' },
+    ] : [],
+    words: compositeHeaderWords,
+    pageWidth: 420,
+    pageHeight: 400,
+    pageType: 'db-schedule',
+    materializeMissingWays: false,
+  },
+  {
+    documentPage: 2,
+    lines: [{ text: 'Distribution Board Schedules' }],
+    words: continuationWords,
+    pageWidth: 420,
+    pageHeight: 400,
+    pageType: 'db-schedule',
+    materializeMissingWays: false,
+  },
+]);
+const compositeContinuation = compositeDocument.pages[1];
+assert.equal(compositeContinuation.result.matched, true);
+assert.equal(compositeContinuation.schemaSourcePage, 1);
+assert.equal(compositeContinuation.result.board.ref, 'DB/QA/01');
+assert.equal(compositeContinuation.result.rows.length, 7);
+assert.equal(compositeContinuation.result.rows.filter((row) => row.device).length, 3);
+assert.equal(compositeContinuation.result.rows.filter((row) => row.spare).length, 4);
+assert.ok(compositeContinuation.result.rows.every((row) => !row.requiresReview));
+assert.ok(compositeContinuation.result.warnings.includes('schedule_continuation_board_inherited'));
 
 // Source drawings can contain authored errors. Three physical phase lanes must
 // survive repeated labels, and a repair is allowed only when the same page or
@@ -678,5 +813,87 @@ const relocatedRating = Core.resolveCalibrationRegion({
 assert.ok(relocatedRating.projection.startsWith('semantic-'));
 assert.ok(relocatedRating.bbox[0] < 540 && relocatedRating.bbox[0] + relocatedRating.bbox[2] > 540);
 assert.ok(relocatedRating.bbox[1] < 90 && relocatedRating.bbox[1] + relocatedRating.bbox[3] > 170);
+
+// Viewer calibration is persisted in the PDF's canonical coordinate space.
+// Every supported visual rotation must round-trip without moving or resizing
+// the source evidence box.
+const sourcePageBox = [37, 91, 126, 48];
+for (const rotation of [0, 90, 180, 270]) {
+  const displayed = Core.rotatePageBox(sourcePageBox, 400, 700, rotation);
+  const restored = Core.unrotatePageBox(displayed, 400, 700, rotation);
+  assert.deepEqual(restored, sourcePageBox, `${rotation} degree Viewer calibration must round-trip to source coordinates`);
+}
+
+// A sideways source still has valid table geometry after the user rotates it
+// for reading. Calibration supplies the semantic columns; the parser must not
+// discard those words merely because their embedded text angle is vertical.
+const sidewaysWords = [
+  word('DB-ROT-01', 230, 18, 72, 10, 90),
+  word('1', 15, 82, 12, 10, 90), word('L1', 48, 82, 18, 10, 90), word('MCB', 92, 82, 28, 10, 90),
+  word('20', 150, 82, 20, 10, 90), word('C', 194, 82, 10, 10, 90), word('Garage lights', 230, 82, 82, 10, 90),
+  word('2', 15, 116, 12, 10, 90), word('L2', 48, 116, 18, 10, 90), word('MCB', 92, 116, 28, 10, 90),
+  word('16', 150, 116, 20, 10, 90), word('B', 194, 116, 10, 10, 90), word('Water softener', 230, 116, 90, 10, 90),
+];
+const sideways = Core.parseSpatialSchedulePage({
+  words: sidewaysWords,
+  pageWidth: 420,
+  pageHeight: 180,
+  pageType: 'unknown',
+  calibrationHint: { regions: [
+    { role: 'board_ref', bbox: [220, 8, 95, 28], viewerRotation: 90 },
+    { role: 'way', bbox: [5, 60, 30, 80], viewerRotation: 90 },
+    { role: 'phase', bbox: [36, 60, 34, 80], viewerRotation: 90 },
+    { role: 'device_class', bbox: [78, 60, 52, 80], viewerRotation: 90 },
+    { role: 'rating', bbox: [140, 60, 40, 80], viewerRotation: 90 },
+    { role: 'trip_curve', bbox: [184, 60, 28, 80], viewerRotation: 90 },
+    { role: 'description', bbox: [215, 60, 125, 80], viewerRotation: 90 },
+  ] },
+});
+assert.equal(sideways.matched, true);
+assert.equal(sideways.board.ref, 'DB-ROT-01');
+assert.deepEqual(sideways.rows.map((row) => [row.way, row.phase, row.device, row.rating, row.curve]), [
+  [1, 'L1', 'MCB', 20, 'C'],
+  [2, 'L2', 'MCB', 16, 'B'],
+]);
+assert.equal(sideways.geometryOrientation.textAxisNormalised, true);
+
+// Some drawing packages express a DB schedule as horizontal field bands with
+// each circuit running down a page column. The adapter must transpose that
+// geometry, apply the ordinary electrical parser, and return source-page
+// evidence coordinates for correction and approval.
+const fieldBandWords = [
+  word('Garage lights', 135, 24, 72), word('Water softener', 215, 24, 82), word('SPARE', 315, 24, 42),
+  word('MCB', 22, 102, 28), word('16', 150, 102, 18), word('20', 240, 102, 18), word('0', 330, 102, 12),
+  word('PHASE', 22, 127, 42), word('L1', 150, 127, 18), word('L2', 240, 127, 18), word('L3', 330, 127, 18),
+  word('AFDD', 22, 152, 34), word('N', 150, 152, 12), word('Y', 240, 152, 12), word('N', 330, 152, 12),
+  word('TYPE', 22, 177, 32), word('C', 150, 177, 12), word('B', 240, 177, 12), word('C', 330, 177, 12),
+  word('WAY', 22, 202, 28), word('1', 150, 202, 12), word('2', 240, 202, 12), word('3', 330, 202, 12),
+  word('DISTRIBUTION BOARD REF DB-BAND-01', 110, 238, 220),
+];
+const fieldBand = Core.parseSpatialSchedulePage({
+  words: fieldBandWords,
+  pageWidth: 420,
+  pageHeight: 280,
+  pageType: 'unknown',
+});
+const fieldBandProfile = Core.isTransposedSchedulePage({
+  words: fieldBandWords,
+  pageWidth: 420,
+  pageHeight: 280,
+});
+assert.equal(fieldBandProfile.matched, true);
+assert.equal(fieldBandProfile.wayCount, 3);
+assert.ok(fieldBandProfile.roles.includes('way') && fieldBandProfile.roles.includes('rating'));
+assert.equal(fieldBand.matched, true, 'a field-band DB schedule must be normalised without calibration');
+assert.equal(fieldBand.dialect, 'transposed_schedule_matrix');
+assert.equal(fieldBand.board.ref, 'DB-BAND-01');
+assert.deepEqual(fieldBand.rows.map((row) => [row.way, row.phase, row.device, row.rating, row.curve, row.afdd, row.spare]), [
+  [1, 'L1', 'MCB', 16, 'C', false, false],
+  [2, 'L2', 'MCB', 20, 'B', true, false],
+  [3, 'L3', 'MCB', 0, 'C', false, true],
+]);
+assert.equal(fieldBand.geometryOrientation.fieldBandsNormalised, true);
+assert.ok(fieldBand.rows[0].sourceCell.bbox[1] < 210,
+  'transposed evidence must be mapped back onto the source field-band geometry');
 
 console.log('PASS: adaptive spatial schedules, damaged phase repair, precise rows, schematic feeder lanes, policy classification, and provenance.');

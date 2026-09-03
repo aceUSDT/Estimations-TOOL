@@ -139,4 +139,30 @@ assert.ok(cableSchedule.references.filter((reference) => reference.role === 'cir
 assert.equal(cableSchedule.references.filter((reference) => reference.role === 'primary_board').length, 1,
   'connected-to circuit references must not be promoted to schedule boards');
 
+const groupedCableSchedulePage = createTrimbleCableScheduleSyntheticPage();
+const combineHeader = (firstText, secondText, replacement) => {
+  const first = groupedCableSchedulePage.words.find((item) => item.text === firstText
+    && item.bbox[1] > 100 && item.bbox[1] < 160);
+  const second = groupedCableSchedulePage.words.find((item) => item.text === secondText && item.bbox[1] === first?.bbox[1]
+    && item.bbox[0] > first.bbox[0]);
+  assert.ok(first && second, `header ${firstText} ${secondText} must exist`);
+  first.text = replacement;
+  first.bbox[2] = (second.bbox[0] + second.bbox[2]) - first.bbox[0];
+  groupedCableSchedulePage.words = groupedCableSchedulePage.words.filter((item) => item !== second);
+};
+combineHeader('Id', 'No:', 'Id No:');
+combineHeader('Connected', 'From:', 'Connected From:');
+combineHeader('Cable', 'Type', 'Cable Type');
+groupedCableSchedulePage.words.find((item) => item.text === 'Ir(A)').text = 'Ir(A';
+groupedCableSchedulePage.words.find((item) => item.text === 'In(A)').text = 'In(A';
+const groupedCableSchedule = Core.parseSpatialSchedulePage(groupedCableSchedulePage);
+assert.equal(groupedCableSchedule.matched, true,
+  'combined or punctuation-truncated cable-schedule headers must retain the bounded schema');
+assert.equal(groupedCableSchedule.board?.ref, 'FF-L&P-3');
+assert.equal(groupedCableSchedule.rows.length, 6);
+assert.ok(groupedCableSchedule.rows.every((row) => row.tripUnit == null),
+  'Ir current-setting and voltage-drop values must never leak into the trip-unit field');
+assert.ok(groupedCableSchedule.rows.every((row) => row.fieldSources.tripUnit == null),
+  'a missing permitted trip unit must not cite an unrelated current-setting cell');
+
 console.log('PASS: Trimble/SVA stacked and cable schedules bind hierarchical boards, rows, protection records, phases, units, and fail-closed conflicts.');
