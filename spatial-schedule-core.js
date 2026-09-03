@@ -3289,11 +3289,16 @@
       && !row.validation?.invalidSensitivity && !row.validation?.invalidBreakingCapacity);
   }
 
+  function spatialProtectionRowComplete(row) {
+    const rating = Number(row?.rating);
+    return Boolean(row?.device) && Number.isFinite(rating) && rating > 0 && rating <= 6300;
+  }
+
   function spatialParseQuality(result) {
     const rows = result?.matched && Array.isArray(result.rows) ? result.rows : [];
     const activeRows = rows.filter((row) => Core.isPopulatedProtectionRow
       ? Core.isPopulatedProtectionRow(row) : !row.space && !row.spare);
-    const completeRows = activeRows.filter((row) => row.device && row.rating != null);
+    const completeRows = activeRows.filter(spatialProtectionRowComplete);
     return {
       rows: rows.length,
       activeRows: activeRows.length,
@@ -3311,6 +3316,13 @@
     if (!guided.rows) return true;
     if (!guided.gridAccepted && baseline.gridAccepted) return true;
     if (!guided.boardResolved && baseline.boardResolved && baseline.rows >= guided.rows) return true;
+    // Calibration is a recovery hint, not permission to discard already proven
+    // protection rows. A misplaced or over-broad projected column can preserve
+    // the row count while silently turning populated circuits into blanks.
+    const completeRowLoss = baseline.completeRows - guided.completeRows;
+    const materialCompleteLoss = completeRowLoss >= Math.max(2, Math.ceil(baseline.completeRows * 0.25));
+    if (baseline.gridAccepted && materialCompleteLoss
+      && baseline.completeness + 0.05 >= guided.completeness) return true;
     const materialLoss = baseline.rows >= guided.rows + Math.max(2, Math.ceil(guided.rows * 0.25));
     return materialLoss && baseline.completeRows >= guided.completeRows
       && baseline.completeness + 0.05 >= guided.completeness;
@@ -3395,17 +3407,46 @@
         // validated below before any transfer is accepted.
         const schemaHint = scaleSpatialSchemaHint(hint.schema, hint.width, hint.height, width, height);
         if (!schemaHint) continue;
-        const recovered = parseSpatialSchedulePage({
+        let recovered = parseSpatialSchedulePage({
           ...entry.input,
           schemaHint,
           allowSingleWay: true,
           materializeMissingWays: false,
         });
+        const transferredCalibration = calibrationRegions(entry.input);
+        let automaticRows = null;
+        let calibrationFallback = false;
+        if (transferredCalibration.length) {
+          const automaticRecovered = parseSpatialSchedulePage({
+            ...entry.input,
+            schemaHint,
+            allowSingleWay: true,
+            materializeMissingWays: false,
+            calibrationHint: { applicable: 0, regions: [], roles: [] },
+          });
+          automaticRows = automaticRecovered.rows?.length || 0;
+          calibrationFallback = automaticGeometryShouldReplaceCalibration(recovered, automaticRecovered);
+          if (calibrationFallback) {
+            recovered = {
+              ...automaticRecovered,
+              calibration: {
+                applicable: transferredCalibration.length,
+                applied: 0,
+                roles: [...new Set(transferredCalibration.map((region) => region.role))],
+                fallback: 'automatic_baseline_recovered_rows',
+              },
+              warnings: [...new Set([...(automaticRecovered.warnings || []),
+                'user_calibration_fell_back_to_automatic_geometry'])],
+            };
+          }
+        }
         entry.attempts.push({
           strategy: 'geometry-document-schema',
           sourcePage: hint.page,
           matched: false,
           rows: recovered.rows?.length || 0,
+          automaticRows,
+          calibrationFallback,
           confidence: Number(Number(recovered.confidence || 0).toFixed(2)),
           gridAccepted: recovered.grid?.accepted !== false,
           blockingReasons: recovered.grid?.blockingReasons || [],
@@ -3414,7 +3455,7 @@
         if (recovered.matched && recovered.rows?.length) {
           const activeRows = recovered.rows.filter((row) => Core.isPopulatedProtectionRow
             ? Core.isPopulatedProtectionRow(row) : !row.space && !row.spare);
-          const completeRows = activeRows.filter((row) => row.device && row.rating != null);
+          const completeRows = activeRows.filter(spatialProtectionRowComplete);
           const unresolvedPhaseRows = recovered.rows.filter((row) => row.phaseConflict).length;
           const completeness = activeRows.length ? completeRows.length / activeRows.length : 1;
           const occupancyContinuation = spatialOccupancyContinuationEligible(recovered);

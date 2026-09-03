@@ -522,6 +522,34 @@ assert.equal(adaptiveFirst.schemaSourcePage, 2);
 assert.ok(adaptiveFirst.attempts.some((attempt) => attempt.strategy === 'geometry-document-schema' && attempt.matched));
 assert.equal(adaptiveFirst.result.rows.find((row) => row.way === 1)?.rating, 20);
 
+// A calibration projected onto a headerless continuation page must be checked
+// against the same document-level schema recovery used by automatic geometry.
+const continuationCalibrationDocument = Core.parseSpatialScheduleDocument([
+  {
+    documentPage: 1,
+    lines: [{ text: 'Board Reference: DB-ADAPT-01' }],
+    words: sourcePageWords.filter((item) => item.bbox[1] > 30),
+    pageWidth: 260,
+    pageHeight: 220,
+    pageType: 'db-schedule',
+    calibrationHint: { applicable: 1, regions: [{ role: 'rating', bbox: [225, 30, 30, 160] }], roles: ['rating'] },
+  },
+  {
+    documentPage: 2,
+    lines: [{ text: 'DISTRIBUTION BOARD SCHEDULE' }, { text: 'Board Reference: DB-ADAPT-02' }],
+    words: sourcePageWords,
+    pageWidth: 260,
+    pageHeight: 220,
+    pageType: 'db-schedule',
+  },
+]);
+const calibratedContinuation = continuationCalibrationDocument.pages.find((entry) => entry.input.documentPage === 1);
+assert.equal(calibratedContinuation.schemaSourcePage, 2);
+assert.deepEqual(calibratedContinuation.result.rows.map((row) => row.rating), [20, 32]);
+assert.equal(calibratedContinuation.result.calibration.fallback, 'automatic_baseline_recovered_rows');
+assert.ok(calibratedContinuation.attempts.some((attempt) => attempt.strategy === 'geometry-document-schema'
+  && attempt.calibrationFallback && attempt.matched));
+
 const unrelatedWords = [
   word('1', 12, 90), word('L1', 47, 90), word('NOTES', 100, 90),
   word('2', 12, 150), word('L2', 47, 150), word('REVISION', 100, 150),

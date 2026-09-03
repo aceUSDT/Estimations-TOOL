@@ -15,6 +15,12 @@ fixtures.forEach((fixture) => assert.ok(fs.existsSync(fixture), `Missing fixture
 const expectedHealthReasons = new Set(String(process.env.EXPECTED_HEALTH_REASONS || '')
   .split(',').map((value) => value.trim()).filter(Boolean));
 const expectedFirstPage = Math.max(1, Number(process.env.EXPECTED_FIRST_PAGE || 1));
+const optionalExpectedNumber = (name) => process.env[name] == null || process.env[name] === ''
+  ? null : Number(process.env[name]);
+const expectedBoardCount = optionalExpectedNumber('EXPECTED_BOARD_COUNT');
+const expectedDeviceCount = optionalExpectedNumber('EXPECTED_DEVICE_COUNT');
+const expectedSpareCount = optionalExpectedNumber('EXPECTED_SPARE_COUNT');
+const expectedInferredRows = optionalExpectedNumber('EXPECTED_INFERRED_ROWS');
 
 const playwrightSpecifier = process.env.PLAYWRIGHT_CORE_PATH
   ? pathToFileURL(process.env.PLAYWRIGHT_CORE_PATH).href
@@ -104,6 +110,11 @@ try {
     return {
       analysisVersion: state.cur.analysis.version,
       scheduleRows: scheduleRows.length,
+      boardCount: new Set(scheduleRows.map((row) => row.boardNorm).filter(Boolean)).size,
+      deviceCount: scheduleRows.filter(isCountedDeviceRow).reduce((sum, row) => sum + countedRowQuantity(row), 0),
+      spareCount: scheduleRows.filter((row) => row.spare).reduce((sum, row) => sum + Math.max(1, Number(row.quantity) || 1), 0),
+      inferredRows: scheduleRows.filter((row) => row.inferredWay).length,
+      unassignedRows: scheduleRows.filter((row) => !row.boardNorm).length,
       schematicPages: (state.cur.analysis.pageDiagnostics || []).filter((item) => item.type === 'sld' || item.type === 'schematic').length,
       schematicVectorSegments: (state.cur.analysis.pageDiagnostics || []).reduce((sum, item) => sum + Number(item.schematicVectorStats?.segments || 0), 0),
       schematicFeeds: state.cur.analysis.feeders.filter((feed) => String(feed.sourceRole || '').startsWith('schematic')).length,
@@ -119,6 +130,8 @@ try {
       issueCounts,
       pageInput: {
         type: sourcePage?.type || null,
+        width: sourcePage?.w || null,
+        height: sourcePage?.h || null,
         lineCount: sourcePage?.lines?.length || 0,
         wordCount: (sourcePage?.lines || []).reduce((sum, line) => sum + (line.words?.length || 0), 0),
         tokenGeometry: (sourcePage?.lines || []).flatMap((line) => line.words || [])
@@ -168,6 +181,10 @@ try {
     `guided review must have a first schedule row: ${JSON.stringify({ issueCounts: extraction.issueCounts, rowSample: extraction.rowSample,
       pageInput: extraction.pageInput, spatialProbe: extraction.spatialProbe })}`);
   assert.equal(extraction.firstPage, expectedFirstPage, 'guided review must begin on the earliest schedule page');
+  if (expectedBoardCount != null) assert.equal(extraction.boardCount, expectedBoardCount, 'real fixture board count must reconcile');
+  if (expectedDeviceCount != null) assert.equal(extraction.deviceCount, expectedDeviceCount, 'real fixture device count must reconcile');
+  if (expectedSpareCount != null) assert.equal(extraction.spareCount, expectedSpareCount, 'real fixture spare count must reconcile');
+  if (expectedInferredRows != null) assert.equal(extraction.inferredRows, expectedInferredRows, 'real fixture inferred row count must reconcile');
   if (extraction.schematicPages) {
     assert.ok(extraction.schematicVectorSegments > 100, 'schematic PDF vectors must be captured in the browser pipeline');
     assert.ok(extraction.schematicFeeds > 0, 'schematic feeder relationships must be extracted');
@@ -293,7 +310,9 @@ try {
     };
   });
   assert.equal(rotatedViewer.rotation, 90, 'real Viewer must retain the requested page rotation');
-  assert.ok(rotatedViewer.portrait, 'the landscape source page must render portrait after a 90 degree rotation');
+  const sourceWasLandscape = Number(extraction.pageInput.width) > Number(extraction.pageInput.height);
+  assert.equal(rotatedViewer.portrait, sourceWasLandscape,
+    'a 90 degree Viewer rotation must swap the source page orientation');
   assert.ok(rotatedViewer.evidenceInside, 'the current evidence overlay must stay inside the rotated real PDF page');
   assert.equal(rotatedViewer.currentId, guidedNext.currentId, 'rotation must not change the current audit row');
   await page.screenshot({ path: path.join(shotsDir, 'real-viewer-rotated.png'), fullPage: false });
@@ -364,6 +383,17 @@ try {
   const calibrationReanalysis = await page.evaluate(async () => {
     const project = state.cur;
     const beforeCount = project.analysis.rows.filter(isCountedDeviceRow).reduce((sum, row) => sum + countedRowQuantity(row), 0);
+    const countsByPage = (rows) => Object.fromEntries([...new Set(rows.map((row) => Number(row.page)))].sort((a, b) => a - b)
+      .map((page) => [page, rows.filter((row) => Number(row.page) === page && isCountedDeviceRow(row))
+        .reduce((sum, row) => sum + countedRowQuantity(row), 0)]));
+    const rowSnapshot = (rows) => rows.filter((row) => row.kind === 'schedule').map((row) => ({
+      page: Number(row.page), way: row.way, phase: row.phase, classification: row.classification,
+      deviceType: row.deviceType, rating: row.rating, description: row.description,
+      quantity: row.quantity, complete: Boolean(row.deviceType && row.rating),
+      counted: isCountedDeviceRow(row),
+    }));
+    const beforeByPage = countsByPage(project.analysis.rows);
+    const beforeRows = rowSnapshot(project.analysis.rows);
     const beforeConfirmed = project.analysis.rows.filter((row) => row.status === 'confirmed').length;
     const source = project.analysis.rows.find((row) => row.kind === 'schedule' && row.fieldSources?.rating?.bbox);
     if (!source) throw new Error('real fixture has no source-linked rating field for calibration');
@@ -380,6 +410,7 @@ try {
       signature: window.EstimationExtractorCore.buildCalibrationSignature(
         { ...pageRecord, pageWidth, pageHeight }, { role: 'rating', bbox }),
       axis: 'column', sourcePageType: pageRecord.type,
+      viewerRotation: 0, coordinateVersion: 2, coordinateSpace: 'page',
       sourceWidth: pageWidth, sourceHeight: pageHeight,
       orientation: pageWidth >= pageHeight ? 'landscape' : 'portrait',
       createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
@@ -390,11 +421,19 @@ try {
     saveProject(project);
     await applyCalibrations();
     const afterCount = project.analysis.rows.filter(isCountedDeviceRow).reduce((sum, row) => sum + countedRowQuantity(row), 0);
+    const afterByPage = countsByPage(project.analysis.rows);
+    const afterRows = rowSnapshot(project.analysis.rows);
+    const changedPages = [...new Set([...Object.keys(beforeByPage), ...Object.keys(afterByPage)])]
+      .map(Number).filter((page) => Number(beforeByPage[page] || 0) !== Number(afterByPage[page] || 0));
     const afterConfirmed = project.analysis.rows.filter((row) => row.status === 'confirmed').length;
     const diagnostics = project.analysis.pageDiagnostics.filter((item) => item.fileId === file.id
       && Number(item.calibration?.applicable) > 0);
     return {
-      beforeCount, afterCount, beforeConfirmed, afterConfirmed,
+      beforeCount, afterCount, beforeByPage, afterByPage, beforeConfirmed, afterConfirmed,
+      changedRows: Object.fromEntries(changedPages.map((page) => [page, {
+        before: beforeRows.filter((row) => row.page === page),
+        after: afterRows.filter((row) => row.page === page),
+      }])),
       dirty: state.viewer.calibration.dirty,
       revision: project.calibrationRevision,
       analysisRevision: project.analysis.calibrationRevision,
@@ -409,7 +448,8 @@ try {
   });
   assert.equal(calibrationReanalysis.dirty, false, 'successful calibration re-analysis must clear the pending state');
   assert.equal(calibrationReanalysis.analysisRevision, calibrationReanalysis.revision, 'analysis must commit the active calibration revision');
-  assert.equal(calibrationReanalysis.afterCount, calibrationReanalysis.beforeCount, 'calibration re-analysis must preserve reconciled device counts');
+  assert.equal(calibrationReanalysis.afterCount, calibrationReanalysis.beforeCount,
+    `calibration re-analysis must preserve reconciled device counts: ${JSON.stringify(calibrationReanalysis)}`);
   assert.ok(calibrationReanalysis.afterConfirmed >= calibrationReanalysis.beforeConfirmed, 'calibration re-analysis must preserve prior approvals');
   assert.ok(calibrationReanalysis.applicablePages > 0,
     `saved calibration must reach at least one document page: ${JSON.stringify(calibrationReanalysis)}`);
