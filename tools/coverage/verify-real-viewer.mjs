@@ -14,6 +14,7 @@ assert.ok(fixtures.length, 'Pass at least one PDF to verify-real-viewer.mjs');
 fixtures.forEach((fixture) => assert.ok(fs.existsSync(fixture), `Missing fixture: ${fixture}`));
 const expectedHealthReasons = new Set(String(process.env.EXPECTED_HEALTH_REASONS || '')
   .split(',').map((value) => value.trim()).filter(Boolean));
+const expectedFirstPage = Math.max(1, Number(process.env.EXPECTED_FIRST_PAGE || 1));
 
 const playwrightSpecifier = process.env.PLAYWRIGHT_CORE_PATH
   ? pathToFileURL(process.env.PLAYWRIGHT_CORE_PATH).href
@@ -166,7 +167,7 @@ try {
   assert.ok(extraction.firstId && extraction.firstBoard,
     `guided review must have a first schedule row: ${JSON.stringify({ issueCounts: extraction.issueCounts, rowSample: extraction.rowSample,
       pageInput: extraction.pageInput, spatialProbe: extraction.spatialProbe })}`);
-  assert.equal(extraction.firstPage, 1, 'guided review must begin on the earliest schedule page');
+  assert.equal(extraction.firstPage, expectedFirstPage, 'guided review must begin on the earliest schedule page');
   if (extraction.schematicPages) {
     assert.ok(extraction.schematicVectorSegments > 100, 'schematic PDF vectors must be captured in the browser pipeline');
     assert.ok(extraction.schematicFeeds > 0, 'schematic feeder relationships must be extracted');

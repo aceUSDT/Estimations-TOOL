@@ -362,6 +362,37 @@ test('audited reconciled reports export past advisory page and topology diagnost
   assert.ok(readiness.warnings.some((item) => item.code === 'REPORT_ACCEPTED_QUALIFICATIONS'));
 });
 
+test('an exact accepted-as-printed decision qualifies only its matching board capacity conflict', () => {
+  const qualification = {
+    decision: 'accepted_as_printed', boardNorm: 'DB-01', expectedWays: 36, capturedWays: 22,
+  };
+  const readiness = core.buildReportExportReadiness({
+    health: { state: 'incomplete', reasons: [
+      { code: 'WAYS_UNACCOUNTED', message: 'Ways are unaccounted', count: 1,
+        refs: [{ board: 'DB-01', expected: 36, captured: 22 }] },
+    ] },
+    rows: [row({ status: 'confirmed' })],
+    model: { reviewCount: 0, coverageIssueCount: 1, unassignedQty: 0, reconciliation: { valid: true } },
+    coverageQualifications: [qualification],
+  });
+  assert.equal(core.coverageQualificationMatches({ board: 'DB-01', expected: 36, captured: 22 }, qualification), true);
+  assert.equal(readiness.allowed, true);
+  assert.equal(readiness.blockers.length, 0);
+  assert.ok(readiness.warnings.some((item) => item.code === 'WAYS_UNACCOUNTED_QUALIFIED'));
+
+  const changedSource = core.buildReportExportReadiness({
+    health: { state: 'incomplete', reasons: [
+      { code: 'WAYS_UNACCOUNTED', message: 'Ways are unaccounted', count: 1,
+        refs: [{ board: 'DB-01', expected: 36, captured: 23 }] },
+    ] },
+    rows: [row({ status: 'confirmed' })],
+    model: { reviewCount: 0, coverageIssueCount: 1, unassignedQty: 0, reconciliation: { valid: true } },
+    coverageQualifications: [qualification],
+  });
+  assert.equal(changedSource.allowed, false, 'a changed extraction must invalidate the old qualification');
+  assert.ok(changedSource.blockers.some((item) => item.code === 'WAYS_UNACCOUNTED'));
+});
+
 test('report readiness still blocks pending audit, key coverage gaps and invalid reconciliation', () => {
   const readiness = core.buildReportExportReadiness({
     health: { state: 'incomplete', reasons: [

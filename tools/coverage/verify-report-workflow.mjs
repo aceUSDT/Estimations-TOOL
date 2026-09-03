@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import ExcelJS from 'exceljs';
@@ -143,8 +143,10 @@ try {
   assert.equal(viewerColourAgreement, true, 'Viewer and final report must use the same colour for each specification');
   if (shotsDir) await page.screenshot({ path: join(shotsDir, 'report-device-desktop.png'), fullPage: true });
 
-  const advisoryReadiness = await page.evaluate(() => {
+  const initialCoverageReadiness = await page.evaluate(() => {
     const fallbackBoard = Object.keys(state.cur.analysis.boards)[0];
+    const board = state.cur.analysis.boards[fallbackBoard];
+    const sourceRow = state.cur.analysis.rows.find((row) => row.boardNorm === fallbackBoard && row.fileId);
     state.cur.analysis.rows.filter(isTakeoffEvidenceRow).forEach((row) => {
       if (!row.boardNorm) {
         row.boardNorm = fallbackBoard;
@@ -153,22 +155,61 @@ try {
       if (row.status !== 'rejected') row.status = 'confirmed';
     });
     state.cur.analysis.health = { state: 'incomplete', reasons: [
+      { code: 'WAYS_UNACCOUNTED', message: 'Board header promises more ways than were captured', count: 1,
+        refs: [{ board: fallbackBoard, expected: 36, captured: 22 }] },
       { code: 'SCHEDULE_PAGE_UNPARSED', message: 'One schedule-classified page has no parsed rows', count: 1, refs: [] },
       { code: 'BOARD_FEED_MISSING', message: 'One board feed remains unresolved', count: 1, refs: [] },
     ], counters: {} };
-    renderReport();
+    state.cur.analysis.coverage = {
+      perBoard: [{ norm: fallbackBoard, orig: board?.orig || fallbackBoard, inScope: true,
+        rowsCaptured: 4, expectedWays: 36, capturedWays: 22, unaccountedWays: 14,
+        capacityUnit: 'outgoing_position', evidence: sourceRow
+          ? { fileId: sourceRow.fileId, page: sourceRow.page, text: 'No. of Ways: 12' } : null }],
+      zeroRowSchedulePages: [], summary: { expectedWays: 36, capturedWays: 22 },
+    };
+    state.cur.coverageQualifications = [];
+    setTab('review');
     return currentReportExportReadiness(currentReportModel());
   });
+  assert.equal(initialCoverageReadiness.allowed, false, 'an unqualified capacity conflict must remain fail-closed');
+  assert.ok(initialCoverageReadiness.blockers.some((item) => item.code === 'WAYS_UNACCOUNTED'));
+  const acceptPrinted = page.locator('#reviewList [data-a="accept-printed"]').first();
+  await acceptPrinted.waitFor();
+  await acceptPrinted.click();
+  await page.locator('#modalBk.show #coverageQualificationReason').waitFor();
+  assert.match(await page.locator('#modalBk').textContent(), /does not create missing circuits or alter device totals/i);
+  await page.locator('#coverageQualificationReason').fill('The source schedule was reviewed and its printed outgoing positions are accepted for this report.');
+  await page.locator('#mOk').click();
+  await page.locator('#modalBk').waitFor({ state: 'hidden' });
+  const acceptedDecision = await page.evaluate(() => ({
+    count: state.cur.coverageQualifications.length,
+    decision: state.cur.coverageQualifications[0]?.decision,
+    auditEvent: state.cur.approvalLog.some((event) => event.entityType === 'coverage'
+      && event.action === 'Accepted printed schedule capacity'),
+  }));
+  assert.deepEqual(acceptedDecision, { count: 1, decision: 'accepted_as_printed', auditEvent: true });
+  assert.ok(await page.locator('#reviewList [data-a="undo-qualification"]').count(), 'accepted capacity decision must remain reversible');
+
+  await page.locator('.ptab[data-pt="reports"]').click();
+  await page.locator('#reportMatrixHost .report-qualifications').waitFor();
+  const advisoryReadiness = await page.evaluate(() => currentReportExportReadiness(currentReportModel()));
   assert.equal(advisoryReadiness.allowed, true,
-    `completed audit must permit issue past unrelated page/topology diagnostics: ${JSON.stringify(advisoryReadiness.blockers)}`);
+    `completed audit must permit an exact accepted source qualification: ${JSON.stringify(advisoryReadiness.blockers)}`);
   assert.equal(advisoryReadiness.blockers.length, 0);
+  assert.ok(advisoryReadiness.warnings.some((item) => item.code === 'WAYS_UNACCOUNTED_QUALIFIED'));
+  assert.match(await page.locator('#reportMatrixHost .report-qualifications').textContent(), /22 printed outgoing positions accepted against 36 stated positions/i);
   assert.match(await page.locator('#reportStatus').textContent(), /Audit complete.*export permitted/i);
   const [csvDownload] = await Promise.all([
     page.waitForEvent('download'),
     page.locator('#reportCsvBtn').click(),
   ]);
   assert.match(csvDownload.suggestedFilename(), /DB Devices Take Off.*\.csv$/i);
-  assert.ok(await csvDownload.path(), 'audited advisory CSV download must be created');
+  const csvPath = await csvDownload.path();
+  assert.ok(csvPath, 'audited advisory CSV download must be created');
+  const csvText = await readFile(csvPath, 'utf8');
+  assert.match(csvText, /Report Qualifications,Board,Expected,Captured,Capacity unit,Reason,Source,Status/);
+  assert.match(csvText, /Board coverage,.*36,22,Outgoing positions/);
+  assert.match(csvText, /Accepted as printed/);
   const [xlsxDownload] = await Promise.all([
     page.waitForEvent('download'),
     page.locator('#reportXlsxBtn').click(),
@@ -179,6 +220,10 @@ try {
   const downloadedWorkbook = new ExcelJS.Workbook();
   await downloadedWorkbook.xlsx.readFile(xlsxPath);
   const downloadedBoardSheet = downloadedWorkbook.getWorksheet('Board Take-Off');
+  const downloadedQualificationSheet = downloadedWorkbook.getWorksheet('Qualifications');
+  assert.ok(downloadedQualificationSheet, 'audited Excel export must include source qualifications');
+  assert.ok(downloadedQualificationSheet.getColumn(1).values.includes('Board coverage'));
+  assert.ok(downloadedQualificationSheet.getColumn(6).values.includes('Accepted as printed'));
   assert.deepEqual(downloadedBoardSheet.getRow(3).values.slice(1), [
     'Specification and circuit', 'Qty', 'Protection', 'Circuits / ways', 'Source pages', 'Status',
   ], 'downloaded Board Take-Off headings must match the browser report');
@@ -226,8 +271,25 @@ try {
   assert.match(mobileBoard.rowColumns, /px.*px/, 'mobile Board Take-Off needs two stable detail columns');
   if (shotsDir) await page.screenshot({ path: join(shotsDir, 'report-board-mobile.png'), fullPage: true });
 
+  await page.locator('.ptab[data-pt="review"]').click();
+  const undoQualification = page.locator('#reviewList [data-a="undo-qualification"]').first();
+  await undoQualification.waitFor();
+  await undoQualification.click();
+  await page.locator('#reviewList [data-a="accept-printed"]').first().waitFor();
+  const revokedDecision = await page.evaluate(() => ({
+    count: state.cur.coverageQualifications.length,
+    allowed: currentReportExportReadiness(currentReportModel()).allowed,
+    blockerCodes: currentReportExportReadiness(currentReportModel()).blockers.map((item) => item.code),
+    auditEvent: state.cur.approvalLog.some((event) => event.entityType === 'coverage'
+      && event.action === 'Coverage qualification withdrawn'),
+  }));
+  assert.equal(revokedDecision.count, 0);
+  assert.equal(revokedDecision.allowed, false, 'withdrawing a qualification must restore the capacity blocker');
+  assert.ok(revokedDecision.blockerCodes.includes('WAYS_UNACCOUNTED'));
+  assert.equal(revokedDecision.auditEvent, true);
+
   assert.deepEqual(browserErrors, [], `browser errors: ${browserErrors.join('; ')}`);
-  console.log('PASS: Board Take-Off, correction audit, source review, advisory CSV/XLSX issue, and responsive report viewport.');
+  console.log('PASS: Board Take-Off, correction audit, reversible source qualification, qualified CSV/XLSX issue, and responsive report viewport.');
 } finally {
   await browser.close();
 }

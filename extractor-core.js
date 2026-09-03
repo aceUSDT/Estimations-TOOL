@@ -2549,7 +2549,17 @@
    * take-off row has a human decision, non-quantity diagnostics become
    * advisory; missing ownership, protection data, ways or reconciliation stay
    * hard blockers. */
-  function buildReportExportReadiness({ health, rows, model, extractionGaps } = {}) {
+  function coverageQualificationMatches(ref, qualification) {
+    if (!ref || !qualification || qualification.decision !== 'accepted_as_printed') return false;
+    if (String(qualification.boardNorm || '') !== String(ref.board || '')) return false;
+    const expected = Number(ref.expected);
+    const captured = Number(ref.captured);
+    if (![expected, captured].every(Number.isFinite) || expected <= 0 || captured <= 0 || expected === captured) return false;
+    return Number(qualification.expectedWays) === expected
+      && Number(qualification.capturedWays) === captured;
+  }
+
+  function buildReportExportReadiness({ health, rows, model, extractionGaps, coverageQualifications } = {}) {
     const blockers = [];
     const warnings = [];
     const add = (target, code, message, count = 1) => {
@@ -2566,7 +2576,22 @@
     if (unresolvedExtractionGaps > 0) {
       add(blockers, 'EXTRACTION_GAPS_UNRESOLVED', `${unresolvedExtractionGaps} schedule extraction gap${unresolvedExtractionGaps === 1 ? '' : 's'} still need recovery`, unresolvedExtractionGaps);
     }
+    const qualifications = Array.isArray(coverageQualifications) ? coverageQualifications : [];
     for (const reason of health?.reasons || []) {
+      if (reason.code === 'WAYS_UNACCOUNTED' || reason.code === 'WAYS_OVER_CAPACITY') {
+        const refs = Array.isArray(reason.refs) ? reason.refs : [];
+        const qualified = refs.filter((ref) => qualifications.some((item) => coverageQualificationMatches(ref, item)));
+        const unresolved = refs.filter((ref) => !qualified.includes(ref));
+        if (qualified.length) {
+          add(warnings, `${reason.code}_QUALIFIED`,
+            `${qualified.length} board capacity conflict${qualified.length === 1 ? ' was' : 's were'} accepted against the printed schedule`, qualified.length);
+        }
+        if (unresolved.length || !refs.length) {
+          add(blockers, reason.code, reason.message || HEALTH_REASONS[reason.code] || reason.code,
+            unresolved.length || reason.count);
+        }
+        continue;
+      }
       const target = REPORT_EXPORT_HARD_HEALTH_CODES.has(reason.code) ? blockers : warnings;
       add(target, reason.code, reason.message || HEALTH_REASONS[reason.code] || reason.code, reason.count);
     }
@@ -2936,6 +2961,7 @@
     buildDocumentExtractionScope,
     buildAnalysisHealth,
     buildReportExportReadiness,
+    coverageQualificationMatches,
     buildPageDiagnosticVerdict,
     buildDiagnosticExport,
     THREE_TYPES,

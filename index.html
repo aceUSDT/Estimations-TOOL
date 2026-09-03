@@ -515,6 +515,9 @@
   .report-status.ok{background:#f2faf6;color:#176c48;}
   .report-status.warn{background:#fff8eb;color:#87570b;}
   .report-status.bad{background:#fff1f2;color:#a52d35;}
+  .report-qualifications{padding:10px 18px;border-bottom:1px solid #e6c77b;background:#fffaf0;color:#69480d;font-size:11.5px;}
+  .report-qualifications strong{display:block;margin-bottom:3px;font-size:12px;color:#553800;}
+  .report-qualifications p{margin:2px 0;}
   .report-viewbar{display:flex;align-items:center;justify-content:flex-start;padding:9px 18px;border-bottom:1px solid var(--line);background:#fafbfd;}
   .report-mode{display:inline-flex;border:1px solid var(--line2);border-radius:5px;overflow:hidden;background:#fff;}
   .report-mode button{min-height:30px;padding:5px 11px;border-right:1px solid var(--line2);font-size:11.5px;font-weight:700;color:var(--txt2);}
@@ -1785,7 +1788,7 @@ $('#restoreProjectInput').addEventListener('change',async event=>{
 /* ============================ PROJECT MODEL ============================ */
 function newProject(name){
   return { id:uid(), name, created:todayStr(), updated:todayStr(), status:'Not analysed',
-    files:[], analysis:null, assistedMarkups:[], calibrations:[], approvalLog:[], correctionLog:[], reviewSession:null, contractVersions:{decisions:1,review:1} };
+    files:[], analysis:null, assistedMarkups:[], calibrations:[], approvalLog:[], correctionLog:[], coverageQualifications:[], reviewSession:null, contractVersions:{decisions:1,review:1} };
 }
 function bufferToBase64(buffer){
   const bytes=new Uint8Array(buffer);let binary='';
@@ -1959,6 +1962,7 @@ function ensureProjectState(p){
     if(!Array.isArray(p.approvalLog))p.approvalLog=[];
     if(!Array.isArray(p.correctionLog))p.correctionLog=[];
   }
+  if(!Array.isArray(p.coverageQualifications))p.coverageQualifications=[];
   if(window.EstimationReviewCore){
     p.contractVersions=p.contractVersions||{};
     p.contractVersions.review=window.EstimationReviewCore.CONTRACT_VERSION;
@@ -4273,6 +4277,55 @@ function orderedPendingReviewRows(){
     return boardDifference||compareReviewTuple(reviewRowTuple(a),reviewRowTuple(b));
   });
 }
+function coverageQualificationFor(coverage,project=state.cur){
+  if(!coverage||!project)return null;
+  const ref={board:coverage.norm,expected:coverage.expectedWays,captured:coverage.capturedWays};
+  const matcher=window.EstimationExtractorCore?.coverageQualificationMatches;
+  return (project.coverageQualifications||[]).find(item=>matcher
+    ?matcher(ref,item)
+    :item?.decision==='accepted_as_printed'&&item.boardNorm===coverage.norm
+      &&Number(item.expectedWays)===Number(coverage.expectedWays)&&Number(item.capturedWays)===Number(coverage.capturedWays))||null;
+}
+function recordCoverageQualification(coverage,reason){
+  const p=ensureProjectState(state.cur);if(!p||!coverage)return false;
+  const decision={id:uid(),decision:'accepted_as_printed',boardNorm:coverage.norm,
+    expectedWays:Number(coverage.expectedWays),capturedWays:Number(coverage.capturedWays),
+    capacityUnit:coverage.capacityUnit||'way',reason:String(reason||'').trim(),
+    evidence:coverage.evidence?{fileId:coverage.evidence.fileId||null,page:coverage.evidence.page||null,text:coverage.evidence.text||null}:null,
+    createdAt:new Date().toISOString()};
+  p.coverageQualifications=(p.coverageQualifications||[]).filter(item=>item.boardNorm!==coverage.norm);
+  p.coverageQualifications.unshift(decision);
+  p.approvalLog.unshift({id:uid(),entityType:'coverage',entityId:decision.id,boardNorm:coverage.norm,
+    action:'Accepted printed schedule capacity',surface:'Review',
+    summary:`Accepted ${coverage.capturedWays} printed outgoing positions against ${coverage.expectedWays} stated positions`,
+    note:decision.reason,fileId:coverage.evidence?.fileId||null,page:coverage.evidence?.page||null,
+    sourceText:'',createdAt:decision.createdAt});
+  if(p.approvalLog.length>2500)p.approvalLog.length=2500;
+  saveProject(p);renderReview();renderReport();renderProjHeader();
+  return true;
+}
+function openCoverageQualification(coverage){
+  const unit=coverage.capacityUnit==='outgoing_position'?'outgoing positions':'ways';
+  openModal('Accept the printed schedule',`
+    <div class="hint" style="margin-bottom:12px"><b>${esc(coverage.orig||coverage.norm)}</b> states ${coverage.expectedWays} ${unit}, but the schedule table contains ${coverage.capturedWays}. This records a report qualification; it does not create missing circuits or alter device totals.</div>
+    <label class="lbl">Audit reason</label>
+    <textarea class="in" id="coverageQualificationReason" rows="4">Source schedule reviewed against the document; the printed outgoing positions are accepted despite the header capacity conflict.</textarea>`,()=>{
+      const reason=$('#coverageQualificationReason').value.trim();
+      if(reason.length<12){toast('Add a clear audit reason before accepting this source conflict');return false;}
+      if(!recordCoverageQualification(coverage,reason))return false;
+      toast('Printed schedule accepted with a report qualification');
+    },'Accept as printed');
+}
+function revokeCoverageQualification(coverage){
+  const p=ensureProjectState(state.cur),existing=coverageQualificationFor(coverage,p);if(!p||!existing)return;
+  p.coverageQualifications=p.coverageQualifications.filter(item=>item.id!==existing.id);
+  p.approvalLog.unshift({id:uid(),entityType:'coverage',entityId:existing.id,boardNorm:coverage.norm,
+    action:'Coverage qualification withdrawn',surface:'Review',summary:'Printed schedule capacity must be reviewed again',
+    note:'User withdrew the previous accepted-as-printed decision',fileId:coverage.evidence?.fileId||null,
+    page:coverage.evidence?.page||null,sourceText:'',createdAt:new Date().toISOString()});
+  if(p.approvalLog.length>2500)p.approvalLog.length=2500;
+  saveProject(p);renderReview();renderReport();renderProjHeader();toast('Coverage qualification withdrawn');
+}
 function unresolvedReviewExtractionGaps(){
   const p=state.cur,A=p?.analysis,rows=A?.rows||[];
   if(!p||!A)return [];
@@ -5310,6 +5363,10 @@ function currentReportModel(){
     rows:A.rows,
     files:p.files,
     coverage:A.coverage,
+    coverageQualifications:(p.coverageQualifications||[]).filter(item=>{
+      const coverage=(A.coverage?.perBoard||[]).find(board=>board.norm===item.boardNorm);
+      return coverage&&coverageQualificationFor(coverage,p)?.id===item.id;
+    }),
     generatedAt:new Date(),
   });
 }
@@ -5317,7 +5374,7 @@ function currentReportExportReadiness(model=currentReportModel()){
   const A=state.cur?.analysis,core=window.EstimationExtractorCore;
   if(core?.buildReportExportReadiness){
     return core.buildReportExportReadiness({health:A?.health||null,rows:A?.rows||[],model,
-      extractionGaps:unresolvedReviewExtractionGaps()});
+      extractionGaps:unresolvedReviewExtractionGaps(),coverageQualifications:state.cur?.coverageQualifications||[]});
   }
   const blockers=[];
   if(A?.health&&A.health.state!=='complete')blockers.push({code:'ANALYSIS_INCOMPLETE',message:'Analysis is incomplete'});
@@ -5528,11 +5585,15 @@ function renderReport(){
     });
     return table+`<tr class="report-final"><th class="report-board-name">${esc(totalLabel)}</th>${rows.map(row=>`<td class="report-spec-cell" style="${row.appearance.style}">${row.total||''}</td>`).join('')}<td class="report-total">${grandTotal}</td></tr></tbody></table>`;
   };
-  let html='';
+  const acceptedCoverage=model.coverageQualifications||[];
+  let html=acceptedCoverage.length?`<section class="report-qualifications"><strong>Accepted source qualifications</strong>${acceptedCoverage.map(item=>{
+    const unit=item.capacityUnit==='outgoing_position'?'outgoing positions':'ways';
+    return `<p><b>${esc(boardLabel(item.boardNorm))}</b>: ${item.capturedWays} printed ${unit} accepted against ${item.expectedWays} stated positions. ${esc(item.reason)}</p>`;
+  }).join('')}</section>`:'';
   if(mode==='board'){
-    html=boardPresentation.sections.map(boardView).join('');
+    html+=boardPresentation.sections.map(boardView).join('');
   }else{
-    html=matrix(model.groups,'Consolidated Device Take-Off','Grand Total',model.boardTotals,model.grandTotal,'main');
+    html+=matrix(model.groups,'Consolidated Device Take-Off','Grand Total',model.boardTotals,model.grandTotal,'main');
     if(model.associated&&model.associated.grandTotal){
       html+='<div class="report-subhead"><h3>Control &amp; associated equipment</h3></div>'+matrix(model.associated.groups,'Control & Associated Equipment','Associated Equipment Total',model.associated.boardTotals,model.associated.grandTotal,'associated');
     }
@@ -5817,7 +5878,10 @@ function renderReview(){
   p.files.filter(f=>f.status==='ready'&&!f.native&&f.pages.some(pg=>!(pg.lines||[]).length)).forEach(f=>items.push({kind:'scan',f}));
   Object.values(A.boards).filter(b=>b.inScope!==false&&!b.parent&&!b.manual&&b.type!=='MAIN').forEach(b=>items.push({kind:'orphan',b}));
   if (A.coverage){
-    A.coverage.perBoard.filter(b=>b.inScope!==false&&(b.unaccountedWays||0)>0).forEach(b=>items.push({kind:'gap',g:b,conf:0}));
+    A.coverage.perBoard.filter(b=>b.inScope!==false&&(b.unaccountedWays||0)>0).forEach(b=>{
+      const qualification=coverageQualificationFor(b,p);
+      items.push({kind:'gap',g:b,qualification,conf:qualification?1:0});
+    });
     A.coverage.zeroRowSchedulePages.forEach(z=>items.push({kind:'zeropage',z,conf:0.1}));
   }
   if (!items.length){ host.innerHTML='<div class="empty"><div class="ico">✓</div>Nothing to review — all results are confirmed or high confidence.</div>'; return; }
@@ -5855,14 +5919,17 @@ function renderReview(){
         <div class="racts"><button class="btn sm" data-a="ocr">OCR scanned pages</button></div>`;
       div.querySelector('[data-a=ocr]').addEventListener('click',()=>ocrScannedPages(it.f).catch(err=>toast(err.message)));
     } else if (it.kind==='gap'){
-      const g=it.g;
-      div.innerHTML=`<div class="ric" style="background:var(--red-soft)">▦</div>
-        <div style="flex:1"><h4>${esc(g.orig||g.norm)}: ${g.unaccountedWays} of ${g.expectedWays} ways unaccounted for</h4>
-        <div class="rsrc">Header says "${esc(g.evidence?g.evidence.text:'')}"${g.evidence?' (page '+g.evidence.page+')':''} but only ${g.capturedWays} way${g.capturedWays===1?'':'s'} were extracted.</div>
-        <div class="hint">Missing ways are the worst failure — open the page and check what the extractor did not read.</div></div>
-        <div class="racts">${g.evidence?'<button class="btn sm" data-a="view">View page</button>':''}</div>`;
+      const g=it.g,q=it.qualification,unit=g.capacityUnit==='outgoing_position'?'outgoing positions':'ways';
+      div.innerHTML=`<div class="ric" style="background:${q?'var(--green-soft)':'var(--red-soft)'}">${q?'✓':'▦'}</div>
+        <div style="flex:1"><h4>${esc(g.orig||g.norm)}: ${g.capturedWays} of ${g.expectedWays} ${unit} printed${q?' · accepted with qualification':''}</h4>
+        <div class="rsrc">Header says "${esc(g.evidence?g.evidence.text:'')}"${g.evidence?' (page '+g.evidence.page+')':''}; the table accounts for ${g.capturedWays} ${unit}.</div>
+        <div class="hint">${q?esc(q.reason):'Review the source. Recover genuinely missed rows, correct the board header, or explicitly accept the printed table with a report qualification.'}</div></div>
+        <div class="racts">${g.evidence?'<button class="btn sm" data-a="view">View source</button>':''}
+          <button class="btn sm ${q?'ghost':'primary'}" data-a="${q?'undo-qualification':'accept-printed'}">${q?'Undo qualification':'Accept as printed'}</button></div>`;
       const vb=div.querySelector('[data-a=view]');
       if (vb) vb.addEventListener('click',()=>{ state.viewer.fileId=g.evidence.fileId; state.viewer.page=g.evidence.page; setTab('viewer'); });
+      div.querySelector('[data-a=accept-printed]')?.addEventListener('click',()=>openCoverageQualification(g));
+      div.querySelector('[data-a=undo-qualification]')?.addEventListener('click',()=>revokeCoverageQualification(g));
     } else if (it.kind==='zeropage'){
       const z=it.z, fl=p.files.find(x=>x.id===z.fileId);
       div.innerHTML=`<div class="ric" style="background:var(--amber-soft)">▤</div>

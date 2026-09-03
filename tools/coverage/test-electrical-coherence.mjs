@@ -122,7 +122,7 @@ test('T-33 rejects populated plus spare ways above the stated board total', () =
   assert.ok(hasReason(health, 'WAYS_OVER_CAPACITY'), 'missing stable over-capacity coherence reason');
 });
 
-test('T-33 requires a feed edge or an explicit orphaned flag for every board', () => {
+test('T-33 records an unresolved standalone feed without discarding valid schedule take-off', () => {
   const norm = 'DB-NO-FEED';
   const boards = { [norm]: board(norm, { parent: null, header: { fed_from_ref: 'RAW-TEXT-ONLY' } }) };
   const rows = [row('r-1', norm)];
@@ -136,7 +136,7 @@ test('T-33 requires a feed edge or an explicit orphaned flag for every board', (
   };
 
   const health = Core.buildAnalysisHealth(input);
-  assert.equal(health.state, 'failed', 'raw supplied-from text is not a resolved feed edge');
+  assert.equal(health.state, 'incomplete', 'raw supplied-from text must remain unresolved without invalidating valid schedule rows');
   assert.ok(hasReason(health, 'BOARD_FEED_MISSING'), 'missing stable feed-coherence reason');
 
   const explicitlyOrphaned = Core.buildAnalysisHealth({

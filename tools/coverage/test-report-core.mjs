@@ -170,4 +170,31 @@ assert.equal(occupancyModel.grandTotal, 2);
 assert.equal(occupancyModel.boardSections[0].total, 2);
 assert.deepEqual(Array.from(occupancyModel.groups[0].rows, (row) => row.rating), [6, 10]);
 
+const qualifiedModel = Report.buildModel({
+  projectName: 'Qualified source report',
+  boards: { DB2: { norm: 'DB2', orig: 'DB-2', type: 'DB', inScope: true } },
+  rows: [{ id: 'q1', boardNorm: 'DB2', device: 'MCB', rating: 50, poles: 1, qty: 1, status: 'confirmed', conf: 1 }],
+  coverageQualifications: [{
+    decision: 'accepted_as_printed', boardNorm: 'DB2', expectedWays: 36, capturedWays: 22,
+    capacityUnit: 'outgoing_position', reason: 'The supplied source is page 1 of 4.',
+    evidence: { fileId: 'f1', page: 1, text: 'No. of Ways: 12' },
+  }],
+});
+assert.equal(qualifiedModel.coverageQualifications.length, 1);
+const qualifiedWorkbook = Report.createExcelWorkbook(qualifiedModel, ExcelJS);
+const qualificationSheet = qualifiedWorkbook.getWorksheet('Qualifications');
+assert.ok(qualificationSheet, 'accepted source conflicts need a dedicated Excel qualification sheet');
+let coverageQualificationRow = null;
+qualificationSheet.eachRow((sheetRow) => {
+  if (sheetRow.getCell(1).value === 'Board coverage') coverageQualificationRow = sheetRow;
+});
+assert.ok(coverageQualificationRow, 'Excel qualification sheet must retain the accepted board-capacity decision');
+assert.equal(coverageQualificationRow.getCell(2).value, 'DB2');
+assert.match(coverageQualificationRow.getCell(4).text, /22 printed outgoing positions accepted against 36 stated positions/);
+assert.equal(coverageQualificationRow.getCell(6).value, 'Accepted as printed');
+const qualifiedCsv = Report.csv(qualifiedModel);
+assert.match(qualifiedCsv, /Report Qualifications,Board,Expected,Captured,Capacity unit,Reason,Source,Status/);
+assert.match(qualifiedCsv, /Board coverage,DB2,36,22,Outgoing positions/);
+assert.match(qualifiedCsv, /Accepted as printed/);
+
 console.log("Report matrix and XLSX export: OK");

@@ -969,6 +969,22 @@
     associated.boardSections = buildBoardSections(boards, associated.groups, associated.boardTotals);
     const procurementRows = groups.flatMap((group) => group.rows);
     const reviewCount = procurementRows.filter((row) => row.reviewStatus === "Review required").length;
+    const coverageQualifications = (Array.isArray(options?.coverageQualifications) ? options.coverageQualifications : [])
+      .filter((item) => item?.decision === 'accepted_as_printed')
+      .map((item) => ({
+        decision: 'accepted_as_printed',
+        boardNorm: text(item.boardNorm),
+        expectedWays: Number(item.expectedWays),
+        capturedWays: Number(item.capturedWays),
+        capacityUnit: text(item.capacityUnit) || 'way',
+        reason: text(item.reason),
+        createdAt: text(item.createdAt),
+        evidence: item.evidence ? {
+          fileId: text(item.evidence.fileId),
+          page: Number(item.evidence.page) || null,
+          text: text(item.evidence.text),
+        } : null,
+      }));
     const sourceTotal = included.reduce((sum, row) => {
       return boardOrder.has(resolveBoard(row.boardNorm)) ? sum + Math.max(1, Number(row.qty) || 1) : sum;
     }, 0);
@@ -985,6 +1001,7 @@
       associated,
       reviewCount,
       coverageIssueCount,
+      coverageQualifications,
       unassignedQty,
       includedRows: included.length,
       sourceTotal,
@@ -1746,6 +1763,14 @@
       "Extraction policy",
       "Applies to all rows",
     ]);
+    (model.coverageQualifications || []).forEach((item) => rows.push([
+      "Board coverage",
+      item.boardNorm,
+      item.boardNorm,
+      `${item.capturedWays} printed ${item.capacityUnit === 'outgoing_position' ? 'outgoing positions' : 'ways'} accepted against ${item.expectedWays} stated positions. ${item.reason}`.trim(),
+      item.evidence?.page ? `Source page ${item.evidence.page}` : "Source schedule",
+      "Accepted as printed",
+    ]));
     return rows;
   }
 
@@ -1810,6 +1835,11 @@
 
     createBoardTakeOffWorksheet(workbook, model);
     createTakeOffWorksheet(workbook, model);
+    if ((model.coverageQualifications || []).length) {
+      createFlatSheet(workbook, 'Qualifications',
+        ['Type', 'Reference', 'Description', 'Qualification', 'Source', 'Status'],
+        qualificationRows(model), [20, 24, 30, 76, 24, 22]);
+    }
     return workbook;
   }
 
@@ -1820,7 +1850,22 @@
       const raw = String(value == null ? "" : value);
       return /[",\r\n]/.test(raw) ? `"${raw.replace(/"/g, '""')}"` : raw;
     };
-    return "\ufeff" + matrixRows(model).map((row) => row.map(escape).join(",")).join("\r\n");
+    const rows = matrixRows(model);
+    if ((model.coverageQualifications || []).length) {
+      rows.push([]);
+      rows.push(["Report Qualifications", "Board", "Expected", "Captured", "Capacity unit", "Reason", "Source", "Status"]);
+      model.coverageQualifications.forEach((item) => rows.push([
+        "Board coverage",
+        item.boardNorm,
+        item.expectedWays,
+        item.capturedWays,
+        item.capacityUnit === 'outgoing_position' ? 'Outgoing positions' : 'Ways',
+        item.reason,
+        item.evidence?.page ? `Source page ${item.evidence.page}` : 'Source schedule',
+        'Accepted as printed',
+      ]));
+    }
+    return "\ufeff" + rows.map((row) => row.map(escape).join(",")).join("\r\n");
   }
 
   function safeFileName(value) {

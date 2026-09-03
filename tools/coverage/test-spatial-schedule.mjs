@@ -14,6 +14,7 @@ assert.equal(Core.parseProtectionDescriptor('Hager h3+ MCCB P160 LSI').productRa
 assert.equal(Core.extractWayIdentifier('L1'), null, 'a plain phase label is not a way identifier');
 assert.equal(Core.extractWayIdentifier('L1L2'), 'L1', 'a composite section/phase label preserves its L1 base way');
 assert.equal(Core.extractWayIdentifier('L3L3'), 'L3', 'all L-prefixed composite ways remain extractable');
+assert.equal(Core.extractWayIdentifier('L1-L3'), null, 'an explicit L1-L3 phase span is not a composite way identifier');
 
 const word = (text, x, y, width = Math.max(8, String(text).length * 4.5), height = 10, rotation = 0) => ({
   text,
@@ -372,7 +373,10 @@ assert.equal(compositeSchedule.board.header.board_rating_a, 125);
 assert.equal(compositeSchedule.board.header.ways_total, 12);
 assert.equal(compositeSchedule.board.header.incomer_rating_a, 63);
 assert.equal(compositeSchedule.board.header.supply_cable_details, '25mm2 Cu/XLPE/SWA/LSOH + 16mm2 CPC');
-assert.equal(compositeSchedule.rows.length, 10);
+assert.equal(compositeSchedule.rows.length, 10,
+  `composite phase lanes collapsed: ${JSON.stringify({ dialect: compositeSchedule.schema?.dialect, warnings: compositeSchedule.warnings,
+    grid: compositeSchedule.grid, rows: compositeSchedule.rows.map((row) => ({ way: row.way, phase: row.phase, device: row.device,
+      rating: row.rating, spare: row.spare, source: row.source })) })}`);
 const afddRcbo = compositeSchedule.rows.find((row) => row.way === 'A1' && row.device);
 assert.ok(afddRcbo, `composite A1 device row missing: ${JSON.stringify(compositeSchedule.rows.map((row) => ({ way: row.way, phase: row.phase, device: row.device, rating: row.rating, spare: row.spare })))}`);
 assert.deepEqual(

@@ -254,13 +254,13 @@
   function compositeWayPhase(value) {
     const source = String(value || '').trim().toUpperCase();
     const labelled = source.replace(/^(?:WAY|CCT|CKT|CIRCUIT)\s*[:#-]?\s*/i, '').replace(/\s+/g, '');
-    const match = labelled.match(/^([A-Z]{1,3}\d{1,3})(?:[\/-]?)(L[123])$/);
-    if (!match || Number(match[1].match(/\d+$/)?.[0]) > 200) return null;
+    const match = labelled.match(/^([A-Z]{1,3}\d{1,3})([\/-]?)(L[123])$/);
+    if (!match || (/^L[123]$/.test(match[1]) && match[2]) || Number(match[1].match(/\d+$/)?.[0]) > 200) return null;
     // Composite labels such as A1L1/A1L2/A1L3 are phase lanes of one
     // electrical way. Group by the printed base identifier so a populated
     // middle lane can be reconciled as one three-pole device, while genuinely
     // independent phase rows remain separate rows after lane parsing.
-    return { way: match[1], phase: match[2], printed: labelled };
+    return { way: match[1], phase: match[3], printed: labelled };
   }
 
   function extractWayIdentifier(value) {
@@ -1507,7 +1507,7 @@
   function physicalPhaseLanes(words, schema) {
     const phaseColumn = schema.columns.find((column) => column.role === 'phase');
     const candidates = words.filter((word) => extractPhase(word.text)
-      && (!phaseColumn || (word.cx >= phaseColumn.left && word.cx < phaseColumn.right)))
+      && (compositeWayPhase(word.text) || !phaseColumn || (word.cx >= phaseColumn.left && word.cx < phaseColumn.right)))
       .sort((a, b) => a.cy - b.cy || b.confidence - a.confidence);
     const medianHeight = median(candidates.map((word) => word.height)) || 8;
     const tolerance = Math.max(2, Math.min(6, medianHeight * 0.42));
