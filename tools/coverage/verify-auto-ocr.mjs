@@ -260,6 +260,7 @@ try {
     if (actual < Number(process.env[name])) throw new Error(`${name} expected at least ${process.env[name]}, received ${actual}`);
   };
   exactExpectation('EXPECT_ROWS', res.rows);
+  exactExpectation('EXPECT_DEVICES', res.health?.counters?.deviceCount);
   exactExpectation('EXPECT_REVIEW_ITEMS', res.reviewItems);
   exactExpectation('EXPECT_TAKEOFF_BOARDS', res.takeoffBoards);
   maximumExpectation('EXPECT_MAX_ELAPSED_MS', res.elapsedMs);
