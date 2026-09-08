@@ -17,10 +17,17 @@ CREATE TABLE IF NOT EXISTS btc.raw_trades
 ENGINE = MergeTree
 PARTITION BY toYYYYMMDD(event_time)
 ORDER BY (market_type, venue, symbol, event_time, trade_id)
-TTL event_time + INTERVAL 180 DAY DELETE
+TTL event_time + INTERVAL 7 DAY DELETE
 SETTINGS index_granularity = 8192;
 
-CREATE TABLE IF NOT EXISTS btc.orderbook_snapshots
+ALTER TABLE btc.raw_trades MODIFY TTL event_time + INTERVAL 7 DAY DELETE;
+
+-- The Railway ClickHouse volume is intentionally small. Keep live order books in Redis
+-- and accept historical book writes into a Null sink until a sampled liquidity table is added.
+-- This prevents sub-second depth snapshots from exhausting persistent storage.
+DROP TABLE IF EXISTS btc.orderbook_snapshots;
+
+CREATE TABLE btc.orderbook_snapshots
 (
     event_time DateTime64(3, 'UTC'),
     ingested_at DateTime64(3, 'UTC'),
@@ -37,11 +44,7 @@ CREATE TABLE IF NOT EXISTS btc.orderbook_snapshots
     best_ask Nullable(Float64),
     spread_bps Nullable(Float64)
 )
-ENGINE = MergeTree
-PARTITION BY toYYYYMMDD(event_time)
-ORDER BY (market_type, venue, symbol, event_time)
-TTL event_time + INTERVAL 30 DAY DELETE
-SETTINGS index_granularity = 8192;
+ENGINE = Null;
 
 CREATE TABLE IF NOT EXISTS btc.minute_flow
 (
@@ -84,4 +87,6 @@ CREATE TABLE IF NOT EXISTS btc.collector_health
 ENGINE = MergeTree
 PARTITION BY toYYYYMMDD(observed_at)
 ORDER BY (service, observed_at)
-TTL observed_at + INTERVAL 90 DAY DELETE;
+TTL observed_at + INTERVAL 30 DAY DELETE;
+
+ALTER TABLE btc.collector_health MODIFY TTL observed_at + INTERVAL 30 DAY DELETE;
