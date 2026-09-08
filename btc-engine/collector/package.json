@@ -4,7 +4,10 @@
   "private": true,
   "type": "module",
   "engines": {"node": ">=22"},
-  "scripts": {"start": "node src/index.js"},
+  "scripts": {
+    "bootstrap": "node src/bootstrap.js",
+    "start": "node src/bootstrap.js && node src/index.js"
+  },
   "dependencies": {
     "@clickhouse/client": "^1.12.1",
     "@supabase/supabase-js": "^2.57.4",
