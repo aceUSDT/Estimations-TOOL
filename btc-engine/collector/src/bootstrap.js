@@ -9,7 +9,8 @@ const client = createClient({
   url: process.env.CLICKHOUSE_URL,
   username: process.env.CLICKHOUSE_USER || 'default',
   password: process.env.CLICKHOUSE_PASSWORD || '',
-  database: 'default'
+  database: 'default',
+  request_timeout: 180_000
 });
 
 const sql = await fs.readFile(new URL('../clickhouse/init.sql', import.meta.url), 'utf8');
