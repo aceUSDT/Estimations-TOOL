@@ -17,15 +17,18 @@ CREATE TABLE IF NOT EXISTS btc.raw_trades
 ENGINE = MergeTree
 PARTITION BY toYYYYMMDD(event_time)
 ORDER BY (market_type, venue, symbol, event_time, trade_id)
-TTL event_time + INTERVAL 7 DAY DELETE
+TTL event_time + INTERVAL 3 HOUR DELETE
 SETTINGS index_granularity = 8192;
 
-ALTER TABLE btc.raw_trades MODIFY TTL event_time + INTERVAL 7 DAY DELETE;
+ALTER TABLE btc.raw_trades MODIFY TTL event_time + INTERVAL 3 HOUR DELETE;
 
--- The Railway ClickHouse volume is intentionally small. Keep live order books in Redis
--- and accept historical book writes into a Null sink until a sampled liquidity table is added.
--- This prevents sub-second depth snapshots from exhausting persistent storage.
-DROP TABLE IF EXISTS btc.orderbook_snapshots;
+-- ONE-TIME RESET: the initial test collector filled the 500 MB Railway volume.
+-- This is removed immediately after the first successful cleanup deployment.
+TRUNCATE TABLE btc.raw_trades SYNC;
+
+-- Keep sub-second books live in Redis, but do not persist every raw depth message
+-- on the small ClickHouse volume. A sampled liquidity-history table will replace this.
+DROP TABLE IF EXISTS btc.orderbook_snapshots SYNC;
 
 CREATE TABLE btc.orderbook_snapshots
 (
