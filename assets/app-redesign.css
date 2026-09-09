@@ -255,7 +255,7 @@ table.t th.num {
 .appbar {
   height: 56px;
   gap: var(--s4);
-  padding: 0 var(--s5);
+  padding: 0 var(--gutter);
   border-bottom: 0;
   background: var(--nav);
 }
@@ -307,7 +307,7 @@ table.t th.num {
 }
 
 .processing-dock-inner {
-  padding: var(--s3) var(--s6);
+  padding: var(--s3) var(--gutter);
 }
 
 .processing-spinner {
@@ -320,8 +320,7 @@ table.t th.num {
 }
 
 .page {
-  max-width: 1600px;
-  padding: var(--s6) var(--s6) 72px;
+  padding: var(--s6) var(--gutter) 72px;
 }
 
 h1.pg {
@@ -512,8 +511,8 @@ table.t tr:hover td {
 
 .ptabs {
   min-height: 44px;
-  margin: 0 calc(var(--s6) * -1) var(--s5);
-  padding: 0 var(--s6);
+  margin: 0 calc(var(--gutter) * -1) var(--s5);
+  padding: 0 var(--gutter);
   gap: var(--s5);
   border: 0;
   border-top: 1px solid var(--line);
@@ -834,7 +833,7 @@ body[data-project-tab="viewer"] .proj-head {
 
 body[data-project-tab="viewer"] .ptabs {
   margin: 0 calc(var(--s4) * -1);
-  padding: 0 var(--s5);
+  padding: 0 var(--s4);
 }
 
 body[data-project-tab="viewer"] .viewer-layout {
@@ -1077,18 +1076,8 @@ body[data-project-tab="viewer"] .viewer-layout {
 }
 
 @media (max-width: 1200px) {
-  .page {
-    padding-right: var(--s5);
-    padding-left: var(--s5);
-  }
-
-  .ptabs {
-    margin-right: calc(var(--s5) * -1);
-    margin-left: calc(var(--s5) * -1);
-    padding-right: var(--s5);
-    padding-left: var(--s5);
-  }
-
+  /* The gutter already narrows with the viewport, so the page and tab row
+     need no override here — one rule keeps every edge in line. */
   .bd-explorer {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -1139,7 +1128,6 @@ body[data-project-tab="viewer"] .viewer-layout {
 
   .appbar {
     height: 56px;
-    padding: 0 var(--s4);
   }
 
   .appbar .brand {
@@ -1165,7 +1153,7 @@ body[data-project-tab="viewer"] .viewer-layout {
 
   .page,
   body[data-project-tab="viewer"] #projView.page {
-    padding: var(--s4) var(--s3) 76px;
+    padding: var(--s4) var(--gutter) 76px;
   }
 
   .home-head,
@@ -1500,15 +1488,28 @@ body {
 
 .appbar {
   height: 64px;
-  padding: 0 28px;
+  padding: 0 var(--gutter);
   border-bottom: 3px solid var(--brand);
   box-shadow: 0 1px 0 rgba(18, 24, 28, .3);
 }
 
+/* The brand is the way back to the projects list, so it is a button. It must
+   still line up with the page content below it, which is why the horizontal
+   padding is pulled back out with a negative margin. */
 .appbar .brand {
   gap: 14px;
   min-width: 240px;
-  padding-right: 22px;
+  padding: 8px 22px 8px 10px;
+  margin-left: -10px;
+}
+
+.appbar button.brand:hover {
+  background: rgba(255, 255, 255, .07);
+}
+
+.appbar button.brand:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
 }
 
 .appbar .brand-logo {
@@ -1544,13 +1545,15 @@ body {
 
 .processing-dock-inner {
   min-height: 62px;
-  padding: 10px 28px;
+  padding: 10px var(--gutter);
 }
 
+/* No width cap: the shell fills the window. A capped, centred column left the
+   app bar spanning the screen while the content sat in the middle of it —
+   two different left edges on the same page. */
 .page {
   width: 100%;
-  max-width: 1720px;
-  padding: 28px 28px 80px;
+  padding: 28px var(--gutter) 80px;
 }
 
 .home-head {
@@ -1685,8 +1688,8 @@ h1.pg {
 
 .ptabs {
   min-height: 50px;
-  margin: 0 -28px 24px;
-  padding: 0 28px;
+  margin: 0 calc(var(--gutter) * -1) 24px;
+  padding: 0 var(--gutter);
   gap: 28px;
   border-color: var(--line2);
   box-shadow: 0 8px 18px -20px rgba(18, 24, 28, .55);

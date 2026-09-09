@@ -29,6 +29,7 @@
     "test:viewer-real": "node tools/coverage/verify-real-viewer.mjs",
     "test:schematic-scan-browser": "node tools/coverage/verify-scanned-schematic.mjs",
     "test:report-ui": "node tools/coverage/verify-report-workflow.mjs",
-    "test:design-ui": "node tools/coverage/verify-design-workflow.mjs"
+    "test:design-ui": "node tools/coverage/verify-design-workflow.mjs",
+    "test:ui-shell": "node tools/coverage/probe-ui-shell.mjs"
   }
 }
