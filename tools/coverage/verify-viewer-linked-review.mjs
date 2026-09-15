@@ -482,6 +482,90 @@ try {
     await renderViewer();
   }, correctionRowId);
 
+  for (const scenario of [
+    { name: 'rating', code: 'INVALID_PROTECTION_DOMAIN', field: '#eRat', corrected: '25',
+      patch: { rating: 20, validation: { invalidRating: true } } },
+    { name: 'class', code: 'PROTECTION_CLASS_CONFLICT', field: '#eStandard', corrected: 'BS EN 60898-1',
+      patch: { protectionStandard: 'BS EN 61009-1', classConflict: { explicit: 'MCB', standardDevice: 'RCBO' } } },
+    { name: 'poles', code: 'PHASE_POLE_CONFLICT', field: '#ePol', corrected: 'SP', select: true,
+      patch: { poleConfiguration: 'TP', poles: 3, poleSourceText: 'TP', poleConflict: { printedPhase: 'L1', descriptor: 'TP' } } },
+    { name: 'sensitivity', code: 'INVALID_PROTECTION_DOMAIN', field: '#eSens', corrected: '30',
+      patch: { sens: 10, rcdProtected: true, rcdArrangement: 'separate', validation: { invalidSensitivity: true } } },
+    { name: 'capacity', code: 'INVALID_PROTECTION_DOMAIN', field: '#eKa', corrected: '10',
+      patch: { ka: 6, validation: { invalidBreakingCapacity: true } } },
+  ]) {
+    const conflictId = await page.evaluate(({ name, patch }) => {
+      const current = guidedReviewCurrentRow();
+      const row = { ...current, id: 'viewer-unresolved-' + name, kind: 'schedule', status: 'pending',
+        device: 'MCB', rating: 20, qty: 1, phase: 'L1', poleConfiguration: 'SP', poles: 1,
+        protectionStandard: 'BS EN 60898-1', ka: 10, sens: null, rcdProtected: false, rcdArrangement: null,
+        classConflict: null, poleConflict: null, validation: {}, edited: false, requiresReview: true,
+        corrections: [], spare: false, space: false, fieldSources: {}, srcText: 'L1 MCB 20A',
+        phaseSourceText: null, poleSourceText: null, ...patch };
+      state.cur.analysis.rows.push(row);
+      openRowEditor(row, false, 'Viewer');
+      return row.id;
+    }, scenario);
+    for (const descriptionOnly of [false, true]) {
+      if (descriptionOnly) {
+        await page.evaluate(id => openRowEditor(state.cur.analysis.rows.find(row => row.id === id), false, 'Viewer'), conflictId);
+        await page.locator('#eDesc').fill('Description changed; protection evidence remains unresolved');
+      }
+      await page.locator('#mOk').click();
+      await page.locator('#modalBk').waitFor({ state: 'hidden' });
+      const saved = await page.evaluate(id => {
+        const row = state.cur.analysis.rows.find(item => item.id === id);
+        return { status: row.status, issue: rowApprovalIssue(row), requiresReview: row.requiresReview,
+          healthCodes: state.cur.analysis.health.reasons.map(reason => reason.code) };
+      }, conflictId);
+      assert.equal(saved.status, 'pending', `${scenario.name}: an unrelated save must not approve the conflict`);
+      assert.ok(saved.issue);
+      assert.equal(saved.requiresReview, true);
+      assert.ok(saved.healthCodes.includes(scenario.code));
+    }
+    await page.evaluate(id => openRowEditor(state.cur.analysis.rows.find(row => row.id === id), false, 'Viewer'), conflictId);
+    if (scenario.select) await page.locator(scenario.field).selectOption(scenario.corrected);
+    else await page.locator(scenario.field).fill(scenario.corrected);
+    await page.locator('#mOk').click();
+    await page.locator('#modalBk').waitFor({ state: 'hidden' });
+    const resolved = await page.evaluate(id => {
+      const row = state.cur.analysis.rows.find(item => item.id === id);
+      return { status: row.status, issue: rowApprovalIssue(row), requiresReview: row.requiresReview };
+    }, conflictId);
+    assert.deepEqual(resolved, { status: 'confirmed', issue: null, requiresReview: false }, `${scenario.name}: correcting the flagged field must allow approval`);
+    await page.evaluate(async id => {
+      state.cur.analysis.rows = state.cur.analysis.rows.filter(row => row.id !== id);
+      refreshAnalysisHealth();
+      await renderViewer();
+    }, conflictId);
+  }
+
+  const invalidEntry = await page.evaluate(() => {
+    const current = guidedReviewCurrentRow();
+    const row = { ...current, id: 'viewer-invalid-numeric-entry', status: 'pending', kind: 'schedule',
+      device: 'MCB', rating: 20, ka: 10, sens: 10, rcdProtected: true, rcdArrangement: 'separate',
+      classConflict: null, poleConflict: null, validation: {}, corrections: [], edited: false };
+    state.cur.analysis.rows.push(row);
+    openRowEditor(row, false, 'Viewer');
+    return { id: row.id, before: JSON.stringify(row) };
+  });
+  for (const [field, value, reset] of [
+    ['#eRat', '0', '20'], ['#eRat', '-20', '20'], ['#eRat', 'not a number', '20'], ['#eRat', '1e309', '20'],
+    ['#eKa', '0', '10'], ['#eKa', '300', '10'], ['#eSens', '32', '10'],
+  ]) {
+    await page.locator(field).fill(value);
+    await page.locator('#mOk').click();
+    assert.equal(await page.locator('#modalBk.show').isVisible(), true, `${field}=${value} must keep correction open`);
+    assert.equal(await page.evaluate(id => JSON.stringify(state.cur.analysis.rows.find(row => row.id === id)), invalidEntry.id),
+      invalidEntry.before, 'invalid correction must not mutate the row or its evidence');
+    await page.locator(field).fill(reset);
+  }
+  await page.locator('#mCancel').click();
+  await page.evaluate(async id => {
+    state.cur.analysis.rows = state.cur.analysis.rows.filter(row => row.id !== id);
+    await renderViewer();
+  }, invalidEntry.id);
+
   let nextBoard = firstBoard;
   for (let decision = 0; decision < 80 && nextBoard === firstBoard; decision += 1) {
     const priorRow = await page.evaluate(() => state.reviewFlow.currentRowId);

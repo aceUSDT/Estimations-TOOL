@@ -3932,9 +3932,10 @@ async function runAnalysis(opts){
       incomerRows:scheduleRows.filter(row=>row.incomer).length,
       unassignedRows:scheduleRows.filter(row=>!row.boardNorm).length,
       reviewRows:scheduleRows.filter(row=>row.status!=='confirmed'&&row.status!=='rejected').length,
-      invalidRows:scheduleRows.filter(row=>row.validation?.invalidSensitivity||row.validation?.invalidBreakingCapacity).length,
-      classConflictRows:scheduleRows.filter(row=>row.classConflict&&!row.edited).length,
-      phaseConflictRows:scheduleRows.filter(row=>row.poleConflict&&!row.edited).length,
+      invalidRows:scheduleRows.filter(row=>window.EstimationExtractorCore?.hasInvalidProtectionValues?.(row)
+        ||row.validation?.invalidRating||row.validation?.invalidSensitivity||row.validation?.invalidBreakingCapacity).length,
+      classConflictRows:scheduleRows.filter(row=>row.classConflict).length,
+      phaseConflictRows:scheduleRows.filter(row=>row.poleConflict).length,
       feeders:A.feeders.filter(feeder=>feeder.fileId===d.fileId&&Number(feeder.page)===Number(d.page)).length,
     };
   });
@@ -4154,16 +4155,18 @@ function rowApprovalIssue(row){
     ? window.EstimationExtractorCore.isPopulatedProtectionRow(row)
     : !row.spare&&!row.space&&Boolean(row.device||row.rating!=null);
   if(populated&&!row.boardNorm)return 'No board identity is linked to this schedule row';
-  if(row.classConflict&&!row.edited)return 'The device class conflicts with the printed protection standard';
-  if(row.poleConflict&&!row.edited)return 'The printed phase conflicts with the device pole descriptor';
-  if(!row.edited&&(row.validation?.invalidSensitivity||row.validation?.invalidBreakingCapacity))return 'A protection value is outside the supported electrical unit range';
+  if(row.classConflict)return 'The device class conflicts with the printed protection standard';
+  if(row.poleConflict)return 'The printed phase conflicts with the device pole descriptor';
+  if(window.EstimationExtractorCore?.hasInvalidProtectionValues?.(row)
+    ||row.validation?.invalidRating||row.validation?.invalidSensitivity||row.validation?.invalidBreakingCapacity)return 'A protection value is outside the supported electrical unit range';
   if(populated&&(!row.device||row.rating==null))return 'The protective device class or current rating is missing';
   const diagnostic=(A.pageDiagnostics||[]).find(page=>page.fileId===row.fileId&&Number(page.page)===Number(row.page));
   const calibratedRoles=diagnostic?.calibration?.roles||[];
   const calibratedPage=Number(diagnostic?.calibration?.applied||0)>0||calibratedRoles.length>0;
   const sourceBox=row.highlightBbox||row.bbox||row.sourceCell?.bbox||null;
-  const reviewableSource=Array.isArray(sourceBox)&&sourceBox.length>=4
-    &&sourceBox.every(value=>Number.isFinite(Number(value)));
+  const reviewableSource=Array.isArray(sourceBox)&&sourceBox.length===4
+    &&sourceBox.every(value=>Number.isFinite(value))
+    &&sourceBox[0]>=0&&sourceBox[1]>=0&&sourceBox[2]>0&&sourceBox[3]>0;
   const humanResolved=Boolean(row.edited||row.manual||row.resolutionSource==='user_guided_recovery');
   if((diagnostic?.spatialBlockingReasons||[]).length&&!((calibratedPage||humanResolved)&&reviewableSource)){
     return 'The schedule table geometry has not been proven on this page';
@@ -5227,6 +5230,15 @@ function openRowEditor(r, isNew, surface='Boards & Devices'){
       rcdProtected:r.rcdProtected??null,rcdArrangement:r.rcdArrangement||null,rcdType:r.rcdType||null,sens:r.sens??null,afdd:afddSource??null,
       earthFaultDevice:r.earthFaultDevice||null,arcFlashDevice:r.arcFlashDevice||null,circuitReference:r.circuitReference||null,circuitConfig:r.circuitConfig||null,
       serviceCode:r.serviceCode||null,discipline:r.discipline||null,cable:r.cable||null,spare:Boolean(r.spare),space:Boolean(r.space),incomer:Boolean(r.incomer),desc:r.desc||null};
+    const numericValues={rating:$('#eRat').value.trim()||null,ka:$('#eKa').value.trim()||null,sens:$('#eSens').value.trim()||null};
+    const numericValidation=window.EstimationExtractorCore?.validateProtectionValues?.(numericValues);
+    if(!numericValidation){toast('Protection validation is unavailable. Reload before saving.');return false;}
+    if(numericValidation&&Object.values(numericValidation).some(Boolean)){
+      const message=numericValidation.invalidRating?'Current rating must be a finite number greater than zero'
+        :numericValidation.invalidSensitivity?'RCD sensitivity must be 10, 30, 100, 300 or 500 mA'
+        :'Breaking capacity must be a finite value from 3 to 150 kA';
+      toast(message);return false;
+    }
     const numberOrNull=id=>{const raw=$(id).value.trim(),value=Number(raw);return raw===''||!Number.isFinite(value)?null:value;};
     const wayOrNull=()=>{const raw=$('#eWay').value.trim().toUpperCase();if(!raw)return null;
       if(!/^(?:\d{1,3}|[A-Z]{1,3}\d{1,3})$/.test(raw)){toast('Way must be a number or an identifier such as L7 or P1');return undefined;}
@@ -5292,8 +5304,9 @@ function openRowEditor(r, isNew, surface='Boards & Devices'){
     if(changedFields.includes('Phase')||changedFields.includes('Pole Configuration'))r.poleConflict=null;
     if(changedFields.includes('RCD Sensitivity'))r.validation={...(r.validation||{}),invalidSensitivity:false};
     if(changedFields.includes('Breaking Capacity'))r.validation={...(r.validation||{}),invalidBreakingCapacity:false};
+    if(changedFields.includes('Current Rating'))r.validation={...(r.validation||{}),invalidRating:false};
     r.edited=true;
-    r.requiresReview=Boolean(r.classConflict||r.poleConflict||r.validation?.invalidSensitivity||r.validation?.invalidBreakingCapacity
+    r.requiresReview=Boolean(r.classConflict||r.poleConflict||r.validation?.invalidRating||r.validation?.invalidSensitivity||r.validation?.invalidBreakingCapacity
       ||(!r.spare&&!r.space&&(!r.device||r.rating==null)));
     const approvalIssue=rowApprovalIssue(r);
     r.status=approvalIssue?'pending':'confirmed';
