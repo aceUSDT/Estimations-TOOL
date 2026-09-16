@@ -1556,6 +1556,7 @@ function scheduleBoardFromLines(lines){
   let sawLabel=false;
   for(const line of lines){
     const source=String(line||'');
+    if(/\b(?:index|contents|connected\s+to|fed\s+from|supplied\s+from)\b/i.test(source))continue;
     const label=source.match(/\bDB\s+REFERENCE\b|\b(?:DISTRIBUTION\s+)?BOARD\s*(?:REFERENCE|REF|IDENTITY)?\s*[:=\-]|\bDISTRIBUTION\s+BOARD\s+SCHEDULE\b\s*[—–:\-]\s*(?=[A-Z0-9])/i);
     if(!label) continue;
     sawLabel=true;
@@ -1571,6 +1572,7 @@ function scheduleBoardFromLines(lines){
   const topN=Math.max(6,Math.ceil(lines.length/3));
   for(let index=0;index<Math.min(topN,lines.length);index++){
     if(!/\b(?:board|panel)\b/i.test(String(lines[index]||''))) continue;
+    if(/\b(?:index|contents|connected\s+to|fed\s+from|supplied\s+from)\b/i.test(String(lines[index]||'')))continue;
     const boards=detectBoards(lines[index]);if(boards.length)return boards[0];
   }
   return null;
@@ -1986,16 +1988,20 @@ function isCountedDeviceRow(row){
     &&(!['mention','ai'].includes(row.kind)||row.status==='confirmed');
 }
 function isPendingReviewRow(row){
-  return isTakeoffEvidenceRow(row)&&!row.outOfScope&&row.status!=='confirmed'&&row.status!=='rejected';
+  return isTakeoffEvidenceRow(row)&&!row.outOfScope&&row.status!=='rejected'
+    &&(row.status!=='confirmed'||Boolean(window.EstimationExtractorCore?.rowBoardOwnershipIssue(row,state.cur?.analysis?.boards)));
 }
 function projStats(p){
   const docs=p.files.length;
   const pages=p.files.reduce((a,f)=>a+(f.pages?f.pages.length:0),0);
   const a=p.analysis;
-  const boards=a?Object.values(a.boards).filter(board=>board.inScope!==false).length:0;
+  const ownership=a?window.EstimationExtractorCore?.buildBoardOwnership({boards:a.boards,rows:a.rows}):null;
+  const boards=ownership?.resolvedBoardCount??(a?Object.values(a.boards).filter(board=>board.inScope!==false).length:0);
   const devices=a?a.rows.filter(isCountedDeviceRow).reduce((s,r)=>s+(r.qty||1),0):0;
-  const review=a?a.rows.filter(isPendingReviewRow).length:0;
-  return {docs,pages,boards,devices,review};
+  const review=a?a.rows.filter(row=>isTakeoffEvidenceRow(row)&&!row.outOfScope&&row.status!=='rejected'
+    &&(row.status!=='confirmed'||Boolean(window.EstimationExtractorCore?.rowBoardOwnershipIssue(row,a.boards)))).length:0;
+  if(ownership?.unassignedRowCount)p.status='Analysis failed';
+  return {docs,pages,boards,devices,review,unassignedRows:ownership?.unassignedRowCount||0,unassignedPages:ownership?.unassignedPageCount||0};
 }
 /* ============================ HOME / PROJECT CARDS ============================ */
 function renderProjects(){
@@ -2072,6 +2078,7 @@ function openProject(id){
   if (!state.cur) return;
   if(!analysisBusy)hideProcessing();
   ensureProjectState(state.cur);
+  if(state.cur.analysis)refreshAnalysisHealth();
   restoreGuidedReviewSession(state.cur);
   show('proj');
   $('#projTitle').textContent=state.cur.name;
@@ -2089,7 +2096,7 @@ function openProject(id){
 function renderProjHeader(){
   const p=state.cur; if(!p) return;
   const s=projStats(p);
-  $('#projMeta').textContent = `${s.docs} document${s.docs===1?'':'s'} · ${s.pages} pages · ${s.boards} boards · Last analysis: ${p.analysis?p.analysis.ranAt:'never'}`;
+  $('#projMeta').textContent = `${s.docs} document${s.docs===1?'':'s'} · ${s.pages} pages · ${s.boards} resolved boards${s.unassignedRows?` · ${s.unassignedRows} unassigned rows on ${s.unassignedPages} pages`:''} · Last analysis: ${p.analysis?p.analysis.ranAt:'never'}`;
   $('#bDocs').textContent=s.docs; $('#bDev').textContent=s.devices;
   $('#bBoards').textContent=s.boards; $('#bRev').textContent=s.review;
 }
@@ -3489,6 +3496,7 @@ async function runAnalysis(opts){
     const fl=p.files.find(x=>x.id===id); if(!fl||fl.status!=='ready') continue;
       const filenameBoardCandidates=filenameBoardCandidatesOf(fl.name);
       let prevBoard=null;
+      let prevBoardPage=null;
       let prevSpatialSchema=null;
       fl.pages.forEach((pg,pi)=>{
         const pageNo=pi+1;
@@ -3612,19 +3620,32 @@ async function runAnalysis(opts){
           ctxBoard={norm:canonical.normalised,orig:spatial.board.ref,type:spatial.board.type||'UNK',section:canonical.splitSection||null};
         }else ctxBoard=scheduleBoardFromLines(lines);
         const hasBoardHeader=hasScheduleBoardHeader(lines);
-        if (!ctxBoard && !hasBoardHeader && prevBoard) ctxBoard=prevBoard; // continuation page
+        const inheritedContext=!ctxBoard&&!hasBoardHeader&&prevBoard
+          &&prevBoardPage===pageNo-1&&core?.isResolvedBoardIdentity(A.boards[prevBoard.norm]);
+        if(inheritedContext)ctxBoard=prevBoard;
         const hasDocumentPrimary=Object.values(A.boards).some(board=>(board.pages||[])
           .some(page=>page.fileId===id&&page.primary));
         const filenameBoardFallback=!ctxBoard&&!prevBoard&&!hasDocumentPrimary&&filenameBoardCandidates.length===1
           ? filenameBoardCandidates[0] : null;
         if(filenameBoardFallback)ctxBoard=filenameBoardFallback;
-        if (ctxBoard){ regBoard(ctxBoard,id,pageNo,true); prevBoard=ctxBoard; if(spatial?.schema)prevSpatialSchema=spatial.schema; }
+        if (ctxBoard){ regBoard(ctxBoard,id,pageNo,!filenameBoardFallback); prevBoard=ctxBoard; prevBoardPage=pageNo; if(spatial?.schema)prevSpatialSchema=spatial.schema; }
         else if(hasBoardHeader){ prevBoard=null;prevSpatialSchema=null; }
-        diagnostic.boardResolved=Boolean(ctxBoard);
+        diagnostic.boardResolved=Boolean(ctxBoard&&!filenameBoardFallback);
         diagnostic.primaryBoardRef=ctxBoard?.orig||null;
         diagnostic.primaryBoardNorm=ctxBoard?.norm||null;
-        diagnostic.boardOwnershipMethod=spatial?.board?.ref?'spatial_board_header'
+        diagnostic.boardOwnershipMethod=spatial?.board?.continuationSourcePage?'spatial_continuation'
+          :inheritedContext?'previous_schedule_page':spatial?.board?.ref?'spatial_board_header'
           :(filenameBoardFallback?'filename_reference_review':(ctxBoard?'labelled_text_header':null));
+        diagnostic.boardOwnershipSourcePage=spatial?.board?.continuationSourcePage||(inheritedContext?pageNo-1:ctxBoard?pageNo:null);
+        diagnostic.boardIdentityConfidence=spatial?.board?.confidence??(filenameBoardFallback?0.55:null);
+        diagnostic.boardReferenceCandidates=[
+          ...contextualRefs.map(reference=>({reference:reference.original,role:reference.role,source:'page_text'})),
+          ...filenameBoardCandidates.map(reference=>({reference:reference.orig,role:'candidate',source:'filename'})),
+          ...(spatial?.board?.ref?[{reference:spatial.board.ref,role:'primary',source:diagnostic.boardOwnershipMethod,
+            evidence:spatial.board.evidence?.board_ref||null}]:[]),
+          ...lines.map((text,line)=>({text,line})).filter(item=>hasScheduleBoardHeader([item.text]))
+            .map(item=>({reference:item.text,role:'candidate',source:'labelled_header',line:item.line,bbox:pg.lines[item.line]?.bbox||null})),
+        ];
         if(filenameBoardFallback){
           diagnostic.spatialWarnings=[...new Set([...(diagnostic.spatialWarnings||[]),'filename_board_reference_used_for_review'])];
           const board=A.boards[ctxBoard.norm];
@@ -3635,6 +3656,9 @@ async function runAnalysis(opts){
             board.headerEvidence.board_ref={text:ctxBoard.orig,originalText:fl.name,bbox:null,confidence:0.55,
               extractionMethod:'Filename reference recovery'};
           }
+        }
+        if(!filenameBoardFallback&&ctxBoard&&A.boards[ctxBoard.norm]?.identitySource==='filename_reference_review'){
+          A.boards[ctxBoard.norm].identitySource=diagnostic.boardOwnershipMethod;
         }
         diagnostic.downstreamCircuitReferences=(spatial?.references||[]).filter(reference=>reference.role==='circuit_reference')
           .map(reference=>reference.original);
@@ -3729,7 +3753,8 @@ async function runAnalysis(opts){
         const confidence=trace.lineConfidence?Math.min(Number(row.conf??1),trace.lineConfidence):row.conf;
         const record={id:uid(),fileId:id,page:pageNo,line,status:'pending',kind:'schedule',...row,...trace,
           boardNorm:effectiveBoardNorm,boardSection:effectiveBoardSection,boardOwnershipConflict:ownershipConflict,
-          boardIdentitySource:diagnostic.boardOwnershipMethod||null,conf:confidence};
+          boardIdentitySource:diagnostic.boardOwnershipMethod||null,
+          boardIdentitySourcePage:diagnostic.boardOwnershipSourcePage||null,conf:confidence};
         record.sourceKey=stableRowSourceKey(record);A.rows.push(record);
       };
       if(codedPage.matched) codedPage.rows.forEach(row=>addScheduleRow(row,row.line));
@@ -3930,7 +3955,7 @@ async function runAnalysis(opts){
       spareRows:scheduleRows.filter(row=>row.spare).length,
       blankRows:scheduleRows.filter(row=>row.space).length,
       incomerRows:scheduleRows.filter(row=>row.incomer).length,
-      unassignedRows:scheduleRows.filter(row=>!row.boardNorm).length,
+      unassignedRows:scheduleRows.filter(row=>window.EstimationExtractorCore?.rowBoardOwnershipIssue(row,A.boards)||!row.boardNorm).length,
       reviewRows:scheduleRows.filter(row=>row.status!=='confirmed'&&row.status!=='rejected').length,
       invalidRows:scheduleRows.filter(row=>window.EstimationExtractorCore?.hasInvalidProtectionValues?.(row)
         ||row.validation?.invalidRating||row.validation?.invalidSensitivity||row.validation?.invalidBreakingCapacity).length,
@@ -3964,7 +3989,7 @@ async function runAnalysis(opts){
     : health.state==='incomplete' ? 'Incomplete'
     : rev? 'Needs review':'Analysed';
   const deviceCount=A.rows.filter(isCountedDeviceRow).reduce((sum,row)=>sum+(Number(row.qty)||1),0);
-  const scopedBoardCount=Object.values(A.boards).filter(board=>board.inScope!==false).length;
+  const scopedBoardCount=projStats(p).boards;
   const completeDetail=`${deviceCount} devices | ${scopedBoardCount} boards | ${rev} review items`;
   renderStages(7,true,completeDetail);
   renderTakeoff(); renderProjHeader(); renderAnalysisControls(); renderPgclass(); saveProject(p);
@@ -4148,6 +4173,8 @@ function refreshAnalysisHealth(){
   const files=p.files.filter(file=>fileIds.has(file.id)).map(file=>({id:file.id,ext:file.ext,status:file.status,pages:file.pages}));
   A.health=core.buildAnalysisHealth({coverage:A.coverage||null,boards:A.boards,rows:A.rows,
     pages:A.pageDiagnostics||[],files,feeders:A.feeders||[],discrepancies:A.discrepancies||[]});
+  p.status=A.health.state==='failed'?'Analysis failed':A.health.state==='incomplete'?'Incomplete'
+    :A.rows.some(isPendingReviewRow)?'Needs review':'Analysed';
 }
 function rowApprovalIssue(row){
   const A=state.cur?.analysis;if(!row||!A)return 'Analysis data is unavailable';
@@ -4155,6 +4182,8 @@ function rowApprovalIssue(row){
     ? window.EstimationExtractorCore.isPopulatedProtectionRow(row)
     : !row.spare&&!row.space&&Boolean(row.device||row.rating!=null);
   if(populated&&!row.boardNorm)return 'No board identity is linked to this schedule row';
+  const ownershipIssue=window.EstimationExtractorCore?.rowBoardOwnershipIssue(row,A.boards);
+  if(ownershipIssue)return `Board ownership is unresolved (${ownershipIssue.reasonCode}). ${ownershipIssue.action}`;
   if(row.classConflict)return 'The device class conflicts with the printed protection standard';
   if(row.poleConflict)return 'The printed phase conflicts with the device pole descriptor';
   if(window.EstimationExtractorCore?.hasInvalidProtectionValues?.(row)
@@ -5084,6 +5113,7 @@ function renderHealthBanner(){
     const more=(r.refs||[]).length>4?' …':'';
     return `<li><b>${esc(r.message)}</b> ×${r.count}${where?' — '+where+more:''}</li>`;
   }).join('');
+  const ownership=window.EstimationExtractorCore?.buildBoardOwnership({boards:A.boards,rows:A.rows});
   host.innerHTML=`<div class="panel" style="margin-bottom:14px;border-left:4px solid var(--${tone})">
     <div class="p-body">
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
@@ -5094,6 +5124,7 @@ function renderHealthBanner(){
         <button class="btn sm" id="healthDiagBtn" title="Counts and reason codes only — no document content">Export diagnostics</button>
       </div>
       <ul style="margin:9px 0 0 20px;font-size:12.5px;color:var(--txt2);line-height:1.7">${items}</ul>
+      ${ownership?.unassignedRowCount?`<p role="status">${ownership.unassignedRowCount} unassigned rows on ${ownership.unassignedPageCount} pages. These devices are not resolved board totals.</p><button class="btn sm" id="healthOwnershipBtn">Review unassigned source</button>`:''}
     </div></div>`;
   const ocrBtn=$('#healthOcrBtn');
   if(ocrBtn)ocrBtn.addEventListener('click', async()=>{
@@ -5103,6 +5134,10 @@ function renderHealthBanner(){
   });
   const diagBtn=$('#healthDiagBtn');
   if(diagBtn)diagBtn.addEventListener('click', exportDiagnostics);
+  $('#healthOwnershipBtn')?.addEventListener('click',async()=>{
+    const issue=ownership?.issues[0],row=A.rows.find(item=>item.id===issue?.rowId);
+    if(row){await setTab('viewer');await jumpToEvidence(row);openRowEditor(row,false,'Viewer');}
+  });
 }
 function exportDiagnostics(){
   const p=state.cur, A=p&&p.analysis;
@@ -5300,6 +5335,10 @@ function openRowEditor(r, isNew, surface='Boards & Devices'){
       Object.assign(r,window.EstimationExtractorCore.reconcileCombinedProtection(r));
     }
     const changedFields=correctionResult.changedFields||[];
+    if((changedFields.includes('Board Reference')||typedBoard)&&window.EstimationExtractorCore?.isResolvedBoardIdentity(A.boards[r.boardNorm])){
+      r.boardOwnershipConflict=null;r.boardOwnershipUnresolved=false;
+      r.boardIdentitySource='user_correction';
+    }
     if(changedFields.includes('Device Family')||changedFields.includes('Protection Standard'))r.classConflict=null;
     if(changedFields.includes('Phase')||changedFields.includes('Pole Configuration'))r.poleConflict=null;
     if(changedFields.includes('RCD Sensitivity'))r.validation={...(r.validation||{}),invalidSensitivity:false};
@@ -5386,7 +5425,7 @@ function currentReportModel(){
 function currentReportExportReadiness(model=currentReportModel()){
   const A=state.cur?.analysis,core=window.EstimationExtractorCore;
   if(core?.buildReportExportReadiness){
-    return core.buildReportExportReadiness({health:A?.health||null,rows:A?.rows||[],model,
+    return core.buildReportExportReadiness({health:A?.health||null,boards:A?.boards||{},rows:A?.rows||[],model,
       extractionGaps:unresolvedReviewExtractionGaps(),coverageQualifications:state.cur?.coverageQualifications||[]});
   }
   const blockers=[];
@@ -6298,7 +6337,8 @@ function viewerBoardsOnPage(f,pageNo){
   A.rows.forEach(row=>{
     if(row.fileId!==f.id||Number(row.page)!==Number(pageNo)||!row.boardNorm)return;
     add(row.boardNorm,row.kind==='schedule'?80:20,row.kind==='schedule'?'schedule rows':'extracted rows');
-    candidates.get(row.boardNorm).rowCount+=1;
+    const candidate=candidates.get(row.boardNorm);
+    if(candidate)candidate.rowCount+=1;
   });
   (pg.lines||[]).forEach(line=>detectBoards(line.text).forEach(board=>add(board.norm,1,'printed reference')));
   return [...candidates.values()].sort((left,right)=>

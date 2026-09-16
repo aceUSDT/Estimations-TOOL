@@ -8,6 +8,24 @@ const context = vm.createContext({ console });
 vm.runInContext(source, context, { filename: "report-core.js" });
 const Report = context.EstimationReport;
 
+const orphanedModel = Report.buildModel({ boards: {}, rows: [
+  { id: 'orphan-a', kind: 'schedule', boardNorm: 'NOT-REGISTERED', device: 'MCB', rating: 20,
+    qty: 238, status: 'confirmed', fileId: 'synthetic', page: 1, way: 1 },
+] });
+assert.equal(orphanedModel.boards.length, 0, 'rows must never manufacture owning boards');
+assert.equal(orphanedModel.unassignedQty, 238, 'unassigned quantities remain visible and block issue');
+assert.equal(orphanedModel.grandTotal, 0, 'unassigned quantities are not resolved board totals');
+const repeatedUnassigned = Report.buildModel({ boards: {}, rows: [1, 2].map(page => ({
+  id: `orphan-${page}`, kind: 'schedule', boardNorm: 'NOT-REGISTERED', device: 'MCB', rating: 20,
+  qty: 1, status: 'confirmed', fileId: 'synthetic', page, way: 1,
+})) });
+assert.equal(repeatedUnassigned.unassignedQty, 2, 'unresolved duplicate ways retain both source occurrences');
+const conflictedModel = Report.buildModel({ boards: { DB1: { norm: 'DB1', orig: 'DB-1' } }, rows: [
+  { id: 'conflict-a', boardNorm: 'DB1', boardOwnershipConflict: { sourceBoard: 'DB2' },
+    device: 'MCB', rating: 20, qty: 1, status: 'confirmed' },
+] });
+assert.equal(conflictedModel.unassignedQty, 1, 'a populated board ID does not resolve an identity conflict');
+
 const model = Report.buildModel({
   projectName: "Llangatwg Test",
   generatedAt: "2026-07-13T09:00:00Z",

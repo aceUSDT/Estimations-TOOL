@@ -782,31 +782,35 @@
 
   function buildModel(options) {
     const rows = Array.isArray(options && options.rows) ? options.rows : [];
+    const ownershipCore = globalThis.EstimationExtractorCore;
+    const ownerIssue = row => ownershipCore?.rowBoardOwnershipIssue
+      ? ownershipCore.rowBoardOwnershipIssue(row, options?.boards)
+      : !Object.prototype.hasOwnProperty.call(options?.boards || {}, row.boardNorm)
+        || row.boardOwnershipConflict || row.boardOwnershipUnresolved;
     const allKnownBoards = boardEntries(options && options.boards);
     const excludedBoardNorms = new Set(allKnownBoards.filter((board) => !board.inScope).flatMap((board) => [board.sourceNorm, board.norm]));
-    const knownBoards = allKnownBoards.filter((board) => board.inScope);
+    const knownBoards = allKnownBoards.filter((board) => board.inScope
+      && (!ownershipCore?.isResolvedBoardIdentity || ownershipCore.isResolvedBoardIdentity(options.boards[board.sourceNorm])));
     const aliases = new Map(knownBoards.map((board) => [board.sourceNorm, board.norm]));
     const knownMap = new Map();
     knownBoards.forEach((board) => {
       if (!knownMap.has(board.norm)) knownMap.set(board.norm, board);
     });
     const accepted = rows.filter((row) => includeRow(row) && !excludedBoardNorms.has(text(row.boardNorm)));
-    const deduplicated = deduplicateRows(accepted);
-    const included = deduplicated.unique;
+    // Without an evidenced owner, repeated way numbers cannot establish that
+    // two source occurrences describe the same device. Retain them for Review.
+    const deduplicated = deduplicateRows(accepted.filter(row => !ownerIssue(row)));
+    const included = [...deduplicated.unique, ...accepted.filter(row => ownerIssue(row))];
     const fileNames = new Map((Array.isArray(options && options.files) ? options.files : [])
       .map((file) => [text(file && file.id), text(file && file.name)]));
     const resolveBoard = (value) => aliases.get(text(value)) || text(value);
-    const activeBoards = new Set(included.map((row) => resolveBoard(row.boardNorm)).filter(Boolean));
+    const rowBoard = row => ownerIssue(row) ? null : resolveBoard(row.boardNorm);
+    const activeBoards = new Set(included.map(rowBoard).filter(Boolean));
     const boardMap = new Map();
     if (options && options.includeEmptyBoards) knownMap.forEach((board, norm) => boardMap.set(norm, board));
     else included.forEach((row) => {
-      const norm = resolveBoard(row.boardNorm);
-      if (norm && activeBoards.has(norm) && !boardMap.has(norm)) boardMap.set(norm, knownMap.get(norm) || { norm, label: norm, type: "" });
-    });
-
-    included.forEach((row) => {
-      const norm = resolveBoard(row.boardNorm);
-      if (norm && !boardMap.has(norm)) boardMap.set(norm, { norm, label: norm, type: "" });
+      const norm = rowBoard(row);
+      if (norm && activeBoards.has(norm) && knownMap.has(norm) && !boardMap.has(norm)) boardMap.set(norm, knownMap.get(norm));
     });
 
     const boards = Array.from(boardMap.values());
@@ -816,7 +820,7 @@
 
     included.forEach((source) => {
       const qty = Math.max(1, Number(source.qty) || 1);
-      const boardIndex = boardOrder.get(resolveBoard(source.boardNorm));
+      const boardIndex = boardOrder.get(rowBoard(source));
       if (boardIndex == null) {
         unassignedQty += qty;
         return;

@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createOrphanedTakeoff, resolvedSyntheticBoard } from './fixtures/board-ownership-synthetic.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 // extractor-core is a browser global-style module; evaluate it onto a sandbox.
@@ -32,7 +33,69 @@ const row = (over = {}) => ({
   id: 'r', boardNorm: 'DB-01', fileId: 'f1', page: 1, device: 'MCB', qty: 1,
   status: 'pending', kind: 'schedule', way: 1, ...over,
 });
-const linkedBoard = (over = {}) => ({ parent: 'MAIN', ...over });
+const linkedBoard = (over = {}) => ({ parent: 'MAIN', scheduleEvidence: true, ...over });
+
+test('MICRO-001: 238 devices and no registered boards is failed with all unresolved rows retained', () => {
+  const fixture = createOrphanedTakeoff();
+  const h = core.buildAnalysisHealth(fixture);
+  assert.equal(h.state, 'failed');
+  assert.equal(h.counters.boards, 0);
+  assert.equal(h.counters.deviceCount, 238);
+  assert.equal(h.counters.unassignedRows, 254);
+  assert.equal(h.counters.unassignedPages, 2);
+  assert.ok(h.reasons.some(reason => reason.code === 'ZERO_BOARDS_WITH_DEVICES'));
+  const ownership = core.buildBoardOwnership(fixture);
+  assert.equal(ownership.issues.length, 254, 'retain every occurrence, including duplicate way numbers');
+  assert.equal(ownership.issues[0].rowId, 'ownership-0');
+  assert.equal(ownership.issues[0].fileId, 'ownership-synthetic');
+  assert.equal(ownership.issues[0].page, 1);
+  assert.equal(ownership.issues[0].way, 1);
+  assert.equal(ownership.issues[0].sourceText, fixture.rows[0].srcText);
+  assert.deepEqual(ownership.issues[0].bbox, fixture.rows[0].bbox);
+  assert.ok(ownership.issues[0].action);
+});
+
+test('MICRO-001: current ownership blocks stale-health export across extraction kinds', () => {
+  for (const kind of ['schedule', 'ai', 'manual', 'mention']) {
+    for (const patch of [{ boardNorm: null }, { boardNorm: 'DANGLING' },
+      { boardNorm: 'DB1', boardOwnershipConflict: { printed: 'DB2' } },
+      { boardNorm: 'DB1', boardOwnershipUnresolved: true }]) {
+      const item = row({ kind, rating: 20, status: 'confirmed', ...patch });
+      const boards = { DB1: resolvedSyntheticBoard };
+      assert.ok(core.rowBoardOwnershipIssue(item, boards));
+      const readiness = core.buildReportExportReadiness({ health: { state: 'complete', reasons: [] }, rows: [item], boards });
+      assert.equal(readiness.allowed, false, `${kind}: ${JSON.stringify(patch)}`);
+      assert.ok(readiness.blockers.some(reason => reason.code === 'UNASSIGNED_SCHEDULE_ROWS'));
+    }
+  }
+});
+
+test('MICRO-001: candidates are reviewable and never become resolved owners by repetition', () => {
+  for (const board of [
+    { norm: 'DB1', orig: 'DB-1' },
+    { ...resolvedSyntheticBoard, identitySource: 'filename_reference_review' },
+    { norm: 'DB1', pages: [{ fileId: 'f1', page: 1, primary: false, sourceRole: 'reference' }] },
+    { norm: 'DB1', takeoffEligible: false, schematicEvidence: true },
+  ]) {
+    const fixture = { boards: { DB1: board }, rows: [row({ boardNorm: 'DB1', rating: 20, status: 'confirmed' })] };
+    const ownership = core.buildBoardOwnership(fixture);
+    assert.equal(ownership.resolvedBoardCount, 0);
+    assert.equal(ownership.unassignedRowCount, 1);
+    assert.equal(core.buildReportExportReadiness({ ...fixture, health: { state: 'complete', reasons: [] } }).allowed, false);
+  }
+});
+
+test('MICRO-001: valid owners and excluded rows retain their existing meanings', () => {
+  const boards = { DB1: resolvedSyntheticBoard };
+  const item = row({ boardNorm: 'DB1', rating: 20, status: 'confirmed' });
+  assert.equal(core.rowBoardOwnershipIssue(item, boards), null);
+  assert.equal(core.buildReportExportReadiness({ boards, rows: [item], health: { state: 'complete', reasons: [] } }).allowed, true);
+  for (const patch of [{ status: 'rejected' }, { outOfScope: true }, { kind: 'schematic' }]) {
+    assert.equal(core.rowBoardOwnershipIssue({ ...item, boardNorm: null, ...patch }, boards), null);
+  }
+  const restored = JSON.parse(JSON.stringify({ boards, rows: [item] }));
+  assert.deepEqual(core.buildBoardOwnership(restored), core.buildBoardOwnership({ boards, rows: [item] }));
+});
 
 function loadApprovalIssue(pageDiagnostics = []) {
   const html = readFileSync(resolve(root, 'index.html'), 'utf8');
@@ -40,7 +103,7 @@ function loadApprovalIssue(pageDiagnostics = []) {
   const end = html.indexOf('function approvalButtonAttrs(row)', start);
   assert.ok(start >= 0 && end > start);
   return new Function('state', 'window', `${html.slice(start, end)}; return rowApprovalIssue;`)(
-    { cur: { analysis: { pageDiagnostics } } }, { EstimationExtractorCore: core });
+    { cur: { analysis: { pageDiagnostics, boards: { 'DB-01': linkedBoard() } } } }, { EstimationExtractorCore: core });
 }
 
 const protectionConflicts = [
@@ -165,7 +228,7 @@ test('a missing standalone schedule feed is advisory rather than a failed extrac
   const h = core.buildAnalysisHealth({
     coverage: { perBoard: [{ norm: 'DB-01', inScope: true, rowsCaptured: 12, capturedWays: 12,
       expectedWays: 12, unaccountedWays: 0 }], summary: { expectedWays: 12, capturedWays: 12 } },
-    boards: { 'DB-01': {} },
+    boards: { 'DB-01': { scheduleEvidence: true } },
     rows: Array.from({ length: 12 }, (_, i) => row({ way: i + 1 })),
     pages: [page()],
     files: [{ id: 'f1', status: 'ready' }],
@@ -178,7 +241,7 @@ test('an unresolved See LV Schematic feed remains advisory for schedule-only doc
   const h = core.buildAnalysisHealth({
     coverage: { perBoard: [{ norm: 'DB-01', inScope: true, rowsCaptured: 12, capturedWays: 12,
       expectedWays: 12, unaccountedWays: 0 }], summary: { expectedWays: 12, capturedWays: 12 } },
-    boards: { 'DB-01': { header: { supplied_from_text: 'See LV Schematic' } } },
+    boards: { 'DB-01': { scheduleEvidence: true, header: { supplied_from_text: 'See LV Schematic' } } },
     rows: Array.from({ length: 12 }, (_, i) => row({ way: i + 1 })),
     pages: [page()],
     files: [{ id: 'f1', status: 'ready' }],
@@ -430,6 +493,7 @@ test('take-off evidence detector separates table headers from outgoing rows and 
 
 test('audited reconciled reports retain standalone missing-feed advice', () => {
   const readiness = core.buildReportExportReadiness({
+    boards: { 'DB-01': linkedBoard() },
     health: { state: 'failed', reasons: [
       { code: 'BOARD_FEED_MISSING', message: 'Board feed is unresolved', count: 1 },
     ] },
@@ -468,6 +532,7 @@ test('an exact accepted-as-printed decision qualifies only its matching board ca
     decision: 'accepted_as_printed', boardNorm: 'DB-01', expectedWays: 36, capturedWays: 22,
   };
   const readiness = core.buildReportExportReadiness({
+    boards: { 'DB-01': linkedBoard() },
     health: { state: 'incomplete', reasons: [
       { code: 'WAYS_UNACCOUNTED', message: 'Ways are unaccounted', count: 1,
         refs: [{ board: 'DB-01', expected: 36, captured: 22 }] },

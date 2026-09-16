@@ -928,4 +928,16 @@ assert.equal(fieldBand.geometryOrientation.fieldBandsNormalised, true);
 assert.ok(fieldBand.rows[0].sourceCell.bbox[1] < 210,
   'transposed evidence must be mapped back onto the source field-band geometry');
 
+// MICRO-001: rotation/transposition must not weaken the common owner contract.
+for (const parsed of [sideways, fieldBand, compositeSchedule]) {
+  const norm = Core.canonicalBoardReference(parsed.board.ref).normalised;
+  const boards = { [norm]: { norm, orig: parsed.board.ref, scheduleEvidence: true,
+    pages: [{ fileId: 'synthetic-layout', page: 1, primary: true }] } };
+  const rows = parsed.rows.map((row, index) => ({ ...row, id: `layout-${index}`, kind: 'schedule',
+    fileId: 'synthetic-layout', page: 1, boardNorm: norm, status: 'confirmed' }));
+  assert.equal(Core.buildBoardOwnership({ boards, rows }).unassignedRowCount, 0);
+  assert.ok(Core.buildBoardOwnership({ boards: {}, rows }).unassignedRowCount > 0,
+    'rotated geometry must not substitute for a registered owning board');
+}
+
 console.log('PASS: adaptive spatial schedules, damaged phase repair, precise rows, schematic feeder lanes, policy classification, and provenance.');
