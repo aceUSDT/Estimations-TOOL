@@ -141,6 +141,7 @@ function scheduleBoardFromLines(lines){
   let sawLabel=false;
   for(const line of lines){
     const source=String(line||'');
+    if(/\b(?:index|contents|connected\s+to|fed\s+from|supplied\s+from)\b/i.test(source))continue;
     const label=source.match(/\bDB\s+REFERENCE\b|\b(?:DISTRIBUTION\s+)?BOARD\s*(?:REFERENCE|REF|IDENTITY)?\s*[:=\-]|\bDISTRIBUTION\s+BOARD\s+SCHEDULE\b\s*[—–:\-]\s*(?=[A-Z0-9])/i);
     if(!label) continue;
     sawLabel=true;
@@ -156,6 +157,7 @@ function scheduleBoardFromLines(lines){
   const topN=Math.max(6,Math.ceil(lines.length/3));
   for(let index=0;index<Math.min(topN,lines.length);index++){
     if(!/\b(?:board|panel)\b/i.test(String(lines[index]||''))) continue;
+    if(/\b(?:index|contents|connected\s+to|fed\s+from|supplied\s+from)\b/i.test(String(lines[index]||'')))continue;
     const boards=detectBoards(lines[index]);if(boards.length)return boards[0];
   }
   return null;

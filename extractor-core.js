@@ -1792,6 +1792,50 @@
       && ['schedule', 'ai', 'manual', 'mention'].includes(row.kind);
   }
 
+  function isResolvedBoardIdentity(board) {
+    if (!board || board.inScope === false || board.outOfScope === true) return false;
+    if (board.manual) return true;
+    if (board.identitySource === 'filename_reference_review' || board.boardOwnershipUnresolved || board.boardOwnershipConflict) return false;
+    if (board.scheduleEvidence) return true;
+    if (board.takeoffEligible === false) return false;
+    // A name in a registry is not evidence of primary ownership. Older records
+    // with no source provenance stay in Review until the source is checked.
+    const pages = board.pages || [];
+    return pages.some(page => page.primary || page.sourceRole === 'schedule');
+  }
+
+  function rowBoardOwnershipIssue(row, boards) {
+    if (!row || row.status === 'rejected' || row.outOfScope || isSchematicTopologyEvidence(row)
+      || (!isTakeoffEvidenceRow(row) && !isCountableProtectionDevice(row)) || !isPopulatedProtectionRow(row)) return null;
+    const norm = typeof row.boardNorm === 'string' ? row.boardNorm.trim() : '';
+    const board = norm && Object.prototype.hasOwnProperty.call(boards || {}, norm) ? boards[norm] : null;
+    const reasonCode = row.boardOwnershipConflict ? 'BOARD_IDENTITY_CONFLICT'
+      : row.boardOwnershipUnresolved || row.boardIdentitySource === 'filename_reference_review' ? 'BOARD_IDENTITY_UNPROVEN'
+      : !norm ? 'BOARD_IDENTITY_MISSING'
+      : !board ? 'BOARD_IDENTITY_NOT_REGISTERED'
+      : !isResolvedBoardIdentity(board) ? 'BOARD_IDENTITY_UNPROVEN' : null;
+    if (!reasonCode) return null;
+    return { rowId: row.id || null, fileId: row.fileId || null, page: row.page ?? null,
+      way: row.way ?? null, line: row.line ?? null, boardNorm: row.boardNorm || null,
+      candidate: row.boardRef || row.aiClaimedBoardRef || board?.orig || null,
+      sourceText: String(row.srcText || ''), bbox: row.highlightBbox || row.bbox || row.sourceCell?.bbox || null,
+      reasonCode, action: 'Review the source and calibrate its board-reference header or correct the owning board.' };
+  }
+
+  function buildBoardOwnership({ boards, rows } = {}) {
+    const issues = [], pages = new Set();
+    let unassignedDeviceCount = 0;
+    for (const row of rows || []) {
+      const issue = rowBoardOwnershipIssue(row, boards);
+      if (!issue) continue;
+      issues.push(issue);
+      if (issue.fileId && issue.page != null) pages.add(`${issue.fileId}#${issue.page}`);
+      unassignedDeviceCount += protectionDeviceQuantity(row);
+    }
+    return { resolvedBoardCount: Object.values(boards || {}).filter(isResolvedBoardIdentity).length,
+      unassignedRowCount: issues.length, unassignedPageCount: pages.size, unassignedDeviceCount, issues };
+  }
+
   function applyBoardScope(boards, rows) {
     const scopedBoards = {};
     const rowList = (rows || []).map((row) => ({ ...row }));
@@ -2227,6 +2271,7 @@
     SCHEDULE_PAGE_UNPARSED: 'Page looks like a schedule but produced no rows',
     SCHEDULE_DOC_NO_BOARDS: 'Schedule-type pages exist but no board reference was identified',
     UNASSIGNED_SCHEDULE_ROWS: 'Active schedule rows were captured without a resolved board identity',
+    ZERO_BOARDS_WITH_DEVICES: 'Devices were captured but no owning board identity is resolved',
     SCHEDULE_GRID_UNPROVEN: 'A schedule page contains rows but its table geometry was not proven',
     PROTECTION_CLASS_CONFLICT: 'Explicit device wording conflicts with the governing protection standard',
     PHASE_POLE_CONFLICT: 'Printed phase evidence conflicts with the device pole descriptor',
@@ -2422,9 +2467,10 @@
     const inScopeBoardNorms = coverage
       ? new Set((coverage.perBoard || []).filter((board) => board.inScope).map((board) => board.norm))
       : null;
+    const ownership = buildBoardOwnership({ boards, rows });
     const boardCount = inScopeBoardNorms
-      ? inScopeBoardNorms.size
-      : Object.values(boards || {}).filter((board) => board?.inScope !== false).length;
+      ? [...inScopeBoardNorms].filter(norm => isResolvedBoardIdentity(boards?.[norm])).length
+      : ownership.resolvedBoardCount;
     const pageList = pages || [];
     const schematicPages = pageList.filter((pg) => pg.type === 'sld' || pg.type === 'schematic');
     const schedulePages = pageList.filter((pg) => pg.type !== 'sld' && pg.type !== 'schematic'
@@ -2477,13 +2523,13 @@
     for (const row of allRows) {
       if (!isPopulatedProtectionRow(row)) continue;
       const ref = { fileId: row.fileId, page: row.page };
-      if (row.kind === 'schedule' && !row.boardNorm) addReason('UNASSIGNED_SCHEDULE_ROWS', ref);
       if (row.classConflict) addReason('PROTECTION_CLASS_CONFLICT', ref);
       if (row.poleConflict) addReason('PHASE_POLE_CONFLICT', ref);
       if (hasInvalidProtectionValues(row)) {
         addReason('INVALID_PROTECTION_DOMAIN', ref);
       }
     }
+    for (const issue of ownership.issues) addReason('UNASSIGNED_SCHEDULE_ROWS', issue);
     if (coverage) {
       for (const board of coverage.perBoard || []) {
         if (!board.inScope) continue;
@@ -2507,6 +2553,7 @@
       }
     }
     if (boardCount === 0 && schedulePages.length > 0) addReason('SCHEDULE_DOC_NO_BOARDS', null);
+    if (boardCount === 0 && deviceCount > 0) addReason('ZERO_BOARDS_WITH_DEVICES', null);
     if (schematicPages.length > 0 && schematicBoardNorms.length > 1 && !(feeders || []).some((feeder) => feeder?.to)) {
       addReason('SCHEMATIC_FEEDS_MISSING', { boards: schematicBoardNorms.length });
     }
@@ -2528,7 +2575,7 @@
 
     let state = 'complete';
     if (reasons.size > 0) state = 'incomplete';
-    if (reasons.has('ZERO_DEVICES_WITH_BOARDS') || reasons.has('NO_CONTENT')
+    if (reasons.has('ZERO_DEVICES_WITH_BOARDS') || reasons.has('ZERO_BOARDS_WITH_DEVICES') || reasons.has('NO_CONTENT')
       || reasons.has('DEVICE_COUNT_BELOW_BOARD_COUNT') || reasons.has('WAYS_OVER_CAPACITY')
       || reasons.has('SCHEMATIC_FEEDS_MISSING')
       || reasons.has('SCHEMATIC_VECTOR_GEOMETRY_MISSING') || reasons.has('SCHEMATIC_TOPOLOGY_UNRESOLVED')
@@ -2550,6 +2597,9 @@
         boards: boardCount,
         boardsWithRows: coverage ? (coverage.perBoard || []).filter((b) => b.rowsCaptured > 0).length : null,
         deviceCount,
+        unassignedRows: ownership.unassignedRowCount,
+        unassignedPages: ownership.unassignedPageCount,
+        unassignedDevices: ownership.unassignedDeviceCount,
         expectedWays: coverage ? coverage.summary.expectedWays : null,
         capturedWays: coverage ? coverage.summary.capturedWays : null,
       },
@@ -2557,7 +2607,7 @@
   }
 
   const REPORT_EXPORT_HARD_HEALTH_CODES = new Set([
-    'NO_CONTENT', 'ZERO_DEVICES_WITH_BOARDS',
+    'NO_CONTENT', 'ZERO_DEVICES_WITH_BOARDS', 'ZERO_BOARDS_WITH_DEVICES',
     'BOARD_ROWS_MISSING', 'WAYS_UNACCOUNTED', 'WAYS_OVER_CAPACITY',
     'SCHEDULE_DOC_NO_BOARDS', 'UNASSIGNED_SCHEDULE_ROWS', 'PROTECTION_DETAILS_MISSING',
     'SCHEDULE_GRID_UNPROVEN', 'PROTECTION_CLASS_CONFLICT', 'PHASE_POLE_CONFLICT',
@@ -2584,7 +2634,7 @@
       && Number(qualification.capturedWays) === captured;
   }
 
-  function buildReportExportReadiness({ health, rows, model, extractionGaps, coverageQualifications } = {}) {
+  function buildReportExportReadiness({ health, boards, rows, model, extractionGaps, coverageQualifications } = {}) {
     const blockers = [];
     const warnings = [];
     const add = (target, code, message, count = 1) => {
@@ -2605,6 +2655,9 @@
     // Stored health may predate a correction or come from an older saved project.
     // Current unresolved evidence blocks issue even if that snapshot was complete.
     const activeRows = (rows || []).filter(row => row && !row.outOfScope && row.status !== 'rejected');
+    const ownership = buildBoardOwnership({ boards, rows });
+    if (ownership.unassignedRowCount) add(blockers, 'UNASSIGNED_SCHEDULE_ROWS',
+      `${ownership.unassignedRowCount} rows on ${ownership.unassignedPageCount} pages have unresolved board ownership`, ownership.unassignedRowCount);
     for (const [code, count] of [
       ['PROTECTION_CLASS_CONFLICT', activeRows.filter(row => row.classConflict).length],
       ['PHASE_POLE_CONFLICT', activeRows.filter(row => row.poleConflict).length],
@@ -3033,6 +3086,9 @@
     applyGoverningNotes,
     isSchematicTopologyEvidence,
     isTakeoffEvidenceRow,
+    isResolvedBoardIdentity,
+    rowBoardOwnershipIssue,
+    buildBoardOwnership,
     applyBoardScope,
     aggregateDevices,
     finalizeScheduleContext,
