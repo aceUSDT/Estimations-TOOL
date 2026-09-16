@@ -91,6 +91,25 @@
     return Boolean(String(row?.device || '').trim());
   }
 
+  function validateProtectionValues(row) {
+    const number = value => typeof value === 'number' ? value
+      : typeof value === 'string' && value.trim() ? Number(value) : NaN;
+    const rating = number(row?.rating), sensitivity = number(row?.sens), capacity = number(row?.ka);
+    return {
+      invalidRating: Boolean(row?.validation?.invalidRating)
+        || (row?.rating != null && (!Number.isFinite(rating) || rating <= 0)),
+      // Retain the electrical domains used by the spatial schedule parser.
+      invalidSensitivity: Boolean(row?.validation?.invalidSensitivity)
+        || (row?.sens != null && ![10, 30, 100, 300, 500].includes(sensitivity)),
+      invalidBreakingCapacity: Boolean(row?.validation?.invalidBreakingCapacity)
+        || (row?.ka != null && (!Number.isFinite(capacity) || capacity < 3 || capacity > 150)),
+    };
+  }
+
+  function hasInvalidProtectionValues(row) {
+    return Object.values(validateProtectionValues(row)).some(Boolean);
+  }
+
   function hasProtectionEvidence(row) {
     if (!row) return false;
     const hasValue = (value) => value != null && String(value).trim() !== '';
@@ -2456,12 +2475,12 @@
       }
     }
     for (const row of allRows) {
-      if (row.kind !== 'schedule' || !isPopulatedProtectionRow(row)) continue;
+      if (!isPopulatedProtectionRow(row)) continue;
       const ref = { fileId: row.fileId, page: row.page };
-      if (!row.boardNorm) addReason('UNASSIGNED_SCHEDULE_ROWS', ref);
-      if (row.classConflict && !row.edited) addReason('PROTECTION_CLASS_CONFLICT', ref);
-      if (row.poleConflict && !row.edited) addReason('PHASE_POLE_CONFLICT', ref);
-      if (!row.edited && (row.validation?.invalidSensitivity || row.validation?.invalidBreakingCapacity)) {
+      if (row.kind === 'schedule' && !row.boardNorm) addReason('UNASSIGNED_SCHEDULE_ROWS', ref);
+      if (row.classConflict) addReason('PROTECTION_CLASS_CONFLICT', ref);
+      if (row.poleConflict) addReason('PHASE_POLE_CONFLICT', ref);
+      if (hasInvalidProtectionValues(row)) {
         addReason('INVALID_PROTECTION_DOMAIN', ref);
       }
     }
@@ -2543,12 +2562,18 @@
     'SCHEDULE_DOC_NO_BOARDS', 'UNASSIGNED_SCHEDULE_ROWS', 'PROTECTION_DETAILS_MISSING',
     'SCHEDULE_GRID_UNPROVEN', 'PROTECTION_CLASS_CONFLICT', 'PHASE_POLE_CONFLICT',
     'INVALID_PROTECTION_DOMAIN',
+    'DEVICE_COUNT_BELOW_BOARD_COUNT', 'SCHEDULE_PAGE_UNPARSED',
+    'OCR_PENDING', 'PAGE_TEXT_UNRELIABLE', 'DOCUMENT_UNREADABLE',
+    'SCHEMATIC_FEEDS_MISSING', 'SCHEMATIC_VECTOR_GEOMETRY_MISSING',
+    'SCHEMATIC_TOPOLOGY_UNRESOLVED', 'SCHEMATIC_TOPOLOGY_AMBIGUOUS', 'SCHEMATIC_TOPOLOGY_INFERRED_GAP',
+    'SCHEMATIC_SCHEDULE_FEED_MISMATCH', 'SCHEMATIC_SCHEDULE_DEVICE_MISMATCH',
+    'SCHEMATIC_SCHEDULE_CABLE_MISMATCH', 'SCHEMATIC_ORPHAN_BOARD', 'SCHEDULE_ORPHAN_BOARD',
+    'DOCUMENT_REVISION_CONFLICT',
   ]);
 
-  /* Report issue is a separate decision from parser health. Once every
-   * take-off row has a human decision, non-quantity diagnostics become
-   * advisory; missing ownership, protection data, ways or reconciliation stay
-   * hard blockers. */
+  /* Row approval cannot resolve unreadable/missing source evidence or an
+   * electrical, identity or geometry conflict. Standalone missing-feed advice
+   * and exact source-capacity qualifications retain their separate treatment. */
   function coverageQualificationMatches(ref, qualification) {
     if (!ref || !qualification || qualification.decision !== 'accepted_as_printed') return false;
     if (String(qualification.boardNorm || '') !== String(ref.board || '')) return false;
@@ -2577,6 +2602,16 @@
       add(blockers, 'EXTRACTION_GAPS_UNRESOLVED', `${unresolvedExtractionGaps} schedule extraction gap${unresolvedExtractionGaps === 1 ? '' : 's'} still need recovery`, unresolvedExtractionGaps);
     }
     const qualifications = Array.isArray(coverageQualifications) ? coverageQualifications : [];
+    // Stored health may predate a correction or come from an older saved project.
+    // Current unresolved evidence blocks issue even if that snapshot was complete.
+    const activeRows = (rows || []).filter(row => row && !row.outOfScope && row.status !== 'rejected');
+    for (const [code, count] of [
+      ['PROTECTION_CLASS_CONFLICT', activeRows.filter(row => row.classConflict).length],
+      ['PHASE_POLE_CONFLICT', activeRows.filter(row => row.poleConflict).length],
+      ['INVALID_PROTECTION_DOMAIN', activeRows.filter(hasInvalidProtectionValues).length],
+    ]) {
+      if (count) add(blockers, code, HEALTH_REASONS[code], count);
+    }
     for (const reason of health?.reasons || []) {
       if (reason.code === 'WAYS_UNACCOUNTED' || reason.code === 'WAYS_OVER_CAPACITY') {
         const refs = Array.isArray(reason.refs) ? reason.refs : [];
@@ -2974,6 +3009,8 @@
     explicitPhaseEvidence,
     reconcilePoleEvidence,
     hasFittedProtectionDevice,
+    validateProtectionValues,
+    hasInvalidProtectionValues,
     hasProtectionEvidence,
     protectionDeviceQuantity,
     isCountableProtectionDevice,

@@ -34,6 +34,87 @@ const row = (over = {}) => ({
 });
 const linkedBoard = (over = {}) => ({ parent: 'MAIN', ...over });
 
+function loadApprovalIssue(pageDiagnostics = []) {
+  const html = readFileSync(resolve(root, 'index.html'), 'utf8');
+  const start = html.indexOf('function rowApprovalIssue(row)');
+  const end = html.indexOf('function approvalButtonAttrs(row)', start);
+  assert.ok(start >= 0 && end > start);
+  return new Function('state', 'window', `${html.slice(start, end)}; return rowApprovalIssue;`)(
+    { cur: { analysis: { pageDiagnostics } } }, { EstimationExtractorCore: core });
+}
+
+const protectionConflicts = [
+  ['current rating', 'INVALID_PROTECTION_DOMAIN', { validation: { invalidRating: true } }],
+  ['device class', 'PROTECTION_CLASS_CONFLICT', { classConflict: { explicit: 'MCB', standardDevice: 'RCBO' } }],
+  ['phase and poles', 'PHASE_POLE_CONFLICT', { poleConflict: { printedPhase: 'L1', descriptor: 'TP' } }],
+  ['RCD sensitivity', 'INVALID_PROTECTION_DOMAIN', { validation: { invalidSensitivity: true } }],
+  ['breaking capacity', 'INVALID_PROTECTION_DOMAIN', { validation: { invalidBreakingCapacity: true } }],
+];
+for (const kind of ['schedule', 'ai', 'manual']) {
+  for (const [label, code, conflict] of protectionConflicts) {
+    test(`an edited ${kind} row retains its unresolved ${label} blocker`, () => {
+      const rows = [row({ kind, rating: 20, status: 'confirmed', edited: true, ...conflict })];
+      const health = core.buildAnalysisHealth({ boards: { 'DB-01': linkedBoard() }, rows,
+        pages: [page({ rowsParsed: 1 })], files: [{ id: 'f1', status: 'ready' }] });
+      assert.equal(health.state, 'failed');
+      assert.ok(health.reasons.some(reason => reason.code === code));
+      assert.equal(core.buildReportExportReadiness({ health, rows }).allowed, false);
+    });
+  }
+}
+test('current protection flags block export even when stored health says complete', () => {
+  for (const [, code, conflict] of protectionConflicts) {
+    const rows = [row({ rating: 20, status: 'confirmed', edited: true, ...conflict })];
+    const readiness = core.buildReportExportReadiness({ health: { state: 'complete', reasons: [] }, rows });
+    assert.equal(readiness.allowed, false);
+    assert.ok(readiness.blockers.some(reason => reason.code === code));
+    for (const inactive of [{ status: 'rejected' }, { outOfScope: true }]) {
+      assert.equal(core.buildReportExportReadiness({ health: { state: 'complete', reasons: [] },
+        rows: rows.map(item => ({ ...item, ...inactive })) }).allowed, true);
+    }
+  }
+});
+test('approval rejects unresolved flags after an edit and accepts explicitly resolved flags', () => {
+  const approvalIssue = loadApprovalIssue();
+  for (const [, , conflict] of protectionConflicts) {
+    assert.ok(approvalIssue(row({ rating: 20, edited: true, ...conflict })));
+  }
+  assert.equal(approvalIssue(row({ rating: 20, edited: true, classConflict: null, poleConflict: null,
+    validation: { invalidSensitivity: false, invalidBreakingCapacity: false } })), null);
+});
+
+test('invalid current values block approval, health and cached-health export without relying on parser flags', () => {
+  const approvalIssue = loadApprovalIssue();
+  for (const [field, values] of Object.entries({
+    rating: [0, -1, NaN, Infinity, 'not a rating', true, []],
+    sens: [0, 32, '30mA', true, [30]],
+    ka: [0, -1, 151, Infinity, 'not a capacity'],
+  })) {
+    for (const value of values) {
+      const item = row({ rating: 20, status: 'confirmed', edited: true, validation: {}, [field]: value });
+      assert.equal(core.hasInvalidProtectionValues(item), true, `${field}: ${String(value)}`);
+      assert.ok(approvalIssue(item));
+      const health = core.buildAnalysisHealth({ boards: { 'DB-01': linkedBoard() }, rows: [item],
+        pages: [page({ rowsParsed: 1 })], files: [{ id: 'f1', status: 'ready' }] });
+      assert.ok(health.reasons.some(reason => reason.code === 'INVALID_PROTECTION_DOMAIN'));
+      assert.equal(core.buildReportExportReadiness({ health: { state: 'complete', reasons: [] }, rows: [item] }).allowed, false);
+    }
+  }
+  for (const sens of [null, 10, 30, 100, 300, 500, '30']) {
+    for (const ka of [null, 3, 10, 150, '10']) assert.equal(core.hasInvalidProtectionValues({ rating: 20, sens, ka }), false);
+  }
+});
+
+test('calibration cannot make malformed or zero-area source geometry reviewable', () => {
+  const approvalIssue = loadApprovalIssue([{ fileId: 'f1', page: 1,
+    calibration: { applied: 1, roles: ['outgoing_table'] }, spatialBlockingReasons: ['column_schema_low_confidence'] }]);
+  for (const highlightBbox of [[0, 0, 0, 20], [0, 0, 20, 0], [0, 0, -20, 10], [-1, 0, 20, 10],
+    [null, null, 20, 10], ['0', '0', '20', '10'], [0, 0, Infinity, 10], [0, 0, 20, 10, 5], null]) {
+    assert.match(approvalIssue(row({ rating: 20, edited: true, highlightBbox })) || '', /geometry/);
+  }
+  assert.equal(approvalIssue(row({ rating: 20, highlightBbox: [0, 0, 20, 10] })), null);
+});
+
 test('healthy analysis ⇒ complete with no reasons', () => {
   const h = core.buildAnalysisHealth({
     coverage: { perBoard: [{ norm: 'DB-01', inScope: true, rowsCaptured: 12, capturedWays: 12, expectedWays: 12, unaccountedWays: 0 }], summary: { expectedWays: 12, capturedWays: 12 } },
@@ -347,10 +428,9 @@ test('take-off evidence detector separates table headers from outgoing rows and 
   assert.equal(active.occupancyRows, 1);
 });
 
-test('audited reconciled reports export past advisory page and topology diagnostics', () => {
+test('audited reconciled reports retain standalone missing-feed advice', () => {
   const readiness = core.buildReportExportReadiness({
     health: { state: 'failed', reasons: [
-      { code: 'SCHEDULE_PAGE_UNPARSED', message: 'Page looks like a schedule but produced no rows', count: 1 },
       { code: 'BOARD_FEED_MISSING', message: 'Board feed is unresolved', count: 1 },
     ] },
     rows: [row({ status: 'confirmed' })],
@@ -358,8 +438,29 @@ test('audited reconciled reports export past advisory page and topology diagnost
   });
   assert.equal(readiness.allowed, true);
   assert.equal(readiness.blockers.length, 0);
-  assert.ok(readiness.warnings.some((item) => item.code === 'SCHEDULE_PAGE_UNPARSED'));
+  assert.ok(readiness.warnings.some((item) => item.code === 'BOARD_FEED_MISSING'));
   assert.ok(readiness.warnings.some((item) => item.code === 'REPORT_ACCEPTED_QUALIFICATIONS'));
+});
+
+test('completed row audit cannot waive incomplete extraction, source conflicts or unreviewable geometry', () => {
+  for (const code of [
+    'DEVICE_COUNT_BELOW_BOARD_COUNT', 'SCHEDULE_PAGE_UNPARSED', 'DOCUMENT_UNREADABLE',
+    'OCR_PENDING', 'PAGE_TEXT_UNRELIABLE', 'SCHEMATIC_FEEDS_MISSING', 'SCHEMATIC_VECTOR_GEOMETRY_MISSING',
+    'SCHEMATIC_TOPOLOGY_UNRESOLVED', 'SCHEMATIC_TOPOLOGY_AMBIGUOUS', 'SCHEMATIC_TOPOLOGY_INFERRED_GAP',
+    'SCHEMATIC_SCHEDULE_FEED_MISMATCH', 'SCHEMATIC_SCHEDULE_DEVICE_MISMATCH',
+    'SCHEMATIC_SCHEDULE_CABLE_MISMATCH', 'SCHEMATIC_ORPHAN_BOARD', 'SCHEDULE_ORPHAN_BOARD',
+    'DOCUMENT_REVISION_CONFLICT',
+  ]) {
+    const readiness = core.buildReportExportReadiness({
+      health: { state: 'failed', reasons: [{ code, count: 1 }] },
+      rows: [row({ rating: 20, status: 'confirmed' })],
+      model: { reviewCount: 0, unassignedQty: 0, reconciliation: { valid: true } },
+      coverageQualifications: [{ decision: 'accepted_as_printed', boardNorm: 'DB-01', expectedWays: 36, capturedWays: 22 }],
+    });
+    assert.equal(readiness.allowed, false, code);
+    assert.ok(readiness.blockers.some(item => item.code === code), code);
+    assert.ok(!readiness.warnings.some(item => item.code === code), code);
+  }
 });
 
 test('an exact accepted-as-printed decision qualifies only its matching board capacity conflict', () => {

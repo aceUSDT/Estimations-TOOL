@@ -192,6 +192,24 @@ try {
 
   await page.locator('.ptab[data-pt="reports"]').click();
   await page.locator('#reportMatrixHost .report-qualifications').waitFor();
+  const incompleteReadiness = await page.evaluate(() => currentReportExportReadiness(currentReportModel()));
+  assert.equal(incompleteReadiness.allowed, false, 'a capacity qualification cannot waive an unparsed schedule page');
+  assert.ok(incompleteReadiness.blockers.some(item => item.code === 'SCHEDULE_PAGE_UNPARSED'));
+  const blockedDownloads = [];
+  const recordBlockedDownload = download => blockedDownloads.push(download);
+  page.on('download', recordBlockedDownload);
+  for (const button of ['#reportCsvBtn', '#reportXlsxBtn']) {
+    await page.locator(button).click();
+    assert.equal(await page.evaluate(() => exportBlockedByHealth()), true);
+  }
+  assert.equal(blockedDownloads.length, 0, 'blocked report buttons must not create downloads');
+  page.off('download', recordBlockedDownload);
+  // Resolve only the synthetic missing-page diagnostic injected above; the
+  // capacity qualification and standalone feed advice remain in force.
+  await page.evaluate(() => {
+    state.cur.analysis.health.reasons = state.cur.analysis.health.reasons.filter(reason => reason.code !== 'SCHEDULE_PAGE_UNPARSED');
+    renderReport();
+  });
   const advisoryReadiness = await page.evaluate(() => currentReportExportReadiness(currentReportModel()));
   assert.equal(advisoryReadiness.allowed, true,
     `completed audit must permit an exact accepted source qualification: ${JSON.stringify(advisoryReadiness.blockers)}`);
