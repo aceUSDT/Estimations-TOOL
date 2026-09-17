@@ -35,7 +35,10 @@ module.exports = {
   extraResources: [
     { from: '../index.html', to: 'web/index.html' },
     { from: '../extractor-core.js', to: 'web/extractor-core.js' },
+    { from: '../decision-core.js', to: 'web/decision-core.js' },
+    { from: '../review-core.js', to: 'web/review-core.js' },
     { from: '../spatial-schedule-core.js', to: 'web/spatial-schedule-core.js' },
+    { from: '../schematic-topology-core.js', to: 'web/schematic-topology-core.js' },
     { from: '../report-core.js', to: 'web/report-core.js' },
     { from: '../assets', to: 'web/assets' },
     { from: '../vendor', to: 'web/vendor' },

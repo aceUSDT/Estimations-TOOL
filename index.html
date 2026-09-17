@@ -681,9 +681,10 @@
   <div class="lock-card" id="lockCard">
     <img class="lock-logo" src="./assets/hager-logo.png" alt="Hager">
     <div class="lock-name"><span>Estimation</span><span class="brand-accent">Tools</span></div>
-    <div class="lock-prompt" id="lockPrompt">Enter this device's PIN</div>
-    <input type="password" id="pwInput" placeholder="PIN" autocomplete="current-password">
+    <label class="lock-prompt" id="lockPrompt" for="pwInput">Enter this device's PIN</label>
+    <input type="password" id="pwInput" placeholder="PIN" autocomplete="current-password" aria-describedby="lockPrivacy">
     <button class="go" id="pwBtn">Unlock</button>
+    <p class="lock-privacy" id="lockPrivacy">A local screen lock for this browser. Your documents stay on this computer. The PIN does not encrypt them.</p>
     <div class="lock-err" id="pwErr"></div>
   </div>
 </div>
@@ -691,12 +692,12 @@
 <!-- ================= APP ================= -->
 <div class="view" id="appView">
   <div class="appbar">
-    <div class="brand"><img class="brand-logo" src="./assets/hager-logo.png" alt="Hager">
-      <div class="bt"><span>Estimation</span><span class="brand-accent">Tools</span></div></div>
+    <button class="brand" id="homeBrandBtn" type="button" aria-label="Project library"><img class="brand-logo" src="./assets/hager-logo.png" alt="Hager">
+      <span class="bt"><span>Estimation</span><span class="brand-accent">Tools</span></span></button>
     <div class="crumb" id="crumb"><b>Projects</b></div>
     <div class="right">
       <span class="storage-state" id="storageState" title="Projects and original files are stored in this device profile">Stored on this computer</span>
-      <a class="link-btn" href="./download/" title="Buy the Windows/macOS desktop app">Get desktop app</a>
+      <a class="link-btn" href="./download/" title="Desktop app availability">Desktop app</a>
       <button class="link-btn" id="lockBtn">Lock</button>
     </div>
   </div>
@@ -723,21 +724,38 @@
   <!-- HOME -->
   <div class="page subview active" id="homeView">
     <div class="home-head">
-      <div><h1 class="pg">Projects</h1><div class="pg-sub" id="homeSub">Projects stored on this computer</div></div>
+      <div><span class="workspace-eyebrow">Electrical estimation</span><h1 class="pg">Projects</h1><div class="pg-sub" id="homeSub">Projects stored on this computer</div></div>
       <div class="home-actions">
         <button class="btn" id="restoreProjectBtn">Restore project</button>
         <button class="btn primary" id="newProjectBtn">New project</button>
       </div>
       <input type="file" id="restoreProjectInput" accept=".json,.estimation-project" style="display:none">
     </div>
+    <div class="workspace-overview" aria-label="Project overview">
+      <div class="overview-stat"><span>Projects</span><strong id="homeProjects">0</strong><small>In this workspace</small></div>
+      <div class="overview-stat attention"><span>Needs attention</span><strong id="homeAttention">0</strong><small>Extraction or review outstanding</small></div>
+      <div class="overview-stat"><span>Documents</span><strong id="homeDocuments">0</strong><small>Stored on this computer</small></div>
+      <div class="overview-stat"><span>Source pages</span><strong id="homePages">0</strong><small>Across your projects</small></div>
+    </div>
+    <div class="project-library-tools">
+      <label class="project-search"><span>Find a project</span><input type="search" class="in" id="projectSearch" placeholder="Search project names" autocomplete="off"></label>
+      <div class="project-filters" role="group" aria-label="Filter projects">
+        <button class="project-filter active" data-project-filter="all" aria-pressed="true">All projects</button>
+        <button class="project-filter" data-project-filter="attention" aria-pressed="false">Needs attention</button>
+        <button class="project-filter" data-project-filter="unanalysed" aria-pressed="false">Not analysed</button>
+      </div>
+      <span class="project-result-count" id="projectResultCount" role="status" aria-live="polite"></span>
+    </div>
     <div class="proj-grid" id="projGrid"></div>
+    <div class="workspace-guide"><strong>From source to take-off</strong><span><b>01</b> Add documents</span><span><b>02</b> Review the evidence</span><span><b>03</b> Check and export</span></div>
   </div>
 
   <!-- PROJECT -->
   <div class="page subview" id="projView">
     <div class="proj-head">
-      <button class="back-btn" id="backBtn" title="All projects">←</button>
-      <div style="flex:1">
+      <button class="back-btn" id="backBtn" title="All projects" aria-label="All projects">←</button>
+      <div class="project-heading-copy">
+        <span class="workspace-eyebrow">Project workspace</span>
         <h1 class="pg" id="projTitle">Project</h1>
         <div class="pg-sub" id="projMeta"></div>
       </div>
@@ -746,6 +764,12 @@
         <button class="btn primary" id="reanalyzeBtn">Analyse documents</button>
       </div>
     </div>
+
+    <section class="workspace-summary" id="workspaceSummary" aria-label="Project next step">
+      <div class="workspace-next-copy"><span class="workspace-eyebrow">Next step</span><h2 id="workspaceNextTitle">Add your source documents</h2><p id="workspaceNextDetail">Start with a drawing or board schedule.</p></div>
+      <div class="workspace-counts" aria-label="Take-off counts"><div><strong id="workspaceBoards">0</strong><span>Resolved boards</span></div><div><strong id="workspaceDevices">0</strong><span>Devices counted</span></div><div><strong id="workspaceReview">0</strong><span>Rows to review</span></div></div>
+      <button class="btn primary" id="workspaceNextBtn">Add documents</button>
+    </section>
 
     <div class="ptabs">
       <button class="ptab active" data-pt="docs">Documents <span class="badge" id="bDocs">0</span></button>
@@ -759,16 +783,17 @@
     <!-- ==== DOCUMENTS ==== -->
     <div class="subview active" id="pt-docs">
       <div class="section-head documents-head">
-        <div><h2>Documents</h2><p>What the tool has read, and what it could not - a shortfall is flagged, never silently accepted.</p></div>
+        <div><h2>Source documents</h2><p>Add drawings and schedules, then check coverage before reviewing the take-off.</p></div>
       </div>
-      <div class="dropzone" id="dropzone">
-        <div class="dropzone-copy"><h3>Drop documents here</h3>
-        <p>PDF, XLSX, PNG, JPG, TXT or CSV - files are copied into the project, not moved.</p></div>
-        <span class="btn dropzone-choose">Choose files</span>
+      <div class="dropzone" id="dropzone" role="button" tabindex="0" aria-label="Add source documents" aria-describedby="dropzoneHint">
+        <span class="dropzone-icon" aria-hidden="true">↑</span>
+        <div class="dropzone-copy"><h3>Drop your drawings and schedules</h3>
+        <p id="dropzoneHint">PDF, Excel, images or text. Originals stay on this computer.</p></div>
+        <span class="btn dropzone-choose" aria-hidden="true">Choose files</span>
       </div>
       <input type="file" id="fileInput" multiple accept=".pdf,.txt,.csv,.md,.xlsx,.png,.jpg,.jpeg,.webp" style="display:none">
       <div class="panel" style="margin-bottom:16px">
-        <div class="p-head">Ingestion queue <span class="sub" id="docCountSub"></span></div>
+        <div class="p-head">Document library <span class="sub" id="docCountSub"></span></div>
         <div class="doc-queue-scroll" style="overflow-x:auto"><table class="t doc-table">
           <thead><tr><th></th><th>Document</th><th>Type</th><th>Size</th><th class="num">Pages</th>
           <th>Source</th><th>Status</th><th></th></tr></thead>
@@ -778,7 +803,7 @@
       </div>
       <div class="panel">
         <div class="p-head">Page classification
-          <span class="sub">what the tool believes each page contains — correct it if wrong</span>
+          <span class="sub">Check the detected page type against the source</span>
           <select class="sel" id="pgclassFileSel" style="margin-left:auto"></select>
         </div>
         <div style="overflow-x:auto"><table class="t">
@@ -790,7 +815,7 @@
       </div>
       <div class="panel" style="margin-top:16px">
         <div class="p-head">Extraction coverage
-          <span class="sub">expected vs captured — a shortfall is flagged, never silently accepted</span>
+          <span class="sub">Expected and captured evidence, including unresolved gaps</span>
           <span class="chip grey" id="covSummary" style="margin-left:auto"></span>
         </div>
         <div style="overflow-x:auto"><table class="t">
@@ -1080,7 +1105,7 @@
 /* ============================ CORE ============================ */
 const $ = s => document.querySelector(s);
 const $$ = s => Array.from(document.querySelectorAll(s));
-const esc = s => String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;');
+const esc = s => String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 let toastTimer;
 const toast = m => { const t=$('#toast'); t.textContent=m; t.classList.add('show');
   clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.remove('show'),2600); };
@@ -1760,16 +1785,19 @@ function parseLegendLine(line){
 /* ============================ NAVIGATION ============================ */
 function show(view){
   document.body.dataset.view=view;
+  if(view==='home'&&!analysisBusy)hideProcessing();
   $('#homeView').classList.toggle('active', view==='home');
   $('#projView').classList.toggle('active', view==='proj');
   $('#crumb').innerHTML = view==='home' ? '<b>Projects</b>' : ('Projects <span style="opacity:.5">/</span> <b>'+esc(state.cur?state.cur.name:'')+'</b>');
+  window.scrollTo({top:0,left:0,behavior:'instant'});
 }
 function setTab(name){
   if (name==='boards') name='analysis';   // §5.4 — Boards merged into the Boards & Devices page
   if(name!=='viewer'&&state.viewer.fullscreen)setViewerFullscreen(false);
   document.body.dataset.projectTab=name;
-  $$('.ptab').forEach(t=>t.classList.toggle('active', t.dataset.pt===name));
+  $$('.ptab').forEach(t=>{t.classList.toggle('active', t.dataset.pt===name);t.setAttribute('aria-current',t.dataset.pt===name?'page':'false');});
   $$('#projView .subview').forEach(p=>p.classList.toggle('active', p.id==='pt-'+name));
+  window.scrollTo({top:0,left:0,behavior:'instant'});
   if (name==='viewer') return renderViewer();
   if (name==='analysis') return renderTakeoff();
   if (name==='reports') return renderReport();
@@ -1778,10 +1806,21 @@ function setTab(name){
   return null;
 }
 $$('.ptab').forEach(t=>t.addEventListener('click',()=>setTab(t.dataset.pt)));
-$('#backBtn').addEventListener('click', ()=>{ pauseGuidedReview();state.cur=null;if(!analysisBusy)hideProcessing();renderProjects(); show('home'); });
+$('#backBtn').addEventListener('click', ()=>{ pauseGuidedReview();setViewerFullscreen(false);state.cur=null;if(!analysisBusy)hideProcessing();renderProjects(); show('home'); });
+$('#homeBrandBtn').addEventListener('click',()=>$('#backBtn').click());
 $('#backupProjectBtn').addEventListener('click',()=>backupProject(state.cur));
 $('#restoreProjectBtn').addEventListener('click',()=>$('#restoreProjectInput').click());
 $('#newProjectBtn').addEventListener('click',()=>$('.proj-card.new')?.click());
+$('#projectSearch').addEventListener('input',renderProjects);
+$$('[data-project-filter]').forEach(button=>button.addEventListener('click',()=>{
+  state.projectFilter=button.dataset.projectFilter;renderProjects();
+}));
+$('#workspaceNextBtn').addEventListener('click',()=>{
+  const next=projectNextStep(state.cur);
+  setTab(next.tab);
+  if(next.tab==='docs')$('#dropzone').focus();
+  else $(`.ptab[data-pt="${next.tab}"]`)?.focus();
+});
 $('#restoreProjectInput').addEventListener('change',async event=>{
   const file=event.target.files?.[0];event.target.value='';if(!file)return;
   try{await restoreProject(file);}catch(error){toast('Restore failed: '+(error.message||error));}
@@ -2004,36 +2043,57 @@ function projStats(p){
   return {docs,pages,boards,devices,review,unassignedRows:ownership?.unassignedRowCount||0,unassignedPages:ownership?.unassignedPageCount||0};
 }
 /* ============================ HOME / PROJECT CARDS ============================ */
+function projectNextStep(project,stats=project?projStats(project):null){
+  if(!project||!stats.docs)return {key:'unanalysed',tone:'grey',title:'Add your source documents',detail:'Start with a drawing or board schedule. Your originals stay on this computer.',action:'Add documents',tab:'docs'};
+  if(project.files.some(file=>file.status==='processing')||(analysisBusy&&state.cur?.id===project.id))return {key:'processing',tone:'blue',title:'Reading your source documents',detail:'Wait for processing to finish before checking the updated take-off.',action:'View documents',tab:'docs'};
+  if(project.files.some(file=>file.status==='error'))return {key:'attention',tone:'red',title:'Check document errors',detail:'One or more source files could not be read. Check the document library before continuing.',action:'Check documents',tab:'docs'};
+  if(!project.analysis)return {key:'unanalysed',tone:'grey',title:'Analyse your documents',detail:'Read the source files to identify boards, devices and evidence that needs review.',action:'View documents',tab:'docs'};
+  if(stats.unassignedRows||project.analysis.health?.state!=='complete')return {key:'attention',tone:stats.unassignedRows||project.analysis.health?.state==='failed'?'red':'amber',title:'Resolve extraction issues',detail:stats.unassignedRows?`${stats.unassignedRows} rows on ${stats.unassignedPages} pages need an evidenced board reference.`:'Check extraction coverage and source conflicts before issuing the take-off.',action:'Check extraction',tab:'analysis'};
+  if(stats.review)return {key:'attention',tone:'amber',title:'Review source evidence',detail:`${stats.review} row${stats.review===1?' needs':'s need'} a decision. Check each value against its source.`,action:'Review evidence',tab:'review'};
+  return {key:'analysed',tone:'blue',title:'Check report readiness',detail:'Check quantities, qualifications and export requirements in Reports.',action:'Open reports',tab:'reports'};
+}
 function renderProjects(){
   const g=$('#projGrid'); g.innerHTML='';
   const count=state.projects.length;
-  $('#homeSub').textContent=`${count||'No'} project${count===1?'':'s'} on this computer - nothing is uploaded unless you ask for it`;
-  state.projects.forEach(p=>{
-    const s=projStats(p);
-    const statusCl = p.status==='Analysed'?'green'
-      : p.status==='Needs review'||p.status==='Incomplete'?'amber'
-      : p.status==='Analysis failed'?'red':'grey';
+  $('#homeSub').textContent='Manage source documents, review evidence and prepare your take-offs.';
+  const records=state.projects.map(project=>{const stats=projStats(project);return {project,stats,next:projectNextStep(project,stats)};});
+  $('#homeProjects').textContent=count;
+  $('#homeAttention').textContent=records.filter(item=>item.next.key==='attention').length;
+  $('#homeDocuments').textContent=records.reduce((sum,item)=>sum+item.stats.docs,0);
+  $('#homePages').textContent=records.reduce((sum,item)=>sum+item.stats.pages,0);
+  const query=$('#projectSearch').value.trim().toLocaleLowerCase(),filter=state.projectFilter||'all';
+  $$('[data-project-filter]').forEach(button=>{const active=button.dataset.projectFilter===filter;button.classList.toggle('active',active);button.setAttribute('aria-pressed',String(active));});
+  const visible=records.filter(item=>item.project.name.toLocaleLowerCase().includes(query)&&(filter==='all'||item.next.key===filter));
+  $('#projectResultCount').textContent=`${visible.length} of ${count} project${count===1?'':'s'}`;
+  if(!visible.length){
+    const empty=document.createElement('div');empty.className='project-library-empty';
+    empty.innerHTML=count?'<strong>No matching projects</strong><p>Try a different name or clear the filters.</p><button class="btn" id="clearProjectFilters">Clear filters</button>':'<strong>Your first take-off starts here</strong><p>Create a project, add your source documents and review the extracted evidence.</p>';
+    g.appendChild(empty);
+    empty.querySelector('button')?.addEventListener('click',()=>{$('#projectSearch').value='';state.projectFilter='all';renderProjects();$('#projectSearch').focus();});
+  }
+  visible.forEach(({project:p,stats:s,next})=>{
+    const statusCl = next.tone;
     const card=document.createElement('div'); card.className='proj-card status-'+statusCl;
     card.innerHTML = `
       <div class="pc-menu">
-        <button data-act="rename" title="Rename">✎</button>
-        <button data-act="dup" title="Duplicate">⧉</button>
-        <button data-act="del" class="d" title="Delete" aria-label="Delete">×</button>
+        <button data-act="rename" title="Rename" aria-label="Rename ${esc(p.name)}">✎</button>
+        <button data-act="dup" title="Duplicate" aria-label="Duplicate ${esc(p.name)}">⧉</button>
+        <button data-act="del" class="d" title="Delete" aria-label="Delete ${esc(p.name)}">×</button>
       </div>
-      <h3>${esc(p.name)}</h3>
-      <div class="pdate">Created ${esc(p.created)} · Updated ${esc(p.updated)}</div>
+      <div class="project-card-label">Project</div>
+      <h3><button class="project-title-button" data-act="open">${esc(p.name)}</button></h3>
+      <div class="pdate">Updated ${esc(p.updated)}</div>
       <div class="pstats">
-        <div class="pstat"><div class="v">${s.docs}</div><div class="k">Docs</div></div>
+        <div class="pstat"><div class="v">${s.docs}</div><div class="k">Documents</div></div>
         <div class="pstat"><div class="v">${s.pages}</div><div class="k">Pages</div></div>
-        <div class="pstat"><div class="v">${s.boards}</div><div class="k">Boards</div></div>
+        <div class="pstat"><div class="v">${s.boards}</div><div class="k">Resolved boards</div></div>
         <div class="pstat"><div class="v">${s.devices}</div><div class="k">Devices</div></div>
-        <div class="pstat"><div class="v">${s.review}</div><div class="k">Review</div></div>
-        <div class="pstat"><div class="v" style="font-size:11px;padding-top:4px">${p.analysis?esc(p.analysis.ranAt):'—'}</div><div class="k">Analysed</div></div>
       </div>
-      <div class="foot"><span class="chip ${statusCl}">${esc(p.status)}</span></div>`;
+      <div class="project-card-next"><span class="chip ${statusCl}">${esc(next.key==='processing'?'Processing':p.status)}</span><span>${s.review&&next.key!=='processing'?`${s.review} rows to review`:esc(next.title)}</span></div>
+      <div class="foot"><span>${p.analysis?'Analysis '+esc(p.analysis.ranAt):'Analysis not started'}</span><button class="project-open-button" data-act="open" aria-label="Open workspace: ${esc(p.name)}">Open workspace <span aria-hidden="true">→</span></button></div>`;
     card.addEventListener('click', async e=>{
-      const act=e.target.dataset&&e.target.dataset.act;
-      if (!act){ openProject(p.id); return; }
+      const act=e.target.closest('button[data-act]')?.dataset.act;
+      if (!act||act==='open'){ openProject(p.id); return; }
       e.stopPropagation();
       if (act==='rename'){
         openModal('Rename project', `<label class="lbl">Project name</label><input id="mName" class="in" value="${esc(p.name)}">`, ()=>{
@@ -2060,8 +2120,8 @@ function renderProjects(){
     });
     g.appendChild(card);
   });
-  const add=document.createElement('div'); add.className='proj-card new';
-  add.innerHTML='<span style="font-size:18px">＋</span> New project';
+  const add=document.createElement('button'); add.type='button';add.className='proj-card new';
+  add.innerHTML='<span class="new-project-icon" aria-hidden="true">＋</span><strong>New project</strong><span>Start a take-off from your source documents</span>';
   add.addEventListener('click', ()=>{
     openModal('New project', `<label class="lbl">Project name</label><input id="mName" class="in" placeholder="e.g. Riverside Office Fit-Out">`, ()=>{
       const v=$('#mName').value.trim(); if(!v) return false;
@@ -2099,6 +2159,14 @@ function renderProjHeader(){
   $('#projMeta').textContent = `${s.docs} document${s.docs===1?'':'s'} · ${s.pages} pages · ${s.boards} resolved boards${s.unassignedRows?` · ${s.unassignedRows} unassigned rows on ${s.unassignedPages} pages`:''} · Last analysis: ${p.analysis?p.analysis.ranAt:'never'}`;
   $('#bDocs').textContent=s.docs; $('#bDev').textContent=s.devices;
   $('#bBoards').textContent=s.boards; $('#bRev').textContent=s.review;
+  const next=projectNextStep(p,s);
+  $('#workspaceSummary').dataset.tone=next.tone;
+  $('#workspaceNextTitle').textContent=next.title;
+  $('#workspaceNextDetail').textContent=next.detail;
+  $('#workspaceNextBtn').textContent=next.action;
+  $('#workspaceBoards').textContent=next.key==='processing'?'—':s.boards;
+  $('#workspaceDevices').textContent=next.key==='processing'?'—':s.devices;
+  $('#workspaceReview').textContent=next.key==='processing'?'—':s.review;
 }
 
 /* ============================ FILE INGESTION ============================ */
@@ -2720,10 +2788,12 @@ function applyAiAudit(A,response,fileId,pageNo,{primaryBoard=null,pageType=null}
         A.xcheck.mismatches++;
         const boardNorm=auditBoardNorm(mismatch.board);
         const mismatchPhase=String(mismatch.phase||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
-        const row=A.rows.find(item=>item.fileId===fileId&&item.page===pageNo&&item.boardNorm===boardNorm
+        const candidates=A.rows.filter(item=>item.fileId===fileId&&item.page===pageNo&&item.boardNorm===boardNorm
           &&String(item.way??'')===String(mismatch.way??'')
           &&(!mismatchPhase||String(item.phase||'').toUpperCase().replace(/[^A-Z0-9]/g,'')===mismatchPhase));
-        if(row&&row.status==='pending'){
+        // A board/way/phase key can identify multiple source occurrences.
+        // Keep every pending candidate in Review rather than choosing the first.
+        for(const row of candidates.filter(item=>item.status==='pending')){
           row.conf=Math.min(row.conf??1,0.55);row.requiresReview=true;
           row.xcheck=mismatch.detail||'Independent extraction agents disagreed on this row';
         }
@@ -3011,6 +3081,7 @@ async function handleFiles(list){
 $('#fileInput').addEventListener('change', e=>{ handleFiles(e.target.files); e.target.value=''; });
 const dz=$('#dropzone');
 dz.addEventListener('click', ()=>$('#fileInput').click());
+dz.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();$('#fileInput').click();}});
 /* §5.3 — drop-anywhere: a drop anywhere on the Documents page captures files, not just the dz box. */
 const docsPage=$('#pt-docs');
 ['dragover','dragenter'].forEach(ev=>docsPage.addEventListener(ev,e=>{e.preventDefault();docsPage.classList.add('dz-over');dz.classList.add('over');}));
@@ -3405,6 +3476,7 @@ async function runAnalysis(opts){
   analysisButtons.forEach(button=>button.disabled=true);
   $('#projView')?.setAttribute('aria-busy','true');
   try{
+  renderProjHeader();
   const pageSet=parseRanges(f.pages);
   const boardFilter=f.boards.length?new Set(f.boards):null;
   const devFilter=f.devices.length?new Set(f.devices.map(d=>d.toUpperCase())):null;
@@ -4008,6 +4080,7 @@ async function runAnalysis(opts){
     return null;
   }finally{
     analysisBusy=false;
+    if(state.cur?.id===p.id)renderProjHeader();
     if(analysisAbortController===runController)analysisAbortController=null;
     const cancel=$('#processingCancelBtn');if(cancel)cancel.hidden=true;
     analysisButtons.forEach(button=>button.disabled=false);

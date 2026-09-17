@@ -6,6 +6,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import assert from 'node:assert/strict';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -33,6 +34,124 @@ const disagreement=providers.crossCheckExtractions(
 );
 check('cross-check exposes disagreements without resolving them', disagreement.agree===false
   && disagreement.mismatches.some(item=>item.kind==='field_mismatch'&&item.primary===10&&item.second===16));
+
+/* Every occurrence matters, even when board/way/phase repeat. These synthetic
+ * comparisons are offline; agreement never certifies extraction completeness. */
+const device = (fields = {}) => ({ board_ref: 'DB-1', way: 1, phase: 'L1', device_class: 'MCB', rating_a: 32, ...fields });
+const compare = (primary, second) => providers.crossCheckExtractions({ devices: primary }, { devices: second });
+let crossCheckCases = 0;
+const crossCheckCase = (name, run) => {
+  crossCheckCases++;
+  try { run(); } catch (error) { check(`cross-check: ${name}`, false, error.message); }
+};
+crossCheckCase('unique rows agree regardless of order and numeric representation', () => {
+  assert.deepEqual(compare([device(), device({ way: 2, rating_a: 10 })],
+    [device({ way: '2', rating_a: '10' }), device({ rating_a: '32' })]),
+  { agree: true, counts: { primary: 2, second: 2 }, mismatches: [] });
+});
+crossCheckCase('identical duplicate occurrences are counted', () => {
+  assert.deepEqual(compare([device(), device()], [device(), device()]),
+    { agree: true, counts: { primary: 2, second: 2 }, mismatches: [] });
+});
+crossCheckCase('different duplicate occurrences match independent of order', () => {
+  assert.equal(compare([device({ rating_a: 20 }), device()], [device(), device({ rating_a: 20 })]).agree, true);
+});
+crossCheckCase('extra primary occurrence is never lost behind the last Map entry', () => {
+  const result = compare([device({ rating_a: 20 }), device()], [device()]);
+  assert.equal(result.agree, false);
+  assert.deepEqual(result.counts, { primary: 2, second: 1 });
+  assert.deepEqual(result.mismatches.map(item => item.kind), ['missing_in_second']);
+  assert.equal(result.mismatches[0].primary.rating_a, 20);
+});
+crossCheckCase('every extra second occurrence is retained', () => {
+  const result = compare([device()], [device(), device({ rating_a: 20 }), device({ rating_a: 20 })]);
+  assert.equal(result.agree, false);
+  assert.deepEqual(result.counts, { primary: 1, second: 3 });
+  assert.equal(result.mismatches.length, 2);
+  assert.ok(result.mismatches.every(item => item.kind === 'missing_in_primary' && item.second.rating_a === 20));
+});
+crossCheckCase('equal counts cannot conceal a duplicate electrical conflict', () => {
+  const result = compare([device({ rating_a: 20 }), device()], [device({ rating_a: 25 }), device()]);
+  assert.equal(result.agree, false);
+  assert.deepEqual(result.counts, { primary: 2, second: 2 });
+  assert.equal(result.mismatches.length, 1);
+  assert.equal(result.mismatches[0].field, 'rating_a');
+  assert.equal(result.mismatches[0].primary, 20);
+  assert.equal(result.mismatches[0].second, 25);
+});
+crossCheckCase('disagreement output is stable under row reordering', () => {
+  const first = [device({ rating_a: 20 }), device(), device({ way: 3 })];
+  const second = [device({ rating_a: 25 }), device(), device({ way: 2 })];
+  assert.deepEqual(compare(first, second), compare([...first].reverse(), [...second].reverse()));
+});
+crossCheckCase('material protection fields must be corroborated', () => {
+  const conflicts = {
+    device_class: ['MCB', 'RCBO'], poles: [1, 3], trip_curve: ['B', 'C'],
+    breaking_capacity_ka: [6, 10], rcd_protected: [false, true], rcd_ma: [30, 100],
+    rcd_arrangement: ['integral', 'separate'], afdd: [false, true],
+    is_incomer: [false, true], is_spare: [false, true], is_spd: [false, true],
+    protection_standard: ['BS EN 60898', 'BS EN 61009'], trip_unit: ['TM', 'LSI'],
+    earth_fault_device: ['', 'Earth fault relay'], arc_flash_device: ['', 'Arc flash relay'],
+  };
+  for (const [field, [primary, second]] of Object.entries(conflicts)) {
+    const result = compare([device({ [field]: primary })], [device({ [field]: second })]);
+    assert.ok(!result.agree && result.mismatches.some(item => item.kind === 'field_mismatch' && item.field === field), field);
+  }
+});
+crossCheckCase('known versus missing fields remain disagreement', () => {
+  for (const field of ['rating_a', 'poles', 'rcd_protected']) {
+    const known = field === 'rcd_protected' ? false : 1;
+    const result = compare([device({ [field]: known })], [device({ [field]: null })]);
+    assert.ok(!result.agree && result.mismatches.some(item => item.field === field), field);
+  }
+});
+crossCheckCase('description changes alone do not manufacture electrical disagreement', () => {
+  assert.equal(compare([device({ description: 'Sockets' })], [device({ description: 'Socket outlets' })]).agree, true);
+});
+crossCheckCase('blank ways are valid for incomers and remain occurrence-aware', () => {
+  const incomer = device({ way: null, phase: '', device_class: 'isolator', is_incomer: true });
+  assert.deepEqual(compare([incomer, incomer], [incomer]).counts, { primary: 2, second: 1 });
+  assert.equal(compare([incomer, incomer], [incomer]).agree, false);
+});
+crossCheckCase('spaces are excluded but fitted spares are counted', () => {
+  const space = device({ device_class: 'space', rating_a: null });
+  const spare = device({ is_spare: true });
+  assert.deepEqual(compare([space, spare], [spare]), { agree: true, counts: { primary: 1, second: 1 }, mismatches: [] });
+});
+crossCheckCase('explicit empty lists agree only as an empty comparison', () => {
+  assert.deepEqual(compare([], []), { agree: true, counts: { primary: 0, second: 0 }, mismatches: [] });
+});
+crossCheckCase('missing or malformed device lists cannot masquerade as empty agreement', () => {
+  for (const malformed of [null, {}, { devices: null }, { devices: {} }, { devices: 'invalid' }]) {
+    const result = providers.crossCheckExtractions(malformed, { devices: [] });
+    assert.equal(result.agree, false);
+    assert.ok(result.mismatches.some(item => item.kind === 'invalid_extraction' && item.side === 'primary'));
+  }
+});
+crossCheckCase('malformed rows do not throw or silently disappear', () => {
+  for (const malformed of [null, 32, 'MCB', [], {}, device({ board_ref: {} }), device({ device_class: null })]) {
+    const result = compare([malformed], [device()]);
+    assert.equal(result.agree, false);
+    assert.deepEqual(result.counts, { primary: 1, second: 1 });
+    assert.ok(result.mismatches.some(item => item.kind === 'invalid_device' && item.side === 'primary'));
+  }
+});
+crossCheckCase('malformed electrical values cannot agree with themselves', () => {
+  for (const fields of [{ rating_a: '32A' }, { rating_a: -1 }, { rating_a: Infinity },
+    { poles: 1.5 }, { rcd_protected: 'false' }, { trip_curve: {} }]) {
+    const row = device(fields);
+    const result = compare([row], [row]);
+    assert.equal(result.agree, false);
+    assert.equal(result.mismatches.filter(item => item.kind === 'invalid_device').length, 2);
+  }
+});
+crossCheckCase('inputs are never mutated', () => {
+  const primary = [device({ rating_a: 20 }), device()];
+  const second = [device()];
+  const before = JSON.stringify([primary, second]);
+  compare(primary, second);
+  assert.equal(JSON.stringify([primary, second]), before);
+});
 for (const file of ['netlify/functions/lib/providers.mjs', 'netlify/functions/extract.mjs', 'netlify/functions/extract-background.mjs', 'netlify/functions/extract-status.mjs']) {
   const src = fs.readFileSync(path.resolve(ROOT, file), 'utf8');
   check(`${file} has no Anthropic references`, !/anthropic|ANTHROPIC|claude-|CLAUDE_MODEL|EXTRACTION_MODEL/i.test(src));
@@ -110,4 +229,4 @@ check('instruction preserves source-board ownership and calibration guidance', c
   && calibratedInstr.includes('downstream circuit_reference') && calibratedInstr.includes('board_ref, device_class'));
 
 if (fail) { console.log(`\n${fail} failure(s)`); process.exit(1); }
-console.log('PASS: Gemini master runtime, deterministic cross-check, schema translation, provider gating, health probe.');
+console.log(`PASS: Gemini master runtime, ${crossCheckCases} occurrence-aware cross-check cases, schema translation, provider gating, health probe.`);
