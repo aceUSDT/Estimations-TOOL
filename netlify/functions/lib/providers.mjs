@@ -164,35 +164,112 @@ export async function callGeminiJson({ instruction, schema, maxTokens = 4000, mo
 
 const norm = (value) => String(value == null ? '' : value).trim().toUpperCase().replace(/[\s\-_/]+/g, '');
 const deviceKey = (device) => [norm(device.board_ref), norm(device.way), norm(device.phase)].join('|');
+const comparisonFields = ['rating_a', 'device_class', 'poles', 'trip_curve', 'breaking_capacity_ka',
+  'rcd_protected', 'rcd_ma', 'rcd_arrangement', 'afdd', 'is_incomer', 'is_spare', 'is_spd',
+  'protection_standard', 'trip_unit', 'earth_fault_device', 'arc_flash_device'];
+const numericFields = new Set(['rating_a', 'poles', 'breaking_capacity_ka', 'rcd_ma']);
+const booleanFields = new Set(['rcd_protected', 'afdd', 'is_incomer', 'is_spare', 'is_spd']);
+const absent = (value) => value == null || value === '';
+const comparable = (field, value) => absent(value) ? ''
+  : numericFields.has(field) ? String(Number(value)) : String(value).trim().toUpperCase();
+const electricalSignature = (device) => JSON.stringify(comparisonFields.map(field => comparable(field, device[field])));
+const sourceIdentity = (device) => ({ board: device.board_ref || '', way: device.way ?? '', phase: device.phase || '' });
+const deviceSummary = (device) => ({ device_class: device.device_class, rating_a: device.rating_a, description: device.description });
 
-export function crossCheckExtractions(primary, second) {
-  const primaryRows = (primary?.devices || []).filter((device) => device.device_class !== 'space');
-  const secondRows = (second?.devices || []).filter((device) => device.device_class !== 'space');
-  const primaryMap = new Map(primaryRows.map((device) => [deviceKey(device), device]));
-  const secondMap = new Map(secondRows.map((device) => [deviceKey(device), device]));
-  const mismatches = [];
-  for (const [key, device] of secondMap) {
-    if (!primaryMap.has(key)) mismatches.push({
-      kind: 'missing_in_primary', board: device.board_ref || '', way: device.way ?? '', phase: device.phase || '',
-      detail: `Second agent found ${device.device_class || 'a device'}${device.rating_a ? ` ${device.rating_a}A` : ''} that the primary extraction missed`,
-      second: { device_class: device.device_class, rating_a: device.rating_a, description: device.description },
-    });
+function invalidDeviceField(device) {
+  if (!device || typeof device !== 'object' || Array.isArray(device)) return 'row';
+  if (typeof device.board_ref !== 'string' || !device.board_ref.trim()) return 'board_ref';
+  if (typeof device.device_class !== 'string' || !device.device_class.trim()) return 'device_class';
+  if (!absent(device.way) && !(typeof device.way === 'string'
+    || (typeof device.way === 'number' && Number.isFinite(device.way)))) return 'way';
+  if (!absent(device.phase) && typeof device.phase !== 'string') return 'phase';
+  for (const field of comparisonFields) {
+    const value = device[field];
+    if (absent(value)) continue;
+    if (numericFields.has(field)) {
+      if (!['string', 'number'].includes(typeof value) || !/^\d+(?:\.\d+)?$/.test(String(value).trim())
+        || !Number.isFinite(Number(value)) || Number(value) <= 0
+        || (field === 'poles' && !Number.isInteger(Number(value)))) return field;
+    } else if (booleanFields.has(field)) {
+      if (typeof value !== 'boolean') return field;
+    } else if (typeof value !== 'string') return field;
   }
-  for (const [key, device] of primaryMap) {
-    const other = secondMap.get(key);
-    if (!other) {
-      mismatches.push({ kind: 'missing_in_second', board: device.board_ref || '', way: device.way ?? '', phase: device.phase || '',
-        detail: 'Second agent did not corroborate this device' });
+  return null;
+}
+
+function comparisonGroups(extraction, side, mismatches) {
+  const groups = new Map();
+  let count = 0;
+  if (!Array.isArray(extraction?.devices)) {
+    mismatches.push({ kind: 'invalid_extraction', side, board: '', way: '', phase: '',
+      detail: `${side} extraction has no valid device list; independent comparison requires review` });
+    return { groups, count };
+  }
+  for (const device of extraction.devices) {
+    if (device?.device_class === 'space') continue;
+    count++;
+    const field = invalidDeviceField(device);
+    if (field) {
+      // Never echo malformed objects or silently discard a purported occurrence.
+      mismatches.push({ kind: 'invalid_device', side, field, board: typeof device?.board_ref === 'string' ? device.board_ref : '',
+        way: ['string', 'number'].includes(typeof device?.way) ? device.way : '',
+        phase: typeof device?.phase === 'string' ? device.phase : '',
+        detail: `${side} extraction contains an invalid ${field}; independent comparison requires review` });
       continue;
     }
-    for (const field of ['rating_a', 'device_class', 'poles']) {
-      if (device[field] != null && other[field] != null && String(device[field]) !== String(other[field])) {
-        mismatches.push({ kind: 'field_mismatch', board: device.board_ref || '', way: device.way ?? '', phase: device.phase || '',
-          field, primary: device[field], second: other[field], detail: `Agents disagree on ${field}: ${device[field]} vs ${other[field]}` });
+    const key = deviceKey(device);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(device);
+  }
+  return { groups, count };
+}
+
+function sortedOccurrences(rows = []) {
+  // Sort a copy. The electrical signature governs matching; the remaining
+  // source fields make the reported extra occurrence stable under reordering.
+  const sortKey = device => JSON.stringify([electricalSignature(device), device.board_ref, device.way, device.phase,
+    comparisonFields.map(field => device[field]), device.description]);
+  return rows.map(device => ({ device, key: sortKey(device) }))
+    .sort((a, b) => a.key < b.key ? -1 : a.key > b.key ? 1 : 0).map(item => item.device);
+}
+
+export function crossCheckExtractions(primary, second) {
+  const mismatches = [];
+  const a = comparisonGroups(primary, 'primary', mismatches);
+  const b = comparisonGroups(second, 'second', mismatches);
+  for (const key of [...new Set([...a.groups.keys(), ...b.groups.keys()])].sort()) {
+    const remainingPrimary = [];
+    const remainingSecond = sortedOccurrences(b.groups.get(key));
+    // Match identical occurrences first. A later duplicate must not overwrite
+    // an earlier one, and provider row order cannot create a disagreement.
+    for (const device of sortedOccurrences(a.groups.get(key))) {
+      const signature = electricalSignature(device);
+      const match = remainingSecond.findIndex(other => electricalSignature(other) === signature);
+      if (match === -1) remainingPrimary.push(device);
+      else remainingSecond.splice(match, 1);
+    }
+    const paired = Math.min(remainingPrimary.length, remainingSecond.length);
+    for (let index = 0; index < paired; index++) {
+      const device = remainingPrimary[index], other = remainingSecond[index];
+      for (const field of comparisonFields) {
+        if (comparable(field, device[field]) !== comparable(field, other[field])) {
+          mismatches.push({ kind: 'field_mismatch', ...sourceIdentity(device), field,
+            primary: device[field] ?? null, second: other[field] ?? null,
+            detail: `Agents disagree on ${field}: ${absent(device[field]) ? 'unknown' : device[field]} vs ${absent(other[field]) ? 'unknown' : other[field]}` });
+        }
       }
     }
+    for (const device of remainingSecond.slice(paired)) mismatches.push({
+      kind: 'missing_in_primary', ...sourceIdentity(device),
+      detail: `Second agent found ${device.device_class}${device.rating_a ? ` ${device.rating_a}A` : ''} that the primary extraction missed`,
+      second: deviceSummary(device),
+    });
+    for (const device of remainingPrimary.slice(paired)) mismatches.push({
+      kind: 'missing_in_second', ...sourceIdentity(device),
+      detail: 'Second agent did not corroborate this device occurrence', primary: deviceSummary(device),
+    });
   }
-  return { agree: mismatches.length === 0, counts: { primary: primaryMap.size, second: secondMap.size }, mismatches };
+  return { agree: mismatches.length === 0, counts: { primary: a.count, second: b.count }, mismatches };
 }
 
 /* Full-page extraction. Fails with 503 semantics when unconfigured so the
